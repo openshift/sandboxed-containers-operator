@@ -1,0 +1,4 @@
+apiVersion: kataconfiguration.openshift.io/v1alpha1
+kind: KataConfig
+metadata:
+  name: example-kataconfig 

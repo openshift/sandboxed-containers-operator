@@ -1,0 +1,138 @@
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: kataconfigs.kataconfiguration.openshift.io
+spec:
+  group: kataconfiguration.openshift.io
+  names:
+    kind: KataConfig
+    listKind: KataConfigList
+    plural: kataconfigs
+    singular: kataconfig
+  scope: Namespaced
+  subresources:
+    status: {}
+  validation:
+    openAPIV3Schema:
+      description: KataConfig is the Schema for the kataconfigs API
+      properties:
+        apiVersion:
+          description: 'APIVersion defines the versioned schema of this representation
+            of an object. Servers should convert recognized schemas to the latest
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+          type: string
+        kind:
+          description: 'Kind is a string value representing the REST resource this
+            object represents. Servers may infer this from the endpoint the client
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+          type: string
+        metadata:
+          type: object
+        spec:
+          description: KataConfigSpec defines the desired state of KataConfig
+          properties:
+            config:
+              description: KataInstallConfig is a placeholder struct
+              type: object
+            kataConfigPoolSelector:
+              description: KataConfigPoolSelector is used to filer the worker nodes
+                if not specified, all worker nodes are selected
+              properties:
+                matchExpressions:
+                  description: matchExpressions is a list of label selector requirements.
+                    The requirements are ANDed.
+                  items:
+                    description: A label selector requirement is a selector that contains
+                      values, a key, and an operator that relates the key and values.
+                    properties:
+                      key:
+                        description: key is the label key that the selector applies
+                          to.
+                        type: string
+                      operator:
+                        description: operator represents a key's relationship to a
+                          set of values. Valid operators are In, NotIn, Exists and
+                          DoesNotExist.
+                        type: string
+                      values:
+                        description: values is an array of string values. If the operator
+                          is In or NotIn, the values array must be non-empty. If the
+                          operator is Exists or DoesNotExist, the values array must
+                          be empty. This array is replaced during a strategic merge
+                          patch.
+                        items:
+                          type: string
+                        type: array
+                    required:
+                    - key
+                    - operator
+                    type: object
+                  type: array
+                matchLabels:
+                  additionalProperties:
+                    type: string
+                  description: matchLabels is a map of {key,value} pairs. A single
+                    {key,value} in the matchLabels map is equivalent to an element
+                    of matchExpressions, whose key field is "key", the operator is
+                    "In", and the values array contains only "value". The requirements
+                    are ANDed.
+                  type: object
+              type: object
+          required:
+          - config
+          type: object
+        status:
+          description: KataConfigStatus defines the observed state of KataConfig
+          properties:
+            completedNodesCount:
+              description: CompletedNodesCounts is the number of nodes that have successfully
+                completed the given operation
+              type: integer
+            failedNodes:
+              description: FailedNodes is the list of worker nodes failed to complete
+                the given operation
+              items:
+                description: FailedNode holds the name and the error message of the
+                  failed node
+                properties:
+                  error:
+                    description: Error message of the failed node reported by the
+                      installation daemon
+                    type: string
+                  name:
+                    description: Name of the failed node
+                    type: string
+                required:
+                - error
+                - name
+                type: object
+              type: array
+            inProgressNodesCount:
+              description: InProgressNodesCounts is the number of nodes still in progress
+                in completing the given operation
+              type: integer
+            kataImage:
+              description: KataImage is the image used for delivering kata binaries
+              type: string
+            runtimeClass:
+              description: RuntimeClass is the name of the runtime class used in CRIO
+                configuration
+              type: string
+            totalNodesCount:
+              description: TotalNodesCounts is the total number of worker nodes targeted
+                by this CR
+              type: integer
+          required:
+          - completedNodesCount
+          - failedNodes
+          - inProgressNodesCount
+          - kataImage
+          - runtimeClass
+          - totalNodesCount
+          type: object
+      type: object
+  version: v1alpha1
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
