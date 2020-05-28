@@ -60,7 +60,6 @@ func uninstallKata() error {
 
 func installKata(kataConfigResourceName string) {
 
-	fmt.Println("HEYHHO HHO HEY")
 	//config, err := clientcmd.BuildConfigFromFlags("", "/tmp/kubeconfig")
 	config, err := clientcmd.BuildConfigFromFlags("", "")
 	if err != nil {

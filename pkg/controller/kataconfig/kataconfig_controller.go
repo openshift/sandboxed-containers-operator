@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	ignTypes "github.com/coreos/ignition/config/v2_2/types"
 	kataconfigurationv1alpha1 "github.com/openshift/kata-operator/pkg/apis/kataconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -63,7 +65,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// err = c.Watch(&source.Kind{Type: &corev1.NodeList{}}, &handler.EnqueueRequestForOwner{
+	// err = c.Watch(&source.Kind{Type: &mcfgv1.MachineConfig{}}, &handler.EnqueueRequestForOwner{
 	// 	IsController: true,
 	// 	OwnerType:    &kataconfigurationv1alpha1.KataConfig{},
 	// })
@@ -149,6 +151,33 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 		return reconcile.Result{}, err
 	}
 
+	if instance.Status.CompletedNodesCount == instance.Status.TotalNodesCount && instance.Status.TotalNodesCount != 0 {
+		reqLogger.Info("Kata installation on the cluster is completed")
+
+		mc := newMCForCR(instance)
+		// Set Kataconfig instance as the owner and controller
+		if err := controllerutil.SetControllerReference(instance, mc, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
+
+		foundMc := &mcfgv1.MachineConfig{}
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, foundMc)
+		if err != nil && errors.IsNotFound(err) {
+			reqLogger.Info("Creating a new Machine Config ", "mc.Name", mc.Name)
+			err = r.client.Create(context.TODO(), mc)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			// Pod created successfully - don't requeue
+			return reconcile.Result{}, nil
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
 	reqLogger.Info("Skip reconcile: DS already exists", "DS.Namespace", foundDs.Namespace, "DS.Name", foundDs.Name)
 	return reconcile.Result{}, nil
 }
@@ -214,4 +243,34 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 			},
 		},
 	}
+}
+
+func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig {
+	labels := map[string]string{
+		"machineconfiguration.openshift.io/role": "worker",
+		"app":                                    cr.Name,
+	}
+
+	mc := *&mcfgv1.MachineConfig{}
+
+	mc.APIVersion = "machineconfiguration.openshift.io/v1"
+	mc.Kind = "MachineConfig"
+
+	mc.ObjectMeta.Labels = labels
+	mc.ObjectMeta.Name = "50-heyho-kata-crio-dropin"
+	mc.ObjectMeta.Namespace = cr.Namespace
+	mc.Spec.Config.Ignition.Version = "2.2.0"
+
+	file := ignTypes.File{}
+	c := ignTypes.FileContents{}
+	c.Source = "data:text/plain;charset=utf-8;base64,cnVudGltZV9wYXRoPSIvdXNyL2Jpbi9rYXRhLXJ1bnRpbWUiCg=="
+	file.Contents = c
+	file.Filesystem = "root"
+	m := 420
+	file.Mode = &m
+	file.Path = "/opt/kata-1.conf"
+
+	mc.Spec.Config.Storage.Files = []ignTypes.File{file}
+
+	return &mc
 }
