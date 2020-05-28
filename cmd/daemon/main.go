@@ -71,6 +71,7 @@ func installKata(kataConfigResourceName string) {
 			fmt.Println(err)
 		}
 
+		// TODO - remove this line, no longer required.
 		kataconfig.Status.FailedNodes = []kataTypes.FailedNode{}
 		kataconfig.Status.InProgressNodesCount = kataconfig.Status.InProgressNodesCount + 1
 		_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs("default").UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})

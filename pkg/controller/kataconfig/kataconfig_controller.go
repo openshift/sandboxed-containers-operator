@@ -63,6 +63,14 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	// err = c.Watch(&source.Kind{Type: &corev1.NodeList{}}, &handler.EnqueueRequestForOwner{
+	// 	IsController: true,
+	// 	OwnerType:    &kataconfigurationv1alpha1.KataConfig{},
+	// })
+	// if err != nil {
+	// 	return err
+	// }
+
 	return nil
 }
 
@@ -114,62 +122,35 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 			return reconcile.Result{}, err
 		}
 
+		instance.Status.FailedNodes = []kataconfigurationv1alpha1.FailedNode{}
+		instance.Status.RuntimeClass = "kata-oc"
+		instance.Status.KataImage = "quay.io/kata-operator/kata-artifacts:1.0"
+
+		nodesList := &corev1.NodeList{}
+		workerNodeLabels := make(map[string]string)
+		workerNodeLabels["node-role.kubernetes.io/worker"] = ""
+		listOpts := []client.ListOption{
+			client.MatchingLabels(workerNodeLabels),
+		}
+		err = r.client.List(context.TODO(), nodesList, listOpts...)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		instance.Status.TotalNodesCount = len(nodesList.Items)
+
+		err = r.client.Status().Update(context.TODO(), instance)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
 		// DS created successfully - don't requeue
 		return reconcile.Result{}, nil
 	} else if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	// Define a new Pod object
-	// pod := newPodForCR(instance)
-
-	// // Set KataConfig instance as the owner and controller
-	// if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
-	// 	return reconcile.Result{}, err
-	// }
-
-	// Check if this Pod already exists
-	// found := &corev1.Pod{}
-	// err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
-	// if err != nil && errors.IsNotFound(err) {
-	// 	reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-	// 	err = r.client.Create(context.TODO(), pod)
-	// 	if err != nil {
-	// 		return reconcile.Result{}, err
-	// 	}
-
-	// 	// Pod created successfully - don't requeue
-	// 	return reconcile.Result{}, nil
-	// } else if err != nil {
-	// 	return reconcile.Result{}, err
-	// }
-
-	// Pod already exists - don't requeue
 	reqLogger.Info("Skip reconcile: DS already exists", "DS.Namespace", foundDs.Namespace, "DS.Name", foundDs.Name)
 	return reconcile.Result{}, nil
-}
-
-// newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *kataconfigurationv1alpha1.KataConfig) *corev1.Pod {
-	labels := map[string]string{
-		"app": cr.Name,
-	}
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-pod",
-			Namespace: cr.Namespace,
-			Labels:    labels,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    "busybox",
-					Image:   "busybox",
-					Command: []string{"sleep", "3600"},
-				},
-			},
-		},
-	}
 }
 
 func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation string) *appsv1.DaemonSet {
