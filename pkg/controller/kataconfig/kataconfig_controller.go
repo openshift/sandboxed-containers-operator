@@ -184,13 +184,30 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 					Containers: []corev1.Container{
 						{
 							Name:            "kata-install-pod",
-							Image:           "docker.io/pharshal/kata-install-daemon:0.2",
+							Image:           "quay.io/jensfr/kata-install-daemon:v1.0",
 							ImagePullPolicy: "Always",
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
 								RunAsUser:  &runAsUser,
 							},
 							Command: []string{"/bin/sh", "-c", fmt.Sprintf("/daemon --resource %s --operation %s", cr.Name, operation)},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "hostroot",
+									MountPath: "/host",
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "hostroot", // Has to match VolumeMounts in containers
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/",
+									//Type: &corev1.HostPathVolumeSource,
+								},
+							},
 						},
 					},
 				},

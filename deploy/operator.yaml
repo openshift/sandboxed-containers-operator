@@ -16,7 +16,7 @@ spec:
       containers:
         - name: kata-operator
           # Replace this with the built image name
-          image: docker.io/pharshal/kata-operator:v0.0.4 
+          image: quay.io/jensfr/kata-operator:v1.0
           command:
           - kata-operator
           imagePullPolicy: Always
