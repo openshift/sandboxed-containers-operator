@@ -1,8 +1,13 @@
 package kataconfig
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+
+	b64 "encoding/base64"
+
+	"github.com/BurntSushi/toml"
 
 	ignTypes "github.com/coreos/ignition/config/v2_2/types"
 	kataconfigurationv1alpha1 "github.com/openshift/kata-operator/pkg/apis/kataconfiguration/v1alpha1"
@@ -213,7 +218,7 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 					Containers: []corev1.Container{
 						{
 							Name:            "kata-install-pod",
-							Image:           "quay.io/jensfr/kata-install-daemon:v1.0",
+							Image:           "docker.io/pharshal/kata-install-daemon:0.2",
 							ImagePullPolicy: "Always",
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
@@ -263,7 +268,10 @@ func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig 
 
 	file := ignTypes.File{}
 	c := ignTypes.FileContents{}
-	c.Source = "data:text/plain;charset=utf-8;base64,cnVudGltZV9wYXRoPSIvdXNyL2Jpbi9rYXRhLXJ1bnRpbWUiCg=="
+
+	dropinConf, _ := generateDropinConfig(cr.Status.RuntimeClass)
+	// c.Source = "data:text/plain;charset=utf-8;base64,cnVudGltZV9wYXRoPSIvdXNyL2Jpbi9rYXRhLXJ1bnRpbWUiCg=="
+	c.Source = "data:text/plain;charset=utf-8;base64," + dropinConf
 	file.Contents = c
 	file.Filesystem = "root"
 	m := 420
@@ -273,4 +281,43 @@ func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig 
 	mc.Spec.Config.Storage.Files = []ignTypes.File{file}
 
 	return &mc
+}
+
+func generateDropinConfig(handlerName string) (string, error) {
+
+	type RuntimeHandler struct {
+		RuntimePath                  string `toml:"runtime_path"`
+		RuntimeType                  string `toml:"runtime_type,omitempty"`
+		RuntimeRoot                  string `toml:"runtime_root,omitempty"`
+		PrivilegedWithoutHostDevices bool   `toml:"privileged_without_host_devices,omitempty"`
+	}
+	// Multiple runtime Handlers in a map
+	type Runtimes map[string]*RuntimeHandler
+
+	kataHandler := &RuntimeHandler{
+		RuntimePath: "/usr/bin/kata-runtime",
+		RuntimeType: "vm",
+	}
+
+	runcHandler := &RuntimeHandler{
+		RuntimePath: "/bin/runc",
+		RuntimeType: "oci",
+		RuntimeRoot: "/run/runc",
+	}
+
+	var r Runtimes
+
+	r = Runtimes{
+		"crio.runtime.runtimes.runc":           runcHandler,
+		"crio.runtime.runtimes." + handlerName: kataHandler,
+	}
+
+	var err error
+	buf := new(bytes.Buffer)
+	if err = toml.NewEncoder(buf).Encode(r); err != nil {
+	}
+
+	sEnc := b64.StdEncoding.EncodeToString([]byte(buf.String()))
+	return sEnc, err
+
 }

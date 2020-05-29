@@ -3,8 +3,13 @@ module github.com/openshift/kata-operator
 go 1.13
 
 require (
+	github.com/BurntSushi/toml v0.3.1
+	github.com/Sirupsen/logrus v0.0.0-00010101000000-000000000000 // indirect
 	github.com/ajeddeloh/go-json v0.0.0-20200220154158-5ae607161559 // indirect
+	github.com/containers/image/v5 v5.0.0
 	github.com/coreos/ignition v0.35.0
+	github.com/dsnet/compress v0.0.1 // indirect
+	github.com/opencontainers/image-tools v0.3.0
 	github.com/openshift/machine-config-operator v4.2.0-alpha.0.0.20190917115525-033375cbe820+incompatible
 	github.com/operator-framework/operator-sdk v0.16.0
 	github.com/spf13/pflag v1.0.5
@@ -18,6 +23,7 @@ require (
 
 // Pinned to kubernetes-1.16.2
 replace (
+	github.com/Sirupsen/logrus => github.com/sirupsen/logrus v1.6.0
 	github.com/go-log/log => github.com/go-log/log v0.1.1-0.20181211034820-a514cf01a3eb
 	github.com/openshift/machine-config-operator => github.com/openshift/machine-config-operator v0.0.1-0.20200305103412-b9fa5093eb95
 
