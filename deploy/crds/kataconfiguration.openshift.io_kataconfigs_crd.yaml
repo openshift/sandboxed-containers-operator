@@ -78,8 +78,6 @@ spec:
                     are ANDed.
                   type: object
               type: object
-          required:
-          - config
           type: object
         status:
           description: KataConfigStatus defines the observed state of KataConfig

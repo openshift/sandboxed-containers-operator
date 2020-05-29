@@ -2,3 +2,7 @@ apiVersion: kataconfiguration.openshift.io/v1alpha1
 kind: KataConfig
 metadata:
   name: example-kataconfig 
+spec:
+  kataConfigPoolSelector:
+    matchLabels:
+       custom-kata: test 

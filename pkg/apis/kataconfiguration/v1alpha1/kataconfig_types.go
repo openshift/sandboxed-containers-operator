@@ -11,6 +11,7 @@ type KataConfigSpec struct {
 	// +optional
 	KataConfigPoolSelector *metav1.LabelSelector `json:"kataConfigPoolSelector"`
 
+	// +optional
 	Config KataInstallConfig `json:"config"`
 }
 

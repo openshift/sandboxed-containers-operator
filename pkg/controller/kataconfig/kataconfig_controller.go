@@ -220,6 +220,12 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 		// "app":  cr.Name,
 		"name": "kata-install-daemon",
 	}
+
+	var nodeSelector map[string]string
+	if cr.Spec.KataConfigPoolSelector != nil {
+		nodeSelector = cr.Spec.KataConfigPoolSelector.MatchLabels
+	}
+
 	return &appsv1.DaemonSet{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "apps/v1",
@@ -240,6 +246,7 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: "kata-operator",
+					NodeSelector:       nodeSelector,
 					Containers: []corev1.Container{
 						{
 							Name:            "kata-install-pod",
@@ -278,12 +285,18 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 func newRuntimeClassForCR(cr *kataconfigurationv1alpha1.KataConfig) *nodeapi.RuntimeClass {
 
 	rc := &nodeapi.RuntimeClass{}
+
+	var nodeSelector map[string]string
+	if cr.Spec.KataConfigPoolSelector != nil {
+		nodeSelector = cr.Spec.KataConfigPoolSelector.MatchLabels
+	}
+
 	rc.APIVersion = "node.k8s.io/v1beta1"
 	rc.Kind = "RuntimeClass"
 
 	rc.Handler = cr.Status.RuntimeClass
 	rc.Name = cr.Status.RuntimeClass
-
+	rc.Scheduling.NodeSelector = nodeSelector
 	return rc
 }
 
