@@ -15,8 +15,8 @@ spec:
       serviceAccountName: kata-operator
       containers:
       - name: kata-install-daemon 
-        #image: quay.io/harpatil/kata-install-daemon:1.4
-        image: quay.io/jensfr/kata-install-daemon:latest
+        image: quay.io/harpatil/kata-install-daemon:1.5
+        #image: quay.io/jensfr/kata-install-daemon:latest
         imagePullPolicy: Always
         securityContext:
           privileged: true

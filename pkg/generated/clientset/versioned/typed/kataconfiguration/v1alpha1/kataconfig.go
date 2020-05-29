@@ -72,7 +72,7 @@ func (c *kataConfigs) Get(ctx context.Context, name string, options v1.GetOption
 		Resource("kataconfigs").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }
@@ -89,7 +89,7 @@ func (c *kataConfigs) List(ctx context.Context, opts v1.ListOptions) (result *v1
 		Resource("kataconfigs").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }
@@ -106,7 +106,7 @@ func (c *kataConfigs) Watch(ctx context.Context, opts v1.ListOptions) (watch.Int
 		Resource("kataconfigs").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
-		Watch(ctx)
+		Watch()
 }
 
 // Create takes the representation of a kataConfig and creates it.  Returns the server's representation of the kataConfig, and an error, if there is any.
@@ -117,7 +117,7 @@ func (c *kataConfigs) Create(ctx context.Context, kataConfig *v1alpha1.KataConfi
 		Resource("kataconfigs").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(kataConfig).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }
@@ -131,7 +131,7 @@ func (c *kataConfigs) Update(ctx context.Context, kataConfig *v1alpha1.KataConfi
 		Name(kataConfig.Name).
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(kataConfig).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }
@@ -147,7 +147,7 @@ func (c *kataConfigs) UpdateStatus(ctx context.Context, kataConfig *v1alpha1.Kat
 		SubResource("status").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(kataConfig).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }
@@ -159,7 +159,7 @@ func (c *kataConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOpt
 		Resource("kataconfigs").
 		Name(name).
 		Body(&opts).
-		Do(ctx).
+		Do().
 		Error()
 }
 
@@ -175,7 +175,7 @@ func (c *kataConfigs) DeleteCollection(ctx context.Context, opts v1.DeleteOption
 		VersionedParams(&listOpts, scheme.ParameterCodec).
 		Timeout(timeout).
 		Body(&opts).
-		Do(ctx).
+		Do().
 		Error()
 }
 
@@ -189,7 +189,7 @@ func (c *kataConfigs) Patch(ctx context.Context, name string, pt types.PatchType
 		SubResource(subresources...).
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(data).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }

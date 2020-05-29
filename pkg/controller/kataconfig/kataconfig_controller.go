@@ -158,7 +158,7 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 		return reconcile.Result{}, err
 	}
 
-	if instance.Status.CompletedNodesCount == instance.Status.TotalNodesCount && instance.Status.TotalNodesCount != 0 {
+	if instance.Status.CompletedDaemons == instance.Status.TotalNodesCount && instance.Status.TotalNodesCount != 0 {
 		reqLogger.Info("Kata installation on the cluster is completed")
 
 		rc := newRuntimeClassForCR(instance)
@@ -243,7 +243,7 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 					Containers: []corev1.Container{
 						{
 							Name:            "kata-install-pod",
-							Image:           "docker.io/pharshal/kata-install-daemon:0.2",
+							Image:           "quay.io/harpatil/kata-install-daemon:1.5",
 							ImagePullPolicy: "Always",
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
