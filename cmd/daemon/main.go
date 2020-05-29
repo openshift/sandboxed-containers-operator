@@ -77,7 +77,9 @@ func installKata(kataConfigResourceName string) {
 				fmt.Println(err)
 			}
 
-			kataconfig.Status.InProgressNodesCount = kataconfig.Status.InProgressNodesCount - 1
+			if kataconfig.Status.InProgressNodesCount > 0 {
+				kataconfig.Status.InProgressNodesCount = kataconfig.Status.InProgressNodesCount - 1
+			}
 			kataconfig.Status.CompletedNodesCount = kataconfig.Status.CompletedNodesCount + 1
 
 			_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs("default").UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})
