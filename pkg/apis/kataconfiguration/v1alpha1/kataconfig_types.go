@@ -32,6 +32,9 @@ type KataConfigStatus struct {
 	// CompletedNodesCounts is the number of nodes that have successfully completed the given operation
 	CompletedNodesCount int `json:"completedNodesCount"`
 
+	// CompletedDaemons is the number of kata installation daemons that have successfully completed the given operation
+	CompletedDaemons int `json:"completedDaemons"`
+
 	// InProgressNodesCounts is the number of nodes still in progress in completing the given operation
 	InProgressNodesCount int `json:"inProgressNodesCount"`
 

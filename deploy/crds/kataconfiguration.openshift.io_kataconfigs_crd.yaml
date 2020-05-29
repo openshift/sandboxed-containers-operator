@@ -84,6 +84,10 @@ spec:
         status:
           description: KataConfigStatus defines the observed state of KataConfig
           properties:
+            completedDaemons:
+              description: CompletedDaemons is the number of kata installation daemons
+                that have successfully completed the given operation
+              type: integer
             completedNodesCount:
               description: CompletedNodesCounts is the number of nodes that have successfully
                 completed the given operation
@@ -123,6 +127,7 @@ spec:
                 by this CR
               type: integer
           required:
+          - completedDaemons
           - completedNodesCount
           - failedNodes
           - inProgressNodesCount
