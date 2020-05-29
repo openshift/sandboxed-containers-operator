@@ -15,6 +15,8 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+
+	nodeapi "k8s.io/api/node/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -159,6 +161,29 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 	if instance.Status.CompletedNodesCount == instance.Status.TotalNodesCount && instance.Status.TotalNodesCount != 0 {
 		reqLogger.Info("Kata installation on the cluster is completed")
 
+		rc := newRuntimeClassForCR(instance)
+
+		// TODO - make kata operatro cluster-scoped so that we can own runtime class object
+		// Set Kataconfig instance as the owner and controller
+		// if err := controllerutil.SetControllerReference(instance, rc, r.scheme); err != nil {
+		// 	return reconcile.Result{}, err
+		// }
+
+		foundRc := &nodeapi.RuntimeClass{}
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: rc.Name}, foundRc)
+		if err != nil && errors.IsNotFound(err) {
+			reqLogger.Info("Creating a new RuntimeClass", "rc.Name", rc.Name)
+			err = r.client.Create(context.TODO(), rc)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			// RuntimeClass created successfully - don't requeue
+			//	return reconcile.Result{}, nil
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
+
 		mc := newMCForCR(instance)
 		// Set Kataconfig instance as the owner and controller
 		if err := controllerutil.SetControllerReference(instance, mc, r.scheme); err != nil {
@@ -250,6 +275,18 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 	}
 }
 
+func newRuntimeClassForCR(cr *kataconfigurationv1alpha1.KataConfig) *nodeapi.RuntimeClass {
+
+	rc := &nodeapi.RuntimeClass{}
+	rc.APIVersion = "node.k8s.io/v1beta1"
+	rc.Kind = "RuntimeClass"
+
+	rc.Handler = cr.Status.RuntimeClass
+	rc.Name = cr.Status.RuntimeClass
+
+	return rc
+}
+
 func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig {
 	labels := map[string]string{
 		"machineconfiguration.openshift.io/role": "worker",
@@ -283,6 +320,7 @@ func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig 
 	return &mc
 }
 
+// func newRuntimeClassForCR(cr *kataconfigurationv1alpha1.KataConfig) *
 func generateDropinConfig(handlerName string) (string, error) {
 
 	type RuntimeHandler struct {

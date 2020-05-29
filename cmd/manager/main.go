@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/kata-operator/version"
 
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
+	nodeapi "k8s.io/kubernetes/pkg/apis/node/v1beta1"
 
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	kubemetrics "github.com/operator-framework/operator-sdk/pkg/kube-metrics"
@@ -125,6 +126,11 @@ func main() {
 	}
 
 	if err := mcfgapi.Install(mgr.GetScheme()); err != nil {
+		log.Error(err, "")
+		os.Exit(1)
+	}
+
+	if err := nodeapi.AddToScheme(mgr.GetScheme()); err != nil {
 		log.Error(err, "")
 		os.Exit(1)
 	}
