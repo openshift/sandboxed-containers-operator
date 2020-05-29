@@ -184,22 +184,42 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 			return reconcile.Result{}, err
 		}
 
-		mc := newMCForCR(instance)
+		mcp := newMCPforCR(instance)
 		// Set Kataconfig instance as the owner and controller
-		if err := controllerutil.SetControllerReference(instance, mc, r.scheme); err != nil {
+		if err := controllerutil.SetControllerReference(instance, mcp, r.scheme); err != nil {
 			return reconcile.Result{}, err
 		}
 
-		foundMc := &mcfgv1.MachineConfig{}
-		err = r.client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, foundMc)
+		founcMcp := &mcfgv1.MachineConfigPool{}
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: mcp.Name}, founcMcp)
 		if err != nil && errors.IsNotFound(err) {
-			reqLogger.Info("Creating a new Machine Config ", "mc.Name", mc.Name)
-			err = r.client.Create(context.TODO(), mc)
+			reqLogger.Info("Creating a new Machine Config Pool ", "mcp.Name", mcp.Name)
+			err = r.client.Create(context.TODO(), mcp)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
 
-			// Pod created successfully - don't requeue
+			mc := newMCForCR(instance)
+			// Set Kataconfig instance as the owner and controller
+			if err := controllerutil.SetControllerReference(instance, mc, r.scheme); err != nil {
+				return reconcile.Result{}, err
+			}
+
+			foundMc := &mcfgv1.MachineConfig{}
+			err = r.client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, foundMc)
+			if err != nil && errors.IsNotFound(err) {
+				reqLogger.Info("Creating a new Machine Config ", "mc.Name", mc.Name)
+				err = r.client.Create(context.TODO(), mc)
+				if err != nil {
+					return reconcile.Result{}, err
+				}
+
+				// mc created successfully - don't requeue
+				return reconcile.Result{}, nil
+			} else if err != nil {
+				return reconcile.Result{}, err
+			}
+			// mcp created successfully - don't requeue
 			return reconcile.Result{}, nil
 		} else if err != nil {
 			return reconcile.Result{}, err
@@ -300,9 +320,27 @@ func newRuntimeClassForCR(cr *kataconfigurationv1alpha1.KataConfig) *nodeapi.Run
 	return rc
 }
 
+func newMCPforCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfigPool {
+	mcp := &mcfgv1.MachineConfigPool{}
+	mcp.APIVersion = "machineconfiguration.openshift.io/v1"
+	mcp.Kind = "MachineConfigPool"
+
+	mcp.ObjectMeta.Name = "kata-oc"
+	lsr := metav1.LabelSelectorRequirement{}
+	lsr.Key = "machineconfiguration.openshift.io/role"
+
+	lsr.Operator = metav1.LabelSelectorOpIn
+	lsr.Values = []string{"worker", "kata-oc"}
+
+	mcp.Spec.MachineConfigSelector.MatchExpressions = []metav1.LabelSelectorRequirement{lsr}
+	mcp.Spec.NodeSelector = cr.Spec.KataConfigPoolSelector
+
+	return mcp
+}
+
 func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig {
 	labels := map[string]string{
-		"machineconfiguration.openshift.io/role": "worker",
+		"machineconfiguration.openshift.io/role": "kata-oc",
 		"app":                                    cr.Name,
 	}
 
@@ -312,7 +350,7 @@ func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig 
 	mc.Kind = "MachineConfig"
 
 	mc.ObjectMeta.Labels = labels
-	mc.ObjectMeta.Name = "50-heyho-kata-crio-dropin"
+	mc.ObjectMeta.Name = "50-kata-crio-dropin"
 	mc.ObjectMeta.Namespace = cr.Namespace
 	mc.Spec.Config.Ignition.Version = "2.2.0"
 

@@ -12,6 +12,7 @@ rules:
   - runtimeclass
   - nodes
   - machineconfigs
+  - machineconfigpools
   - pods
   - services
   - services/finalizers
