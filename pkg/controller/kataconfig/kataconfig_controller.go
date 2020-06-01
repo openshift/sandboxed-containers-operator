@@ -255,7 +255,7 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 		nodeSelector = cr.Spec.KataConfigPoolSelector.MatchLabels
 	} else {
 		nodeSelector = map[string]string{
-			"machineconfiguration.openshift.io/role": "worker",
+			"node-role.kubernetes.io/worker": "",
 		}
 	}
 
@@ -356,7 +356,7 @@ func newMCPforCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig
 	} else {
 		mcp.Spec.NodeSelector = &metav1.LabelSelector{
 			MatchLabels: map[string]string{
-				"machineconfiguration.openshift.io/role": "worker",
+				"node-role.kubernetes.io/worker": "",
 			},
 		}
 	}
