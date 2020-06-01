@@ -165,8 +165,8 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 		return reconcile.Result{}, err
 	}
 
-	if instance.Status.CompletedDaemons == instance.Status.TotalNodesCount && instance.Status.TotalNodesCount != 0 {
-		reqLogger.Info("Kata installation on the cluster is completed")
+	if instance.Status.CompletedNodesCount == instance.Status.TotalNodesCount && instance.Status.TotalNodesCount != 0 {
+		// Create runtime class object only after all the targetted nodes have completed kata installation including crio drop in config
 
 		rc := newRuntimeClassForCR(instance)
 
@@ -186,10 +186,17 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 			}
 
 			// RuntimeClass created successfully - don't requeue
-			//	return reconcile.Result{}, nil
+			return reconcile.Result{}, nil
 		} else if err != nil {
 			return reconcile.Result{}, err
 		}
+
+	}
+
+	if instance.Status.CompletedDaemons == instance.Status.TotalNodesCount && instance.Status.TotalNodesCount != 0 {
+		// Kata installation is complete on targetted nodes, now let's drop in crio config using MCO
+
+		reqLogger.Info("Kata installation on the cluster is completed")
 
 		mcp := newMCPforCR(instance)
 		// TODO - make kata operator cluster scoped to uncomment following lines
@@ -344,12 +351,11 @@ func newMCPforCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig
 	lsr.Key = "machineconfiguration.openshift.io/role"
 
 	lsr.Operator = metav1.LabelSelectorOpIn
-	lsr.Values = []string{"worker", "kata-oc"}
+	lsr.Values = []string{"kata-oc"}
 
 	mcp.Spec.MachineConfigSelector = &metav1.LabelSelector{
 		MatchExpressions: []metav1.LabelSelectorRequirement{lsr},
 	}
-	// mcp.Spec.MachineConfigSelector.MatchExpressions = []metav1.LabelSelectorRequirement{lsr}
 
 	if cr.Spec.KataConfigPoolSelector != nil {
 		mcp.Spec.NodeSelector = cr.Spec.KataConfigPoolSelector
