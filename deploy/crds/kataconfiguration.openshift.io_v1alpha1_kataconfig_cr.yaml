@@ -5,4 +5,4 @@ metadata:
 spec:
   kataConfigPoolSelector:
     matchLabels:
-       custom-kata: test 
+       custom-kata1: test 

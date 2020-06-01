@@ -9,7 +9,7 @@ spec:
     listKind: KataConfigList
     plural: kataconfigs
     singular: kataconfig
-  scope: Namespaced
+  scope: Cluster
   subresources:
     status: {}
   validation:

@@ -12,6 +12,7 @@ import (
 
 	kataTypes "github.com/openshift/kata-operator/pkg/apis/kataconfiguration/v1alpha1"
 	kataClient "github.com/openshift/kata-operator/pkg/generated/clientset/versioned"
+	v1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -71,7 +72,7 @@ func installKata(kataConfigResourceName string) {
 		// mark completion
 		attempts := 5
 		for i := 0; ; i++ {
-			kataconfig, err := kataClientSet.KataconfigurationV1alpha1().KataConfigs("default").Get(context.TODO(), kataConfigResourceName, metaV1.GetOptions{})
+			kataconfig, err := kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).Get(context.TODO(), kataConfigResourceName, metaV1.GetOptions{})
 			if err != nil {
 				fmt.Println("error 0")
 				fmt.Println(err)
@@ -82,7 +83,7 @@ func installKata(kataConfigResourceName string) {
 			}
 			kataconfig.Status.CompletedNodesCount = kataconfig.Status.CompletedNodesCount + 1
 
-			_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs("default").UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})
+			_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})
 			if err != nil {
 				fmt.Println("error 1")
 				fmt.Println(err)
@@ -109,14 +110,15 @@ func installKata(kataConfigResourceName string) {
 		fmt.Println("placeholder 2 install kata")
 		attempts := 5
 		for i := 0; ; i++ {
-			kataconfig, err := kataClientSet.KataconfigurationV1alpha1().KataConfigs("default").Get(context.TODO(), kataConfigResourceName, metaV1.GetOptions{})
+
+			kataconfig, err := kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).Get(context.TODO(), kataConfigResourceName, metaV1.GetOptions{})
 			if err != nil {
 				fmt.Println("error 0")
 				fmt.Println(err)
 			}
 
 			kataconfig.Status.InProgressNodesCount = kataconfig.Status.InProgressNodesCount + 1
-			_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs("default").UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})
+			_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})
 			if err != nil {
 				fmt.Println("error 1")
 				fmt.Println(err)
@@ -144,7 +146,7 @@ func installKata(kataConfigResourceName string) {
 			fmt.Println(err)
 			attempts := 5
 			for i := 0; ; i++ {
-				kataconfig, err := kataClientSet.KataconfigurationV1alpha1().KataConfigs("default").Get(context.TODO(), kataConfigResourceName, metaV1.GetOptions{})
+				kataconfig, err := kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).Get(context.TODO(), kataConfigResourceName, metaV1.GetOptions{})
 				if err != nil {
 					fmt.Println("error 0")
 					fmt.Println(err)
@@ -163,7 +165,7 @@ func installKata(kataConfigResourceName string) {
 				}
 
 				kataconfig.Status.FailedNodes = append(kataconfig.Status.FailedNodes, fn)
-				_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs("default").UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})
+				_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})
 				if err != nil {
 					fmt.Println("error 1")
 					fmt.Println(err)
@@ -188,7 +190,7 @@ func installKata(kataConfigResourceName string) {
 			fmt.Println("placeholder 5 mark daemon completion")
 			attempts := 5
 			for i := 0; ; i++ {
-				kataconfig, err := kataClientSet.KataconfigurationV1alpha1().KataConfigs("default").Get(context.TODO(), kataConfigResourceName, metaV1.GetOptions{})
+				kataconfig, err := kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).Get(context.TODO(), kataConfigResourceName, metaV1.GetOptions{})
 				if err != nil {
 					fmt.Println("error 0")
 					fmt.Println(err)
@@ -196,7 +198,7 @@ func installKata(kataConfigResourceName string) {
 
 				kataconfig.Status.CompletedDaemons = kataconfig.Status.CompletedDaemons + 1
 
-				_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs("default").UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})
+				_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})
 				if err != nil {
 					fmt.Println("error 1")
 					fmt.Println(err)

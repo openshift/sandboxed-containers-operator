@@ -68,7 +68,7 @@ func newKataConfigs(c *KataconfigurationV1alpha1Client, namespace string) *kataC
 func (c *kataConfigs) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.KataConfig, err error) {
 	result = &v1alpha1.KataConfig{}
 	err = c.client.Get().
-		Namespace(c.ns).
+		// Namespace(c.ns).
 		Resource("kataconfigs").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
@@ -126,7 +126,7 @@ func (c *kataConfigs) Create(ctx context.Context, kataConfig *v1alpha1.KataConfi
 func (c *kataConfigs) Update(ctx context.Context, kataConfig *v1alpha1.KataConfig, opts v1.UpdateOptions) (result *v1alpha1.KataConfig, err error) {
 	result = &v1alpha1.KataConfig{}
 	err = c.client.Put().
-		Namespace(c.ns).
+		// Namespace(c.ns).
 		Resource("kataconfigs").
 		Name(kataConfig.Name).
 		VersionedParams(&opts, scheme.ParameterCodec).
@@ -141,7 +141,7 @@ func (c *kataConfigs) Update(ctx context.Context, kataConfig *v1alpha1.KataConfi
 func (c *kataConfigs) UpdateStatus(ctx context.Context, kataConfig *v1alpha1.KataConfig, opts v1.UpdateOptions) (result *v1alpha1.KataConfig, err error) {
 	result = &v1alpha1.KataConfig{}
 	err = c.client.Put().
-		Namespace(c.ns).
+		// Namespace(c.ns).
 		Resource("kataconfigs").
 		Name(kataConfig.Name).
 		SubResource("status").

@@ -170,11 +170,10 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 
 		rc := newRuntimeClassForCR(instance)
 
-		// TODO - make kata operatro cluster-scoped so that we can own runtime class object
 		// Set Kataconfig instance as the owner and controller
-		// if err := controllerutil.SetControllerReference(instance, rc, r.scheme); err != nil {
-		// 	return reconcile.Result{}, err
-		// }
+		if err := controllerutil.SetControllerReference(instance, rc, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
 
 		foundRc := &nodeapi.RuntimeClass{}
 		err = r.client.Get(context.TODO(), types.NamespacedName{Name: rc.Name}, foundRc)
@@ -199,11 +198,10 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 		reqLogger.Info("Kata installation on the cluster is completed")
 
 		mcp := newMCPforCR(instance)
-		// TODO - make kata operator cluster scoped to uncomment following lines
 		// Set Kataconfig instance as the owner and controller
-		// if err := controllerutil.SetControllerReference(instance, mcp, r.scheme); err != nil {
-		// 	return reconcile.Result{}, err
-		// }
+		if err := controllerutil.SetControllerReference(instance, mcp, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
 
 		founcMcp := &mcfgv1.MachineConfigPool{}
 		err = r.client.Get(context.TODO(), types.NamespacedName{Name: mcp.Name}, founcMcp)
@@ -215,11 +213,10 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 			}
 
 			mc := newMCForCR(instance)
-			// TODO - make kata operator cluster scoped to uncomment following lines
 			// Set Kataconfig instance as the owner and controller
-			// if err := controllerutil.SetControllerReference(instance, mc, r.scheme); err != nil {
-			// 	return reconcile.Result{}, err
-			// }
+			if err := controllerutil.SetControllerReference(instance, mc, r.scheme); err != nil {
+				return reconcile.Result{}, err
+			}
 
 			foundMc := &mcfgv1.MachineConfig{}
 			err = r.client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, foundMc)
@@ -253,7 +250,6 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 	var runAsUser int64 = 0
 
 	labels := map[string]string{
-		// "app":  cr.Name,
 		"name": "kata-install-daemon",
 	}
 
@@ -273,8 +269,7 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kata-install-daemon",
-			Namespace: cr.Namespace,
-			// Labels:    labels,
+			Namespace: "kata-operator",
 		},
 		Spec: appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
@@ -326,7 +321,6 @@ func newRuntimeClassForCR(cr *kataconfigurationv1alpha1.KataConfig) *nodeapi.Run
 
 	rc := &nodeapi.RuntimeClass{}
 
-	// var nodeSelector map[string]string
 	if cr.Spec.KataConfigPoolSelector != nil {
 		rc.Scheduling = &nodeapi.Scheduling{
 			NodeSelector: cr.Spec.KataConfigPoolSelector.MatchLabels,
@@ -383,7 +377,8 @@ func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig 
 
 	mc.ObjectMeta.Labels = labels
 	mc.ObjectMeta.Name = "50-kata-crio-dropin"
-	mc.ObjectMeta.Namespace = cr.Namespace
+	// mc.ObjectMeta.Namespace = cr.Namespace
+	mc.ObjectMeta.Namespace = "kata-operator"
 	mc.Spec.Config.Ignition.Version = "2.2.0"
 
 	file := ignTypes.File{}

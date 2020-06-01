@@ -56,7 +56,7 @@ type FailedNode struct {
 
 // KataConfig is the Schema for the kataconfigs API
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:path=kataconfigs,scope=Namespaced
+// +kubebuilder:resource:path=kataconfigs,scope=Cluster
 type KataConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

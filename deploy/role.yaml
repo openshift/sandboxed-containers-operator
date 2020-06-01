@@ -1,5 +1,5 @@
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
   creationTimestamp: null
   name: kata-operator
@@ -8,7 +8,7 @@ rules:
   - ""
   - machineconfiguration.openshift.io
   - node.k8s.io/v1beta1
-  resources:
+  resources:  
   - runtimeclass
   - nodes
   - machineconfigs
