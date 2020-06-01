@@ -136,8 +136,15 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 		instance.Status.KataImage = "quay.io/kata-operator/kata-artifacts:1.0"
 
 		nodesList := &corev1.NodeList{}
-		workerNodeLabels := make(map[string]string)
-		workerNodeLabels["node-role.kubernetes.io/worker"] = ""
+		var workerNodeLabels map[string]string
+
+		if instance.Spec.KataConfigPoolSelector != nil {
+			workerNodeLabels = instance.Spec.KataConfigPoolSelector.MatchLabels
+		} else {
+			workerNodeLabels = make(map[string]string)
+			workerNodeLabels["node-role.kubernetes.io/worker"] = ""
+		}
+
 		listOpts := []client.ListOption{
 			client.MatchingLabels(workerNodeLabels),
 		}
@@ -185,10 +192,11 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 		}
 
 		mcp := newMCPforCR(instance)
+		// TODO - make kata operator cluster scoped to uncomment following lines
 		// Set Kataconfig instance as the owner and controller
-		if err := controllerutil.SetControllerReference(instance, mcp, r.scheme); err != nil {
-			return reconcile.Result{}, err
-		}
+		// if err := controllerutil.SetControllerReference(instance, mcp, r.scheme); err != nil {
+		// 	return reconcile.Result{}, err
+		// }
 
 		founcMcp := &mcfgv1.MachineConfigPool{}
 		err = r.client.Get(context.TODO(), types.NamespacedName{Name: mcp.Name}, founcMcp)
@@ -200,10 +208,11 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 			}
 
 			mc := newMCForCR(instance)
+			// TODO - make kata operator cluster scoped to uncomment following lines
 			// Set Kataconfig instance as the owner and controller
-			if err := controllerutil.SetControllerReference(instance, mc, r.scheme); err != nil {
-				return reconcile.Result{}, err
-			}
+			// if err := controllerutil.SetControllerReference(instance, mc, r.scheme); err != nil {
+			// 	return reconcile.Result{}, err
+			// }
 
 			foundMc := &mcfgv1.MachineConfig{}
 			err = r.client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, foundMc)
@@ -244,6 +253,10 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 	var nodeSelector map[string]string
 	if cr.Spec.KataConfigPoolSelector != nil {
 		nodeSelector = cr.Spec.KataConfigPoolSelector.MatchLabels
+	} else {
+		nodeSelector = map[string]string{
+			"machineconfiguration.openshift.io/role": "worker",
+		}
 	}
 
 	return &appsv1.DaemonSet{
@@ -306,9 +319,11 @@ func newRuntimeClassForCR(cr *kataconfigurationv1alpha1.KataConfig) *nodeapi.Run
 
 	rc := &nodeapi.RuntimeClass{}
 
-	var nodeSelector map[string]string
+	// var nodeSelector map[string]string
 	if cr.Spec.KataConfigPoolSelector != nil {
-		nodeSelector = cr.Spec.KataConfigPoolSelector.MatchLabels
+		rc.Scheduling = &nodeapi.Scheduling{
+			NodeSelector: cr.Spec.KataConfigPoolSelector.MatchLabels,
+		}
 	}
 
 	rc.APIVersion = "node.k8s.io/v1beta1"
@@ -316,7 +331,6 @@ func newRuntimeClassForCR(cr *kataconfigurationv1alpha1.KataConfig) *nodeapi.Run
 
 	rc.Handler = cr.Status.RuntimeClass
 	rc.Name = cr.Status.RuntimeClass
-	rc.Scheduling.NodeSelector = nodeSelector
 	return rc
 }
 
@@ -332,8 +346,20 @@ func newMCPforCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig
 	lsr.Operator = metav1.LabelSelectorOpIn
 	lsr.Values = []string{"worker", "kata-oc"}
 
-	mcp.Spec.MachineConfigSelector.MatchExpressions = []metav1.LabelSelectorRequirement{lsr}
-	mcp.Spec.NodeSelector = cr.Spec.KataConfigPoolSelector
+	mcp.Spec.MachineConfigSelector = &metav1.LabelSelector{
+		MatchExpressions: []metav1.LabelSelectorRequirement{lsr},
+	}
+	// mcp.Spec.MachineConfigSelector.MatchExpressions = []metav1.LabelSelectorRequirement{lsr}
+
+	if cr.Spec.KataConfigPoolSelector != nil {
+		mcp.Spec.NodeSelector = cr.Spec.KataConfigPoolSelector
+	} else {
+		mcp.Spec.NodeSelector = &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"machineconfiguration.openshift.io/role": "worker",
+			},
+		}
+	}
 
 	return mcp
 }
