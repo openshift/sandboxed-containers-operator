@@ -345,7 +345,7 @@ func newMCPforCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig
 	lsr.Key = "machineconfiguration.openshift.io/role"
 
 	lsr.Operator = metav1.LabelSelectorOpIn
-	lsr.Values = []string{"kata-oc"}
+	lsr.Values = []string{"kata-oc", "worker"}
 
 	mcp.Spec.MachineConfigSelector = &metav1.LabelSelector{
 		MatchExpressions: []metav1.LabelSelectorRequirement{lsr},
