@@ -377,7 +377,6 @@ func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig 
 
 	mc.ObjectMeta.Labels = labels
 	mc.ObjectMeta.Name = "50-kata-crio-dropin"
-	// mc.ObjectMeta.Namespace = cr.Namespace
 	mc.ObjectMeta.Namespace = "kata-operator"
 	mc.Spec.Config.Ignition.Version = "2.2.0"
 
@@ -385,7 +384,6 @@ func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig 
 	c := ignTypes.FileContents{}
 
 	dropinConf, _ := generateDropinConfig(cr.Status.RuntimeClass)
-	// c.Source = "data:text/plain;charset=utf-8;base64,cnVudGltZV9wYXRoPSIvdXNyL2Jpbi9rYXRhLXJ1bnRpbWUiCg=="
 	c.Source = "data:text/plain;charset=utf-8;base64," + dropinConf
 	file.Contents = c
 	file.Filesystem = "root"
@@ -398,7 +396,6 @@ func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig 
 	return &mc
 }
 
-// func newRuntimeClassForCR(cr *kataconfigurationv1alpha1.KataConfig) *
 func generateDropinConfig(handlerName string) (string, error) {
 
 	type RuntimeHandler struct {
@@ -407,7 +404,7 @@ func generateDropinConfig(handlerName string) (string, error) {
 		RuntimeRoot                  string `toml:"runtime_root,omitempty"`
 		PrivilegedWithoutHostDevices bool   `toml:"privileged_without_host_devices,omitempty"`
 	}
-	// Multiple runtime Handlers in a map
+
 	type Runtimes map[string]*RuntimeHandler
 
 	kataHandler := &RuntimeHandler{

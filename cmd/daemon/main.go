@@ -27,9 +27,11 @@ func main() {
 	flag.Parse()
 
 	if kataOperation == "" {
+		fmt.Println("Operation type must be specified. Check -h for more information.")
 		os.Exit(1)
 	}
 	if kataConfigResourceName == "" {
+		fmt.Println("Kata Custom Resource name must be specified. Check -h for more information.")
 		os.Exit(1)
 	}
 
@@ -41,17 +43,62 @@ func main() {
 	case "uninstall":
 		uninstallKata()
 	default:
-		fmt.Println("invalid operation")
+		fmt.Println("invalid operation. Check -h for more information.")
 		os.Exit(1)
 	}
 
 }
 
+type updateStatus = func(a *kataTypes.KataConfigStatus)
+
+func updateKataConfigStatus(kataClientSet *kataClient.Clientset, kataConfigResourceName string, us updateStatus) (err error) {
+
+	attempts := 5
+	for i := 0; i < attempts; i++ {
+		kataconfig, err := kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).Get(context.TODO(), kataConfigResourceName, metaV1.GetOptions{})
+		if err != nil {
+			break
+		}
+
+		us(&kataconfig.Status)
+
+		_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})
+		if err != nil {
+			log.Println("retrying after error:", err)
+			continue
+		}
+
+		if err == nil {
+			break
+		}
+
+		time.Sleep(5 * time.Second)
+	}
+
+	return err
+}
+
+func getFailedNode(err error) (fn kataTypes.FailedNode, retErr error) {
+	// TODO - this may not be correct. Make sure you get the right hostname
+	hostname, hErr := os.Hostname()
+	if hErr != nil {
+		return kataTypes.FailedNode{}, hErr
+	}
+
+	return kataTypes.FailedNode{
+		Name:  hostname,
+		Error: fmt.Sprintf("%+v", err),
+	}, nil
+
+}
+
 func upgradeKata() error {
+	fmt.Println("Not Implemented Yet")
 	return nil
 }
 
 func uninstallKata() error {
+	fmt.Println("Not Implemented Yet")
 	return nil
 }
 
@@ -60,169 +107,81 @@ func installKata(kataConfigResourceName string) {
 	//config, err := clientcmd.BuildConfigFromFlags("", "/tmp/kubeconfig")
 	config, err := clientcmd.BuildConfigFromFlags("", "")
 	if err != nil {
+		// TODO - remove printfs with logger
 		fmt.Println("error creating config")
+		os.Exit(1)
 	}
 
-	fmt.Println("placeholder 1")
 	kataClientSet, err := kataClient.NewForConfig(config)
+	if err != nil {
+		fmt.Println("Unable to get client set")
+		os.Exit(1)
+	}
 
 	if _, err := os.Stat("/host/opt/kata-runtime"); err == nil {
-		fmt.Println("placeholder 3 mark node completion")
-		// kata exists
-		// mark completion
-		attempts := 5
-		for i := 0; ; i++ {
-			kataconfig, err := kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).Get(context.TODO(), kataConfigResourceName, metaV1.GetOptions{})
-			if err != nil {
-				fmt.Println("error 0")
-				fmt.Println(err)
+		// kata exist - mark completion
+		err = updateKataConfigStatus(kataClientSet, kataConfigResourceName, func(ks *kataTypes.KataConfigStatus) {
+			if ks.InProgressNodesCount > 0 {
+				ks.InProgressNodesCount = ks.InProgressNodesCount - 1
 			}
+			ks.CompletedNodesCount = ks.CompletedNodesCount + 1
+		})
 
-			if kataconfig.Status.InProgressNodesCount > 0 {
-				kataconfig.Status.InProgressNodesCount = kataconfig.Status.InProgressNodesCount - 1
-			}
-			kataconfig.Status.CompletedNodesCount = kataconfig.Status.CompletedNodesCount + 1
-
-			_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})
-			if err != nil {
-				fmt.Println("error 1")
-				fmt.Println(err)
-
-			}
-
-			if err == nil {
-				// return
-				break
-			}
-
-			if i >= (attempts - 1) {
-				break
-			}
-
-			time.Sleep(5 * time.Second)
-
-			log.Println("retrying after error:", err)
-
+		if err != nil {
+			fmt.Printf("kata exists on the node, error updating kataconfig status %+v", err)
+			os.Exit(1)
 		}
 
 	} else if os.IsNotExist(err) {
 		// kata doesn't exist, install it.
-		fmt.Println("placeholder 2 install kata")
-		attempts := 5
-		for i := 0; ; i++ {
+		err = updateKataConfigStatus(kataClientSet, kataConfigResourceName, func(ks *kataTypes.KataConfigStatus) {
+			ks.InProgressNodesCount = ks.InProgressNodesCount + 1
+		})
 
-			kataconfig, err := kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).Get(context.TODO(), kataConfigResourceName, metaV1.GetOptions{})
-			if err != nil {
-				fmt.Println("error 0")
-				fmt.Println(err)
-			}
-
-			kataconfig.Status.InProgressNodesCount = kataconfig.Status.InProgressNodesCount + 1
-			_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})
-			if err != nil {
-				fmt.Println("error 1")
-				fmt.Println(err)
-
-			}
-
-			if err == nil {
-				// return
-				break
-			}
-
-			if i >= (attempts - 1) {
-				break
-			}
-
-			time.Sleep(5 * time.Second)
-
-			log.Println("retrying after error:", err)
+		if err != nil {
+			fmt.Printf("kata is not installed on the node, error updating kataconfig status %+v", err)
+			os.Exit(1)
 		}
+
 		err = installBinaries()
+
+		// Temporary hold to simulate time taken for the installation of the binaries
 		time.Sleep(10 * time.Second)
+
 		if err != nil {
 			// kata installation failed. report it.
-			fmt.Printf("placeholder 6 err")
-			fmt.Println(err)
-			attempts := 5
-			for i := 0; ; i++ {
-				kataconfig, err := kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).Get(context.TODO(), kataConfigResourceName, metaV1.GetOptions{})
+			err = updateKataConfigStatus(kataClientSet, kataConfigResourceName, func(ks *kataTypes.KataConfigStatus) {
+				ks.InProgressNodesCount = ks.InProgressNodesCount - 1
+
+				fn, err := getFailedNode(err)
 				if err != nil {
-					fmt.Println("error 0")
-					fmt.Println(err)
+					fmt.Printf("Error getting failed node information %+v", err)
+					os.Exit(1)
 				}
 
-				kataconfig.Status.InProgressNodesCount = kataconfig.Status.InProgressNodesCount - 1
+				ks.FailedNodes = append(ks.FailedNodes, fn)
+			})
 
-				hostname, hErr := os.Hostname()
-				if hErr != nil {
-					// err = fmt.Errorf("error getting the hostname (%v); error installating kata (%v)", hErr, err)
-				}
-
-				fn := kataTypes.FailedNode{
-					Name:  hostname,
-					Error: err.Error(),
-				}
-
-				kataconfig.Status.FailedNodes = append(kataconfig.Status.FailedNodes, fn)
-				_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})
-				if err != nil {
-					fmt.Println("error 1")
-					fmt.Println(err)
-
-				}
-
-				if err == nil {
-					// return
-					break
-				}
-
-				if i >= (attempts - 1) {
-					break
-				}
-
-				time.Sleep(5 * time.Second)
-
-				log.Println("retrying after error:", err)
+			if err != nil {
+				fmt.Printf("kata installation failed, error updating kataconfig status %+v", err)
+				os.Exit(1)
 			}
 
 		} else {
-			fmt.Println("placeholder 5 mark daemon completion")
-			attempts := 5
-			for i := 0; ; i++ {
-				kataconfig, err := kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).Get(context.TODO(), kataConfigResourceName, metaV1.GetOptions{})
-				if err != nil {
-					fmt.Println("error 0")
-					fmt.Println(err)
-				}
+			// mark daemon completion
+			err = updateKataConfigStatus(kataClientSet, kataConfigResourceName, func(ks *kataTypes.KataConfigStatus) {
+				ks.CompletedDaemons = ks.CompletedDaemons + 1
+			})
 
-				kataconfig.Status.CompletedDaemons = kataconfig.Status.CompletedDaemons + 1
-
-				_, err = kataClientSet.KataconfigurationV1alpha1().KataConfigs(v1.NamespaceAll).UpdateStatus(context.TODO(), kataconfig, metaV1.UpdateOptions{FieldManager: "kata-install-daemon"})
-				if err != nil {
-					fmt.Println("error 1")
-					fmt.Println(err)
-
-				}
-
-				if err == nil {
-					// return
-					break
-				}
-
-				if i >= (attempts - 1) {
-					break
-				}
-
-				time.Sleep(5 * time.Second)
-
-				log.Println("retrying after error:", err)
-
+			if err != nil {
+				fmt.Printf("kata installation succeeded, but error updating kataconfig status %+v", err)
+				os.Exit(1)
 			}
 		}
 
 	} else {
-		// check err
+		fmt.Printf("Unknown error %+v", err)
+		os.Exit(1)
 	}
 
 	for {
@@ -248,7 +207,7 @@ func rpmostreeOverrideReplace(rpms string) {
 }
 
 func installBinaries() error {
-	fmt.Println("placeholder 4 install binaries")
+	fmt.Println("placeholder install binaries")
 	return ioutil.WriteFile("/host/opt/kata-runtime", []byte(""), 0644)
 
 	// fmt.Fprintf(os.Stderr, "%s\n", os.Getenv("PATH"))
