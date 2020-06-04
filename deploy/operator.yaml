@@ -17,7 +17,7 @@ spec:
       containers:
         - name: kata-operator
           # Replace this with the built image name
-          image: quay.io/harpatil/kata-operator:0.1
+          image: quay.io/harpatil/kata-operator:0.1 
           command:
           - kata-operator
           imagePullPolicy: Always
