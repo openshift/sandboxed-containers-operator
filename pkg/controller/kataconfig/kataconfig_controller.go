@@ -72,6 +72,8 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	// TODO - add all the owned objects and watch for the changes.
+
 	// err = c.Watch(&source.Kind{Type: &mcfgv1.MachineConfig{}}, &handler.EnqueueRequestForOwner{
 	// 	IsController: true,
 	// 	OwnerType:    &kataconfigurationv1alpha1.KataConfig{},
@@ -212,7 +214,11 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 				return reconcile.Result{}, err
 			}
 
-			mc := newMCForCR(instance)
+			mc, err := newMCForCR(instance)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
 			// Set Kataconfig instance as the owner and controller
 			if err := controllerutil.SetControllerReference(instance, mc, r.scheme); err != nil {
 				return reconcile.Result{}, err
@@ -318,8 +324,16 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 }
 
 func newRuntimeClassForCR(cr *kataconfigurationv1alpha1.KataConfig) *nodeapi.RuntimeClass {
-
-	rc := &nodeapi.RuntimeClass{}
+	rc := &nodeapi.RuntimeClass{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "node.k8s.io/v1beta1",
+			Kind:       "RuntimeClass",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: cr.Status.RuntimeClass,
+		},
+		Handler: cr.Status.RuntimeClass,
+	}
 
 	if cr.Spec.KataConfigPoolSelector != nil {
 		rc.Scheduling = &nodeapi.Scheduling{
@@ -327,63 +341,79 @@ func newRuntimeClassForCR(cr *kataconfigurationv1alpha1.KataConfig) *nodeapi.Run
 		}
 	}
 
-	rc.APIVersion = "node.k8s.io/v1beta1"
-	rc.Kind = "RuntimeClass"
-
-	rc.Handler = cr.Status.RuntimeClass
-	rc.Name = cr.Status.RuntimeClass
 	return rc
 }
 
 func newMCPforCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfigPool {
-	mcp := &mcfgv1.MachineConfigPool{}
-	mcp.APIVersion = "machineconfiguration.openshift.io/v1"
-	mcp.Kind = "MachineConfigPool"
-
-	mcp.ObjectMeta.Name = "kata-oc"
-	lsr := metav1.LabelSelectorRequirement{}
-	lsr.Key = "machineconfiguration.openshift.io/role"
-
-	lsr.Operator = metav1.LabelSelectorOpIn
-	lsr.Values = []string{"kata-oc", "worker"}
-
-	mcp.Spec.MachineConfigSelector = &metav1.LabelSelector{
-		MatchExpressions: []metav1.LabelSelectorRequirement{lsr},
+	lsr := metav1.LabelSelectorRequirement{
+		Key:      "machineconfiguration.openshift.io/role",
+		Operator: metav1.LabelSelectorOpIn,
+		Values:   []string{"kata-oc", "worker"},
 	}
 
+	var nodeSelector *metav1.LabelSelector
+
 	if cr.Spec.KataConfigPoolSelector != nil {
-		mcp.Spec.NodeSelector = cr.Spec.KataConfigPoolSelector
+		nodeSelector = cr.Spec.KataConfigPoolSelector
 	} else {
-		mcp.Spec.NodeSelector = &metav1.LabelSelector{
+		nodeSelector = &metav1.LabelSelector{
 			MatchLabels: map[string]string{
 				"node-role.kubernetes.io/worker": "",
 			},
 		}
 	}
 
+	mcp := &mcfgv1.MachineConfigPool{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "machineconfiguration.openshift.io/v1",
+			Kind:       "MachineConfigPool",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kata-oc",
+		},
+		Spec: mcfgv1.MachineConfigPoolSpec{
+			MachineConfigSelector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{lsr},
+			},
+			NodeSelector: nodeSelector,
+		},
+	}
+
 	return mcp
 }
 
-func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig {
-	labels := map[string]string{
-		"machineconfiguration.openshift.io/role": "kata-oc",
-		"app":                                    cr.Name,
+func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) (*mcfgv1.MachineConfig, error) {
+
+	mc := *&mcfgv1.MachineConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "machineconfiguration.openshift.io/v1",
+			Kind:       "MachineConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "50-kata-crio-dropin",
+			Labels: map[string]string{
+				"machineconfiguration.openshift.io/role": "kata-oc",
+				"app":                                    cr.Name,
+			},
+			Namespace: "kata-operator",
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: ignTypes.Config{
+				Ignition: ignTypes.Ignition{
+					Version: "2.2.0",
+				},
+			},
+		},
 	}
-
-	mc := *&mcfgv1.MachineConfig{}
-
-	mc.APIVersion = "machineconfiguration.openshift.io/v1"
-	mc.Kind = "MachineConfig"
-
-	mc.ObjectMeta.Labels = labels
-	mc.ObjectMeta.Name = "50-kata-crio-dropin"
-	mc.ObjectMeta.Namespace = "kata-operator"
-	mc.Spec.Config.Ignition.Version = "2.2.0"
 
 	file := ignTypes.File{}
 	c := ignTypes.FileContents{}
 
-	dropinConf, _ := generateDropinConfig(cr.Status.RuntimeClass)
+	dropinConf, err := generateDropinConfig(cr.Status.RuntimeClass)
+	if err != nil {
+		return nil, err
+	}
+
 	c.Source = "data:text/plain;charset=utf-8;base64," + dropinConf
 	file.Contents = c
 	file.Filesystem = "root"
@@ -393,7 +423,7 @@ func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) *mcfgv1.MachineConfig 
 
 	mc.Spec.Config.Storage.Files = []ignTypes.File{file}
 
-	return &mc
+	return &mc, nil
 }
 
 func generateDropinConfig(handlerName string) (string, error) {
@@ -428,6 +458,7 @@ func generateDropinConfig(handlerName string) (string, error) {
 	var err error
 	buf := new(bytes.Buffer)
 	if err = toml.NewEncoder(buf).Encode(r); err != nil {
+		return "", err
 	}
 
 	sEnc := b64.StdEncoding.EncodeToString([]byte(buf.String()))
