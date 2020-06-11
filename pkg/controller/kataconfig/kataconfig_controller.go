@@ -15,12 +15,14 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/discovery"
 
 	nodeapi "k8s.io/api/node/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -62,9 +64,8 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// TODO(user): Modify this to be the types you create that are owned by the primary resource
 	// Watch for changes to secondary resource Pods and requeue the owner KataConfig
-	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
+	err = c.Watch(&source.Kind{Type: &appsv1.DaemonSet{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
 		OwnerType:    &kataconfigurationv1alpha1.KataConfig{},
 	})
@@ -72,15 +73,30 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// TODO - add all the owned objects and watch for the changes.
+	// TODO - Need to test this on vanilla kubernetes
+	err = c.Watch(&source.Kind{Type: &mcfgv1.MachineConfig{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &kataconfigurationv1alpha1.KataConfig{},
+	})
+	if err != nil {
+		return err
+	}
 
-	// err = c.Watch(&source.Kind{Type: &mcfgv1.MachineConfig{}}, &handler.EnqueueRequestForOwner{
-	// 	IsController: true,
-	// 	OwnerType:    &kataconfigurationv1alpha1.KataConfig{},
-	// })
-	// if err != nil {
-	// 	return err
-	// }
+	err = c.Watch(&source.Kind{Type: &mcfgv1.MachineConfigPool{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &kataconfigurationv1alpha1.KataConfig{},
+	})
+	if err != nil {
+		return err
+	}
+
+	err = c.Watch(&source.Kind{Type: &nodeapi.RuntimeClass{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &kataconfigurationv1alpha1.KataConfig{},
+	})
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -94,6 +110,8 @@ type ReconcileKataConfig struct {
 	// that reads objects from the cache and writes to the apiserver
 	client client.Client
 	scheme *runtime.Scheme
+
+	isOpenShift *bool
 }
 
 // Reconcile reads that state of the cluster for a KataConfig object and makes changes based on the state read
@@ -103,6 +121,14 @@ type ReconcileKataConfig struct {
 func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 	reqLogger.Info("Reconciling KataConfig")
+
+	if r.isOpenShift == nil {
+		i, err := isOpenShift()
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		r.isOpenShift = &i
+	}
 
 	// Fetch the KataConfig instance
 	instance := &kataconfigurationv1alpha1.KataConfig{}
@@ -134,7 +160,12 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 		}
 
 		instance.Status.FailedNodes = []kataconfigurationv1alpha1.FailedNode{}
-		instance.Status.RuntimeClass = "kata-oc"
+		if *r.isOpenShift {
+			instance.Status.RuntimeClass = "kata-oc"
+		} else {
+			instance.Status.RuntimeClass = "kata-runtime"
+		}
+
 		instance.Status.KataImage = "quay.io/kata-operator/kata-artifacts:1.0"
 
 		nodesList := &corev1.NodeList{}
@@ -143,8 +174,7 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 		if instance.Spec.KataConfigPoolSelector != nil {
 			workerNodeLabels = instance.Spec.KataConfigPoolSelector.MatchLabels
 		} else {
-			workerNodeLabels = make(map[string]string)
-			workerNodeLabels["node-role.kubernetes.io/worker"] = ""
+			workerNodeLabels = map[string]string{"node-role.kubernetes.io/worker": ""}
 		}
 
 		listOpts := []client.ListOption{
@@ -194,7 +224,7 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 
 	}
 
-	if instance.Status.CompletedDaemons == instance.Status.TotalNodesCount && instance.Status.TotalNodesCount != 0 {
+	if *r.isOpenShift && instance.Status.TotalNodesCount != 0 && instance.Status.CompletedDaemons == instance.Status.TotalNodesCount {
 		// Kata installation is complete on targetted nodes, now let's drop in crio config using MCO
 
 		reqLogger.Info("Kata installation on the cluster is completed")
@@ -220,9 +250,10 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 			}
 
 			// Set Kataconfig instance as the owner and controller
-			if err := controllerutil.SetControllerReference(instance, mc, r.scheme); err != nil {
-				return reconcile.Result{}, err
-			}
+			// TODO - this might be incorrect, maybe the owner should be mcp and not kataconfig.
+			// if err := controllerutil.SetControllerReference(instance, mc, r.scheme); err != nil {
+			// 	return reconcile.Result{}, err
+			// }
 
 			foundMc := &mcfgv1.MachineConfig{}
 			err = r.client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, foundMc)
@@ -464,4 +495,31 @@ func generateDropinConfig(handlerName string) (string, error) {
 	sEnc := b64.StdEncoding.EncodeToString([]byte(buf.String()))
 	return sEnc, err
 
+}
+
+func isOpenShift() (bool, error) {
+	cfg, err := config.GetConfig()
+	if err != nil {
+		return false, err
+	}
+
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(cfg)
+	if err != nil {
+		return false, err
+	}
+
+	gv := metav1.GroupVersion{Group: "config.openshift.io", Version: "v1"}.String()
+
+	apiGroup, err := discoveryClient.ServerResourcesForGroupVersion(gv)
+	if err != nil {
+		return false, err
+	}
+
+	for _, group := range apiGroup.APIResources {
+		if group.Kind == "ClusterVersion" {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }

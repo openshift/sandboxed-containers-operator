@@ -94,7 +94,8 @@ func TestKataConfigDaemonset(t *testing.T) {
 	// Create a fake client to mock API calls.
 	cl := fake.NewFakeClientWithScheme(s, objs...)
 
-	k := &ReconcileKataConfig{client: cl, scheme: s}
+	isOpenShift := false
+	k := &ReconcileKataConfig{client: cl, scheme: s, isOpenShift: &isOpenShift}
 
 	req := reconcile.Request{
 		NamespacedName: types.NamespacedName{
@@ -163,7 +164,8 @@ func TestKataConfigStatusUpdate(t *testing.T) {
 	// Create a fake client to mock API calls.
 	cl := fake.NewFakeClientWithScheme(s, objs...)
 
-	k := &ReconcileKataConfig{client: cl, scheme: s}
+	isOpenShift := true
+	k := &ReconcileKataConfig{client: cl, scheme: s, isOpenShift: &isOpenShift}
 
 	req := reconcile.Request{
 		NamespacedName: types.NamespacedName{
