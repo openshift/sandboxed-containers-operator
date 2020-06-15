@@ -123,7 +123,7 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 	reqLogger.Info("Reconciling KataConfig")
 
 	if r.isOpenShift == nil {
-		i, err := isOpenShift()
+		i, err := IsOpenShift()
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -231,9 +231,10 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 
 		mcp := newMCPforCR(instance)
 		// Set Kataconfig instance as the owner and controller
-		if err := controllerutil.SetControllerReference(instance, mcp, r.scheme); err != nil {
-			return reconcile.Result{}, err
-		}
+		// TODO - this might be incorrect, maybe the owner should not be kataconfig.
+		// if err := controllerutil.SetControllerReference(instance, mcp, r.scheme); err != nil {
+		// 	return reconcile.Result{}, err
+		// }
 
 		founcMcp := &mcfgv1.MachineConfigPool{}
 		err = r.client.Get(context.TODO(), types.NamespacedName{Name: mcp.Name}, founcMcp)
@@ -497,7 +498,8 @@ func generateDropinConfig(handlerName string) (string, error) {
 
 }
 
-func isOpenShift() (bool, error) {
+// IsOpenShift detects if we are running in OpenShift using the discovery client
+func IsOpenShift() (bool, error) {
 	cfg, err := config.GetConfig()
 	if err != nil {
 		return false, err
