@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"time"
 
 	b64 "encoding/base64"
 
@@ -244,39 +245,49 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 			if err != nil {
 				return reconcile.Result{}, err
 			}
+			// mcp created successfully - requeue to check the status later
+			return reconcile.Result{Requeue: true, RequeueAfter: 20 * time.Second}, nil
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
 
-			mc, err := newMCForCR(instance)
+		// Wait till MCP is ready
+		if founcMcp.Status.MachineCount == 0 {
+			reqLogger.Info("Waiting till Machine Config Pool is initialized ", "mcp.Name", mcp.Name)
+			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+		}
+		if founcMcp.Status.MachineCount != founcMcp.Status.ReadyMachineCount {
+			reqLogger.Info("Waiting till Machine Config Pool is ready ", "mcp.Name", mcp.Name)
+			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+		}
+
+		mc, err := newMCForCR(instance)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		// Set Kataconfig instance as the owner and controller
+		// TODO - this might be incorrect, maybe the owner should be mcp and not kataconfig.
+		// if err := controllerutil.SetControllerReference(instance, mc, r.scheme); err != nil {
+		// 	return reconcile.Result{}, err
+		// }
+
+		foundMc := &mcfgv1.MachineConfig{}
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, foundMc)
+		if err != nil && errors.IsNotFound(err) {
+			reqLogger.Info("Creating a new Machine Config ", "mc.Name", mc.Name)
+			err = r.client.Create(context.TODO(), mc)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
 
-			// Set Kataconfig instance as the owner and controller
-			// TODO - this might be incorrect, maybe the owner should be mcp and not kataconfig.
-			// if err := controllerutil.SetControllerReference(instance, mc, r.scheme); err != nil {
-			// 	return reconcile.Result{}, err
-			// }
-
-			foundMc := &mcfgv1.MachineConfig{}
-			err = r.client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, foundMc)
-			if err != nil && errors.IsNotFound(err) {
-				reqLogger.Info("Creating a new Machine Config ", "mc.Name", mc.Name)
-				err = r.client.Create(context.TODO(), mc)
-				if err != nil {
-					return reconcile.Result{}, err
-				}
-
-				// mc created successfully - don't requeue
-				return reconcile.Result{}, nil
-			} else if err != nil {
-				return reconcile.Result{}, err
-			}
-			// mcp created successfully - don't requeue
+			// mc created successfully - don't requeue
 			return reconcile.Result{}, nil
 		} else if err != nil {
 			return reconcile.Result{}, err
 		}
 
-		return reconcile.Result{}, nil
+		//  return reconcile.Result{}, nil
 	}
 
 	reqLogger.Info("Skip reconcile: DS already exists", "DS.Namespace", foundDs.Namespace, "DS.Name", foundDs.Name)
