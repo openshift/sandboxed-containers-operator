@@ -20,13 +20,23 @@ type KataBinaryInstaller func() error
 
 //KataOpenShift is used for KataActions on OpenShift cluster nodes
 type KataOpenShift struct {
-	KataClientSet       kataClient.Interface
-	KataInstallChecker  KataInstalled
-	kataBinaryInstaller KataBinaryInstaller
+	KataClientSet         kataClient.Interface
+	KataInstallChecker    KataInstalled
+	kataBinaryInstaller   KataBinaryInstaller
+	KataInstallStatusPath string
 }
 
 // Install the kata binaries on Openshift
 func (k *KataOpenShift) Install(kataConfigResourceName string) error {
+
+	if k.KataInstallStatusPath == "" {
+		k.KataInstallStatusPath = "/host/opt/kata-install-daemon/"
+	}
+
+	if err := os.MkdirAll(k.KataInstallStatusPath, os.ModePerm); err != nil {
+		return err
+	}
+
 	if k.KataInstallChecker == nil {
 		k.KataInstallChecker = func() (bool, error) {
 			var isKataInstalled bool
@@ -56,15 +66,23 @@ func (k *KataOpenShift) Install(kataConfigResourceName string) error {
 
 	if isKataInstalled {
 		// kata exist - mark completion
-		err = updateKataConfigStatus(k.KataClientSet, kataConfigResourceName, func(ks *kataTypes.KataConfigStatus) {
-			if ks.InProgressNodesCount > 0 {
-				ks.InProgressNodesCount = ks.InProgressNodesCount - 1
-			}
-			ks.CompletedNodesCount = ks.CompletedNodesCount + 1
-		})
+		if _, err := os.Stat(k.KataInstallStatusPath + "/marked_installed"); os.IsNotExist(err) {
+			err = updateKataConfigStatus(k.KataClientSet, kataConfigResourceName, func(ks *kataTypes.KataConfigStatus) {
+				if ks.InProgressNodesCount > 0 {
+					ks.InProgressNodesCount = ks.InProgressNodesCount - 1
+				}
+				ks.CompletedNodesCount = ks.CompletedNodesCount + 1
+			})
 
-		if err != nil {
-			return fmt.Errorf("kata exists on the node, error updating kataconfig status %+v", err)
+			if err != nil {
+				return fmt.Errorf("kata exists on the node, error updating kataconfig status %+v", err)
+			}
+
+			err = ioutil.WriteFile(k.KataInstallStatusPath+"/marked_installed", []byte(""), 0644)
+			if err != nil {
+				// TODO - maybe we should roll back the update to kataconfig status above
+				return err
+			}
 		}
 
 	} else {
