@@ -4,11 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"text/template"
 	"time"
 
 	b64 "encoding/base64"
-
-	"github.com/BurntSushi/toml"
 
 	ignTypes "github.com/coreos/ignition/config/v2_2/types"
 	kataconfigurationv1alpha1 "github.com/openshift/kata-operator/pkg/apis/kataconfiguration/v1alpha1"
@@ -470,43 +469,28 @@ func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) (*mcfgv1.MachineConfig
 }
 
 func generateDropinConfig(handlerName string) (string, error) {
-
-	type RuntimeHandler struct {
-		RuntimePath                  string `toml:"runtime_path"`
-		RuntimeType                  string `toml:"runtime_type,omitempty"`
-		RuntimeRoot                  string `toml:"runtime_root,omitempty"`
-		PrivilegedWithoutHostDevices bool   `toml:"privileged_without_host_devices,omitempty"`
-	}
-
-	type Runtimes map[string]*RuntimeHandler
-
-	kataHandler := &RuntimeHandler{
-		RuntimePath: "/usr/bin/kata-runtime",
-		RuntimeType: "vm",
-	}
-
-	runcHandler := &RuntimeHandler{
-		RuntimePath: "/bin/runc",
-		RuntimeType: "oci",
-		RuntimeRoot: "/run/runc",
-	}
-
-	var r Runtimes
-
-	r = Runtimes{
-		"crio.runtime.runtimes.runc":           runcHandler,
-		"crio.runtime.runtimes." + handlerName: kataHandler,
-	}
-
 	var err error
 	buf := new(bytes.Buffer)
-	if err = toml.NewEncoder(buf).Encode(r); err != nil {
+	type RuntimeConfig struct {
+		RuntimeName string
+	}
+	const b = `
+[crio.runtime.runtimes.{{.RuntimeName}}]
+  runtime_path = "/usr/bin/kata-runtime"
+  runtime_type = "vm"
+[crio.runtime.runtimes.runc]
+  runtime_path = "/bin/runc"
+  runtime_type = "oci"
+  runtime_root = "/run/runc"
+`
+	c := RuntimeConfig{RuntimeName: "kata-oc"}
+	t := template.Must(template.New("test").Parse(b))
+	err = t.Execute(buf, c)
+	if err != nil {
 		return "", err
 	}
-
 	sEnc := b64.StdEncoding.EncodeToString([]byte(buf.String()))
 	return sEnc, err
-
 }
 
 // IsOpenShift detects if we are running in OpenShift using the discovery client
