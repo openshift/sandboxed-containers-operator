@@ -475,11 +475,16 @@ func generateDropinConfig(handlerName string) (string, error) {
 		RuntimeName string
 	}
 	const b = `
+[crio.runtime]
+  manage_ns_lifecycle = true
+
 [crio.runtime.runtimes.{{.RuntimeName}}]
-  runtime_path = "/usr/bin/kata-runtime"
+  runtime_path = "/usr/bin/containerd-shim-kata-v2"
   runtime_type = "vm"
+  runtime_root = "/run/vc"
+  
 [crio.runtime.runtimes.runc]
-  runtime_path = "/bin/runc"
+  runtime_path = ""
   runtime_type = "oci"
   runtime_root = "/run/runc"
 `
