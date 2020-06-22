@@ -159,7 +159,8 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 			return reconcile.Result{}, err
 		}
 
-		instance.Status.FailedNodes = []kataconfigurationv1alpha1.FailedNode{}
+		instance.Status.InstallationStatus = kataconfigurationv1alpha1.KataInstallationStatus{}
+
 		if *r.isOpenShift {
 			instance.Status.RuntimeClass = "kata-oc"
 		} else {
@@ -191,15 +192,6 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 			return reconcile.Result{}, err
 		}
 
-		// DS created successfully - don't requeue
-		return reconcile.Result{}, nil
-	} else if err != nil {
-		return reconcile.Result{}, err
-	}
-
-	if instance.Status.CompletedNodesCount == instance.Status.TotalNodesCount && instance.Status.TotalNodesCount != 0 {
-		// Create runtime class object only after all the targetted nodes have completed kata installation including crio drop in config
-
 		rc := newRuntimeClassForCR(instance)
 
 		// Set Kataconfig instance as the owner and controller
@@ -215,16 +207,16 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 			if err != nil {
 				return reconcile.Result{}, err
 			}
-
-			// RuntimeClass created successfully - don't requeue
-			return reconcile.Result{}, nil
-		} else if err != nil {
-			return reconcile.Result{}, err
 		}
-
+		// DS created successfully - don't requeue
+		return reconcile.Result{}, nil
+	} else if err != nil {
+		return reconcile.Result{}, err
 	}
 
-	if *r.isOpenShift && instance.Status.TotalNodesCount != 0 && instance.Status.CompletedDaemons == instance.Status.TotalNodesCount {
+	if *r.isOpenShift && instance.Status.TotalNodesCount != 0 &&
+		len(instance.Status.InstallationStatus.InProgress.BinariesInstalledNodesList) == instance.Status.TotalNodesCount {
+		// if *r.isOpenShift && instance.Status.TotalNodesCount != 0 && instance.Status.CompletedDaemons == instance.Status.TotalNodesCount {
 		// Kata installation is complete on targetted nodes, now let's drop in crio config using MCO
 
 		reqLogger.Info("Kata installation on the cluster is completed")
