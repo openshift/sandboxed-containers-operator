@@ -30,21 +30,68 @@ type KataConfigStatus struct {
 	// TotalNodesCounts is the total number of worker nodes targeted by this CR
 	TotalNodesCount int `json:"totalNodesCount"`
 
-	// CompletedNodesCounts is the number of nodes that have successfully completed the given operation
-	CompletedNodesCount int `json:"completedNodesCount"`
+	// InstallationStatus reflects the status of the ongoing kata installation
+	// +optional
+	InstallationStatus KataInstallationStatus `json:"installationStatus,omitempty"`
 
-	// CompletedDaemons is the number of kata installation daemons that have successfully completed the given operation
-	CompletedDaemons int `json:"completedDaemons"`
+	// UnInstallationStatus reflects the status of the ongoing kata uninstallation
+	// +optional
+	UnInstallationStatus KataUnInstallationStatus `json:"unInstallationStatus,omitempty"`
 
-	// InProgressNodesCounts is the number of nodes still in progress in completing the given operation
-	InProgressNodesCount int `json:"inProgressNodesCount"`
-
-	// FailedNodes is the list of worker nodes failed to complete the given operation
-	FailedNodes []FailedNode `json:"failedNodes"`
+	// Upgradestatus reflects the status of the ongoing kata upgrade
+	// +optional
+	Upgradestatus KataUpgradeStatus `json:"upgradeStatus,omitempty"`
 }
 
-// FailedNode holds the name and the error message of the failed node
-type FailedNode struct {
+// KataInstallationStatus reflects the status of the ongoing kata installation
+type KataInstallationStatus struct {
+	// InProgress reflects the status of nodes that are in the process of kata installation
+	InProgress KataInstallationInProgressStatus `json:"inProgress"`
+
+	// Completed reflects the status of nodes that have completed kata installation
+	Completed KataInstallationCompletedStatus `json:"completed"`
+
+	// Failed reflects the status of nodes that have failed kata installation
+	Failed KataFailedNodeStatus `json:"failed"`
+}
+
+// KataInstallationInProgressStatus reflects the status of nodes that are in the process of kata installation
+type KataInstallationInProgressStatus struct {
+	InProgressNodesCount int `json:"inProgressNodesCount"`
+	// +optional
+	BinariesInstalledNodesList []string `json:"binaryInstallNodesList,omitempty"`
+}
+
+// KataInstallationCompletedStatus reflects the status of nodes that have completed kata installation
+type KataInstallationCompletedStatus struct {
+	// CompletedNodesCount reflects the number of nodes that have completed kata installation
+	CompletedNodesCount int `json:"completedNodesCount"`
+
+	// CompletedNodesList reflects the list of nodes that have completed kata installation
+	// +optional
+	CompletedNodesList []string `json:"completedNodesList,omitempty"`
+}
+
+// KataFailedNodeStatus reflects the status of nodes that have failed kata operation
+type KataFailedNodeStatus struct {
+	// FailedNodesCount reflects the number of nodes that have failed kata operation
+	FailedNodesCount int `json:"failedNodesCount"`
+
+	// FailedNodesList reflects the list of nodes that have failed kata operation
+	// +optional
+	FailedNodesList []FailedNodeStatus `json:"failedNodesList,omitempty"`
+}
+
+// KataUnInstallationStatus reflects the status of the ongoing kata uninstallation
+type KataUnInstallationStatus struct {
+}
+
+// KataUpgradeStatus reflects the status of the ongoing kata upgrade
+type KataUpgradeStatus struct {
+}
+
+// FailedNodeStatus holds the name and the error message of the failed node
+type FailedNodeStatus struct {
 	// Name of the failed node
 	Name string `json:"name"`
 	// Error message of the failed node reported by the installation daemon

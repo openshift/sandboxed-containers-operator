@@ -82,37 +82,75 @@ spec:
         status:
           description: KataConfigStatus defines the observed state of KataConfig
           properties:
-            completedDaemons:
-              description: CompletedDaemons is the number of kata installation daemons
-                that have successfully completed the given operation
-              type: integer
-            completedNodesCount:
-              description: CompletedNodesCounts is the number of nodes that have successfully
-                completed the given operation
-              type: integer
-            failedNodes:
-              description: FailedNodes is the list of worker nodes failed to complete
-                the given operation
-              items:
-                description: FailedNode holds the name and the error message of the
-                  failed node
-                properties:
-                  error:
-                    description: Error message of the failed node reported by the
-                      installation daemon
-                    type: string
-                  name:
-                    description: Name of the failed node
-                    type: string
-                required:
-                - error
-                - name
-                type: object
-              type: array
-            inProgressNodesCount:
-              description: InProgressNodesCounts is the number of nodes still in progress
-                in completing the given operation
-              type: integer
+            installationStatus:
+              description: InstallationStatus reflects the status of the ongoing kata
+                installation
+              properties:
+                completed:
+                  description: Completed reflects the status of nodes that have completed
+                    kata installation
+                  properties:
+                    completedNodesCount:
+                      description: CompletedNodesCount reflects the number of nodes
+                        that have completed kata installation
+                      type: integer
+                    completedNodesList:
+                      description: CompletedNodesList reflects the list of nodes that
+                        have completed kata installation
+                      items:
+                        type: string
+                      type: array
+                  required:
+                  - completedNodesCount
+                  type: object
+                failed:
+                  description: Failed reflects the status of nodes that have failed
+                    kata installation
+                  properties:
+                    failedNodesCount:
+                      description: FailedNodesCount reflects the number of nodes that
+                        have failed kata operation
+                      type: integer
+                    failedNodesList:
+                      description: FailedNodesList reflects the list of nodes that
+                        have failed kata operation
+                      items:
+                        description: FailedNodeStatus holds the name and the error
+                          message of the failed node
+                        properties:
+                          error:
+                            description: Error message of the failed node reported
+                              by the installation daemon
+                            type: string
+                          name:
+                            description: Name of the failed node
+                            type: string
+                        required:
+                        - error
+                        - name
+                        type: object
+                      type: array
+                  required:
+                  - failedNodesCount
+                  type: object
+                inProgress:
+                  description: InProgress reflects the status of nodes that are in
+                    the process of kata installation
+                  properties:
+                    binaryInstallNodesList:
+                      items:
+                        type: string
+                      type: array
+                    inProgressNodesCount:
+                      type: integer
+                  required:
+                  - inProgressNodesCount
+                  type: object
+              required:
+              - completed
+              - failed
+              - inProgress
+              type: object
             kataImage:
               description: KataImage is the image used for delivering kata binaries
               type: string
@@ -124,11 +162,14 @@ spec:
               description: TotalNodesCounts is the total number of worker nodes targeted
                 by this CR
               type: integer
+            unInstallationStatus:
+              description: UnInstallationStatus reflects the status of the ongoing
+                kata uninstallation
+              type: object
+            upgradeStatus:
+              description: Upgradestatus reflects the status of the ongoing kata upgrade
+              type: object
           required:
-          - completedDaemons
-          - completedNodesCount
-          - failedNodes
-          - inProgressNodesCount
           - kataImage
           - runtimeClass
           - totalNodesCount
