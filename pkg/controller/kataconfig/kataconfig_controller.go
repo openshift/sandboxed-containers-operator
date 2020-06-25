@@ -10,12 +10,15 @@ import (
 	b64 "encoding/base64"
 
 	ignTypes "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/go-logr/logr"
 	kataconfigurationv1alpha1 "github.com/openshift/kata-operator/pkg/apis/kataconfiguration/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 
 	nodeapi "k8s.io/api/node/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -114,6 +117,8 @@ type ReconcileKataConfig struct {
 	isOpenShift *bool
 }
 
+const kataConfigFinalizer = "finalizer.kataconfiguration.openshift.io"
+
 // Reconcile reads that state of the cluster for a KataConfig object and makes changes based on the state read
 // and what is in the KataConfig.Spec
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
@@ -144,6 +149,148 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 		return reconcile.Result{}, err
 	}
 
+	// TODO - Maybe instead of these so many if else conditions, maybe it would be better if
+	// we map them to predefined states and have something like a syncLoop from kubelet
+
+	// Check if the KataConfig instance is marked to be deleted, which is
+	// indicated by the deletion timestamp being set.
+	isKataConfigMarkedToBeDeleted := instance.GetDeletionTimestamp() != nil
+	if isKataConfigMarkedToBeDeleted {
+		if contains(instance.GetFinalizers(), kataConfigFinalizer) {
+			podList := &corev1.PodList{}
+			listOpts := []client.ListOption{
+				client.InNamespace(corev1.NamespaceAll),
+			}
+			if err = r.client.List(context.TODO(), podList, listOpts...); err != nil {
+				log.Error(err, "Failed to list pods", "Namespace", corev1.NamespaceAll, "KataConfig.Name", instance.Name)
+				return reconcile.Result{}, err
+			}
+			for _, pod := range podList.Items {
+				var ocRuntimeClassName = "kata-oc"
+				if pod.Spec.RuntimeClassName == &ocRuntimeClassName {
+					return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second},
+						fmt.Errorf("Existing pods using Kata Runtime found. Please delete the pods manually for KataConfig deletion to proceed")
+				}
+			}
+
+			ds := processDaemonsetForCR(instance, "uninstall")
+
+			foundDs := &appsv1.DaemonSet{}
+			err = r.client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDs)
+			if err != nil && errors.IsNotFound(err) {
+				reqLogger.Info("Creating a new uninstallation Daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
+				err = r.client.Create(context.TODO(), ds)
+				if err != nil {
+					return reconcile.Result{}, err
+				}
+				// return reconcile.Result{}, nil
+			} else if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			if instance.Status.UnInstallationStatus.Completed.CompletedNodesCount != instance.Status.TotalNodesCount {
+				if instance.Spec.KataConfigPoolSelector.MatchLabels != nil && len(instance.Spec.KataConfigPoolSelector.MatchLabels) > 0 {
+					clientset, err := getClientSet()
+					if err != nil {
+						return reconcile.Result{}, err
+					}
+					for i, nodeName := range instance.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList {
+						if contains(instance.Status.UnInstallationStatus.Completed.CompletedNodesList, nodeName) {
+							continue
+						}
+
+						node, err := clientset.CoreV1().Nodes().Get(nodeName, metav1.GetOptions{})
+						if err != nil {
+							return reconcile.Result{}, err
+						}
+
+						nodeLabels := node.GetLabels()
+
+						for k := range instance.Spec.KataConfigPoolSelector.MatchLabels {
+							delete(nodeLabels, k)
+						}
+
+						node.SetLabels(nodeLabels)
+
+						_, err = clientset.CoreV1().Nodes().Update(node)
+
+						if err != nil {
+							return reconcile.Result{}, err
+						}
+
+						instance.Status.UnInstallationStatus.Completed.CompletedNodesCount++
+						instance.Status.UnInstallationStatus.Completed.CompletedNodesList = append(instance.Status.UnInstallationStatus.Completed.CompletedNodesList, nodeName)
+						if instance.Status.UnInstallationStatus.InProgress.InProgressNodesCount > 0 {
+							instance.Status.UnInstallationStatus.InProgress.InProgressNodesCount--
+						}
+						instance.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList =
+							append(instance.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList[:i],
+								instance.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList[i+1:]...)
+					}
+
+					err = r.client.Status().Update(context.TODO(), instance)
+					if err != nil {
+						return reconcile.Result{}, err
+					}
+					return reconcile.Result{}, nil
+				}
+			}
+
+			if *r.isOpenShift {
+				reqLogger.Info("Making sure parent MCP is synced properly")
+
+				// Sleep for MCP to reflect the changes
+				time.Sleep(50 * time.Second)
+
+				parentMcp := &mcfgv1.MachineConfigPool{}
+
+				// TODO - maybe read "worker" from cr
+				err = r.client.Get(context.TODO(), types.NamespacedName{Name: "worker"}, parentMcp)
+				if err != nil {
+					return reconcile.Result{}, err
+				}
+
+				reqLogger.Info("Ready, Total", fmt.Sprintf("%d", parentMcp.Status.ReadyMachineCount), fmt.Sprintf("%d", parentMcp.Status.MachineCount))
+				if parentMcp.Status.ReadyMachineCount != parentMcp.Status.MachineCount {
+					return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+				}
+
+				mcp := newMCPforCR(instance)
+
+				founcMcp := &mcfgv1.MachineConfigPool{}
+				err = r.client.Get(context.TODO(), types.NamespacedName{Name: mcp.Name}, founcMcp)
+				if err != nil {
+					return reconcile.Result{}, err
+				}
+
+				err = r.client.Delete(context.TODO(), founcMcp)
+				if err != nil {
+					return reconcile.Result{}, err
+				}
+			}
+
+			if err := controllerutil.SetControllerReference(instance, ds, r.scheme); err != nil {
+				return reconcile.Result{}, err
+			}
+
+			reqLogger.Info("Uninstallation completed on all nodes. Proceeding with the KataConfig deletion")
+			controllerutil.RemoveFinalizer(instance, kataConfigFinalizer)
+			err := r.client.Update(context.TODO(), instance)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+		}
+		return reconcile.Result{}, nil
+	}
+
+	// Add finalizer for this CR
+	if !contains(instance.GetFinalizers(), kataConfigFinalizer) {
+		if err := r.addFinalizer(reqLogger, instance); err != nil {
+			return reconcile.Result{}, err
+		}
+	}
+
 	ds := processDaemonsetForCR(instance, "install")
 	// Set KataConfig instance as the owner and controller
 	if err := controllerutil.SetControllerReference(instance, ds, r.scheme); err != nil {
@@ -153,7 +300,7 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 	foundDs := &appsv1.DaemonSet{}
 	err = r.client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDs)
 	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a new Daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
+		reqLogger.Info("Creating a new installation Daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
 		err = r.client.Create(context.TODO(), ds)
 		if err != nil {
 			return reconcile.Result{}, err
@@ -258,10 +405,9 @@ func (r *ReconcileKataConfig) Reconcile(request reconcile.Request) (reconcile.Re
 		}
 
 		// Set Kataconfig instance as the owner and controller
-		// TODO - this might be incorrect, maybe the owner should be mcp and not kataconfig.
-		// if err := controllerutil.SetControllerReference(instance, mc, r.scheme); err != nil {
-		// 	return reconcile.Result{}, err
-		// }
+		if err := controllerutil.SetControllerReference(mcp, mc, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
 
 		foundMc := &mcfgv1.MachineConfig{}
 		err = r.client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, foundMc)
@@ -289,8 +435,9 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 	runPrivileged := true
 	var runAsUser int64 = 0
 
+	dsName := "kata-operator-daemon-" + operation
 	labels := map[string]string{
-		"name": "kata-install-daemon",
+		"name": dsName,
 	}
 
 	var nodeSelector map[string]string
@@ -308,7 +455,7 @@ func processDaemonsetForCR(cr *kataconfigurationv1alpha1.KataConfig, operation s
 			Kind:       "DaemonSet",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kata-install-daemon",
+			Name:      dsName,
 			Namespace: "kata-operator",
 		},
 		Spec: appsv1.DaemonSetSpec{
@@ -511,4 +658,40 @@ func IsOpenShift() (bool, error) {
 	}
 
 	return false, nil
+}
+
+func (r *ReconcileKataConfig) addFinalizer(reqLogger logr.Logger, m *kataconfigurationv1alpha1.KataConfig) error {
+	reqLogger.Info("Adding Finalizer for the KataConfig")
+	controllerutil.AddFinalizer(m, kataConfigFinalizer)
+
+	// Update CR
+	err := r.client.Update(context.TODO(), m)
+	if err != nil {
+		reqLogger.Error(err, "Failed to update KataConfig with finalizer")
+		return err
+	}
+	return nil
+}
+
+func contains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func getClientSet() (*kubernetes.Clientset, error) {
+	config, err := clientcmd.BuildConfigFromFlags("", "")
+	if err != nil {
+		return nil, err
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
+	return clientset, nil
 }
