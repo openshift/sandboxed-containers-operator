@@ -46,28 +46,29 @@ type KataConfigStatus struct {
 // KataInstallationStatus reflects the status of the ongoing kata installation
 type KataInstallationStatus struct {
 	// InProgress reflects the status of nodes that are in the process of kata installation
-	InProgress KataInstallationInProgressStatus `json:"inProgress"`
+	InProgress KataInstallationInProgressStatus `json:"inProgress,omitempty"`
 
 	// Completed reflects the status of nodes that have completed kata installation
-	Completed KataInstallationCompletedStatus `json:"completed"`
+	Completed KataConfigCompletedStatus `json:"completed,omitempty"`
 
 	// Failed reflects the status of nodes that have failed kata installation
-	Failed KataFailedNodeStatus `json:"failed"`
+	Failed KataFailedNodeStatus `json:"failed,omitempty"`
 }
 
 // KataInstallationInProgressStatus reflects the status of nodes that are in the process of kata installation
 type KataInstallationInProgressStatus struct {
-	InProgressNodesCount int `json:"inProgressNodesCount"`
+	// InProgressNodesCount reflects the number of nodes that are in the process of kata installation
+	InProgressNodesCount int `json:"inProgressNodesCount,omitempty"`
 	// +optional
-	BinariesInstalledNodesList []string `json:"binaryInstallNodesList,omitempty"`
+	BinariesInstalledNodesList []string `json:"binariesInstallNodesList,omitempty"`
 }
 
-// KataInstallationCompletedStatus reflects the status of nodes that have completed kata installation
-type KataInstallationCompletedStatus struct {
-	// CompletedNodesCount reflects the number of nodes that have completed kata installation
-	CompletedNodesCount int `json:"completedNodesCount"`
+// KataConfigCompletedStatus reflects the status of nodes that have completed kata operation
+type KataConfigCompletedStatus struct {
+	// CompletedNodesCount reflects the number of nodes that have completed kata operation
+	CompletedNodesCount int `json:"completedNodesCount,omitempty"`
 
-	// CompletedNodesList reflects the list of nodes that have completed kata installation
+	// CompletedNodesList reflects the list of nodes that have completed kata operation
 	// +optional
 	CompletedNodesList []string `json:"completedNodesList,omitempty"`
 }
@@ -75,7 +76,7 @@ type KataInstallationCompletedStatus struct {
 // KataFailedNodeStatus reflects the status of nodes that have failed kata operation
 type KataFailedNodeStatus struct {
 	// FailedNodesCount reflects the number of nodes that have failed kata operation
-	FailedNodesCount int `json:"failedNodesCount"`
+	FailedNodesCount int `json:"failedNodesCount,omitempty"`
 
 	// FailedNodesList reflects the list of nodes that have failed kata operation
 	// +optional
@@ -84,6 +85,21 @@ type KataFailedNodeStatus struct {
 
 // KataUnInstallationStatus reflects the status of the ongoing kata uninstallation
 type KataUnInstallationStatus struct {
+	// InProgress reflects the status of nodes that are in the process of kata uninstallation
+	InProgress KataUnInstallationInProgressStatus `json:"inProgress,omitempty"`
+
+	// Completed reflects the status of nodes that have completed kata uninstallation
+	Completed KataConfigCompletedStatus `json:"completed,omitempty"`
+
+	// Failed reflects the status of nodes that have failed kata uninstallation
+	Failed KataFailedNodeStatus `json:"failed,omitempty"`
+}
+
+// KataUnInstallationInProgressStatus reflects the status of nodes that are in the process of kata installation
+type KataUnInstallationInProgressStatus struct {
+	InProgressNodesCount int `json:"inProgressNodesCount,omitempty"`
+	// +optional
+	BinariesUnInstalledNodesList []string `json:"binariesUninstallNodesList,omitempty"`
 }
 
 // KataUpgradeStatus reflects the status of the ongoing kata upgrade
