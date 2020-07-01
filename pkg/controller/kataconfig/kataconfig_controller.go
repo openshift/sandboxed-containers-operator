@@ -602,7 +602,7 @@ func newMCForCR(cr *kataconfigurationv1alpha1.KataConfig) (*mcfgv1.MachineConfig
 	file.Filesystem = "root"
 	m := 420
 	file.Mode = &m
-	file.Path = "/opt/kata-1.conf"
+	file.Path = "/etc/crio/crio.conf.d/kata-50.conf"
 
 	mc.Spec.Config.Storage.Files = []ignTypes.File{file}
 
