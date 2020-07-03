@@ -52,9 +52,9 @@ The kata-operator uses three containers:
 
 Container image name | Description | Repository
 ---------------| ----------- | ----------
- _kata-operator_ |  It contains the controller part of the operator that watches and manages the kataconfig custom resource. It runs as a cluster scoped container. The operator itself is build with operator-sdk. | https://github.com/harche/kata-operator
- _kata-operator-daemon_ | The daemon part of the operator that runs on the nodes and performs the actual installation. It pulls down the container kata-operator-payload image. | https://github.com/harche/kata-operator-daemon
- _kata-operator-payload_ | The payload that is used by the daemon to install the kata binaries and dependencies (like e.g. QEMU). It's a container image with (currently) RPMs in it that will be installed on the chosen worker nodes by the daemon. | https://github.com/harche/kata-operator-payload
+ _kata-operator_ |  It contains the controller part of the operator that watches and manages the kataconfig custom resource. It runs as a cluster scoped container. The operator itself is build with operator-sdk. | https://github.com/isolatedcontainers/kata-operator
+ _kata-operator-daemon_ | The daemon part of the operator that runs on the nodes and performs the actual installation. It pulls down the container kata-operator-payload image. | https://github.com/isolatedcontainers/kata-operator-daemon
+ _kata-operator-payload_ | The payload that is used by the daemon to install the kata binaries and dependencies (like e.g. QEMU). It's a container image with (currently) RPMs in it that will be installed on the chosen worker nodes by the daemon. | https://github.com/isolatedcontaineres/kata-operator-payload
 
 ## Upgrading Kata
 
