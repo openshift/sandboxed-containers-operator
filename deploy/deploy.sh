@@ -19,7 +19,7 @@ The kata-operator is ready. Deploy a custom resource to start the installation
 See: deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml as an example
 To immediately start installation on all worker nodes just do
 
-  oc apply -f deploy/crds/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
+  oc apply -f deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
 
 EOF
 

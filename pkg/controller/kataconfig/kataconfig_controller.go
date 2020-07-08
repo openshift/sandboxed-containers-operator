@@ -349,8 +349,7 @@ func (r *ReconcileKataConfig) newMCForCR() (*mcfgv1.MachineConfig, error) {
 	file.Filesystem = "root"
 	m := 420
 	file.Mode = &m
-	// file.Path = "/etc/crio/crio.conf.d/kata-50.conf"
-	file.Path = "/opt/kata-1.conf"
+	file.Path = "/etc/crio/crio.conf.d/kata-50.conf"
 
 	mc.Spec.Config.Storage.Files = []ignTypes.File{file}
 
