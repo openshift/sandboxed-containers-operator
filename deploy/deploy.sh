@@ -1,8 +1,17 @@
 #!/bin/sh
 
-set -e
 
-oc new-project kata-operator
+oc get namespace kata-operator > /dev/null 2>&1
+if [ $? -eq 0 ]; then
+	echo "Error: The namespace kata-operator already exists. Please delete it (oc delete namespace kata-operator)"
+	echo "and make sure no older version of kata-operator is running before continuing"
+	exit
+else
+	echo "Create namespace kata-operator"
+	oc create namespace kata-operator
+fi
+
+set -e
 
 #set up service account
 oc apply -f deploy/role.yaml
