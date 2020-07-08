@@ -238,7 +238,7 @@ func (r *ReconcileKataConfig) processDaemonsetForCR(operation DaemonOperation) *
 					Containers: []corev1.Container{
 						{
 							Name:            "kata-install-pod",
-							Image:           "quay.io/harpatil/kata-install-daemon:1.5",
+							Image:           "quay.io/isolatedcontainers/kata-operator-daemon:v1.0",
 							ImagePullPolicy: "Always",
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
