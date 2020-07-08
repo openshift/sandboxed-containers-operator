@@ -39,12 +39,15 @@ Start the installation. The kata-operator will create a [machine config pool!](h
 
 ## Uninstall
 
-Not implemented yet :-)
+To delete the support for Kata containers you have to delete the custom resource, in our example: `oc delete -f deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml`
+
+Watch the CR description (for example `watch oc describe kataconfig example-kataconfig` to see the progress and current status of the uninstall operation. Once completed it will show the full number of affected nodes as uninstalled in the `Completed nodes` field. This will delete the machineconfig entry for the CRIO configuration drop-in file, the runtimeclass, the RPMs from the worker nodes, the labels from the selected worker nodes and eventually the custom resource. 
 
 ## Troubleshooting
 
-1. During the installation you can watch the values of the kataconfig CR. Do `watch oc get kataconfig example-kataconfig`.
+1. During the installation you can watch the values of the kataconfig CR. Do `watch oc describe kataconfig example-kataconfig`.
 2. To check if the nodes in the machine config pool are going through a config update watch the machine config pool resource. For this do `watch oc get mcp kata-oc`
+3. Check the logs of the kata-operator controller pod to see detailled messages about what the steps it is executing.
 
 ## Components
 
@@ -60,7 +63,7 @@ Container image name | Description | Repository
 
 Not implemented yet
 
-# Build from source (untested)
+# Build from source
 
 1. Install operator-sdk
 2. generate-groups.sh all github.com/openshift/kata-operator/pkg/generated github.com/openshift/kata-operator/pkg/apis kataconfiguration:v1alpha1
