@@ -1,0 +1,91 @@
+arch:
+  - amd64
+  - ppc64le
+  - s390x
+os: linux
+dist: bionic
+language: generic
+services:
+  - docker
+before_install:
+  - sudo chmod 755 /etc/docker
+
+  # Download and install operator-sdk (ADM64)
+  - sudo wget https://github.com/operator-framework/operator-sdk/releases/download/v0.18.2/operator-sdk-v0.18.2-x86_64-linux-gnu
+  - sudo mv operator-sdk-v0.18.2-x86_64-linux-gnu /usr/local/bin/operator-sdk-amd64
+  - sudo chmod +x /usr/local/bin//operator-sdk-amd64
+  # Download and install a new enough version of go (AMD64)
+  - sudo wget https://golang.org/dl/go1.14.4.linux-amd64.tar.gz
+  - sudo mkdir /usr/local/amd64/
+  - sudo tar -C /usr/local/amd64 -xvzf go1.14.4.linux-amd64.tar.gz
+
+  # Download and install operator-sdk (PPC64LE)
+  - sudo wget https://github.com/operator-framework/operator-sdk/releases/download/v0.18.2/operator-sdk-v0.18.2-ppc64le-linux-gnu
+  - sudo mv operator-sdk-v0.18.2-ppc64le-linux-gnu /usr/local/bin//operator-sdk-ppc64le
+  - sudo chmod +x /usr/local/bin//operator-sdk-ppc64le
+  # Download and install a new enough version of go (PPC64LE)
+  - sudo wget https://golang.org/dl/go1.14.4.linux-ppc64le.tar.gz
+  - sudo mkdir /usr/local/ppc64le/
+  - sudo tar -C /usr/local/ppc64le -xvzf go1.14.4.linux-ppc64le.tar.gz
+
+  # Download and install operator-sdk (s390x)
+  - sudo wget https://github.com/operator-framework/operator-sdk/releases/download/v0.18.2/operator-sdk-v0.18.2-s390x-linux-gnu
+  - sudo mv operator-sdk-v0.18.2-s390x-linux-gnu /usr/local/bin//operator-sdk-s390x
+  - sudo chmod +x /usr/local/bin//operator-sdk-s390x
+  # Download and install a new enough version of go (s390x)
+  - sudo wget https://golang.org/dl/go1.14.4.linux-s390x.tar.gz
+  - sudo mkdir /usr/local/s390x/
+  - sudo tar -C /usr/local/s390x -xvzf go1.14.4.linux-s390x.tar.gz
+
+stages:
+  - deploy
+  - deploy-multi-arch
+
+jobs:
+  include:
+
+  # Build and push the image for amd64
+  - stage: deploy
+    name: Build image for kata-operator-daemon (amd64)
+    arch: amd64
+    deploy:
+      provider: script
+      script: bash hack/deploy.sh
+      skip_cleanup: true
+      on:
+        all_branches: true
+        condition: $TRAVIS_BRANCH =~ ^(release-.*|master)$
+
+  # Build and push the image for ppc64le
+  - stage: deploy
+    name: Build image for kata-operator-daemon (ppc64le)
+    arch: ppc64le
+    deploy:
+      provider: script
+      script: bash hack/deploy.sh
+      skip_cleanup: true
+      on:
+        all_branches: true
+        condition: $TRAVIS_BRANCH =~ ^(release-.*|master)$
+
+  # Build and push the image for s390x
+  - stage: deploy
+    name: Build image for kata-operator-daemon (s390x)
+    arch: s390x
+    deploy:
+      provider: script
+      script: bash hack/deploy.sh
+      skip_cleanup: true
+      on:
+        all_branches: true
+        condition: $TRAVIS_BRANCH =~ ^(release-.*|master)$
+
+  - stage: deploy-multi-arch
+    name: Deploy multi-arch manifest
+    deploy:
+      provider: script
+      script: bash hack/deploy-multi-arch.sh
+      skip_cleanup: true
+      on:
+        all_branches: true
+        condition: $TRAVIS_BRANCH =~ ^(release-.*|master)$
