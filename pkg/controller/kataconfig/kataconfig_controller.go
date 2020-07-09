@@ -595,10 +595,11 @@ func (r *ReconcileKataConfig) processKataConfigDeleteRequest() (reconcile.Result
 			// TODO - we don't need this nil check if we know that pool is always initialized
 			if r.kataConfig.Spec.KataConfigPoolSelector != nil &&
 				r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels != nil && len(r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels) > 0 {
-				r.clientset, err = getClientSet()
-				if err != nil {
-					return reconcile.Result{}, err
-
+				if r.clientset == nil {
+					r.clientset, err = getClientSet()
+					if err != nil {
+						return reconcile.Result{}, err
+					}
 				}
 
 				for _, nodeName := range r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList {
@@ -647,7 +648,6 @@ func (r *ReconcileKataConfig) processKataConfigDeleteRequest() (reconcile.Result
 
 		if *r.isOpenShift {
 			r.kataLogger.Info("Making sure parent MCP is synced properly")
-
 			if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/worker"]; ok {
 				mc, err := r.newMCForCR()
 				var isMcDeleted bool

@@ -149,6 +149,11 @@ func TestKataConfigInstallFlow(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
+		Spec: kataconfigurationv1alpha1.KataConfigSpec{
+			KataConfigPoolSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"aa": "bb"},
+			},
+		},
 	}
 
 	kataconfig.Status.TotalNodesCount = 3
@@ -195,6 +200,7 @@ func TestKataConfigInstallFlow(t *testing.T) {
 
 	kataconfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList = []string{"host1", "host2", "host3"}
 	kataconfig.Status.InstallationStatus.InProgress.InProgressNodesCount = 3
+
 	err = k.client.Status().Update(context.TODO(), kataconfig)
 	if err != nil {
 		t.Fatalf("update kataconfig: (%v)", err)
@@ -304,6 +310,11 @@ func TestKataConfigUnInstallFlow(t *testing.T) {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
+		},
+		Spec: kataconfigurationv1alpha1.KataConfigSpec{
+			KataConfigPoolSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"custom-label": "test"},
+			},
 		},
 	}
 
@@ -444,10 +455,17 @@ func TestKataConfigUnInstallFlow(t *testing.T) {
 	now := metav1.Now()
 	kataconfig.SetDeletionTimestamp(&now)
 	kataconfig.SetFinalizers([]string{kataConfigFinalizer})
-	kataconfig.Spec = kataconfigurationv1alpha1.KataConfigSpec{
-		KataConfigPoolSelector: nil,
-	}
+	k.clientset = k8sFake.NewSimpleClientset()
+
 	kataconfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList = []string{"host1", "host2", "host3"}
+	for _, nodeName := range kataconfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList {
+		node := corev1.Node{}
+		node.Name = nodeName
+		_, err := k.clientset.CoreV1().Nodes().Create(&node)
+		if err != nil {
+			t.Errorf("Error creating fake node objects: %+v", err)
+		}
+	}
 
 	parentMcp := mcp.DeepCopy()
 	parentMcp.Name = "worker"
