@@ -5,35 +5,44 @@ An operator to enhance an Openshift/Kubernetes cluster to support running Kata c
 ## Deploying
 
 1. Make sure that oc is configured to talk to the cluster
+
 2. Run 
-   `curl https://raw.githubusercontent.com/jensfr/kata-operator/master/deploy/deploy.sh | bash`
+
+   ```
+   curl https://raw.githubusercontent.com/jensfr/kata-operator/master/deploy/deploy.sh | bash
+   ```
+
    This will create the serviceaccount, role and role binding used by the operator
+
 3. And finally create a custom resource for kata
-     oc apply -f deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
+
+   ```
+   oc apply -f deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
+   ```
+
    This will start the daemonset that runs pods on all nodes where Kata is to be installed
    
 ### Only install Kata on specific pool of worker nodes
 
 By default Kata will be installed on all worker nodes. To choose a subset of nodes, 
 
-1. edit the custom 
-ressource file deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
-and comment out the pool selector fields.
+1. edit the custom resource file `deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml`
+   and comment out the pool selector fields.
 
-```yaml
-apiVersion: kataconfiguration.openshift.io/v1alpha1
-kind: KataConfig
-metadata:
-  name: example-kataconfig
-#spec:
-#  kataConfigPoolSelector:
-#    matchLabels:
-#       custom-kata1: test
-```
+   ```yaml
+   apiVersion: kataconfiguration.openshift.io/v1alpha1
+   kind: KataConfig
+   metadata:
+     name: example-kataconfig
+   #spec:
+   #  kataConfigPoolSelector:
+   #    matchLabels:
+   #       custom-kata1: test
+   ```
 
-Change the label "custom-kata1:test" to something of your choice.
+   Change the label "custom-kata1:test" to something of your choice.
 
-2. Apply the chosen label to the nodes with "oc label node <myworker0> custom-kata1=test
+2. Apply the chosen label to the nodes with `oc label node <myworker0> custom-kata1=test`
 
 Start the installation. The kata-operator will create a [machine config pool!](https://www.redhat.com/en/blog/openshift-container-platform-4-how-does-machine-config-pool-work)
 
