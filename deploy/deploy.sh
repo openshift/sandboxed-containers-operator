@@ -18,6 +18,7 @@ oc apply -f deploy/role.yaml
 oc apply -f deploy/role_binding.yaml
 oc apply -f deploy/service_account.yaml
 oc adm policy add-scc-to-user privileged -z kata-operator
+oc adm policy add-scc-to-user privileged -z kata-operator -n kata-operator
 
 oc apply -f deploy/crds/kataconfiguration.openshift.io_kataconfigs_crd.yaml
 oc create -f deploy/operator.yaml
