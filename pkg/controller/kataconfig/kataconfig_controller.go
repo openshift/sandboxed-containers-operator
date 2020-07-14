@@ -305,6 +305,19 @@ func (r *ReconcileKataConfig) newMCPforCR() *mcfgv1.MachineConfigPool {
 }
 
 func (r *ReconcileKataConfig) newMCForCR() (*mcfgv1.MachineConfig, error) {
+	isenabled := true
+	name := "kata-osbuilder-generate.service"
+	content := `
+[Unit]
+Description=Hacky service to enable kata-osbuilder-generate.service
+ConditionPathExists=/usr/lib/systemd/system/kata-osbuilder-generate.service
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/kata-containers/osbuilder/fedora-kata-osbuilder.sh
+ExecRestart=/usr/libexec/kata-containers/osbuilder/fedora-kata-osbuilder.sh
+[Install]
+WantedBy=multi-user.target
+`
 
 	var workerRole string
 
@@ -332,6 +345,11 @@ func (r *ReconcileKataConfig) newMCForCR() (*mcfgv1.MachineConfig, error) {
 				Ignition: ignTypes.Ignition{
 					Version: "2.2.0",
 				},
+                                Systemd: ignTypes.Systemd{
+                                        Units: []ignTypes.Unit{
+                                               {Name: name, Enabled: &isenabled, Contents: content},
+                                       },
+                               },
 			},
 		},
 	}
