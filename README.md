@@ -27,7 +27,7 @@ An operator to enhance an Openshift/Kubernetes cluster to support running Kata c
 By default Kata will be installed on all worker nodes. To choose a subset of nodes, 
 
 1. edit the custom resource file `deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml`
-   and comment out the pool selector fields.
+   and remove the # signs from the pool selector fields in the spec.
 
    ```yaml
    apiVersion: kataconfiguration.openshift.io/v1alpha1
