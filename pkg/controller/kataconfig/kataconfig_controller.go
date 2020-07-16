@@ -454,8 +454,10 @@ func (r *ReconcileKataConfig) listKataPods() error {
 		return fmt.Errorf("Failed to list kata pods: %v", err)
 	}
 	for _, pod := range podList.Items {
-		if pod.Spec.RuntimeClassName == &r.kataConfig.Status.RuntimeClass {
-			return fmt.Errorf("Existing pods using Kata Runtime found. Please delete the pods manually for KataConfig deletion to proceed")
+		if pod.Spec.RuntimeClassName != nil {
+			if *pod.Spec.RuntimeClassName == r.kataConfig.Status.RuntimeClass {
+				return fmt.Errorf("Existing pods using Kata Runtime found. Please delete the pods manually for KataConfig deletion to proceed")
+			}
 		}
 	}
 	return nil
