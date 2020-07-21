@@ -6,21 +6,41 @@ An operator to enhance an Openshift/Kubernetes cluster to support running Kata c
 
 1. Make sure that oc is configured to talk to the cluster
 
-2. Run 
+2. Get a checkout of this repository
 
    ```
-   curl https://raw.githubusercontent.com/jensfr/kata-operator/master/deploy/deploy.sh | bash
+   git clone https://github.com/harche/kata-operator.git
+   ```
+  
+3. Run 
+   ```
+   cd kata-operator
+   ./deploy/deploy.sh
    ```
 
    This will create the serviceaccount, role and role binding used by the operator
 
-3. And finally create a custom resource for kata
+4. And finally create a custom resource for kata
 
    ```
    oc apply -f deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
    ```
 
    This will start the daemonset that runs pods on all nodes where Kata is to be installed
+   
+ 5. When is the installation finished and I can run kata containers?
+ 
+    Watch the description of the Kataconfig custom ressource
+    ```
+    oc describe kataconfig example-kataconfig
+    ```
+    and look at the field 'Completed nodes'. If the value matches the number of worker nodes the installation is completed.
+    
+ 6. Run an example container using the kata-runtime
+ 
+    ```
+    oc apply -f deploy/example-fedora
+    ```  
    
 ### Only install Kata on specific pool of worker nodes
 
@@ -54,9 +74,10 @@ Watch the CR description (for example `watch oc describe kataconfig example-kata
 
 ## Troubleshooting
 
-1. During the installation you can watch the values of the kataconfig CR. Do `watch oc describe kataconfig example-kataconfig`.
-2. To check if the nodes in the machine config pool are going through a config update watch the machine config pool resource. For this do `watch oc get mcp kata-oc`
-3. Check the logs of the kata-operator controller pod to see detailled messages about what the steps it is executing.
+1. deploy.sh will stop execution if it find that a namespace 'kata-operator' already exists. If you're running deploy.sh and it complains that the kata-operator namespace already exists a) make sure kata-operator is not already installed (check 'oc get kataconfig') and b) delete the namespace so that deploy.sh can create it. 
+2. During the installation you can watch the values of the kataconfig CR. Do `watch oc describe kataconfig example-kataconfig`.
+3. To check if the nodes in the machine config pool are going through a config update watch the machine config pool resource. For this do `watch oc get mcp kata-oc`
+4. Check the logs of the kata-operator controller pod to see detailled messages about what the steps it is executing.
 
 ## Components
 
