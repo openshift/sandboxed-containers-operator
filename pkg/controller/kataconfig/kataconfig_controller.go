@@ -367,7 +367,7 @@ WantedBy=multi-user.target
 	file.Filesystem = "root"
 	m := 420
 	file.Mode = &m
-	file.Path = "/etc/crio/crio.conf.d/kata-50.conf"
+	file.Path = "/etc/crio/crio.conf.d/50-kata.conf"
 
 	mc.Spec.Config.Storage.Files = []ignTypes.File{file}
 
