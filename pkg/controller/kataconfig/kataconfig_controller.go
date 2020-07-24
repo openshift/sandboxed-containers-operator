@@ -313,8 +313,8 @@ Description=Hacky service to enable kata-osbuilder-generate.service
 ConditionPathExists=/usr/lib/systemd/system/kata-osbuilder-generate.service
 [Service]
 Type=oneshot
-ExecStart=/usr/libexec/kata-containers/osbuilder/fedora-kata-osbuilder.sh
-ExecRestart=/usr/libexec/kata-containers/osbuilder/fedora-kata-osbuilder.sh
+ExecStart=/usr/libexec/kata-containers/osbuilder/kata-osbuilder.sh
+ExecRestart=/usr/libexec/kata-containers/osbuilder/kata-osbuilder.sh
 [Install]
 WantedBy=multi-user.target
 `
