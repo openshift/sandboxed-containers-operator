@@ -69,7 +69,7 @@ func TestKataConfigCreation(t *testing.T) {
 	}
 }
 
-func TestKataConfigDaemonset(t *testing.T) {
+func TestOpenShiftKataInstallDaemonset(t *testing.T) {
 	var (
 		name = "example-kataconfig"
 		// namespace = "kata-operator"
@@ -102,13 +102,11 @@ func TestKataConfigDaemonset(t *testing.T) {
 	// Create a fake client to mock API calls.
 	cl := fake.NewFakeClientWithScheme(s, objs...)
 
-	isOpenShift := false
-	k := &ReconcileKataConfig{client: cl, scheme: s, isOpenShift: &isOpenShift}
+	k := &ReconcileKataConfigOpenShift{client: cl, scheme: s}
 
 	req := reconcile.Request{
 		NamespacedName: types.NamespacedName{
 			Name: name,
-			// Namespace: namespace,
 		},
 	}
 
@@ -135,7 +133,7 @@ func TestKataConfigDaemonset(t *testing.T) {
 
 }
 
-func TestKataConfigInstallFlow(t *testing.T) {
+func TestOpenShiftKataInstallFlow(t *testing.T) {
 	var (
 		name = "example-kataconfig"
 	)
@@ -176,9 +174,7 @@ func TestKataConfigInstallFlow(t *testing.T) {
 	// Create a fake client to mock API calls.
 	cl := fake.NewFakeClientWithScheme(s, objs...)
 
-	isOpenShift := true
-
-	k := &ReconcileKataConfig{client: cl, scheme: s, isOpenShift: &isOpenShift}
+	k := &ReconcileKataConfigOpenShift{client: cl, scheme: s}
 
 	req := reconcile.Request{
 		NamespacedName: types.NamespacedName{
@@ -298,7 +294,7 @@ func TestKataConfigInstallFlow(t *testing.T) {
 	}
 }
 
-func TestKataConfigUnInstallFlow(t *testing.T) {
+func TestOpenShiftKataUnInstallFlow(t *testing.T) {
 	var (
 		name = "example-kataconfig"
 	)
@@ -339,8 +335,7 @@ func TestKataConfigUnInstallFlow(t *testing.T) {
 	// Create a fake client to mock API calls.
 	cl := fake.NewFakeClientWithScheme(s, objs...)
 
-	isOpenShift := true
-	k := &ReconcileKataConfig{client: cl, scheme: s, isOpenShift: &isOpenShift, clientset: k8sFake.NewSimpleClientset()}
+	k := &ReconcileKataConfigOpenShift{client: cl, scheme: s, clientset: k8sFake.NewSimpleClientset()}
 
 	req := reconcile.Request{
 		NamespacedName: types.NamespacedName{
