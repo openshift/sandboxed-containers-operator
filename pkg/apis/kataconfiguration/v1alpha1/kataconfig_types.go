@@ -17,6 +17,8 @@ type KataConfigSpec struct {
 
 // KataInstallConfig is a placeholder struct
 type KataInstallConfig struct {
+	// SourceImage is the name of the kata-deploy image
+	SourceImage string `json:"sourceImage"`
 }
 
 // KataConfigStatus defines the observed state of KataConfig

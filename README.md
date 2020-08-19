@@ -1,79 +1,191 @@
-# kata-operator
+# Kata Operator
 
-An operator to enhance an Openshift/Kubernetes cluster to support running Kata containers.
+An operator to perform lifecycle management (install/upgrade/uninstall) of [Kata Runtime](https://katacontainers.io/) on Openshift as well as Kubernetes cluster.
 
-## Deploying
+## Installing the Kata Runtime on the Cluster using Kata Operator
 
-1. Make sure that oc is configured to talk to the cluster
+### Openshift
 
-2. Get a checkout of this repository
+1. Make sure that `oc` is configured to talk to the cluster
 
-   ```
-   git clone https://github.com/harche/kata-operator.git
-   ```
-  
-3. Run 
-   ```
-   cd kata-operator
-   ./deploy/deploy.sh
-   ```
-
-   This will create the serviceaccount, role and role binding used by the operator
-
-4. And finally create a custom resource for kata
+2. Run to install the Kata Operator: 
 
    ```
-   oc apply -f deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
+   curl https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/deploy.sh | bash
+   ```
+3. And finally create a custom resource to install the Kata Runtime on all workers,
+
+   ```
+   oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
    ```
 
-   This will start the daemonset that runs pods on all nodes where Kata is to be installed
+   Please follow [this](#selectively-install-the-kata-runtime-on-specific-workers) section if you wish to install the Kata Runtime only on selected worker nodes.
    
- 5. When is the installation finished and I can run kata containers?
- 
-    Watch the description of the Kataconfig custom ressource
-    ```
-    oc describe kataconfig example-kataconfig
-    ```
-    and look at the field 'Completed nodes'. If the value matches the number of worker nodes the installation is completed.
-    
- 6. Run an example container using the kata-runtime
- 
-    ```
-    oc apply -f deploy/example-fedora
-    ```  
+#### Monitoring the Kata Runtime Installation
+Watch the description of the Kataconfig custom resource
+```
+oc describe kataconfig example-kataconfig
+```
+and look at the field 'Completed nodes' in the status. If the value matches the number of worker nodes the installation is completed.
+
+#### Runtime Class
+Once the kata runtime binaries are successfully installed on the intended workers, Kata Operator will create a [runtime class](https://kubernetes.io/docs/concepts/containers/runtime-class/) `kata-oc`. This runtime class can be used to deploy the pods that will use the Kata Runtime.
+
+#### Run an Example Pod using the Kata Runtime
+```
+oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/example-fedora.yaml
+```  
+
+### Kubernetes
+
+1. Make sure that `kubectl` is configured to talk to the cluster
+
+2. Run to install the Kata Operator: 
+
+   ```
+   curl https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/deploy-k8s.sh | bash
+   ```
+3. And finally create a custom resource to install the Kata Runtime on all workers,
    
-### Only install Kata on specific pool of worker nodes
+   ```
+   kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr_k8s.yaml
+   ```
 
-By default Kata will be installed on all worker nodes. To choose a subset of nodes, 
+   Please follow [this](#selectively-install-the-kata-runtime-on-specific-workers) section if you wish to install the Kata Runtime only on selected worker nodes.
+   
+#### Install custom Kata Runtime version
 
-1. edit the custom resource file `deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml`
-   and remove the # signs from the pool selector fields in the spec.
+Download the following file that contains the `KataConfig` custom resource. 
+```
+curl -o kataconfig_cr.yaml https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr_k8s.yaml 
+``` 
+
+Kata Binaries artifacts are copied to the worker node from the source image (spec.config.sourceImage). You can modify that field to use a different [kata-deploy](https://github.com/kata-containers/packaging/tree/master/kata-deploy) image to install a specific version of the Kata Runtime binaries.
+
+```yaml
+apiVersion: kataconfiguration.openshift.io/v1alpha1
+kind: KataConfig
+metadata:
+   name: example-kataconfig 
+spec:
+   config:
+      sourceImage: docker.io/katadocker/kata-deploy:latest 
+#   kataConfigPoolSelector:
+#      matchLabels:
+#        custom-kata1: test
+``` 
+```
+kubectl apply -f  kataconfig_cr.yaml
+```
+
+   This will start the [kata-deploy](https://github.com/kata-containers/packaging/tree/master/kata-deploy) DaemonSet that runs pods on all nodes where Kata Runtime is to be installed
+
+#### Monitoring the Kata Runtime Installation
+Watch the description of the Kataconfig custom resource
+```
+kubectl describe kataconfig example-kataconfig
+```
+and look at the field 'Completed nodes' in the status. If the value matches the number of worker nodes the installation is completed.
+
+#### Runtime Class
+Once the kata runtime binaries are successfully installed on the intended workers, Kata Operator will create following [runtime classes](https://kubernetes.io/docs/concepts/containers/runtime-class/),
+
+* kata 
+* kata-clh
+* kata-fc 
+* kata-qemu
+* kata-qemu-virtiofs 
+
+Any of these runtime classes can be used to deploy the pods that will use the Kata Runtime.
+
+#### Run an Example Pod using the Kata Runtime
+```
+kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/example-fedora-k8s.yaml
+``` 
+   
+## Selectively Install the Kata Runtime on Specific Workers
+
+### Openshift
+
+1. Download the `KataConfig` custom resource file, 
+   ```
+   curl -o kataconfig_cr.yaml https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
+   ```
+2. edit the custom resource file `kataconfig_cr.yaml`
+   and uncomment the kata pool selector fields in the spec as follows,
 
    ```yaml
    apiVersion: kataconfiguration.openshift.io/v1alpha1
    kind: KataConfig
    metadata:
      name: example-kataconfig
-   #spec:
-   #  kataConfigPoolSelector:
-   #    matchLabels:
-   #       custom-kata1: test
+   spec:
+     kataConfigPoolSelector:
+       matchLabels:
+          custom-kata1: test
    ```
 
-   Change the label "custom-kata1:test" to something of your choice.
+   If you wish, you can change the label "custom-kata1:test" to something of your choice.
 
-2. Apply the chosen label to the nodes with `oc label node <myworker0> custom-kata1=test`
+3. Apply the chosen label to the desired nodes. e.g. `oc label node <worker_node_name> custom-kata1=test`
+4. Create the custom resource to start the installation,
+   ```
+   oc create -f kataconfig_cr.yaml
+   ```
 
-Start the installation. The kata-operator will create a [machine config pool!](https://www.redhat.com/en/blog/openshift-container-platform-4-how-does-machine-config-pool-work)
+### Kubernetes
+
+1. Download the `KataConfig` custom resource file, 
+   ```
+   curl -o kataconfig_cr.yaml https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr_k8s.yaml
+   ```
+2. edit the custom resource file `kataconfig_cr.yaml`
+   and uncomment the kata pool selector fields in the spec as follows,
+
+   ```yaml
+   apiVersion: kataconfiguration.openshift.io/v1alpha1
+   kind: KataConfig
+   metadata:
+      name: example-kataconfig 
+   spec:
+      config:
+         sourceImage: docker.io/katadocker/kata-deploy:latest 
+      kataConfigPoolSelector:
+         matchLabels:
+           custom-kata1: test
+   ```
+
+   If you wish, you can change the label "custom-kata1:test" to something of your choice.
+
+3. Apply the chosen label to the desired nodes. e.g. `kubectl label node <worker_node_name> custom-kata1=test`
+4. Create the custom resource to start the installation,
+   ```
+   kubectl create -f kataconfig_cr.yaml
+   ```
 
 ## Uninstall
 
-To delete the support for Kata containers you have to delete the custom resource, in our example: `oc delete -f deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml`
+### Openshift
+```
+oc delete kataconfig <KataConfig_CR_Name>
+```
+e.g.
+```
+oc delete kataconfig example-kataconfig
+```
 
-Watch the CR description (for example `watch oc describe kataconfig example-kataconfig` to see the progress and current status of the uninstall operation. Once completed it will show the full number of affected nodes as uninstalled in the `Completed nodes` field. This will delete the machineconfig entry for the CRIO configuration drop-in file, the runtimeclass, the RPMs from the worker nodes, the labels from the selected worker nodes and eventually the custom resource. 
+### Kubernetes
+```
+kubectl delete kataconfig <KataConfig_CR_Name>
+```
+e.g.
+```
+kubectl delete kataconfig example-kataconfig
+```
 
 ## Troubleshooting
 
+### Openshift
 1. deploy.sh will stop execution if it find that a namespace 'kata-operator' already exists. If you're running deploy.sh and it complains that the kata-operator namespace already exists a) make sure kata-operator is not already installed (check 'oc get kataconfig') and b) delete the namespace so that deploy.sh can create it. 
 2. During the installation you can watch the values of the kataconfig CR. Do `watch oc describe kataconfig example-kataconfig`.
 3. To check if the nodes in the machine config pool are going through a config update watch the machine config pool resource. For this do `watch oc get mcp kata-oc`
@@ -81,6 +193,7 @@ Watch the CR description (for example `watch oc describe kataconfig example-kata
 
 ## Components
 
+### Openshift
 The kata-operator uses three containers:
 
 Container image name | Description | Repository
@@ -91,6 +204,10 @@ Container image name | Description | Repository
 
 ## Upgrading Kata
 
+### Openshift
+Not implemented yet
+
+### Kubernetes
 Not implemented yet
 
 # Build from source
