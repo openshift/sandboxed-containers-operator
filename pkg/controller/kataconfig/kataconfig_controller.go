@@ -9,8 +9,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 
 	nodeapi "k8s.io/api/node/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -144,20 +142,6 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
-}
-
-func getClientSet() (*kubernetes.Clientset, error) {
-	config, err := clientcmd.BuildConfigFromFlags("", "")
-	if err != nil {
-		return nil, err
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, err
-	}
-
-	return clientset, nil
 }
 
 // IsOpenShift detects if we are running in OpenShift using the discovery client

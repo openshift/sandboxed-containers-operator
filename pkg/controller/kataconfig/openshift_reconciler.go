@@ -5,11 +5,15 @@ import (
 	"context"
 	b64 "encoding/base64"
 	"fmt"
+	"os"
+	"strings"
 	"text/template"
 	"time"
 
 	ignTypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/go-logr/logr"
+	"github.com/hashicorp/go-version"
+	configv1 "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	kataconfigurationv1alpha1 "github.com/openshift/kata-operator/pkg/apis/kataconfiguration/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -20,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -67,6 +72,22 @@ func (r *ReconcileKataConfigOpenShift) Reconcile(request reconcile.Request) (rec
 		// indicated by the deletion timestamp being set.
 		if r.kataConfig.GetDeletionTimestamp() != nil {
 			return r.processKataConfigDeleteRequest()
+		}
+
+		clusterversion, err := getClusterVersion()
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		sourceImageVersionTag, err := getSourceImageTag(r.kataConfig.Spec.Config.SourceImage)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		if versionsCompatible, err := checkCompatibility(clusterversion, sourceImageVersionTag); versionsCompatible == false {
+			r.kataLogger.Error(err, "kataPayloadImage not compatible with OCP version, ocp = %s, payload = %s",
+				clusterversion, sourceImageVersionTag)
+			return reconcile.Result{}, err
 		}
 
 		// if we are using openshift then make sure that MCO related things are
@@ -693,4 +714,96 @@ func (r *ReconcileKataConfigOpenShift) monitorKataConfigInstallation() (reconcil
 	}
 
 	return reconcile.Result{}, nil
+}
+
+func getConfigClientSet() (*configv1.ConfigV1Client, error) {
+	config, err := clientcmd.BuildConfigFromFlags("", "")
+	if err != nil {
+		return nil, err
+	}
+
+	configV1Client, err := configv1.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
+	return configV1Client, err
+}
+
+func getClusterVersion() (string, error) {
+	configV0Client, err := getConfigClientSet()
+	if err != nil {
+		return "", err
+	}
+
+	clusterversion, err := configV0Client.ClusterVersions().Get("version", metav1.GetOptions{})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return "", nil
+	}
+
+	return clusterversion.Status.Desired.Version, nil
+}
+
+func getSourceImageTag(sourceImage string) (string, error) {
+	imageslice := strings.Split(sourceImage, ":")
+	if len(imageslice) <= 1 {
+		return "", fmt.Errorf("bad format of sourceImage")
+	}
+	mytag := imageslice[len(imageslice)-1]
+
+	return mytag, nil
+}
+
+func getClientSet() (*kubernetes.Clientset, error) {
+	config, err := clientcmd.BuildConfigFromFlags("", "")
+	if err != nil {
+		return nil, err
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
+	return clientset, nil
+}
+
+func checkCompatibility(clusterversion string, sourceImageVersion string) (bool, error) {
+	/* map OCP version to the minimum version of the sourceImage
+	 * that can be used on it. For example if a user tries
+	 * to install a sourceImage tagged with 4.5.3 on an OCP cluster
+	 * of version 4.5.4 the installation would fail because the RPM
+	 * dependencies don't match. In this case we return false to
+	 * signal that this is not supported.
+	 * TODO: don't hardcode this here, read it from a yaml file or similar
+	 */
+	minimumVersion := make(map[string]string)
+	minimumVersion["4.5.0"] = "4.5.0"
+	minimumVersion["4.5.1"] = "4.5.0"
+	minimumVersion["4.5.2"] = "4.5.0"
+	minimumVersion["4.5.3"] = "4.5.0"
+	minimumVersion["4.5.4"] = "4.5.4"
+	minimumVersion["4.5.5"] = "4.5.4"
+	minimumVersion["4.5.6"] = "4.5.4"
+	minimumVersion["4.5.7"] = "4.5.4"
+	minimumVersion["4.6.0"] = "4.5.4"
+
+	min := minimumVersion[clusterversion]
+	if min != "" {
+		v1, err := version.NewVersion(min)
+		if err != nil {
+			return false, err
+		}
+		v2, err := version.NewVersion(sourceImageVersion)
+		if err != nil {
+			return false, err
+		}
+		if v2.LessThan(v1) {
+			return false, fmt.Errorf("sourceImage not compatible with this version of OCP")
+		}
+		return true, nil
+	}
+
+	return false, fmt.Errorf("unsupported OCP version")
 }
