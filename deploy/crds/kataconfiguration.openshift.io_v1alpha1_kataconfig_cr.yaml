@@ -2,6 +2,9 @@ apiVersion: kataconfiguration.openshift.io/v1alpha1
 kind: KataConfig
 metadata:
   name: example-kataconfig 
+spec:
+  config:
+     sourceImage: quay.io/isolatedcontainers/kata-operator-payload:4.5.4
 #spec:
 #  kataConfigPoolSelector:
 #    matchLabels:
