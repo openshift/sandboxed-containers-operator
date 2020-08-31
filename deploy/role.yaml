@@ -5,6 +5,12 @@ metadata:
   name: kata-operator
 rules:
 - apiGroups:
+  - config.openshift.io
+  resources:
+  - clusterversions
+  verbs:
+  - get
+- apiGroups:
   - ""
   - machineconfiguration.openshift.io
   resources:  
