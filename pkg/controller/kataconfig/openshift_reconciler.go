@@ -297,7 +297,7 @@ func generateDropinConfig(handlerName string) (string, error) {
   runtime_type = "oci"
   runtime_root = "/run/runc"
 `
-	c := RuntimeConfig{RuntimeName: "kata-oc"}
+	c := RuntimeConfig{RuntimeName: "kata"}
 	t := template.Must(template.New("test").Parse(b))
 	err = t.Execute(buf, c)
 	if err != nil {
@@ -407,7 +407,7 @@ func (r *ReconcileKataConfigOpenShift) processKataConfigInstallRequest() (reconc
 }
 
 func (r *ReconcileKataConfigOpenShift) setRuntimeClass() (reconcile.Result, error) {
-	runtimeClassName := "kata-oc"
+	runtimeClassName := "kata"
 
 	rc := func() *nodeapi.RuntimeClass {
 		rc := &nodeapi.RuntimeClass{

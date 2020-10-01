@@ -282,7 +282,7 @@ func TestOpenShiftKataInstallFlow(t *testing.T) {
 	}
 
 	rc := &nodeapi.RuntimeClass{}
-	err = k.client.Get(context.TODO(), types.NamespacedName{Name: "kata-oc"}, rc)
+	err = k.client.Get(context.TODO(), types.NamespacedName{Name: "kata"}, rc)
 	if err != nil {
 		t.Fatalf("get runtimeclass: (%v)", err)
 	}
@@ -442,7 +442,7 @@ func TestOpenShiftKataUnInstallFlow(t *testing.T) {
 	}
 
 	rc := &nodeapi.RuntimeClass{}
-	err = k.client.Get(context.TODO(), types.NamespacedName{Name: "kata-oc"}, rc)
+	err = k.client.Get(context.TODO(), types.NamespacedName{Name: "kata"}, rc)
 	if err != nil {
 		t.Fatalf("get runtimeclass: (%v)", err)
 	}
