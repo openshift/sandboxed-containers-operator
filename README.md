@@ -11,12 +11,12 @@ An operator to perform lifecycle management (install/upgrade/uninstall) of [Kata
 2. Run to install the Kata Operator: 
 
    ```
-   curl https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/deploy.sh | bash
+   curl https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/deploy.sh | bash
    ```
 3. And finally create a custom resource to install the Kata Runtime on all workers,
 
    ```
-   oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
+   oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
    ```
 
    Please follow [this](#selectively-install-the-kata-runtime-on-specific-workers) section if you wish to install the Kata Runtime only on selected worker nodes.
@@ -33,7 +33,7 @@ Once the kata runtime binaries are successfully installed on the intended worker
 
 #### Run an Example Pod using the Kata Runtime
 ```
-oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/example-fedora.yaml
+oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/example-fedora.yaml
 ```  
 
 ### Kubernetes
@@ -43,12 +43,12 @@ oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/dep
 2. Run to install the Kata Operator: 
 
    ```
-   curl https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/deploy-k8s.sh | bash
+   curl https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/deploy-k8s.sh | bash
    ```
 3. And finally create a custom resource to install the Kata Runtime on all workers,
    
    ```
-   kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr_k8s.yaml
+   kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr_k8s.yaml
    ```
 
    Please follow [this](#selectively-install-the-kata-runtime-on-specific-workers) section if you wish to install the Kata Runtime only on selected worker nodes.
@@ -57,7 +57,7 @@ oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/dep
 
 Download the following file that contains the `KataConfig` custom resource. 
 ```
-curl -o kataconfig_cr.yaml https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr_k8s.yaml 
+curl -o kataconfig_cr.yaml https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr_k8s.yaml
 ``` 
 
 Kata Binaries artifacts are copied to the worker node from the source image (spec.config.sourceImage). You can modify that field to use a different [kata-deploy](https://github.com/kata-containers/packaging/tree/master/kata-deploy) image to install a specific version of the Kata Runtime binaries.
@@ -100,7 +100,7 @@ Any of these runtime classes can be used to deploy the pods that will use the Ka
 
 #### Run an Example Pod using the Kata Runtime
 ```
-kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/example-fedora.yaml
+kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/example-fedora.yaml
 ``` 
    
 ## Selectively Install the Kata Runtime on Specific Workers
@@ -109,7 +109,7 @@ kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/maste
 
 1. Download the `KataConfig` custom resource file, 
    ```
-   curl -o kataconfig_cr.yaml https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
+   curl -o kataconfig_cr.yaml https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
    ```
 2. edit the custom resource file `kataconfig_cr.yaml`
    and uncomment the kata pool selector fields in the spec as follows,
@@ -137,7 +137,7 @@ kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/maste
 
 1. Download the `KataConfig` custom resource file, 
    ```
-   curl -o kataconfig_cr.yaml https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr_k8s.yaml
+   curl -o kataconfig_cr.yaml https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr_k8s.yaml
    ```
 2. edit the custom resource file `kataconfig_cr.yaml`
    and uncomment the kata pool selector fields in the spec as follows,
