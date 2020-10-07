@@ -14,22 +14,22 @@ fi
 set -e
 
 #set up service account
-oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/role.yaml
-oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/role_binding.yaml
-oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/service_account.yaml
+oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/role.yaml
+oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/role_binding.yaml
+oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/service_account.yaml
 oc adm policy add-scc-to-user privileged -z kata-operator
 oc adm policy add-scc-to-user privileged -z kata-operator -n kata-operator
 
-oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_kataconfigs_crd.yaml
-oc create -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/operator.yaml
+oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/crds/kataconfiguration.openshift.io_kataconfigs_crd.yaml
+oc create -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/operator.yaml
 
 cat <<EOF 
 
 The kata-operator is ready. Deploy a custom resource to start the installation
-See: https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml as an example
+See: https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml as an example
 To immediately start installation on all worker nodes,
 
-  oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
+  oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr.yaml
 
 EOF
 
