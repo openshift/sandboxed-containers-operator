@@ -14,20 +14,20 @@ fi
 set -e
 
 #set up service account
-kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/role.yaml
-kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/role_binding.yaml
-kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/service_account.yaml
+kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/role.yaml
+kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/role_binding.yaml
+kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/service_account.yaml
 
-kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_kataconfigs_crd.yaml
-kubectl create -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/operator.yaml
+kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/crds/kataconfiguration.openshift.io_kataconfigs_crd.yaml
+kubectl create -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/operator.yaml
 
 
 cat <<EOF 
 
 The kata-operator is ready. Deploy a custom resource to start the installation
-See: https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr_k8s.yaml as an example
+See: https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr_k8s.yaml as an example
 To immediately start installation on all worker nodes,
 
-  kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr_k8s.yaml
+  kubectl apply -f https://raw.githubusercontent.com/openshift/kata-operator/release-4.6/deploy/crds/kataconfiguration.openshift.io_v1alpha1_kataconfig_cr_k8s.yaml
 
 EOF
