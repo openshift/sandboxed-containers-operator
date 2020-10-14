@@ -161,6 +161,13 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForCR(operation DaemonOp
 								Privileged: &runPrivileged,
 								RunAsUser:  &runAsUser,
 							},
+							Lifecycle: &corev1.Lifecycle{
+								PreStop: &corev1.Handler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"rm", "-rf", "/opt/kata-install", "/usr/local/kata/"},
+									},
+								},
+							},
 							Command: []string{"/bin/sh", "-c", fmt.Sprintf("/daemon --resource %s --operation %s", r.kataConfig.Name, operation)},
 							VolumeMounts: []corev1.VolumeMount{
 								{
