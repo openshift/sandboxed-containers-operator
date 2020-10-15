@@ -1,0 +1,24 @@
+# permissions for end users to edit kataconfigs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kataconfig-editor-role
+rules:
+- apiGroups:
+  - kataconfiguration.openshift.io
+  resources:
+  - kataconfigs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - kataconfiguration.openshift.io
+  resources:
+  - kataconfigs/status
+  verbs:
+  - get

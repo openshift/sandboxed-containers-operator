@@ -1,0 +1,11 @@
+domain: kataconfiguration.openshift.io
+layout: go.kubebuilder.io/v2
+projectName: kata-operator
+repo: github.com/openshift/kata-operator
+resources:
+- group: kataconfiguration
+  kind: KataConfig
+  version: v1
+version: 3-alpha
+plugins:
+  go.sdk.operatorframework.io/v2-alpha: {}
