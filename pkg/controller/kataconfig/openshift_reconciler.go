@@ -210,7 +210,7 @@ func (r *ReconcileKataConfigOpenShift) processDaemonsetForCR(operation DaemonOpe
 							Lifecycle: &corev1.Lifecycle{
 								PreStop: &corev1.Handler{
 									Exec: &corev1.ExecAction{
-										Command: []string{"rm", "-rf", "/opt/kata-install", "/usr/local/kata/"},
+										Command: []string{"/bin/sh", "-c", "rm -rf /host/opt/kata-install /host/usr/local/kata/"},
 									},
 								},
 							},
