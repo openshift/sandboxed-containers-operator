@@ -22,6 +22,23 @@ spec:
       labels:
         control-plane: controller-manager
     spec:
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 120
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 120
+      - effect: NoSchedule
+        key: node.kubernetes.io/memory-pressure
+        operator: Exists
       containers:
       - command:
         - /manager
