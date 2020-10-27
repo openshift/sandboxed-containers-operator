@@ -1,0 +1,31 @@
+apiVersion: apps/v1 
+kind: DaemonSet
+metadata:
+  name: kata-install-daemon
+  #namespace: kata-operator
+spec:
+  selector:
+    matchLabels:
+      name: kata-install-daemon 
+  template:
+    metadata:
+      labels:
+        name: kata-install-daemon 
+    spec:
+      serviceAccountName: kata-operator
+      containers:
+      - name: kata-install-daemon 
+        image: quay.io/harpatil/kata-install-daemon:1.5
+        #image: quay.io/jensfr/kata-install-daemon:latest
+        imagePullPolicy: Always
+        securityContext:
+          privileged: true
+          runAsUser: 0
+        command: ["/bin/sh", "-c", "/daemon --resource example-kataconfig --operation install"]
+        volumeMounts:
+        - name: kata-volume 
+          mountPath: /usr/local
+      volumes:
+      - name: kata-volume 
+        hostPath:
+          path: /usr/local
