@@ -1,4 +1,4 @@
-## Please note: if you are using OCP 4.6 please follow this [README](https://github.com/openshift/kata-operator/blob/release-4.6/README.md)
+## :information_source: If you are using OCP 4.6 please follow this [README](https://github.com/openshift/kata-operator/blob/release-4.6/README.md)
 
 # Kata Operator
 
