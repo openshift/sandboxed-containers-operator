@@ -161,8 +161,11 @@ func (r *ReconcileKataConfigOpenShift) isOldestCR() (bool, error) {
 }
 
 func (r *ReconcileKataConfigOpenShift) processDaemonsetForCR(operation DaemonOperation) *appsv1.DaemonSet {
-	runPrivileged := true
-	var runAsUser int64 = 0
+	var (
+		runPrivileged = true
+		configmapOptional = true
+		runAsUser int64 = 0
+	)
 
 	dsName := "kata-operator-daemon-" + string(operation)
 	labels := map[string]string{
@@ -219,6 +222,20 @@ func (r *ReconcileKataConfigOpenShift) processDaemonsetForCR(operation DaemonOpe
 								{
 									Name:      "hostroot",
 									MountPath: "/host",
+								},
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name: "KATA_PAYLOAD_IMAGE",
+									ValueFrom: &corev1.EnvVarSource{
+										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: "payload-config",
+											},
+											Key:      "daemon.payload",
+											Optional: &configmapOptional,
+										},
+									},
 								},
 							},
 						},
