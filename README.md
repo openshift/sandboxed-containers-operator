@@ -20,7 +20,7 @@ An operator to perform lifecycle management (install/upgrade/uninstall) of [Kata
 3. Install the Kata Operator on the cluster,
 
    ```
-   make install && make deploy IMG=quay.io/harpatil/kata-operator:0.4
+   make install && make deploy IMG=quay.io/isolatedcontainers/kata-operator:4.7
    oc adm policy add-scc-to-user privileged -z default -n kata-operator-system
    ```
 4. To begin the installation of the kata runtime on the cluster,
