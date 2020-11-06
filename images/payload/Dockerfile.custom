@@ -1,0 +1,29 @@
+FROM centos:8.2.2004 as katapackages
+
+ADD CentOS-8-Virt-SIG-Advanced-Virtualization.repo /etc/yum.repos.d/CentOS-8-Virt-SIG-Advanced-Virtualization.repo
+ADD CentOS-8-Virt-SIG-Kata-Containers.repo /etc/yum.repos.d/CentOS-8-Virt-SIG-Kata-Containers.repo
+WORKDIR /usr/src/kata-containers
+ADD packages/ packages
+
+#Call `dnf install` early like this, otherwise the successful transaction would
+#cleanup the packages downloaded, down in this file.
+RUN dnf install -y createrepo
+
+RUN ls -lR /usr/src/kata-containers/
+RUN createrepo /usr/src/kata-containers/packages
+
+COPY . .
+
+############################
+# STEP 2 build a small image
+############################
+FROM scratch
+
+WORKDIR /
+
+COPY --from=katapackages /usr/src/kata-containers/packages  packages/
+
+COPY packages.repo .
+COPY kata-cleanup.sh .
+
+
