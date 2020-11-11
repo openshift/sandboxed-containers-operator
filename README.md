@@ -39,7 +39,7 @@ oc describe kataconfig example-kataconfig
 and look at the field 'Completed nodes' in the status. If the value matches the number of worker nodes the installation is completed.
 
 #### Runtime Class
-Once the kata runtime binaries are successfully installed on the intended workers, Kata Operator will create a [runtime class](https://kubernetes.io/docs/concepts/containers/runtime-class/) `kata-oc`. This runtime class can be used to deploy the pods that will use the Kata Runtime.
+Once the kata runtime binaries are successfully installed on the intended workers, Kata Operator will create a [runtime class](https://kubernetes.io/docs/concepts/containers/runtime-class/) `kata`. This runtime class can be used to deploy the pods that will use the Kata Runtime.
 
 #### Run an Example Pod using the Kata Runtime
 ```

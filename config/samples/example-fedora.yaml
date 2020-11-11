@@ -13,4 +13,4 @@ spec:
         - containerPort: 8080
       command: ["python3"]
       args: [ "-m", "http.server", "8080"]
-  runtimeClassName: kata-oc
+  runtimeClassName: kata
