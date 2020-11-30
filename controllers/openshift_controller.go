@@ -33,6 +33,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	nodeapi "k8s.io/api/node/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -447,6 +448,14 @@ func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
 				Name: runtimeClassName,
 			},
 			Handler: runtimeClassName,
+			// Use same values for Pod Overhead as upstream kata-deploy using, see
+			// https://github.com/kata-containers/packaging/blob/f17450317563b6e4d6b1a71f0559360b37783e19/kata-deploy/k8s-1.18/kata-runtimeClasses.yaml#L7
+			Overhead: &nodeapi.Overhead{
+				PodFixed: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("250m"),
+					corev1.ResourceMemory: resource.MustParse("160Mi"),
+				},
+			},
 		}
 
 		if r.kataConfig.Spec.KataConfigPoolSelector != nil {
