@@ -26,6 +26,7 @@ type KataConfigSpec struct {
 	// KataConfigPoolSelector is used to filer the worker nodes
 	// if not specified, all worker nodes are selected
 	// +optional
+	// +nullable
 	KataConfigPoolSelector *metav1.LabelSelector `json:"kataConfigPoolSelector"`
 
 	// +optional
@@ -68,6 +69,7 @@ type KataConfig struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// +optional
+	// +nullable
 	Spec   KataConfigSpec   `json:"spec,omitempty"`
 	Status KataConfigStatus `json:"status,omitempty"`
 }
