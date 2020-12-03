@@ -380,9 +380,18 @@ func installRPMs(k *KataOpenShift) error {
 		fmt.Println(err)
 	}
 
-	srcRef, err := alltransports.ParseImageName("docker://quay.io/isolatedcontainers/kata-operator-payload:" + k.PayloadTag)
+	payloadImage := os.Getenv("KATA_PAYLOAD_IMAGE")
+	if payloadImage == "" {
+		payloadImage = "docker://quay.io/isolatedcontainers/kata-operator-payload:" + k.PayloadTag
+	} else {
+		log.Println("WARNING: kataconfig installation is tainted")
+		log.Println("Using env variable KATA_PAYLOAD_IMAGE " + payloadImage)
+		payloadImage = "docker://" + payloadImage
+	}
+
+	srcRef, err := alltransports.ParseImageName(payloadImage)
 	if err != nil {
-		fmt.Println("Invalid source name")
+		fmt.Println("Invalid source name of payload container image: " + payloadImage)
 		return err
 	}
 	destRef, err := alltransports.ParseImageName("oci:/opt/kata-install/kata-image:latest")
