@@ -22,8 +22,11 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
@@ -40,6 +43,7 @@ import (
 var cfg *rest.Config
 var k8sClient client.Client
 var testEnv *envtest.Environment
+var k8sManager ctrl.Manager
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -62,13 +66,34 @@ var _ = BeforeSuite(func(done Done) {
 	Expect(err).ToNot(HaveOccurred())
 	Expect(cfg).ToNot(BeNil())
 
-	err = kataconfigurationv1.AddToScheme(scheme.Scheme)
+	s := scheme.Scheme
+
+	s.AddKnownTypes(appsv1.SchemeGroupVersion, &appsv1.DaemonSet{})
+	s.AddKnownTypes(corev1.SchemeGroupVersion, &corev1.NodeList{})
+
+	err = kataconfigurationv1.AddToScheme(s)
+
 	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:scheme
 
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
+		Scheme: scheme.Scheme,
+	})
 	Expect(err).ToNot(HaveOccurred())
+
+	err = (&KataConfigOpenShiftReconciler{
+		Client: k8sManager.GetClient(),
+		Log:    ctrl.Log.WithName("controllers").WithName("KataConfig"),
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	go func() {
+		err = k8sManager.Start(ctrl.SetupSignalHandler())
+		Expect(err).ToNot(HaveOccurred())
+	}()
+
+	k8sClient = k8sManager.GetClient()
 	Expect(k8sClient).ToNot(BeNil())
 
 	close(done)
