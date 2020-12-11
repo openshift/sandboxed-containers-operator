@@ -253,7 +253,7 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool 
 	return mcp
 }
 
-func (r *KataConfigOpenShiftReconciler) newMCForCR() (*mcfgv1.MachineConfig, error) {
+func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
 	isenabled := true
 	name := "kata-osbuilder-generate.service"
 	content := `
@@ -268,12 +268,17 @@ ExecRestart=/usr/libexec/kata-containers/osbuilder/kata-osbuilder.sh
 WantedBy=multi-user.target
 `
 
-	var workerRole string
+	kataOC, err := r.kataOcExists()
+	if err != nil {
+		return nil, err
+	}
 
-	if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/worker"]; ok {
-		workerRole = "worker"
+	if kataOC {
+		machinePool = "kata-oc"
+	} else if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/"+machinePool]; ok {
+		r.Log.Info("in newMCforCR machinePool" + machinePool)
 	} else {
-		workerRole = "kata-oc"
+		r.Log.Error(err, "no valid role for mc found")
 	}
 
 	file := ignTypes.File{}
@@ -316,7 +321,7 @@ WantedBy=multi-user.target
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "50-kata-crio-dropin",
 			Labels: map[string]string{
-				"machineconfiguration.openshift.io/role": workerRole,
+				"machineconfiguration.openshift.io/role": machinePool,
 				"app":                                    r.kataConfig.Name,
 			},
 			Namespace: "kata-operator",
@@ -392,14 +397,54 @@ func (r *KataConfigOpenShiftReconciler) listKataPods() error {
 	return nil
 }
 
+func (r *KataConfigOpenShiftReconciler) kataOcExists() (bool, error) {
+	kataOcMcp := &mcfgv1.MachineConfigPool{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "kata-oc"}, kataOcMcp)
+	if err != nil && errors.IsNotFound(err) {
+		r.Log.Info("No kata-oc machine config pool found!")
+		return false, nil
+	} else if err != nil {
+		r.Log.Error(err, "Could not get the kata-oc machine config pool!")
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (r *KataConfigOpenShiftReconciler) workerOrMaster() (string, error) {
+	var role string
+	workerMcp := &mcfgv1.MachineConfigPool{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "worker"}, workerMcp)
+	if err != nil && errors.IsNotFound(err) {
+		r.Log.Error(err, "No worker machine config pool found!")
+		return "", err
+	} else if err != nil {
+		r.Log.Error(err, "Could not get the worker machine config pool!")
+		return "", err
+	}
+
+	if workerMcp.Status.MachineCount > 0 {
+		role = "worker"
+	} else {
+		role = "master"
+	}
+	return role, nil
+}
+
 func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.Result, error) {
 	if r.kataConfig.Status.TotalNodesCount == 0 {
 
 		nodesList := &corev1.NodeList{}
 
+		/* This could be the case in a compact cluster where master and workers are on the same node */
+		machinePool, err := r.workerOrMaster()
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
 		if r.kataConfig.Spec.KataConfigPoolSelector == nil {
 			r.kataConfig.Spec.KataConfigPoolSelector = &metav1.LabelSelector{
-				MatchLabels: map[string]string{"node-role.kubernetes.io/worker": ""},
+				MatchLabels: map[string]string{"node-role.kubernetes.io/" + machinePool: ""},
 			}
 		}
 
@@ -407,7 +452,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 			client.MatchingLabels(r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels),
 		}
 
-		err := r.Client.List(context.TODO(), nodesList, listOpts...)
+		err = r.Client.List(context.TODO(), nodesList, listOpts...)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -519,6 +564,11 @@ func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
 
 func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.Result, error) {
 	r.Log.Info("KataConfig deletion in progress: ")
+	machinePool, err := r.workerOrMaster()
+	if err != nil {
+		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+	}
+
 	if contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
 		// Get the list of pods that might be running using kata runtime
 		err := r.listKataPods()
@@ -559,7 +609,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 						continue
 					}
 
-					if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/worker"]; !ok {
+					if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/"+machinePool]; !ok {
 						r.Log.Info("Removing the kata pool selector label from the node", "node name ", nodeName)
 						node, err := r.clientset.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
 						if err != nil {
@@ -583,9 +633,9 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 			}
 		}
 
-		r.Log.Info("Making sure parent MCP is synced properly")
-		if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/worker"]; ok {
-			mc, err := r.newMCForCR()
+		r.Log.Info("Making sure parent MCP is synced properly, KataNodeRole=" + machinePool)
+		if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/"+machinePool]; ok {
+			mc, err := r.newMCForCR(machinePool)
 			var isMcDeleted bool
 
 			err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, mc)
@@ -608,7 +658,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 			}
 
 			workreMcp := &mcfgv1.MachineConfigPool{}
-			err = r.Client.Get(context.TODO(), types.NamespacedName{Name: "worker"}, workreMcp)
+			err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, workreMcp)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
@@ -625,7 +675,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 
 				parentMcp := &mcfgv1.MachineConfigPool{}
 
-				err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "worker"}, parentMcp)
+				err := r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, parentMcp)
 				if err != nil && errors.IsNotFound(err) {
 					return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, fmt.Errorf("Not able to find parent pool %s", parentMcp.GetName())
 				} else if err != nil {
@@ -646,7 +696,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 						"mcp", mcp.Name, "error", err)
 				}
 
-				mc, err := r.newMCForCR()
+				mc, err := r.newMCForCR(machinePool)
 				err = r.Client.Delete(context.TODO(), mc)
 				if err != nil {
 					// error during removing mc, don't block the uninstall. Just log the error and move on.
@@ -713,8 +763,13 @@ func (r *KataConfigOpenShiftReconciler) deleteKataDaemonset(operation DaemonOper
 
 func (r *KataConfigOpenShiftReconciler) monitorKataConfigInstallation() (ctrl.Result, error) {
 	r.Log.Info("installation is complete on targetted nodes, now dropping in crio config using MCO")
+	machinePool, err := r.workerOrMaster()
+	if err != nil {
+		return reconcile.Result{}, err
+	}
 
-	if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/worker"]; !ok {
+	if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/"+machinePool]; !ok {
+		r.Log.Info("creating new Mcp")
 		mcp := r.newMCPforCR()
 
 		founcMcp := &mcfgv1.MachineConfigPool{}
@@ -742,7 +797,8 @@ func (r *KataConfigOpenShiftReconciler) monitorKataConfigInstallation() (ctrl.Re
 		}
 	}
 
-	mc, err := r.newMCForCR()
+	r.Log.Info("KataNodeRole is: " + machinePool)
+	mc, err := r.newMCForCR(machinePool)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
