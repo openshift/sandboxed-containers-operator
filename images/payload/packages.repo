@@ -1,0 +1,7 @@
+[packages]
+name=Local kata packages and dependencies repository
+baseurl=file:///opt/kata-install/packages
+enabled=1
+gpgcheck=0
+protect=1
+
