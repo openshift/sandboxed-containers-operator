@@ -166,7 +166,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForCR(operation DaemonOp
 					Containers: []corev1.Container{
 						{
 							Name:            "kata-install-pod",
-							Image:           "quay.io/isolatedcontainers/kata-operator-daemon:4.7",
+							Image:           "quay.io/isolatedcontainers/kata-operator-daemon@sha256:e34f796499ad304b82833904c27aa1fef837df5ec33851a14a722bc2c4eeaea3",
 							ImagePullPolicy: "Always",
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
