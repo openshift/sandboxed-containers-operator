@@ -12,6 +12,7 @@ import (
 	"github.com/containers/image/v5/copy"
 	"github.com/containers/image/v5/signature"
 	"github.com/containers/image/v5/transports/alltransports"
+	"github.com/containers/image/v5/types"
 	"github.com/coreos/go-semver/semver"
 	"github.com/opencontainers/image-tools/image"
 	confv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
@@ -47,10 +48,10 @@ func (k *KataOpenShift) Install(kataConfigResourceName string) error {
 	if k.KataInstallChecker == nil {
 		k.KataInstallChecker = func() (bool, bool, error) {
 			var (
-				isKataInstalled bool
+				isKataInstalled       bool
 				isCrioDropInInstalled bool
-				err error
-				kataConfig kataTypes.KataConfig
+				err                   error
+				kataConfig            kataTypes.KataConfig
 			)
 
 			err = k.KataClient.Get(context.Background(), client.ObjectKey{
@@ -196,10 +197,10 @@ func (k *KataOpenShift) Uninstall(kataConfigResourceName string) error {
 		k.KataUninstallChecker = func() (bool, bool, error) {
 
 			var (
-				isKataUnInstalled bool
+				isKataUnInstalled       bool
 				isCrioDropInUnInstalled bool
-				err error
-				kataConfig kataTypes.KataConfig
+				err                     error
+				kataConfig              kataTypes.KataConfig
 			)
 
 			err = k.KataClient.Get(context.Background(), client.ObjectKey{
@@ -381,12 +382,23 @@ func installRPMs(k *KataOpenShift) error {
 	}
 
 	payloadImage := os.Getenv("KATA_PAYLOAD_IMAGE")
-	if payloadImage == "" {
-		payloadImage = "docker://quay.io/isolatedcontainers/kata-operator-payload:" + k.PayloadTag
-	} else {
-		log.Println("WARNING: kataconfig installation is tainted")
+	sourceCtx := &types.SystemContext{}
+	if payloadImage != "" {
+		username := strings.Replace(os.Getenv("PAYLOAD_REGISTRY_USERNAME"), "\n", "", -1)
+		password := strings.Replace(os.Getenv("PAYLOAD_REGISTRY_PASSWORD"), "\n", "", -1)
+		if username != "" && password != "" {
+			sourceCtx = &types.SystemContext{
+				DockerAuthConfig: &types.DockerAuthConfig{
+					Username: username,
+					Password: password,
+				},
+			}
+		}
+		log.Println("WARNING: private payload image in use")
 		log.Println("Using env variable KATA_PAYLOAD_IMAGE " + payloadImage)
 		payloadImage = "docker://" + payloadImage
+	} else {
+		payloadImage = "docker://quay.io/isolatedcontainers/kata-operator-payload:" + k.PayloadTag
 	}
 
 	srcRef, err := alltransports.ParseImageName(payloadImage)
@@ -400,7 +412,18 @@ func installRPMs(k *KataOpenShift) error {
 		return err
 	}
 
-	_, err = copy.Image(context.Background(), policyContext, destRef, srcRef, &copy.Options{})
+	_, err = copy.Image(context.Background(), policyContext, destRef, srcRef,
+		&copy.Options{SourceCtx: sourceCtx})
+
+	if err != nil {
+		fmt.Println("Error occured when downloading payload image:")
+		fmt.Println(err)
+		if os.Getenv("PAYLOAD_REGISTRY_USERNAME") != "" {
+			fmt.Println("payload secret env vars are set and used. Please check the credentials used?")
+		}
+		return err
+	}
+
 	err = image.CreateRuntimeBundleLayout("/opt/kata-install/kata-image/",
 		"/usr/local/kata", "latest", "linux", []string{"name=latest"})
 	if err != nil {
