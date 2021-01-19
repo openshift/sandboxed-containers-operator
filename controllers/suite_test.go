@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -57,8 +58,15 @@ var _ = BeforeSuite(func(done Done) {
 	logf.SetLogger(zap.LoggerTo(GinkgoWriter, true))
 
 	By("bootstrapping test environment")
-	testEnv = &envtest.Environment{
-		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases")},
+	t := true
+	if os.Getenv("TEST_USE_EXISTING_CLUSTER") == "true" {
+		testEnv = &envtest.Environment{
+			UseExistingCluster: &t,
+		}
+	} else {
+		testEnv = &envtest.Environment{
+			CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases")},
+		}
 	}
 
 	var err error
