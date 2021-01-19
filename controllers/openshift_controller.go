@@ -127,6 +127,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForCR(operation DaemonOp
 		runPrivileged           = true
 		configmapOptional       = true
 		runAsUser         int64 = 0
+		trueValue               = true
 	)
 
 	dsName := "kata-operator-daemon-" + string(operation)
@@ -187,6 +188,30 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForCR(operation DaemonOp
 								},
 							},
 							Env: []corev1.EnvVar{
+								{
+									Name: "PAYLOAD_REGISTRY_USERNAME",
+									ValueFrom: &corev1.EnvVarSource{
+										SecretKeyRef: &corev1.SecretKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: "payload-secret",
+											},
+											Key:      "username",
+											Optional: &trueValue,
+										},
+									},
+								},
+								{
+									Name: "PAYLOAD_REGISTRY_PASSWORD",
+									ValueFrom: &corev1.EnvVarSource{
+										SecretKeyRef: &corev1.SecretKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: "payload-secret",
+											},
+											Key:      "password",
+											Optional: &trueValue,
+										},
+									},
+								},
 								{
 									Name: "KATA_PAYLOAD_IMAGE",
 									ValueFrom: &corev1.EnvVarSource{
