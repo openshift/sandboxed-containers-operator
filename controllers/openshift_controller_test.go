@@ -52,38 +52,6 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 			By("Creating marking the second KataConfig CR correctly")
 			Expect(kataconfig2.Status.InstallationStatus.Failed.FailedNodesCount).Should(Equal(-1))
 		})
-		It("Should return master in combined master/worker cluster", func() {
-			const (
-				name = "example-kataconfig"
-			)
-
-			kataconfig := &kataconfigurationv1.KataConfig{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "kataconfiguration.openshift.io/v1",
-					Kind:       "KataConfig",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name: name,
-				},
-			}
-
-			key := types.NamespacedName{
-				Name:      "example-kataconfig",
-				Namespace: "kata-operator-system",
-			}
-
-			const timeout = time.Second * 30
-			const interval = time.Second * 1
-
-			By("Creating the KataConfig CR successfully")
-			Expect(k8sClient.Create(context.Background(), kataconfig)).Should(Succeed())
-			time.Sleep(time.Second * 5)
-
-			exampleKataconfig := &kataconfigurationv1.KataConfig{}
-			Eventually(func() bool {
-				k8sClient.Get(context.Background(), key, exampleKataconfig)
-				return exampleKataconfig.Status.TotalNodesCount == exampleKataconfig.Status.InstallationStatus.Completed.CompletedNodesCount
-			}, timeout, interval).Should(BeTrue())
-		})
 	})
+
 })
