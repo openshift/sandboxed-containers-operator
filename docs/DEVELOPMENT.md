@@ -18,6 +18,35 @@ change
 
     daemon.payload: quay.io/<username>/mykatapayload:mytag
 
+## Payload container images in private repositories
+
+When a payload image is stored in a private repository the daemon
+needs to authenticate with the registry to be able to download it.
+
+There are two environment variables defined in the daemons pod specification.
+These variables are populated by a Kubernetes secret that the user can create.
+It has to be created before the daemon pods are created.
+
+Steps to use a payload image in a private repository:
+
+1. deploy the operator as usual
+2. create the payload configmap and set daemon.payload to the path in
+   the private repository, for example
+   quay.io/jensfr/kata-operator-payload:special
+3. create the kubernetes secret with the credentials to above private
+   repository. An example:
+
+   apiVersion: v1
+     kind: Secret
+   metadata:
+     name: payload-secret   <- has to have this exact name
+   data:
+     username: ajVXe2ZyCg=y <- base64 encoded
+     password: emFmekIaOKMN <- base64 encoded
+
+4. create the Kataconfig custom ressource. From here on the
+   installation works as usual.
+
 ## How to create a custom payload container image
 
 Based on an existing and known to work set of RPMs it is possible to replace
