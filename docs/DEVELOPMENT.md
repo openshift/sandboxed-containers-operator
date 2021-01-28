@@ -36,6 +36,7 @@ Steps to use a payload image in a private repository:
 3. create the kubernetes secret with the credentials to above private
    repository. An example:
 
+```
    apiVersion: v1
      kind: Secret
    metadata:
@@ -43,7 +44,7 @@ Steps to use a payload image in a private repository:
    data:
      username: ajVXe2ZyCg=y <- base64 encoded
      password: emFmekIaOKMN <- base64 encoded
-
+```
 4. create the Kataconfig custom ressource. From here on the
    installation works as usual.
 
