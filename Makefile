@@ -71,7 +71,7 @@ generate: controller-gen
 
 # Build the docker image
 docker-build: test
-	docker build . -t ${IMG}
+	podman build --squash-all --no-cache . -t ${IMG}
 
 # Push the docker image
 docker-push:
