@@ -47,9 +47,15 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 			time.Sleep(time.Second * 5)
 
 			kataConfig2Key := types.NamespacedName{Name: kataconfig2.Name}
-			Expect(k8sClient.Get(context.Background(), kataConfig2Key, kataconfig2)).Should(Succeed())
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), kataConfig2Key, kataconfig2)
+				if err != nil {
+					return false
+				}
+				return true
+			}, 5, time.Second).Should(BeTrue())
 
-			By("Creating marking the second KataConfig CR correctly")
+			By("Creating and marking the second KataConfig CR correctly")
 			Expect(kataconfig2.Status.InstallationStatus.Failed.FailedNodesCount).Should(Equal(-1))
 		})
 	})
