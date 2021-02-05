@@ -106,9 +106,39 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 				},
 			}
 
-			By("Creating the KataConfig CR successfully")
+			By("Creating the KataConfig CR with custom node selector label successfully")
 			Expect(k8sClient.Create(context.Background(), kataconfig)).Should(Succeed())
 			time.Sleep(time.Second * 5)
+
+			kataconfig2 := &kataconfigurationv1.KataConfig{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "kataconfiguration.openshift.io/v1",
+					Kind:       "KataConfig",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name + "2",
+				},
+				Spec: kataconfigurationv1.KataConfigSpec{
+					KataConfigPoolSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"kata": "true"},
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(context.Background(), kataconfig2)).Should(Succeed())
+			time.Sleep(time.Second * 5)
+
+			kataConfig2Key := types.NamespacedName{Name: kataconfig2.Name}
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), kataConfig2Key, kataconfig2)
+				if err != nil {
+					return false
+				}
+				return true
+			}, 5, time.Second).Should(BeTrue())
+
+			By("Creating and marking the second KataConfig CR with same custom node selector label correctly")
+			Expect(kataconfig2.Status.InstallationStatus.Failed.FailedNodesCount).Should(Equal(-1))
 
 		})
 	})
