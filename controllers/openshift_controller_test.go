@@ -84,5 +84,33 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 			}, 5, time.Second).ShouldNot(Succeed())
 		})
 	})
+	Context("Custom KataConfig create", func() {
+		It("Should support KataConfig with custom node selector label", func() {
+
+			const (
+				name = "example-kataconfig"
+			)
+
+			kataconfig := &kataconfigurationv1.KataConfig{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "kataconfiguration.openshift.io/v1",
+					Kind:       "KataConfig",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name,
+				},
+				Spec: kataconfigurationv1.KataConfigSpec{
+					KataConfigPoolSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"kata": "true"},
+					},
+				},
+			}
+
+			By("Creating the KataConfig CR successfully")
+			Expect(k8sClient.Create(context.Background(), kataconfig)).Should(Succeed())
+			time.Sleep(time.Second * 5)
+
+		})
+	})
 
 })
