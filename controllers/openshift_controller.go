@@ -375,6 +375,7 @@ func generateDropinConfig(handlerName string) (string, error) {
   runtime_path = "/usr/bin/containerd-shim-kata-v2"
   runtime_type = "vm"
   runtime_root = "/run/vc"
+  privileged_without_host_devices = true
   
 [crio.runtime.runtimes.runc]
   runtime_path = ""
