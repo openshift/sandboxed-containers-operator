@@ -25,7 +25,7 @@ import (
 	"text/template"
 	"time"
 
-	ignTypes "github.com/coreos/ignition/config/v2_2/types"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	kataconfigurationv1 "github.com/openshift/kata-operator/api/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -307,27 +307,27 @@ WantedBy=multi-user.target
 	}
 
 	file := ignTypes.File{}
-	c := ignTypes.FileContents{}
+	c := file.Contents
 
 	dropinConf, err := generateDropinConfig(r.kataConfig.Status.RuntimeClass)
 	if err != nil {
 		return nil, err
 	}
 
-	c.Source = "data:text/plain;charset=utf-8;base64," + dropinConf
+	dropinFile := "data:text/plain;charset=utf-8;base64," + dropinConf
+	c.Source = &dropinFile
 	file.Contents = c
-	file.Filesystem = "root"
 	m := 420
 	file.Mode = &m
 	file.Path = "/etc/crio/crio.conf.d/50-kata.conf"
 
 	ic := ignTypes.Config{
 		Ignition: ignTypes.Ignition{
-			Version: "2.2.0",
+			Version: "3.2.0",
 		},
 		Systemd: ignTypes.Systemd{
 			Units: []ignTypes.Unit{
-				{Name: name, Enabled: &isenabled, Contents: content},
+				{Name: name, Enabled: &isenabled, Contents: &content},
 			},
 		},
 	}
