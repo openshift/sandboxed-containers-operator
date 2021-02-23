@@ -1,5 +1,6 @@
 ## :information_source: If you are using OCP 4.6 please follow this [README](https://github.com/openshift/kata-operator/blob/release-4.6/README.md)
 [FIXME: remove. test commit to trigger build]
+[another test to trigger the daemon image build]
 # Kata Operator
 
 An operator to perform lifecycle management (install/upgrade/uninstall) of [Kata Runtime](https://katacontainers.io/) on Openshift as well as Kubernetes cluster.
