@@ -1,25 +1,25 @@
 ## :information_source: If you are using OCP 4.7 please follow this [README](https://github.com/openshift/sandboxed-containers-operator/blob/release-4.7/README.md)
 ## :information_source: If you are using OCP 4.6 please follow this [README](https://github.com/openshift/sandboxed-containers-operator/blob/release-4.6/README.md)
 
-# Kata Operator
+# OpenShift sandboxed containers operator
 
 An operator to perform lifecycle management (install/upgrade/uninstall) of [Kata Runtime](https://katacontainers.io/) on Openshift as well as Kubernetes cluster.
 
-## Installing the Kata Runtime on the Cluster using Kata Operator
+## Installing the Kata Runtime on the Cluster using OpenShift sandboxed containers operator
 
 ### Openshift
 
 #### with a git repo checkout
 1. Make sure that `oc` is configured to talk to the cluster
 
-2. Clone the Kata Operator repository and check out the branch matching with the Openshift version. e.g. If you are running Openshift 4.7 then,
+2. Clone the sandboxed containers operator repository and check out the branch matching with the Openshift version. e.g. If you are running Openshift 4.7 then,
 
 
    ```
    git clone https://github.com/openshift/sandboxed-containers-operator 
    git checkout -b master --track origin/master
    ```
-3. Install the Kata Operator on the cluster,
+3. Install the sandboxed containers operator on the cluster,
 
    ```
    make install && make deploy IMG=quay.io/isolatedcontainers/kata-operator:4.7
@@ -37,7 +37,7 @@ An operator to perform lifecycle management (install/upgrade/uninstall) of [Kata
 2. To deploy the operator and create a custom resource (which installs Kata on all worker nodes), run
    ``` curl https://raw.githubusercontent.com/openshift/sandboxed-containers-operator/master/deploy/install.sh | bash ```
 
-  This will create all necessary resources, deploy the kata-operator and also create a custom resource.
+  This will create all necessary resources, deploy the sandboxed-containers-operator and also create a custom resource.
   See deploy/deploy.sh and deploy/deployment.yaml for details.
 
   To only deploy the operator without automatically creating a kataconfig custom resource just run
@@ -56,7 +56,7 @@ oc describe kataconfig example-kataconfig
 and look at the field 'Completed nodes' in the status. If the value matches the number of worker nodes the installation is completed.
 
 #### Runtime Class
-Once the kata runtime binaries are successfully installed on the intended workers, Kata Operator will create a [runtime class](https://kubernetes.io/docs/concepts/containers/runtime-class/) `kata`. This runtime class can be used to deploy the pods that will use the Kata Runtime.
+Once the kata runtime binaries are successfully installed on the intended workers, the sandboxed containers operator will create a [runtime class](https://kubernetes.io/docs/concepts/containers/runtime-class/) `kata`. This runtime class can be used to deploy the pods that will use the Kata Runtime.
 
 #### Run an Example Pod using the Kata Runtime
 ```
@@ -106,12 +106,12 @@ oc delete kataconfig example-kataconfig
 ### Openshift
 1. During the installation you can watch the values of the kataconfig CR. Do `watch oc describe kataconfig example-kataconfig`.
 2. To check if the nodes in the machine config pool are going through a config update watch the machine config pool resource. For this do `watch oc get mcp kata-oc`
-3. Check the logs of the kata-operator controller pod to see detailled messages about what the steps it is executing. To find out the name of the controller pod, `oc get pods -n kata-operator-system | grep kata-operator-controller-manager` and then monitor the logs of the container `manager` in that pod. 
+3. Check the logs of the sandboxed containers operator controller pod to see detailled messages about what the steps it is executing. To find out the name of the controller pod, `oc get pods -n kata-operator-system | grep kata-operator-controller-manager` and then monitor the logs of the container `manager` in that pod. 
 
 ## Components
 
 ### Openshift
-The kata-operator uses three containers:
+The sandboxed containers operator uses three containers:
 
 Container image name | Description | Container repository
 ---------------| ----------- | ----------
