@@ -1,4 +1,5 @@
-## :information_source: If you are using OCP 4.6 please follow this [README](https://github.com/openshift/kata-operator/blob/release-4.6/README.md)
+## :information_source: If you are using OCP 4.7 please follow this [README](https://github.com/openshift/sandboxed-containers-operator/blob/release-4.7/README.md)
+## :information_source: If you are using OCP 4.6 please follow this [README](https://github.com/openshift/sandboxed-containers-operator/blob/release-4.6/README.md)
 
 # Kata Operator
 
@@ -15,7 +16,7 @@ An operator to perform lifecycle management (install/upgrade/uninstall) of [Kata
 
 
    ```
-   git clone https://github.com/openshift/kata-operator 
+   git clone https://github.com/openshift/sandboxed-containers-operator 
    git checkout -b master --track origin/master
    ```
 3. Install the Kata Operator on the cluster,
@@ -34,16 +35,16 @@ An operator to perform lifecycle management (install/upgrade/uninstall) of [Kata
 1. Make sure that `oc` is configured to talk to the cluster
 
 2. To deploy the operator and create a custom resource (which installs Kata on all worker nodes), run
-   ``` curl https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/install.sh | bash ```
+   ``` curl https://raw.githubusercontent.com/openshift/sandboxed-containers-operator/master/deploy/install.sh | bash ```
 
   This will create all necessary resources, deploy the kata-operator and also create a custom resource.
   See deploy/deploy.sh and deploy/deployment.yaml for details.
 
   To only deploy the operator without automatically creating a kataconfig custom resource just run
-  ``` curl https://raw.githubusercontent.com/openshift/kata-operator/master/deploy/deploy.sh | bash ```
+  ``` curl https://raw.githubusercontent.com/openshift/sandboxed-containers-operator/master/deploy/deploy.sh | bash ```
 
   You can then create the CR and start the installation with
-  ``` oc apply -f https://raw.githubusercontent.com/openshift/kata-operator/master/config/samples/kataconfiguration_v1_kataconfig.yaml ```
+  ``` oc apply -f https://raw.githubusercontent.com/openshift/sandboxed-containers-operator/master/config/samples/kataconfiguration_v1_kataconfig.yaml ```
 
    Please follow [this](#selectively-install-the-kata-runtime-on-specific-workers) section if you wish to install the Kata Runtime only on selected worker nodes.
 
