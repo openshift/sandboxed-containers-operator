@@ -1,4 +1,4 @@
-# Hacking on the kata-operator
+# Hacking on the sandboxed-containers-operator
 
 ## Using a custom kata-operator-payload image
 
