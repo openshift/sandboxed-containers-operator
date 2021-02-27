@@ -1,0 +1,14 @@
+FROM docker.io/fedora:33 AS builder
+
+RUN dnf install -y git golang device-mapper-devel gpgme-devel btrfs-progs-devel
+RUN git clone https://github.com/openshift/sandboxed-containers-operator
+WORKDIR /sandboxed-containers-operator/images/daemon
+RUN go build -v -o image/daemon cmd/daemon/main.go
+RUN cp image/daemon /daemon
+
+FROM docker.io/fedora:33
+WORKDIR /
+COPY --from=builder /daemon /daemon
+RUN dnf install -y device-mapper
+RUN mkdir -p /etc/containers
+COPY policy.json /etc/containers/policy.json
