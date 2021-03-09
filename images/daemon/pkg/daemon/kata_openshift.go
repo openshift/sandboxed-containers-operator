@@ -449,7 +449,7 @@ func installRPMs(k *KataOpenShift) error {
 		return err
 	}
 
-	cmd = exec.Command("/bin/bash", "-c", "/usr/bin/rpm-ostree install --idempotent kata-runtime kata-osbuilder")
+	cmd = exec.Command("/bin/bash", "-c", "/usr/bin/rpm-ostree install --idempotent kata-containers")
 	err = doCmd(cmd)
 	if err != nil {
 		return err
