@@ -3,11 +3,11 @@ package daemon
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	kataTypes "github.com/openshift/kata-operator/api/v1"
 
+	"github.com/Showmax/go-fqdn"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -59,7 +59,7 @@ func getFailedNode(err error) (fn kataTypes.FailedNodeStatus, retErr error) {
 }
 
 func getHostName() (string, error) {
-	hostname, err := os.Hostname()
+	hostname, err := fqdn.FqdnHostname()
 	if err != nil {
 		return "", err
 	}

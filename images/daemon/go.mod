@@ -3,6 +3,7 @@ module github.com/openshift/kata-operator-daemon
 go 1.13
 
 require (
+	github.com/Showmax/go-fqdn v1.0.0
 	github.com/containers/image/v5 v5.5.1
 	github.com/coreos/go-semver v0.3.0
 	github.com/dsnet/compress v0.0.1 // indirect
