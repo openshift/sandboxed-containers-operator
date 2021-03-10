@@ -403,7 +403,10 @@ func (r *ReconcileKataConfigOpenShift) addFinalizer() error {
 
 	// Update CR
 	err := r.client.Update(context.TODO(), r.kataConfig)
-	if err != nil {
+	if err != nil && errors.IsConflict(err) {
+		r.kataLogger.Info("Updating kataconfig finalizer failed, will retry")
+		return err
+	} else if err != nil {
 		r.kataLogger.Error(err, "Failed to update KataConfig with finalizer")
 		return err
 	}
@@ -432,7 +435,7 @@ func (r *ReconcileKataConfigOpenShift) kataOcExists() (bool, error) {
 	kataOcMcp := &mcfgv1.MachineConfigPool{}
 	err := r.client.Get(context.TODO(), types.NamespacedName{Name: "kata-oc"}, kataOcMcp)
 	if err != nil && errors.IsNotFound(err) {
-		r.kataLogger.Error(err, "No kata-oc machine config pool found!")
+		r.kataLogger.Info("No kata-oc machine config pool found!")
 		return false, nil
 	} else if err != nil {
 		r.kataLogger.Error(err, "Could not get the kata-oc machine config pool!")
@@ -517,18 +520,24 @@ func (r *ReconcileKataConfigOpenShift) processKataConfigInstallRequest() (reconc
 		if err != nil && errors.IsNotFound(err) {
 			r.kataLogger.Info("Creating a new installation Daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
 			err = r.client.Create(context.TODO(), ds)
+			/* Retry when there was a conflict */
 			if err != nil {
-				return reconcile.Result{}, err
+				if errors.IsConflict(err) {
+					return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+				}
 			}
-		} else if err != nil {
-			return reconcile.Result{}, err
 		}
+		return reconcile.Result{}, err
 	}
 
 	// Add finalizer for this CR
 	if !contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
 		if err := r.addFinalizer(); err != nil {
-			return reconcile.Result{}, err
+			if errors.IsConflict(err) {
+				return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+			} else {
+				return reconcile.Result{}, err
+			}
 		}
 	}
 
