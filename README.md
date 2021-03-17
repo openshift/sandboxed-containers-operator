@@ -12,7 +12,7 @@ An operator to perform lifecycle management (install/upgrade/uninstall) of [Kata
 #### with a git repo checkout
 1. Make sure that `oc` is configured to talk to the cluster
 
-2. Clone the sandboxed containers operator repository and check out the branch matching with the Openshift version. e.g. If you are running Openshift 4.7 then,
+2. Clone the sandboxed containers operator repository and check out the branch matching with the Openshift version. e.g. If you are running Openshift 4.8 then,
 
 
    ```
@@ -22,8 +22,8 @@ An operator to perform lifecycle management (install/upgrade/uninstall) of [Kata
 3. Install the sandboxed containers operator on the cluster,
 
    ```
-   make install && make deploy IMG=quay.io/isolatedcontainers/kata-operator:4.7
-   oc adm policy add-scc-to-user privileged -z default -n kata-operator-system
+   make install && make deploy IMG=quay.io/isolatedcontainers/sandboxed-containers-operator:4.8
+   oc adm policy add-scc-to-user privileged -z default -n sandboxed-containers-operator-system
    ```
 4. To begin the installation of the kata runtime on the cluster,
 
@@ -106,7 +106,7 @@ oc delete kataconfig example-kataconfig
 ### Openshift
 1. During the installation you can watch the values of the kataconfig CR. Do `watch oc describe kataconfig example-kataconfig`.
 2. To check if the nodes in the machine config pool are going through a config update watch the machine config pool resource. For this do `watch oc get mcp kata-oc`
-3. Check the logs of the sandboxed containers operator controller pod to see detailled messages about what the steps it is executing. To find out the name of the controller pod, `oc get pods -n kata-operator-system | grep kata-operator-controller-manager` and then monitor the logs of the container `manager` in that pod. 
+3. Check the logs of the sandboxed containers operator controller pod to see detailled messages about what the steps it is executing. To find out the name of the controller pod, `oc get pods -n sandboxed-containers-operator-system | grep sandboxed-containers-operator-controller-manager` and then monitor the logs of the container `manager` in that pod. 
 
 ## Components
 
@@ -115,9 +115,9 @@ The sandboxed containers operator uses three containers:
 
 Container image name | Description | Container repository
 ---------------| ----------- | ----------
- _kata-operator_ |  It contains the controller part of the operator that watches and manages the kataconfig custom resource. It runs as a cluster scoped container. The operator itself is build with operator-sdk. | https://quay.io/isolatedcontainers/kata-operator
- _kata-operator-daemon_ | The daemon part of the operator that runs on the nodes and performs the actual installation. It pulls down the container kata-operator-payload image. Dockerfile and other content can be found in images/daemon/ subdirectory of this github repository | https://quay.io/isolatedcontainers/kata-operator-daemon
- _kata-operator-payload_ | The payload that is used by the daemon to install the kata binaries and dependencies (like e.g. QEMU). It's a container image with (currently) RPMs in it that will be installed on the chosen worker nodes by the daemon. Dockerfile and other content can be found in images/payload subdirectory of this github repository. | https://quay.io/isolatedcontaineres/kata-operator-payload
+ _sandboxed-containers-operator_ |  It contains the controller part of the operator that watches and manages the kataconfig custom resource. It runs as a cluster scoped container. The operator itself is build with operator-sdk. | https://quay.io/isolatedcontainers/sandboxed-containers-operator
+ _sandboxed-containers-operator-daemon_ | The daemon part of the operator that runs on the nodes and performs the actual installation. It pulls down the container sandboxed-containers-operator-payload image. Dockerfile and other content can be found in images/daemon/ subdirectory of this github repository | https://quay.io/isolatedcontainers/sandboxed-containers-operator-daemon
+ _sandboxed-containers-operator-payload_ | The payload that is used by the daemon to install the kata binaries and dependencies (like e.g. QEMU). It's a container image with (currently) RPMs in it that will be installed on the chosen worker nodes by the daemon. Dockerfile and other content can be found in images/payload subdirectory of this github repository. | https://quay.io/isolatedcontaineres/sandboxed-containers-operator-payload
 
 ## Upgrading Kata
 
@@ -130,4 +130,4 @@ Not implemented yet
 # Build from source
 
 1. Install operator-sdk version 1.0 or above
-2. make docker-build docker-push IMG=quay.io/<yourusername>/kata-operator:<tag>
+2. make docker-build docker-push IMG=quay.io/<yourusername>/sandboxed-containers-operator:<tag>

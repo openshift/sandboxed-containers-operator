@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	kataconfigurationv1 "github.com/openshift/kata-operator/api/v1"
+	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	nodeapi "k8s.io/api/node/v1beta1"
@@ -275,7 +275,7 @@ func (r *KataConfigKubernetesReconciler) processDaemonset(operation DaemonOperat
 	var runAsUser int64 = 0
 	hostPt := corev1.HostPathType("DirectoryOrCreate")
 
-	dsName := "kata-operator-daemon-" + string(operation)
+	dsName := "sandboxed-containers-operator-daemon-" + string(operation)
 	labels := map[string]string{
 		"name": dsName,
 	}
@@ -296,7 +296,7 @@ func (r *KataConfigKubernetesReconciler) processDaemonset(operation DaemonOperat
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      dsName,
-			Namespace: "kata-operator",
+			Namespace: "sandboxed-containers-operator",
 		},
 		Spec: appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
@@ -316,7 +316,7 @@ func (r *KataConfigKubernetesReconciler) processDaemonset(operation DaemonOperat
 					Labels: labels,
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName: "kata-operator",
+					ServiceAccountName: "sandboxed-containers-operator",
 					NodeSelector:       nodeSelector,
 					Containers: []corev1.Container{
 						{

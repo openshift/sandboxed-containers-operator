@@ -1,7 +1,7 @@
 domain: kataconfiguration.openshift.io
 layout: go.kubebuilder.io/v2
-projectName: kata-operator
-repo: github.com/openshift/kata-operator
+projectName: sandboxed-containers-operator
+repo: github.com/openshift/sandboxed-containers-operator
 resources:
 - group: kataconfiguration
   kind: KataConfig

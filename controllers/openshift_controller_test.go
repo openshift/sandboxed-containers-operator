@@ -6,7 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	kataconfigurationv1 "github.com/openshift/kata-operator/api/v1"
+	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )

@@ -1,4 +1,4 @@
-module github.com/openshift/kata-operator
+module github.com/openshift/sandboxed-containers-operator
 
 go 1.13
 
