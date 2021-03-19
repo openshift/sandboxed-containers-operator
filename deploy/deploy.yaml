@@ -506,7 +506,7 @@ spec:
         - --enable-leader-election
         command:
         - /manager
-        image: quay.io/isolatedcontainers/kata-operator:4.7
+        image: quay.io/isolatedcontainers/kata-operator:4.8
         imagePullPolicy: Always
         name: manager
         resources:
