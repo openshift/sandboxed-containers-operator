@@ -1,5 +1,5 @@
 # Current Operator version
-VERSION ?= 4.7.0
+VERSION ?= 4.8.0
 # Default bundle image tag
 BUNDLE_IMG ?= controller-bundle:$(VERSION)
 # Options for 'bundle-build'
@@ -12,7 +12,7 @@ endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
 # Image URL to use all building/pushing image targets
-IMG ?= quay.io/jensfr/kata-operator:4.7.0
+IMG ?= quay.io/isolatedcontainers/sandboxed-containers-operator:4.8.0
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true"
 

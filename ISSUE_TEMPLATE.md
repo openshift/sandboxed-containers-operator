@@ -1,6 +1,6 @@
 <!--
 Before reporting an issue, check our backlog of
-[open issues](https://github.com/openshift/kata-operator/issues)
+[open issues](https://github.com/openshift/sandboxed-containers-operator/issues)
 to see if someone else has already reported it. If so, feel free to add
 your scenario, or additional information, to the discussion. Or simply
 "subscribe" to it to be notified when it is updated.

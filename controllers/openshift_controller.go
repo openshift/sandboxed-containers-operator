@@ -27,8 +27,8 @@ import (
 
 	ignTypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/go-logr/logr"
-	kataconfigurationv1 "github.com/openshift/kata-operator/api/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	nodeapi "k8s.io/api/node/v1beta1"
@@ -130,7 +130,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForCR(operation DaemonOp
 		trueValue               = true
 	)
 
-	dsName := "kata-operator-daemon-" + string(operation)
+	dsName := "sandboxed-containers-operator-daemon-" + string(operation)
 	labels := map[string]string{
 		"name": dsName,
 	}
@@ -151,7 +151,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForCR(operation DaemonOp
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      dsName,
-			Namespace: "kata-operator-system",
+			Namespace: "sandboxed-containers-operator-system",
 		},
 		Spec: appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
@@ -167,7 +167,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForCR(operation DaemonOp
 					Containers: []corev1.Container{
 						{
 							Name:            "kata-install-pod",
-							Image:           "quay.io/isolatedcontainers/kata-operator-daemon@sha256:b38280effcd923d88fc80de8802238ff82bfc5b1a92bfc25cc618d0146b6a04e",
+							Image:           "quay.io/isolatedcontainers/sandboxed-containers-operator-daemon@sha256:84df0ddc078c3dee27074d419f85dae715f8667c95e37ebf01fb7e45b083c721",
 							ImagePullPolicy: "Always",
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
@@ -349,7 +349,7 @@ WantedBy=multi-user.target
 				"machineconfiguration.openshift.io/role": machinePool,
 				"app":                                    r.kataConfig.Name,
 			},
-			Namespace: "kata-operator",
+			Namespace: "sandboxed-containers-operator",
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: runtime.RawExtension{
@@ -497,7 +497,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	if r.kataConfig.Status.KataImage == "" {
 		// TODO - placeholder. This will change in future.
-		r.kataConfig.Status.KataImage = "quay.io/kata-operator/kata-artifacts:1.0"
+		r.kataConfig.Status.KataImage = "quay.io/sandboxed-containers-operator/kata-artifacts:1.0"
 	}
 
 	// Don't create the daemonset if kata is already installed on the cluster nodes

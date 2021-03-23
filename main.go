@@ -29,8 +29,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	kataconfigurationv1 "github.com/openshift/kata-operator/api/v1"
-	"github.com/openshift/kata-operator/controllers"
+	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
+	"github.com/openshift/sandboxed-containers-operator/controllers"
 	// +kubebuilder:scaffold:imports
 )
 

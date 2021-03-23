@@ -24,7 +24,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kataconfigurationv1 "github.com/openshift/kata-operator/api/v1"
+	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 )
 
 // KataConfigReconciler reconciles a KataConfig object

@@ -1,6 +1,6 @@
 # Hacking on the sandboxed-containers-operator
 
-## Using a custom kata-operator-payload image
+## Using a custom sandboxed-containers-operator-payload image
 
 Sometimes we need to test new builds of RPMs, for example to
 verify a bug in QEMU, kata-runtime or other packages.
@@ -32,7 +32,7 @@ Steps to use a payload image in a private repository:
 1. deploy the operator as usual
 2. create the payload configmap and set daemon.payload to the path in
    the private repository, for example
-   quay.io/jensfr/kata-operator-payload:special
+   quay.io/jensfr/sandboxed-containers-operator-payload:special
 3. create the kubernetes secret with the credentials to above private
    repository. An example:
 
@@ -59,9 +59,9 @@ Note: the example below is using podman but docker could be used as well
 
 An example:
 
-1. skopeo copy docker://quay.io/jensfr/kata-operator-payload:4.7.0 oci:/tmp/kata-operator-payload:4.7.0
-2. oci-image-tool unpack --ref name=4.7.0  /tmp/kata-operator-payload kata-operator-payload-unpacked-4.7.0
-3. cp -r /tmp/kata-operator-payload-unpacked-4.7.0/packages $KATA_OPERATOR_REPO/images/payload
+1. skopeo copy docker://quay.io/jensfr/sandboxed-containers-operator-payload:4.7.0 oci:/tmp/sandboxed-containers-operator-payload:4.7.0
+2. oci-image-tool unpack --ref name=4.7.0  /tmp/sandboxed-containers-operator-payload sandboxed-containers-operator-payload-unpacked-4.7.0
+3. cp -r /tmp/sandboxed-containers-operator-payload-unpacked-4.7.0/packages $KATA_OPERATOR_REPO/images/payload
 4. cd $KATA_OPERATOR_REPO/images/payload
 5. replace RPMs in packages/ with custom RPMs
 6. podman build --no-cache -f Dockerfile.custom quay.io/<username>/mykatapayload:mytag

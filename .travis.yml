@@ -46,7 +46,7 @@ jobs:
 
   # Build and push the image for amd64
   - stage: deploy
-    name: Build image for kata-operator-daemon (amd64)
+    name: Build image for sandboxed-containers-operator-daemon (amd64)
     arch: amd64
     deploy:
       provider: script
@@ -58,7 +58,7 @@ jobs:
 
   # Build and push the image for ppc64le
   - stage: deploy
-    name: Build image for kata-operator-daemon (ppc64le)
+    name: Build image for sandboxed-containers-operator-daemon (ppc64le)
     arch: ppc64le
     deploy:
       provider: script
@@ -70,7 +70,7 @@ jobs:
 
   # Build and push the image for s390x
   - stage: deploy
-    name: Build image for kata-operator-daemon (s390x)
+    name: Build image for sandboxed-containers-operator-daemon (s390x)
     arch: s390x
     deploy:
       provider: script
