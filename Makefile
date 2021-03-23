@@ -81,6 +81,10 @@ docker-push:
 podman-build: test
 	podman build --squash-all --no-cache . -t ${IMG}
 
+# Push the docker image, using podman
+podman-push:
+	podman push ${IMG}
+
 # find or download controller-gen
 # download controller-gen if necessary
 controller-gen:
