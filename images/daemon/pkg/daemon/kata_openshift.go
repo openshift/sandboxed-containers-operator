@@ -368,6 +368,10 @@ func installRPMs(k *KataOpenShift) error {
 		log.Fatalf("Unable to chroot to %s: %s", "/host", err)
 	}
 
+	if !nodeCanRunKata() {
+		log.Fatalf("This node cannot run kata")
+	}
+
 	if err := syscall.Chdir("/"); err != nil {
 		log.Fatalf("Unable to chdir to %s: %s", "/", err)
 	}
