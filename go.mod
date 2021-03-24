@@ -5,6 +5,7 @@ go 1.13
 require (
 	github.com/ajeddeloh/go-json v0.0.0-20200220154158-5ae607161559 // indirect
 	github.com/coreos/ignition v0.35.0
+	github.com/coreos/ignition/v2 v2.9.0
 	github.com/go-logr/logr v0.2.1
 	github.com/go-logr/zapr v0.2.0 // indirect
 	github.com/monopole/mdrip v1.0.1
