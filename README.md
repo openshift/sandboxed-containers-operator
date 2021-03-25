@@ -93,6 +93,10 @@ oc apply -f config/samples/example-fedora.yaml
 ## Uninstall
 
 ### Openshift
+Prior to deletion of your kataconfig, it is expected that all existing pods that use kata runtime have been removed.
+The `oc delete` operation will fail if there are pods in the cluster that are still referencing the kata runtime.
+
+
 ```
 oc delete kataconfig <KataConfig_CR_Name>
 ```
