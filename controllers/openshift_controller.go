@@ -549,7 +549,7 @@ func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
 			Overhead: &nodeapi.Overhead{
 				PodFixed: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("250m"),
-					corev1.ResourceMemory: resource.MustParse("160Mi"),
+					corev1.ResourceMemory: resource.MustParse("350Mi"),
 				},
 			},
 		}
