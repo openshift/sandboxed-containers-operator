@@ -408,7 +408,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		}
 	}
 
-	r.Log.Info("Making sure parent MCP is synced properly, KataNodeRole=" + machinePool)
+	r.Log.Info("Making sure parent MCP is synced properly, SCNodeRole=" + machinePool)
 	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
 	if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/"+machinePool]; ok {
 		mc, err := r.newMCForCR(machinePool)
@@ -518,7 +518,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 
 func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.Result, error) {
 	machinePool, err := r.workerOrMaster()
-	fmt.Println("workerorMaster" + machinePool)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -528,6 +527,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		if err := r.addFinalizer(); err != nil {
 			return ctrl.Result{}, err
 		}
+		r.Log.Info("SCNodeRole is: " + machinePool)
 	}
 
 	if r.kataConfig.Spec.KataConfigPoolSelector == nil {
@@ -594,7 +594,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 }
 
 func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (ctrl.Result, error, bool) {
-	r.Log.Info("KataNodeRole is: " + machinePool)
 	mc, err := r.newMCForCR(machinePool)
 	if err != nil {
 		return ctrl.Result{}, err, true
