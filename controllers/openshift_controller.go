@@ -22,17 +22,17 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
-	"text/template"
+	"html/template"
+	"k8s.io/apimachinery/pkg/labels"
 	"time"
 
-	ignTypes "github.com/coreos/ignition/config/v2_2/types"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	nodeapi "k8s.io/api/node/v1beta1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -74,7 +74,7 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(req ctrl.Request) (ctrl.Result
 	r.kataConfig = &kataconfigurationv1.KataConfig{}
 	err := r.Client.Get(context.TODO(), req.NamespacedName, r.kataConfig)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after ctrl request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
@@ -89,161 +89,29 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(req ctrl.Request) (ctrl.Result
 		if !oldest && err != nil {
 			return reconcile.Result{Requeue: true}, err
 		} else if !oldest && err == nil {
+			r.Log.Info("not oldest CR")
 			return reconcile.Result{}, nil
 		}
 
 		// Check if the KataConfig instance is marked to be deleted, which is
 		// indicated by the deletion timestamp being set.
 		if r.kataConfig.GetDeletionTimestamp() != nil {
-			return r.processKataConfigDeleteRequest()
-		}
-
-		// if we are using openshift then make sure that MCO related things are
-		// handled only after kata binaries are installed on the nodes
-		if r.kataConfig.Status.TotalNodesCount > 0 &&
-			len(r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList) == r.kataConfig.Status.TotalNodesCount {
-			return r.monitorKataConfigInstallation()
-		}
-
-		// Once all the nodes have installed kata binaries and configured the CRI runtime create the runtime class
-		if r.kataConfig.Status.TotalNodesCount > 0 &&
-			r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount == r.kataConfig.Status.TotalNodesCount &&
-			r.kataConfig.Status.RuntimeClass == "" {
-
-			err := r.deleteKataDaemonset(InstallOperation)
-			if err != nil {
-				return ctrl.Result{}, err
+			res, err := r.processKataConfigDeleteRequest()
+			updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
+			if updateErr != nil {
+				return ctrl.Result{}, updateErr
 			}
-
-			return r.setRuntimeClass()
+			return res, err
 		}
-		// Intiate the installation of kata runtime on the nodes if it doesn't exist already
-		return r.processKataConfigInstallRequest()
+
+		res, err := r.processKataConfigInstallRequest()
+		updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
+		if updateErr != nil {
+			return ctrl.Result{}, updateErr
+		}
+
+		return res, err
 	}()
-}
-
-func (r *KataConfigOpenShiftReconciler) processDaemonsetForCR(operation DaemonOperation) *appsv1.DaemonSet {
-	var (
-		runPrivileged           = true
-		configmapOptional       = true
-		runAsUser         int64 = 0
-		trueValue               = true
-	)
-
-	dsName := "sandboxed-containers-operator-daemon-" + string(operation)
-	labels := map[string]string{
-		"name": dsName,
-	}
-
-	var nodeSelector map[string]string
-	if r.kataConfig.Spec.KataConfigPoolSelector != nil {
-		nodeSelector = r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels
-	} else {
-		nodeSelector = map[string]string{
-			"node-role.kubernetes.io/worker": "",
-		}
-	}
-
-	return &appsv1.DaemonSet{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "apps/v1",
-			Kind:       "DaemonSet",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      dsName,
-			Namespace: "sandboxed-containers-operator-system",
-		},
-		Spec: appsv1.DaemonSetSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-				},
-				Spec: corev1.PodSpec{
-					ServiceAccountName: "default",
-					NodeSelector:       nodeSelector,
-					Containers: []corev1.Container{
-						{
-							Name:            "kata-install-pod",
-							Image:           "quay.io/isolatedcontainers/sandboxed-containers-operator-daemon@sha256:84df0ddc078c3dee27074d419f85dae715f8667c95e37ebf01fb7e45b083c721",
-							ImagePullPolicy: "Always",
-							SecurityContext: &corev1.SecurityContext{
-								Privileged: &runPrivileged,
-								RunAsUser:  &runAsUser,
-							},
-							Lifecycle: &corev1.Lifecycle{
-								PreStop: &corev1.Handler{
-									Exec: &corev1.ExecAction{
-										Command: []string{"/bin/sh", "-c", "rm -rf /host/opt/kata-install /host/usr/local/kata/"},
-									},
-								},
-							},
-							Command: []string{"/bin/sh", "-c", fmt.Sprintf("/daemon --resource %s --operation %s", r.kataConfig.Name, operation)},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "hostroot",
-									MountPath: "/host",
-								},
-							},
-							Env: []corev1.EnvVar{
-								{
-									Name: "PAYLOAD_REGISTRY_USERNAME",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "payload-secret",
-											},
-											Key:      "username",
-											Optional: &trueValue,
-										},
-									},
-								},
-								{
-									Name: "PAYLOAD_REGISTRY_PASSWORD",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "payload-secret",
-											},
-											Key:      "password",
-											Optional: &trueValue,
-										},
-									},
-								},
-								{
-									Name: "KATA_PAYLOAD_IMAGE",
-									ValueFrom: &corev1.EnvVarSource{
-										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "payload-config",
-											},
-											Key:      "daemon.payload",
-											Optional: &configmapOptional,
-										},
-									},
-								},
-							},
-						},
-					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "hostroot", // Has to match VolumeMounts in containers
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Path: "/",
-									//Type: &corev1.HostPathVolumeSource,
-								},
-							},
-						},
-					},
-					HostNetwork: true,
-					HostPID:     true,
-				},
-			},
-		},
-	}
 }
 
 func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool {
@@ -300,34 +168,33 @@ WantedBy=multi-user.target
 
 	if kataOC {
 		machinePool = "kata-oc"
-	} else if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/"+machinePool]; ok {
-		r.Log.Info("in newMCforCR machinePool" + machinePool)
-	} else {
+	} else if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/"+machinePool]; !ok {
 		r.Log.Error(err, "no valid role for mc found")
 	}
 
 	file := ignTypes.File{}
-	c := ignTypes.FileContents{}
+	c := file.Contents
 
 	dropinConf, err := generateDropinConfig(r.kataConfig.Status.RuntimeClass)
 	if err != nil {
 		return nil, err
 	}
 
-	c.Source = "data:text/plain;charset=utf-8;base64," + dropinConf
+	dropinFile := "data:text/plain;charset=utf-8;base64," + dropinConf
+	c.Source = &dropinFile
+
 	file.Contents = c
-	file.Filesystem = "root"
 	m := 420
 	file.Mode = &m
 	file.Path = "/etc/crio/crio.conf.d/50-kata.conf"
 
 	ic := ignTypes.Config{
 		Ignition: ignTypes.Ignition{
-			Version: "2.2.0",
+			Version: "3.2.0",
 		},
 		Systemd: ignTypes.Systemd{
 			Units: []ignTypes.Unit{
-				{Name: name, Enabled: &isenabled, Contents: content},
+				{Name: name, Enabled: &isenabled, Contents: &content},
 			},
 		},
 	}
@@ -338,13 +205,13 @@ WantedBy=multi-user.target
 		return nil, err
 	}
 
-	mc := *&mcfgv1.MachineConfig{
+	mc := mcfgv1.MachineConfig{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "machineconfiguration.openshift.io/v1",
 			Kind:       "MachineConfig",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "50-kata-crio-dropin",
+			Name: "50-enable-sandboxed-containers-extension",
 			Labels: map[string]string{
 				"machineconfiguration.openshift.io/role": machinePool,
 				"app":                                    r.kataConfig.Name,
@@ -352,6 +219,7 @@ WantedBy=multi-user.target
 			Namespace: "sandboxed-containers-operator",
 		},
 		Spec: mcfgv1.MachineConfigSpec{
+			Extensions: []string{"sandboxed-containers"},
 			Config: runtime.RawExtension{
 				Raw: icb,
 			},
@@ -426,8 +294,7 @@ func (r *KataConfigOpenShiftReconciler) listKataPods() error {
 func (r *KataConfigOpenShiftReconciler) kataOcExists() (bool, error) {
 	kataOcMcp := &mcfgv1.MachineConfigPool{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "kata-oc"}, kataOcMcp)
-	if err != nil && errors.IsNotFound(err) {
-		r.Log.Info("No kata-oc machine config pool found!")
+	if err != nil && k8serrors.IsNotFound(err) {
 		return false, nil
 	} else if err != nil {
 		r.Log.Error(err, "Could not get the kata-oc machine config pool!")
@@ -441,7 +308,7 @@ func (r *KataConfigOpenShiftReconciler) workerOrMaster() (string, error) {
 	var role string
 	workerMcp := &mcfgv1.MachineConfigPool{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "worker"}, workerMcp)
-	if err != nil && errors.IsNotFound(err) {
+	if err != nil && k8serrors.IsNotFound(err) {
 		r.Log.Error(err, "No worker machine config pool found!")
 		return "", err
 	} else if err != nil {
@@ -455,80 +322,6 @@ func (r *KataConfigOpenShiftReconciler) workerOrMaster() (string, error) {
 		role = "master"
 	}
 	return role, nil
-}
-
-func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.Result, error) {
-	if r.kataConfig.Status.TotalNodesCount == 0 {
-
-		nodesList := &corev1.NodeList{}
-
-		/* This could be the case in a compact cluster where master and workers are on the same node */
-		machinePool, err := r.workerOrMaster()
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-
-		if r.kataConfig.Spec.KataConfigPoolSelector == nil {
-			r.kataConfig.Spec.KataConfigPoolSelector = &metav1.LabelSelector{
-				MatchLabels: map[string]string{"node-role.kubernetes.io/" + machinePool: ""},
-			}
-		}
-
-		listOpts := []client.ListOption{
-			client.MatchingLabels(r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels),
-		}
-
-		err = r.Client.List(context.TODO(), nodesList, listOpts...)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		r.kataConfig.Status.TotalNodesCount = len(nodesList.Items)
-
-		if r.kataConfig.Status.TotalNodesCount == 0 {
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second},
-				fmt.Errorf("No suitable worker nodes found for kata installation. Please make sure to label the nodes with labels specified in KataConfigPoolSelector")
-		}
-
-		err = r.Client.Status().Update(context.TODO(), r.kataConfig)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	if r.kataConfig.Status.KataImage == "" {
-		// TODO - placeholder. This will change in future.
-		r.kataConfig.Status.KataImage = "quay.io/sandboxed-containers-operator/kata-artifacts:1.0"
-	}
-
-	// Don't create the daemonset if kata is already installed on the cluster nodes
-	if r.kataConfig.Status.TotalNodesCount > 0 &&
-		r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount != r.kataConfig.Status.TotalNodesCount {
-		ds := r.processDaemonsetForCR(InstallOperation)
-		// Set KataConfig instance as the owner and controller
-		if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
-			return ctrl.Result{}, err
-		}
-		foundDs := &appsv1.DaemonSet{}
-		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDs)
-		if err != nil && errors.IsNotFound(err) {
-			r.Log.Info("Creating a new installation Daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-			err = r.Client.Create(context.TODO(), ds)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-		} else if err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	// Add finalizer for this CR
-	if !contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
-		if err := r.addFinalizer(); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	return ctrl.Result{}, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
@@ -569,7 +362,7 @@ func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
 
 	foundRc := &nodeapi.RuntimeClass{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: rc.Name}, foundRc)
-	if err != nil && errors.IsNotFound(err) {
+	if err != nil && k8serrors.IsNotFound(err) {
 		r.Log.Info("Creating a new RuntimeClass", "rc.Name", rc.Name)
 		err = r.Client.Create(context.TODO(), rc)
 		if err != nil {
@@ -595,212 +388,162 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
 
+	foundMcp := &mcfgv1.MachineConfigPool{}
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
 		// Get the list of pods that might be running using kata runtime
 		err := r.listKataPods()
 		if err != nil {
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 		}
+	}
 
-		ds := r.processDaemonsetForCR(UninstallOperation)
+	if r.kataConfig.Spec.KataConfigPoolSelector == nil {
+		r.kataConfig.Spec.KataConfigPoolSelector = &metav1.LabelSelector{
+			MatchLabels: map[string]string{"node-role.kubernetes.io/" + machinePool: ""},
+		}
+	}
 
-		foundDs := &appsv1.DaemonSet{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDs)
-		if err != nil && errors.IsNotFound(err) {
-			r.Log.Info("Creating a new uninstallation Daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-			err = r.Client.Create(context.TODO(), ds)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
+	r.Log.Info("Making sure parent MCP is synced properly, KataNodeRole=" + machinePool)
+	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
+	if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/"+machinePool]; ok {
+		mc, err := r.newMCForCR(machinePool)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		var isMcDeleted bool
+
+		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, mc)
+		if err != nil && k8serrors.IsNotFound(err) {
+			isMcDeleted = true
 		} else if err != nil {
 			return ctrl.Result{}, err
 		}
 
-		if r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesCount != r.kataConfig.Status.TotalNodesCount {
-			r.Log.Info("KataConfig uninstallation: ", "Number of nodes completed uninstallation ",
-				r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesCount,
-				"Total number of kata installed nodes ", r.kataConfig.Status.TotalNodesCount)
-			// TODO - we don't need this nil check if we know that pool is always initialized
-			if r.kataConfig.Spec.KataConfigPoolSelector != nil &&
-				r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels != nil && len(r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels) > 0 {
-				if r.clientset == nil {
-					r.clientset, err = getClientSet()
-					if err != nil {
-						return ctrl.Result{}, err
-					}
-				}
-
-				for _, nodeName := range r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList {
-					if contains(r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList, nodeName) {
-						continue
-					}
-
-					if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/"+machinePool]; !ok {
-						r.Log.Info("Removing the kata pool selector label from the node", "node name ", nodeName)
-						node, err := r.clientset.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
-						if err != nil {
-							return ctrl.Result{}, err
-						}
-
-						nodeLabels := node.GetLabels()
-
-						for k := range r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels {
-							delete(nodeLabels, k)
-						}
-
-						node.SetLabels(nodeLabels)
-						_, err = r.clientset.CoreV1().Nodes().Update(context.Background(), node, metav1.UpdateOptions{})
-
-						if err != nil {
-							return ctrl.Result{}, err
-						}
-					}
-				}
+		if !isMcDeleted {
+			err = r.Client.Delete(context.TODO(), mc)
+			if err != nil {
+				// error during removing mc, don't block the uninstall. Just log the error and move on.
+				r.Log.Info("Error found deleting machine config. If the machine config exists after installation it can be safely deleted manually.",
+					"mc", mc.Name, "error", err)
 			}
+			// Sleep for MCP to reflect the changes
+			r.Log.Info("Pausing for a minute to make sure worker mcp has started syncing up")
+			time.Sleep(60 * time.Second)
 		}
 
-		r.Log.Info("Making sure parent MCP is synced properly, KataNodeRole=" + machinePool)
-		if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/"+machinePool]; ok {
-			mc, err := r.newMCForCR(machinePool)
-			var isMcDeleted bool
+		workreMcp := &mcfgv1.MachineConfigPool{}
+		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, workreMcp)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		r.Log.Info("Monitoring worker mcp", "worker mcp name", workreMcp.Name, "ready machines", workreMcp.Status.ReadyMachineCount,
+			"total machines", workreMcp.Status.MachineCount)
+		r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
+		r.clearUninstallStatus()
+		_, result, err2, done := r.updateStatus(machinePool)
+		if !done {
+			r.Log.Info("done returned from updateStatus")
+			return result, err2
+		}
 
-			err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, mc)
-			if err != nil && errors.IsNotFound(err) {
-				isMcDeleted = true
+		if workreMcp.Status.ReadyMachineCount != workreMcp.Status.MachineCount {
+			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+		}
+	} else {
+		if len(r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList) > 0 {
+			r.Log.Info("Pausing for a minute to make sure parent mcp has started syncing up")
+			time.Sleep(60 * time.Second)
+
+			parentMcp := &mcfgv1.MachineConfigPool{}
+
+			err := r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, parentMcp)
+			if err != nil && k8serrors.IsNotFound(err) {
+				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, fmt.Errorf("Not able to find parent pool %s", parentMcp.GetName())
 			} else if err != nil {
 				return ctrl.Result{}, err
 			}
 
-			if !isMcDeleted {
-				err = r.Client.Delete(context.TODO(), mc)
-				if err != nil {
-					// error during removing mc, don't block the uninstall. Just log the error and move on.
-					r.Log.Info("Error found deleting machine config. If the machine config exists after installation it can be safely deleted manually.",
-						"mc", mc.Name, "error", err)
-				}
-				// Sleep for MCP to reflect the changes
-				r.Log.Info("Pausing for a minute to make sure worker mcp has started syncing up")
-				time.Sleep(60 * time.Second)
+			r.Log.Info("Monitoring parent mcp", "parent mcp name", parentMcp.Name, "ready machines", parentMcp.Status.ReadyMachineCount,
+				"total machines", parentMcp.Status.MachineCount)
+			if parentMcp.Status.ReadyMachineCount != parentMcp.Status.MachineCount {
+				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 			}
 
-			workreMcp := &mcfgv1.MachineConfigPool{}
-			err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, workreMcp)
+			mcp := r.newMCPforCR()
+			err = r.Client.Delete(context.TODO(), mcp)
 			if err != nil {
-				return ctrl.Result{}, err
+				// error during removing mcp, don't block the uninstall. Just log the error and move on.
+				r.Log.Info("Error found deleting mcp. If the mcp exists after installation it can be safely deleted manually.",
+					"mcp", mcp.Name, "error", err)
 			}
-			r.Log.Info("Monitoring worker mcp", "worker mcp name", workreMcp.Name, "ready machines", workreMcp.Status.ReadyMachineCount,
-				"total machines", workreMcp.Status.MachineCount)
-			if workreMcp.Status.ReadyMachineCount != workreMcp.Status.MachineCount {
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+
+			mc, err := r.newMCForCR(machinePool)
+			err = r.Client.Delete(context.TODO(), mc)
+			if err != nil {
+				// error during removing mc, don't block the uninstall. Just log the error and move on.
+				r.Log.Info("Error found deleting machine config. If the machine config exists after installation it can be safely deleted manually.",
+					"mc", mc.Name, "error", err)
 			}
 		} else {
-			// Sleep for MCP to reflect the changes
-			if len(r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList) > 0 {
-				r.Log.Info("Pausing for a minute to make sure parent mcp has started syncing up")
-				time.Sleep(60 * time.Second)
-
-				parentMcp := &mcfgv1.MachineConfigPool{}
-
-				err := r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, parentMcp)
-				if err != nil && errors.IsNotFound(err) {
-					return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, fmt.Errorf("Not able to find parent pool %s", parentMcp.GetName())
-				} else if err != nil {
-					return ctrl.Result{}, err
-				}
-
-				r.Log.Info("Monitoring parent mcp", "parent mcp name", parentMcp.Name, "ready machines", parentMcp.Status.ReadyMachineCount,
-					"total machines", parentMcp.Status.MachineCount)
-				if parentMcp.Status.ReadyMachineCount != parentMcp.Status.MachineCount {
-					return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
-				}
-
-				mcp := r.newMCPforCR()
-				err = r.Client.Delete(context.TODO(), mcp)
-				if err != nil {
-					// error during removing mcp, don't block the uninstall. Just log the error and move on.
-					r.Log.Info("Error found deleting mcp. If the mcp exists after installation it can be safely deleted manually.",
-						"mcp", mcp.Name, "error", err)
-				}
-
-				mc, err := r.newMCForCR(machinePool)
-				err = r.Client.Delete(context.TODO(), mc)
-				if err != nil {
-					// error during removing mc, don't block the uninstall. Just log the error and move on.
-					r.Log.Info("Error found deleting machine config. If the machine config exists after installation it can be safely deleted manually.",
-						"mc", mc.Name, "error", err)
-				}
-			} else {
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
-			}
+			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 		}
+	}
 
-		for _, nodeName := range r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList {
-			if contains(r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList, nodeName) {
-				continue
-			}
+	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionFalse
+	_, result, err2, done := r.updateStatus(machinePool)
+	r.clearInstallStatus()
+	if !done {
+		r.Log.Info("done returned from updateStatus")
+		return result, err2
+	}
+	err = r.Client.Status().Update(context.TODO(), r.kataConfig)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
-			r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesCount++
-			r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList = append(r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList, nodeName)
-			if r.kataConfig.Status.UnInstallationStatus.InProgress.InProgressNodesCount > 0 {
-				r.kataConfig.Status.UnInstallationStatus.InProgress.InProgressNodesCount--
-			}
-		}
+	r.Log.Info("Uninstallation completed. Proceeding with the KataConfig deletion")
+	controllerutil.RemoveFinalizer(r.kataConfig, kataConfigFinalizer)
 
-		err = r.Client.Status().Update(context.TODO(), r.kataConfig)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-
-		r.Log.Info("Deleting uninstall daemonset")
-		err = r.deleteKataDaemonset(UninstallOperation)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-
-		r.Log.Info("Uninstallation completed on all nodes. Proceeding with the KataConfig deletion")
-		controllerutil.RemoveFinalizer(r.kataConfig, kataConfigFinalizer)
-		err = r.Client.Update(context.TODO(), r.kataConfig)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
+	err = r.Client.Update(context.TODO(), r.kataConfig)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
 }
 
-func (r *KataConfigOpenShiftReconciler) deleteKataDaemonset(operation DaemonOperation) error {
-
-	ds := r.processDaemonsetForCR(operation)
-	foundDs := &appsv1.DaemonSet{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDs)
-	if err != nil && errors.IsNotFound(err) {
-		// DaemonSet not found, nothing to delete, ignore the request.
-		return nil
-	} else if err != nil {
-		return err
-	}
-
-	err = r.Client.Delete(context.TODO(), foundDs)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (r *KataConfigOpenShiftReconciler) monitorKataConfigInstallation() (ctrl.Result, error) {
-	r.Log.Info("installation is complete on targetted nodes, now dropping in crio config using MCO")
+func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.Result, error) {
 	machinePool, err := r.workerOrMaster()
+	fmt.Println("workerorMaster" + machinePool)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
+	// Add finalizer for this CR
+	if !contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
+		if err := r.addFinalizer(); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	if r.kataConfig.Spec.KataConfigPoolSelector == nil {
+		r.kataConfig.Spec.KataConfigPoolSelector = &metav1.LabelSelector{
+			MatchLabels: map[string]string{"node-role.kubernetes.io/" + machinePool: ""},
+		}
+	}
+
+	/* create custom Machine Config Pool if configured by user */
 	if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/"+machinePool]; !ok {
 		r.Log.Info("creating new Mcp")
 		mcp := r.newMCPforCR()
 
-		founcMcp := &mcfgv1.MachineConfigPool{}
-		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcp.Name}, founcMcp)
-		if err != nil && errors.IsNotFound(err) {
+		foundMcp := &mcfgv1.MachineConfigPool{}
+		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcp.Name}, foundMcp)
+		if err != nil && k8serrors.IsNotFound(err) {
 			r.Log.Info("Creating a new Machine Config Pool ", "mcp.Name", mcp.Name)
 			err = r.Client.Create(context.TODO(), mcp)
 			if err != nil {
@@ -809,41 +552,76 @@ func (r *KataConfigOpenShiftReconciler) monitorKataConfigInstallation() (ctrl.Re
 			// mcp created successfully - requeue to check the status later
 			return ctrl.Result{Requeue: true, RequeueAfter: 20 * time.Second}, nil
 		} else if err != nil {
+			r.Log.Info("other error")
 			return ctrl.Result{}, err
 		}
 
 		// Wait till MCP is ready
-		if founcMcp.Status.MachineCount == 0 {
+		if foundMcp.Status.MachineCount == 0 {
 			r.Log.Info("Waiting till Machine Config Pool is initialized ", "mcp.Name", mcp.Name)
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 		}
-		if founcMcp.Status.MachineCount != founcMcp.Status.ReadyMachineCount {
+		if foundMcp.Status.MachineCount != foundMcp.Status.ReadyMachineCount {
 			r.Log.Info("Waiting till Machine Config Pool is ready ", "mcp.Name", mcp.Name)
+
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 		}
 	}
 
+	doReconcile, err, isMcCreated := r.createExtensionMc(machinePool)
+	if isMcCreated {
+		return doReconcile, err
+	}
+
+	foundMcp, doReconcile, err, done := r.updateStatus(machinePool)
+	if !done {
+		r.Log.Info("done returned from updateStatus")
+		return doReconcile, err
+	}
+
+	r.kataConfig.Status.TotalNodesCount = int(foundMcp.Status.MachineCount)
+
+	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) &&
+		foundMcp.Status.ObservedGeneration > r.kataConfig.Status.BaseMcpGeneration &&
+		foundMcp.Status.UpdatedMachineCount == foundMcp.Status.MachineCount {
+		r.Log.Info("set runtime class")
+		r.kataConfig.Status.InstallationStatus.IsInProgress = "false"
+		return r.setRuntimeClass()
+	} else {
+		r.Log.Info("waiting for machine config pool to be fully updated")
+		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+	}
+}
+
+func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (ctrl.Result, error, bool) {
 	r.Log.Info("KataNodeRole is: " + machinePool)
 	mc, err := r.newMCForCR(machinePool)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, err, true
 	}
 
+	foundMcp := &mcfgv1.MachineConfigPool{}
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
+	if err != nil && k8serrors.IsNotFound(err) {
+		r.Log.Info("MCP not found")
+		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil, false
+	}
+
+	/* Create Machine Config object to enable sandboxed containers RHCOS extension */
 	foundMc := &mcfgv1.MachineConfig{}
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, foundMc)
-	if err != nil && errors.IsNotFound(err) {
-		r.Log.Info("Creating a new Machine Config ", "mc.Name", mc.Name)
+	if err != nil && (k8serrors.IsNotFound(err) || k8serrors.IsGone(err)) {
 		err = r.Client.Create(context.TODO(), mc)
 		if err != nil {
-			return ctrl.Result{}, err
+			r.Log.Info("failed to create a new Machine Config ", "mc.Name", mc.Name)
+			return ctrl.Result{}, err, true
 		}
-		// mc created successfully - don't requeue
-		return ctrl.Result{}, nil
-	} else if err != nil {
-		return ctrl.Result{}, err
+		/* mc created successfully - it will take a moment to finalize, requeue to create runtimeclass */
+		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
+		r.kataConfig.Status.BaseMcpGeneration = foundMcp.Status.ObservedGeneration
+		return ctrl.Result{Requeue: true}, nil, true
 	}
-
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, nil, false
 }
 
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -890,7 +668,7 @@ func (r *KataConfigOpenShiftReconciler) isOldestCR() (bool, error) {
 	}
 
 	oldestCRCreationDate := oldestCR.GetCreationTimestamp()
-	if !tkccd.Before(&oldestCRCreationDate) {
+	if !tkccd.Before(&oldestCRCreationDate) && oldestCR != nil {
 		if r.kataConfig.Status.InstallationStatus.Failed.FailedNodesCount != -1 {
 			r.kataConfig.Status.InstallationStatus.Failed.FailedNodesCount = -1
 			r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList = []kataconfigurationv1.FailedNodeStatus{
@@ -904,10 +682,253 @@ func (r *KataConfigOpenShiftReconciler) isOldestCR() (bool, error) {
 			if err != nil {
 				return false, err
 			}
-
 			return false, nil
 		}
 	}
 
 	return true, nil
+}
+
+func (r *KataConfigOpenShiftReconciler) getMcp() (*mcfgv1.MachineConfigPool, error) {
+	machinePool, err := r.workerOrMaster()
+	if err != nil {
+		return nil, err
+	}
+
+	foundMcp := &mcfgv1.MachineConfigPool{}
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
+	if err != nil {
+		return nil, err
+	}
+
+	return foundMcp, nil
+}
+
+func (r *KataConfigOpenShiftReconciler) getNodes() (error, *corev1.NodeList) {
+	nodes := &corev1.NodeList{}
+	labelSelector := labels.SelectorFromSet(map[string]string{"node-role.kubernetes.io/worker": ""})
+	listOpts := []client.ListOption{
+		client.MatchingLabelsSelector{Selector: labelSelector},
+	}
+
+	if err := r.Client.List(context.TODO(), nodes, listOpts...); err != nil {
+		r.Log.Info("get list of nodes failed")
+		return err, &corev1.NodeList{}
+	}
+	return nil, nodes
+}
+
+func (r *KataConfigOpenShiftReconciler) getConditionReason(conditions []mcfgv1.MachineConfigPoolCondition, conditionType mcfgv1.MachineConfigPoolConditionType) string {
+	for _, c := range conditions {
+		if c.Type == conditionType {
+			return c.Message
+		}
+	}
+
+	return ""
+}
+
+func (r *KataConfigOpenShiftReconciler) updateStatus(machinePool string) (*mcfgv1.MachineConfigPool, ctrl.Result, error, bool) {
+	/* update KataConfig according to occurred error
+	 * We need to pull the status information from the machine config pool object
+	 */
+	foundMcp := &mcfgv1.MachineConfigPool{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
+	if err != nil && k8serrors.IsNotFound(err) {
+		r.Log.Info("MCP not found")
+		return nil, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil, true
+	}
+
+	/* installation status */
+	if corev1.ConditionTrue == r.kataConfig.Status.InstallationStatus.IsInProgress {
+		err, _ := r.updateInstallStatus()
+		if err != nil {
+			r.Log.Info("updateinstallstatus failed")
+			return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
+		}
+		if foundMcp.Status.DegradedMachineCount > 0 || mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions,
+			mcfgv1.MachineConfigPoolDegraded) {
+			err, r.kataConfig.Status.InstallationStatus.Failed = r.updateFailedStatus(r.kataConfig.Status.InstallationStatus.Failed)
+			if err != nil {
+				return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
+			}
+		}
+	}
+
+	/* uninstallation status */
+	if corev1.ConditionTrue == r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress {
+		err, _ := r.updateUninstallStatus()
+		if err != nil {
+			r.Log.Info("update Uninstallstatus failed")
+			return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
+		}
+		if foundMcp.Status.DegradedMachineCount > 0 || mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions,
+			mcfgv1.MachineConfigPoolDegraded) {
+			err, r.kataConfig.Status.UnInstallationStatus.Failed = r.updateFailedStatus(r.kataConfig.Status.UnInstallationStatus.Failed)
+			if err != nil {
+				return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
+			}
+		}
+	}
+
+	return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil, true
+}
+
+func (r *KataConfigOpenShiftReconciler) updateUninstallStatus() (error, bool) {
+	var err error
+	err, nodeList := r.getNodes()
+	if err != nil {
+		r.Log.Info("getNodes failed")
+		return err, false
+	}
+
+	r.clearUnInstallStatus()
+
+	for _, node := range nodeList.Items {
+		if annotation, ok := node.Annotations["machineconfiguration.openshift.io/state"]; ok {
+			switch annotation {
+			case "Done":
+				err, r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList =
+					r.updateCompletedNodes(&node, r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList)
+			case "Degraded":
+				err, r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList =
+					r.updateFailedNodes(&node, r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList)
+			case "Working":
+				err, r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList =
+					r.updateInProgressNodes(&node, r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList)
+			default:
+				r.Log.Info("error updating status, invalid machine config node state")
+			}
+		}
+	}
+	return err, true
+}
+
+func (r *KataConfigOpenShiftReconciler) clearUninstallStatus() {
+	r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList = nil
+	r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList = nil
+	r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList = nil
+}
+
+func (r *KataConfigOpenShiftReconciler) updateInProgressNodes(node *corev1.Node, inProgressList []string) (error, []string) {
+	foundMcp, err := r.getMcp()
+	if err != nil {
+		return err, inProgressList
+	}
+	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) &&
+		r.kataConfig.Status.BaseMcpGeneration < foundMcp.Status.ObservedGeneration {
+		inProgressList = append(inProgressList, node.GetName())
+	}
+
+	return nil, inProgressList
+}
+
+func (r *KataConfigOpenShiftReconciler) updateCompletedNodes(node *corev1.Node, completedList []string) (error, []string) {
+	foundMcp, err := r.getMcp()
+	if err != nil {
+		return err, completedList
+	}
+	currentNodeConfig, ok := node.Annotations["machineconfiguration.openshift.io/currentConfig"]
+	if ok && foundMcp.Spec.Configuration.Name == currentNodeConfig &&
+		r.kataConfig.Status.BaseMcpGeneration < foundMcp.Status.ObservedGeneration &&
+		(r.kataConfig.Status.InstallationStatus.IsInProgress == corev1.ConditionTrue ||
+			r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress == corev1.ConditionTrue) {
+
+		completedList = append(completedList, node.GetName())
+	}
+
+	return nil, completedList
+}
+
+func (r *KataConfigOpenShiftReconciler) updateFailedNodes(node *corev1.Node,
+	failedList []kataconfigurationv1.FailedNodeStatus) (error, []kataconfigurationv1.FailedNodeStatus) {
+
+	foundMcp, err := r.getMcp()
+	if err != nil {
+		return err, failedList
+	}
+	if (mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded) ||
+		mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)) &&
+		r.kataConfig.Status.BaseMcpGeneration < foundMcp.Status.ObservedGeneration {
+		failedList =
+			append(r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList,
+				kataconfigurationv1.FailedNodeStatus{Name: node.GetName(),
+					Error: node.Annotations["machineconfiguration.openshift.io/reason"]})
+	}
+
+	return nil, failedList
+}
+
+func (r *KataConfigOpenShiftReconciler) updateInstallStatus() (error, bool) {
+	var err error
+	err, nodeList := r.getNodes()
+	if err != nil {
+		r.Log.Info("getNodes failed")
+		return err, false
+	}
+
+	r.clearInstallStatus()
+
+	for _, node := range nodeList.Items {
+		if annotation, ok := node.Annotations["machineconfiguration.openshift.io/state"]; ok {
+			switch annotation {
+			case "Done":
+				err, r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesList =
+					r.updateCompletedNodes(&node, r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesList)
+			case "Degraded":
+				err, r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList =
+					r.updateFailedNodes(&node, r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList)
+			case "Working":
+				err, r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList =
+					r.updateInProgressNodes(&node, r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList)
+			default:
+				r.Log.Info("error updating status, invalid machine config node state")
+			}
+		}
+	}
+	return err, true
+}
+
+func (r *KataConfigOpenShiftReconciler) updateFailedStatus(status kataconfigurationv1.KataFailedNodeStatus) (error, kataconfigurationv1.KataFailedNodeStatus) {
+	foundMcp, err := r.getMcp()
+	if err != nil {
+		r.Log.Info("couldn't get MCP information")
+		return err, status
+	}
+
+	status = r.clearFailedStatus(status)
+
+	if foundMcp.Status.DegradedMachineCount > 0 {
+		status.FailedReason = r.getConditionReason(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded)
+		return nil, status
+	} else if mcfgv1.IsMachineConfigPoolConditionPresentAndEqual(foundMcp.Status.Conditions,
+		mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue) {
+		status.FailedReason = r.getConditionReason(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)
+		return nil, status
+	}
+
+	return err, status
+}
+
+func (r *KataConfigOpenShiftReconciler) clearInstallStatus() {
+	r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesList = nil
+	r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList = nil
+	r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList = nil
+	r.kataConfig.Status.InstallationStatus.Failed.FailedReason = ""
+	r.kataConfig.Status.InstallationStatus.Failed.FailedNodesCount = 0
+}
+
+func (r *KataConfigOpenShiftReconciler) clearUnInstallStatus() {
+	r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList = nil
+	r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList = nil
+	r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList = nil
+	r.kataConfig.Status.UnInstallationStatus.Failed.FailedReason = ""
+	r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesCount = 0
+}
+func (r *KataConfigOpenShiftReconciler) clearFailedStatus(status kataconfigurationv1.KataFailedNodeStatus) kataconfigurationv1.KataFailedNodeStatus {
+	status.FailedNodesList = nil
+	status.FailedReason = ""
+	status.FailedNodesCount = 0
+
+	return status
 }

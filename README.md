@@ -23,7 +23,6 @@ An operator to perform lifecycle management (install/upgrade/uninstall) of [Kata
 
    ```
    make install && make deploy IMG=quay.io/isolatedcontainers/sandboxed-containers-operator:4.8
-   oc adm policy add-scc-to-user privileged -z default -n sandboxed-containers-operator-system
    ```
 4. To begin the installation of the kata runtime on the cluster,
 
@@ -56,7 +55,7 @@ oc describe kataconfig example-kataconfig
 and look at the field 'Completed nodes' in the status. If the value matches the number of worker nodes the installation is completed.
 
 #### Runtime Class
-Once the kata runtime binaries are successfully installed on the intended workers, the sandboxed containers operator will create a [runtime class](https://kubernetes.io/docs/concepts/containers/runtime-class/) `kata`. This runtime class can be used to deploy the pods that will use the Kata Runtime.
+Once the sandboxed-containers extension is enabled successfully on the intended workers, the sandboxed containers operator will create a [runtime class](https://kubernetes.io/docs/concepts/containers/runtime-class/) `kata`. This runtime class can be used to deploy the pods that will use the Kata Runtime.
 
 #### Run an Example Pod using the Kata Runtime
 ```
@@ -116,16 +115,6 @@ The sandboxed containers operator uses three containers:
 Container image name | Description | Container repository
 ---------------| ----------- | ----------
  _sandboxed-containers-operator_ |  It contains the controller part of the operator that watches and manages the kataconfig custom resource. It runs as a cluster scoped container. The operator itself is build with operator-sdk. | https://quay.io/isolatedcontainers/sandboxed-containers-operator
- _sandboxed-containers-operator-daemon_ | The daemon part of the operator that runs on the nodes and performs the actual installation. It pulls down the container sandboxed-containers-operator-payload image. Dockerfile and other content can be found in images/daemon/ subdirectory of this github repository | https://quay.io/isolatedcontainers/sandboxed-containers-operator-daemon
- _sandboxed-containers-operator-payload_ | The payload that is used by the daemon to install the kata binaries and dependencies (like e.g. QEMU). It's a container image with (currently) RPMs in it that will be installed on the chosen worker nodes by the daemon. Dockerfile and other content can be found in images/payload subdirectory of this github repository. | https://quay.io/isolatedcontaineres/sandboxed-containers-operator-payload
-
-## Upgrading Kata
-
-### Openshift
-Not implemented yet
-
-### Kubernetes
-Not implemented yet
 
 # Build from source
 
