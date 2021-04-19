@@ -152,6 +152,13 @@ type KataUnInstallationStatus struct {
 
 	// Failed reflects the status of nodes that have failed kata uninstallation
 	Failed KataFailedNodeStatus `json:"failed,omitempty"`
+
+	// Stores an error message if any.  Note that this is currently meant for a single
+	// failure source when kata uninstallation is blocked by existing kata-based pods, so
+	// handling of this field in the controller code is correspondingly simple.  A review
+	// might be necessary if this field were ever to store messages coming from another
+	// source.
+	ErrorMessage string `json:"errorMessage,omitempty"`
 }
 
 // KataUnInstallationInProgressStatus reflects the status of nodes that are in the process of kata installation
