@@ -226,6 +226,9 @@ spec:
                       inProgressNodesCount:
                         type: integer
                     type: object
+                  errorMessage:
+                    description: Cause of uninstallation failure
+                    type: string
                 type: object
               upgradeStatus:
                 description: Upgradestatus reflects the status of the ongoing kata
