@@ -190,6 +190,14 @@ WantedBy=multi-user.target
 			APIVersion: "machineconfiguration.openshift.io/v1",
 			Kind:       "MachineConfig",
 		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "50-enable-sandboxed-containers-extension",
+			Labels: map[string]string{
+				"machineconfiguration.openshift.io/role": machinePool,
+				"app":                                    r.kataConfig.Name,
+			},
+			Namespace: "openshift-sandboxed-containers",
+		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Extensions: []string{"sandboxed-containers"},
 			Config: runtime.RawExtension{
