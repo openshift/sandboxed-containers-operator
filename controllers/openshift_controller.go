@@ -730,8 +730,8 @@ func (r *KataConfigOpenShiftReconciler) updateUninstallStatus() (error, bool) {
 		if annotation, ok := node.Annotations["machineconfiguration.openshift.io/state"]; ok {
 			switch annotation {
 			case "Done":
-				err, r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList =
-					r.updateCompletedNodes(&node, r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList)
+				err, r.kataConfig.Status.UnInstallationStatus.Completed =
+					r.updateCompletedNodes(&node, r.kataConfig.Status.UnInstallationStatus.Completed)
 			case "Degraded":
 				err, r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList =
 					r.updateFailedNodes(&node, r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList)
@@ -744,12 +744,6 @@ func (r *KataConfigOpenShiftReconciler) updateUninstallStatus() (error, bool) {
 		}
 	}
 	return err, true
-}
-
-func (r *KataConfigOpenShiftReconciler) clearUninstallStatus() {
-	r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList = nil
-	r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList = nil
-	r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList = nil
 }
 
 func (r *KataConfigOpenShiftReconciler) updateInProgressNodes(node *corev1.Node, inProgressList []string) (error, []string) {
@@ -765,10 +759,10 @@ func (r *KataConfigOpenShiftReconciler) updateInProgressNodes(node *corev1.Node,
 	return nil, inProgressList
 }
 
-func (r *KataConfigOpenShiftReconciler) updateCompletedNodes(node *corev1.Node, completedList []string) (error, []string) {
+func (r *KataConfigOpenShiftReconciler) updateCompletedNodes(node *corev1.Node, completedStatus kataconfigurationv1.KataConfigCompletedStatus) (error, kataconfigurationv1.KataConfigCompletedStatus) {
 	foundMcp, err := r.getMcp()
 	if err != nil {
-		return err, completedList
+		return err, completedStatus
 	}
 	currentNodeConfig, ok := node.Annotations["machineconfiguration.openshift.io/currentConfig"]
 	if ok && foundMcp.Spec.Configuration.Name == currentNodeConfig &&
@@ -776,10 +770,11 @@ func (r *KataConfigOpenShiftReconciler) updateCompletedNodes(node *corev1.Node, 
 		(r.kataConfig.Status.InstallationStatus.IsInProgress == corev1.ConditionTrue ||
 			r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress == corev1.ConditionTrue) {
 
-		completedList = append(completedList, node.GetName())
+		completedStatus.CompletedNodesList = append(completedStatus.CompletedNodesList, node.GetName())
+		completedStatus.CompletedNodesCount = int(foundMcp.Status.UpdatedMachineCount)
 	}
 
-	return nil, completedList
+	return nil, completedStatus
 }
 
 func (r *KataConfigOpenShiftReconciler) updateFailedNodes(node *corev1.Node,
@@ -815,8 +810,8 @@ func (r *KataConfigOpenShiftReconciler) updateInstallStatus() (error, bool) {
 		if annotation, ok := node.Annotations["machineconfiguration.openshift.io/state"]; ok {
 			switch annotation {
 			case "Done":
-				err, r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesList =
-					r.updateCompletedNodes(&node, r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesList)
+				err, r.kataConfig.Status.InstallationStatus.Completed =
+					r.updateCompletedNodes(&node, r.kataConfig.Status.InstallationStatus.Completed)
 			case "Degraded":
 				err, r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList =
 					r.updateFailedNodes(&node, r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList)
@@ -854,6 +849,7 @@ func (r *KataConfigOpenShiftReconciler) updateFailedStatus(status kataconfigurat
 
 func (r *KataConfigOpenShiftReconciler) clearInstallStatus() {
 	r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesList = nil
+	r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount = 0
 	r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList = nil
 	r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList = nil
 	r.kataConfig.Status.InstallationStatus.Failed.FailedReason = ""
@@ -862,11 +858,13 @@ func (r *KataConfigOpenShiftReconciler) clearInstallStatus() {
 
 func (r *KataConfigOpenShiftReconciler) clearUnInstallStatus() {
 	r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList = nil
+	r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesCount = 0
 	r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList = nil
 	r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList = nil
 	r.kataConfig.Status.UnInstallationStatus.Failed.FailedReason = ""
 	r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesCount = 0
 }
+
 func (r *KataConfigOpenShiftReconciler) clearFailedStatus(status kataconfigurationv1.KataFailedNodeStatus) kataconfigurationv1.KataFailedNodeStatus {
 	status.FailedNodesList = nil
 	status.FailedReason = ""
