@@ -177,7 +177,7 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 				"machineconfiguration.openshift.io/role": machinePool,
 				"app":                                    r.kataConfig.Name,
 			},
-			Namespace: "openshift-sandboxed-containers",
+			Namespace: "openshift-sandboxed-containers-operator",
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Extensions: []string{"sandboxed-containers"},
