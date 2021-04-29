@@ -69,13 +69,21 @@ vet:
 generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
-# Build the docker image
+# Build the docker image, using docker
 docker-build: test
-	podman build --squash-all --no-cache . -t ${IMG}
+	docker build . -t ${IMG}
 
-# Push the docker image
+# Push the docker image, using docker
 docker-push:
 	docker push ${IMG}
+
+# Build the docker image, using podman
+podman-build: test
+	podman build --squash-all --no-cache . -t ${IMG}
+
+# Push the docker image, using podman
+podman-push:
+	podman push ${IMG}
 
 # find or download controller-gen
 # download controller-gen if necessary

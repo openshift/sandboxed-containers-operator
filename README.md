@@ -119,4 +119,4 @@ Container image name | Description | Container repository
 # Build from source
 
 1. Install operator-sdk version 1.0 or above
-2. make docker-build docker-push IMG=quay.io/<yourusername>/sandboxed-containers-operator:<tag>
+2. make podman-build podman-push IMG=quay.io/<yourusername>/sandboxed-containers-operator:<tag>
