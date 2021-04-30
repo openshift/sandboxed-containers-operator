@@ -147,20 +147,6 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool 
 }
 
 func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
-	isenabled := true
-	name := "kata-osbuilder-generate.service"
-	content := `
-[Unit]
-Description=Hacky service to enable kata-osbuilder-generate.service
-ConditionPathExists=/usr/lib/systemd/system/kata-osbuilder-generate.service
-[Service]
-Type=oneshot
-ExecStart=/usr/libexec/kata-containers/osbuilder/kata-osbuilder.sh
-ExecRestart=/usr/libexec/kata-containers/osbuilder/kata-osbuilder.sh
-[Install]
-WantedBy=multi-user.target
-`
-
 	kataOC, err := r.kataOcExists()
 	if err != nil {
 		return nil, err
@@ -191,11 +177,6 @@ WantedBy=multi-user.target
 	ic := ignTypes.Config{
 		Ignition: ignTypes.Ignition{
 			Version: "3.2.0",
-		},
-		Systemd: ignTypes.Systemd{
-			Units: []ignTypes.Unit{
-				{Name: name, Enabled: &isenabled, Contents: &content},
-			},
 		},
 	}
 	ic.Storage.Files = []ignTypes.File{file}
