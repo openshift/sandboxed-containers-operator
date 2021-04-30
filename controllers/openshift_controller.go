@@ -398,7 +398,20 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		// Get the list of pods that might be running using kata runtime
 		err := r.listKataPods()
 		if err != nil {
+			r.kataConfig.Status.UnInstallationStatus.ErrorMessage = err.Error()
+			updErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
+			if updErr != nil {
+				return ctrl.Result{}, updErr
+			}
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		} else {
+			if r.kataConfig.Status.UnInstallationStatus.ErrorMessage != "" {
+				r.kataConfig.Status.UnInstallationStatus.ErrorMessage = ""
+				updErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
+				if updErr != nil {
+					return ctrl.Result{}, updErr
+				}
+			}
 		}
 	}
 
