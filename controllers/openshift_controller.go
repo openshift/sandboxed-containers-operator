@@ -17,12 +17,9 @@ limitations under the License.
 package controllers
 
 import (
-	"bytes"
 	"context"
-	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"k8s.io/apimachinery/pkg/labels"
 	"time"
 
@@ -158,28 +155,11 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 		r.Log.Error(err, "no valid role for mc found")
 	}
 
-	file := ignTypes.File{}
-	c := file.Contents
-
-	dropinConf, err := generateDropinConfig(r.kataConfig.Status.RuntimeClass)
-	if err != nil {
-		return nil, err
-	}
-
-	dropinFile := "data:text/plain;charset=utf-8;base64," + dropinConf
-	c.Source = &dropinFile
-
-	file.Contents = c
-	m := 420
-	file.Mode = &m
-	file.Path = "/etc/crio/crio.conf.d/50-kata.conf"
-
 	ic := ignTypes.Config{
 		Ignition: ignTypes.Ignition{
 			Version: "3.2.0",
 		},
 	}
-	ic.Storage.Files = []ignTypes.File{file}
 
 	icb, err := json.Marshal(ic)
 	if err != nil {
@@ -197,7 +177,7 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 				"machineconfiguration.openshift.io/role": machinePool,
 				"app":                                    r.kataConfig.Name,
 			},
-			Namespace: "sandboxed-containers-operator",
+			Namespace: "openshift-sandboxed-containers",
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Extensions: []string{"sandboxed-containers"},
@@ -208,37 +188,6 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 	}
 
 	return &mc, nil
-}
-
-func generateDropinConfig(handlerName string) (string, error) {
-	var err error
-	buf := new(bytes.Buffer)
-	type RuntimeConfig struct {
-		RuntimeName string
-	}
-	const b = `
-[crio.runtime]
-  manage_ns_lifecycle = true
-
-[crio.runtime.runtimes.{{.RuntimeName}}]
-  runtime_path = "/usr/bin/containerd-shim-kata-v2"
-  runtime_type = "vm"
-  runtime_root = "/run/vc"
-  privileged_without_host_devices = true
-  
-[crio.runtime.runtimes.runc]
-  runtime_path = ""
-  runtime_type = "oci"
-  runtime_root = "/run/runc"
-`
-	c := RuntimeConfig{RuntimeName: "kata"}
-	t := template.Must(template.New("test").Parse(b))
-	err = t.Execute(buf, c)
-	if err != nil {
-		return "", err
-	}
-	sEnc := b64.StdEncoding.EncodeToString([]byte(buf.String()))
-	return sEnc, err
 }
 
 func (r *KataConfigOpenShiftReconciler) addFinalizer() error {
