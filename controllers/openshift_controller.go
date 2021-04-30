@@ -724,7 +724,7 @@ func (r *KataConfigOpenShiftReconciler) updateUninstallStatus() (error, bool) {
 		return err, false
 	}
 
-	r.clearUnInstallStatus()
+	r.clearUninstallStatus()
 
 	for _, node := range nodeList.Items {
 		if annotation, ok := node.Annotations["machineconfiguration.openshift.io/state"]; ok {
@@ -856,7 +856,7 @@ func (r *KataConfigOpenShiftReconciler) clearInstallStatus() {
 	r.kataConfig.Status.InstallationStatus.Failed.FailedNodesCount = 0
 }
 
-func (r *KataConfigOpenShiftReconciler) clearUnInstallStatus() {
+func (r *KataConfigOpenShiftReconciler) clearUninstallStatus() {
 	r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList = nil
 	r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesCount = 0
 	r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList = nil
