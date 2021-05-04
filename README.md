@@ -16,15 +16,15 @@ An operator to perform lifecycle management (install/upgrade/uninstall) of [Kata
 
 
    ```
-   git clone https://github.com/openshift/sandboxed-containers-operator 
+   git clone https://github.com/openshift/sandboxed-containers-operator
    git checkout -b master --track origin/master
    ```
 3. Install the sandboxed containers operator on the cluster,
 
    ```
-   make install && make deploy IMG=quay.io/isolatedcontainers/sandboxed-containers-operator:4.8
+   make install && make deploy IMG=quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator:latest
    ```
-4. To begin the installation of the kata runtime on the cluster,
+4. To begin the installation of the kata runtime on the cluster
 
    ```
    oc create -f config/samples/kataconfiguration_v1_kataconfig.yaml
@@ -105,7 +105,7 @@ oc delete kataconfig example-kataconfig
 ### Openshift
 1. During the installation you can watch the values of the kataconfig CR. Do `watch oc describe kataconfig example-kataconfig`.
 2. To check if the nodes in the machine config pool are going through a config update watch the machine config pool resource. For this do `watch oc get mcp kata-oc`
-3. Check the logs of the sandboxed containers operator controller pod to see detailled messages about what the steps it is executing. To find out the name of the controller pod, `oc get pods -n sandboxed-containers-operator-system | grep sandboxed-containers-operator-controller-manager` and then monitor the logs of the container `manager` in that pod. 
+3. Check the logs of the sandboxed containers operator controller pod to see detailled messages about what steps it is executing. To find out the name of the controller pod, `oc get pods -n openshift-sandboxed-containers-operator | grep controller-manager` and then monitor the logs of the container `manager` in that pod.
 
 ## Components
 
@@ -114,7 +114,7 @@ The sandboxed containers operator uses three containers:
 
 Container image name | Description | Container repository
 ---------------| ----------- | ----------
- _sandboxed-containers-operator_ |  It contains the controller part of the operator that watches and manages the kataconfig custom resource. It runs as a cluster scoped container. The operator itself is build with operator-sdk. | https://quay.io/isolatedcontainers/sandboxed-containers-operator
+ _openshift-sandboxed-containers-operator_ |  It contains the controller part of the operator that watches and manages the kataconfig custom resource. It runs as a cluster scoped container. The operator itself is build with operator-sdk. | https://quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator
 
 # Build from source
 
