@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   labels:
     control-plane: controller-manager
-  name: sandboxed-containers-operator-system
+  name: openshift-sandboxed-containers-operator
 ---
 apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
@@ -146,6 +146,8 @@ spec:
                         - name
                         type: object
                       type: array
+                    failedNodesReason:
+                      type: string
                   type: object
                 inProgress:
                   description: InProgress reflects the status of nodes that are in
@@ -159,11 +161,18 @@ spec:
                       description: InProgressNodesCount reflects the number of nodes
                         that are in the process of kata installation
                       type: integer
+                    isInProgress:
+                      description: IsInProgress reflects if installation is still
+                        in progress
+                      type: boolean
                   type: object
               type: object
             kataImage:
               description: KataImage is the image used for delivering kata binaries
               type: string
+            prevMcpGeneration:
+              format: int64
+              type: integer
             runtimeClass:
               description: RuntimeClass is the name of the runtime class used in CRIO
                 configuration
@@ -218,6 +227,8 @@ spec:
                         - name
                         type: object
                       type: array
+                    failedNodesReason:
+                      type: string
                   type: object
                 inProgress:
                   description: InProgress reflects the status of nodes that are in
@@ -230,12 +241,15 @@ spec:
                     inProgressNodesCount:
                       type: integer
                   type: object
+                isInProgress:
+                  type: boolean
               type: object
             upgradeStatus:
-              description: upgradeStatus reflects the status of the ongoing kata upgrade
+              description: Upgradestatus reflects the status of the ongoing kata upgrade
               type: object
           required:
           - kataImage
+          - prevMcpGeneration
           - runtimeClass
           - totalNodesCount
           type: object
@@ -255,8 +269,8 @@ status:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: sandboxed-containers-operator-leader-election-role
-  namespace: sandboxed-containers-operator-system
+  name: openshift-sandboxed-containers-leader-election-role
+  namespace: openshift-sandboxed-containers-operator
 rules:
 - apiGroups:
   - ""
@@ -290,7 +304,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   creationTimestamp: null
-  name: sandboxed-containers-operator-manager-role
+  name: openshift-sandboxed-containers-manager-role
 rules:
 - apiGroups:
   - ""
@@ -393,7 +407,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: sandboxed-containers-operator-proxy-role
+  name: openshift-sandboxed-containers-proxy-role
 rules:
 - apiGroups:
   - authentication.k8s.io
@@ -411,7 +425,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRole
 metadata:
-  name: sandboxed-containers-operator-metrics-reader
+  name: openshift-sandboxed-containers-metrics-reader
 rules:
 - nonResourceURLs:
   - /metrics
@@ -421,50 +435,50 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: sandboxed-containers-operator-leader-election-rolebinding
-  namespace: sandboxed-containers-operator-system
+  name: openshift-sandboxed-containers-leader-election-rolebinding
+  namespace: openshift-sandboxed-containers-operator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: sandboxed-containers-operator-leader-election-role
+  name: openshift-sandboxed-containers-leader-election-role
 subjects:
 - kind: ServiceAccount
   name: default
-  namespace: sandboxed-containers-operator-system
+  namespace: openshift-sandboxed-containers-operator
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: sandboxed-containers-operator-manager-rolebinding
+  name: openshift-sandboxed-containers-manager-rolebinding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: sandboxed-containers-operator-manager-role
+  name: openshift-sandboxed-containers-manager-role
 subjects:
 - kind: ServiceAccount
   name: default
-  namespace: sandboxed-containers-operator-system
+  namespace: openshift-sandboxed-containers-operator
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: sandboxed-containers-operator-proxy-rolebinding
+  name: openshift-sandboxed-containers-proxy-rolebinding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: sandboxed-containers-operator-proxy-role
+  name: openshift-sandboxed-containers-proxy-role
 subjects:
 - kind: ServiceAccount
   name: default
-  namespace: sandboxed-containers-operator-system
+  namespace: openshift-sandboxed-containers-operator
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
     control-plane: controller-manager
-  name: sandboxed-containers-operator-controller-manager-metrics-svc
-  namespace: sandboxed-containers-operator-system
+  name: openshift-sandboxed-containers-controller-manager-metrics-svc
+  namespace: openshift-sandboxed-containers-operator
 spec:
   ports:
   - name: https
@@ -478,8 +492,8 @@ kind: Deployment
 metadata:
   labels:
     control-plane: controller-manager
-  name: sandboxed-containers-operator-controller-manager
-  namespace: sandboxed-containers-operator-system
+  name: openshift-sandboxed-containers-controller-manager
+  namespace: openshift-sandboxed-containers-operator
 spec:
   replicas: 1
   selector:
@@ -492,21 +506,11 @@ spec:
     spec:
       containers:
       - args:
-        - --secure-listen-address=0.0.0.0:8443
-        - --upstream=http://127.0.0.1:8080/
-        - --logtostderr=true
-        - --v=10
-        image: gcr.io/kubebuilder/kube-rbac-proxy@sha256:e10d1d982dd653db74ca87a1d1ad017bc5ef1aeb651bdea089debf16485b080b
-        name: kube-rbac-proxy
-        ports:
-        - containerPort: 8443
-          name: https
-      - args:
         - --metrics-addr=127.0.0.1:8080
         - --enable-leader-election
         command:
         - /manager
-        image: quay.io/isolatedcontainers/sandboxed-containers-operator:4.8
+        image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers:latest
         imagePullPolicy: Always
         name: manager
         resources:

@@ -5,7 +5,7 @@ metadata:
   namespace: openshift-marketplace
 spec:
   sourceType: grpc
-  image: quay.io/isolatedcontainers/sandboxed-containers-operator-catalog:latest
+  image: quay.io/openshift_sandboxed-containers/openshift-sandboxed-containers-catalog:latest
   displayName: Kata container Operators
   publisher: Red Hat
   updateStrategy:
