@@ -510,7 +510,7 @@ spec:
         - --enable-leader-election
         command:
         - /manager
-        image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers:latest
+        image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator:latest
         imagePullPolicy: Always
         name: manager
         resources:
