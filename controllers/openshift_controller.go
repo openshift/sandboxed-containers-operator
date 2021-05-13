@@ -526,6 +526,14 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	r.kataConfig.Status.TotalNodesCount = int(foundMcp.Status.MachineCount)
 
+	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) &&
+		r.kataConfig.Status.InstallationStatus.IsInProgress == "false" &&
+		r.kataConfig.Status.RuntimeClass == "kata" {
+		r.Log.Info("New node being added to existing cluster")
+		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
+		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+	}
+
 	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) &&
 		foundMcp.Status.ObservedGeneration > r.kataConfig.Status.BaseMcpGeneration &&
 		foundMcp.Status.UpdatedMachineCount == foundMcp.Status.MachineCount {
