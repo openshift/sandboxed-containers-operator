@@ -33,6 +33,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	// +kubebuilder:scaffold:imports
 )
@@ -58,7 +59,10 @@ var _ = BeforeSuite(func(done Done) {
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases")},
+		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases"),
+			filepath.Join("..", "config", "extension-crds", "machineconfig.crd.yaml"),
+			filepath.Join("..", "config", "extension-crds", "machineconfigpool.crd.yaml"),
+		},
 	}
 
 	var err error
@@ -72,8 +76,10 @@ var _ = BeforeSuite(func(done Done) {
 	s.AddKnownTypes(corev1.SchemeGroupVersion, &corev1.NodeList{})
 
 	err = kataconfigurationv1.AddToScheme(s)
-
 	Expect(err).NotTo(HaveOccurred())
+
+	err = mcfgv1.AddToScheme(s)
+	Expect(err).ToNot(HaveOccurred())
 
 	// +kubebuilder:scaffold:scheme
 
@@ -85,6 +91,7 @@ var _ = BeforeSuite(func(done Done) {
 	err = (&KataConfigOpenShiftReconciler{
 		Client: k8sManager.GetClient(),
 		Log:    ctrl.Log.WithName("controllers").WithName("KataConfig"),
+		Scheme: k8sManager.GetScheme(),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
