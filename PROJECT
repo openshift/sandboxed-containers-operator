@@ -1,15 +1,18 @@
 domain: kataconfiguration.openshift.io
-layout: go.kubebuilder.io/v2
+layout:
+- go.kubebuilder.io/v2
+plugins:
+  go.sdk.operatorframework.io/v2-alpha: {}
 projectName: sandboxed-containers-operator
 repo: github.com/openshift/sandboxed-containers-operator
 resources:
--
-  controller: true
+- controller: true
   domain: kataconfiguration.openshift.io
   group: kataconfiguration
   kind: KataConfig
   path: github.com/openshift/sandboxed-containers-operator/api/v1
   version: v1
+  webhooks:
+    validation: true
+    webhookVersion: v1beta1
 version: "3"
-plugins:
-  go.sdk.operatorframework.io/v2-alpha: {}
