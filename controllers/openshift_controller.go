@@ -38,7 +38,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 // blank assignment to verify that KataConfigOpenShiftReconciler implements reconcile.Reconciler
@@ -524,6 +526,14 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	r.kataConfig.Status.TotalNodesCount = int(foundMcp.Status.MachineCount)
 
+	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) &&
+		r.kataConfig.Status.InstallationStatus.IsInProgress == "false" &&
+		r.kataConfig.Status.RuntimeClass == "kata" {
+		r.Log.Info("New node being added to existing cluster")
+		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
+		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+	}
+
 	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) &&
 		foundMcp.Status.ObservedGeneration > r.kataConfig.Status.BaseMcpGeneration &&
 		foundMcp.Status.UpdatedMachineCount == foundMcp.Status.MachineCount {
@@ -569,6 +579,26 @@ func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (c
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
+		Watches(&source.Kind{Type: &mcfgv1.MachineConfigPool{}}, &handler.EnqueueRequestsFromMapFunc{
+			ToRequests: handler.ToRequestsFunc(func(kataConfigObj handler.MapObject) []reconcile.Request {
+				kataConfigList := &kataconfigurationv1.KataConfigList{}
+
+				err := r.Client.List(context.TODO(), kataConfigList)
+				if err != nil {
+					return []reconcile.Request{}
+				}
+
+				reconcileRequests := make([]reconcile.Request, len(kataConfigList.Items))
+				for _, kataconfig := range kataConfigList.Items {
+					reconcileRequests = append(reconcileRequests, reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name: kataconfig.Name,
+						},
+					})
+				}
+				return reconcileRequests
+			}),
+		}).
 		Complete(r)
 }
 
