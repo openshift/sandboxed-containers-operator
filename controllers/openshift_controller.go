@@ -362,92 +362,52 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 
 	r.Log.Info("Making sure parent MCP is synced properly, SCNodeRole=" + machinePool)
 	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
-	if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/"+machinePool]; ok {
-		mc, err := r.newMCForCR(machinePool)
+	mc, err := r.newMCForCR(machinePool)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	var isMcDeleted bool
+
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, mc)
+	if err != nil && k8serrors.IsNotFound(err) {
+		isMcDeleted = true
+	} else if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if !isMcDeleted {
+		err = r.Client.Delete(context.TODO(), mc)
 		if err != nil {
-			return ctrl.Result{}, err
+			// error during removing mc, don't block the uninstall. Just log the error and move on.
+			r.Log.Info("Error found deleting machine config. If the machine config exists after installation it can be safely deleted manually.",
+				"mc", mc.Name, "error", err)
 		}
-		var isMcDeleted bool
+		// Sleep for MCP to reflect the changes
+		r.Log.Info("Pausing for a minute to make sure worker mcp has started syncing up")
+		time.Sleep(60 * time.Second)
+	}
 
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, mc)
-		if err != nil && k8serrors.IsNotFound(err) {
-			isMcDeleted = true
-		} else if err != nil {
-			return ctrl.Result{}, err
-		}
+	workreMcp := &mcfgv1.MachineConfigPool{}
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, workreMcp)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	r.Log.Info("Monitoring worker mcp", "worker mcp name", workreMcp.Name, "ready machines", workreMcp.Status.ReadyMachineCount,
+		"total machines", workreMcp.Status.MachineCount)
+	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
+	r.clearUninstallStatus()
+	_, result, err2, done := r.updateStatus(machinePool)
+	if !done {
+		r.Log.Info("done returned from updateStatus")
+		return result, err2
+	}
 
-		if !isMcDeleted {
-			err = r.Client.Delete(context.TODO(), mc)
-			if err != nil {
-				// error during removing mc, don't block the uninstall. Just log the error and move on.
-				r.Log.Info("Error found deleting machine config. If the machine config exists after installation it can be safely deleted manually.",
-					"mc", mc.Name, "error", err)
-			}
-			// Sleep for MCP to reflect the changes
-			r.Log.Info("Pausing for a minute to make sure worker mcp has started syncing up")
-			time.Sleep(60 * time.Second)
-		}
-
-		workreMcp := &mcfgv1.MachineConfigPool{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, workreMcp)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		r.Log.Info("Monitoring worker mcp", "worker mcp name", workreMcp.Name, "ready machines", workreMcp.Status.ReadyMachineCount,
-			"total machines", workreMcp.Status.MachineCount)
-		r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
-		r.clearUninstallStatus()
-		_, result, err2, done := r.updateStatus(machinePool)
-		if !done {
-			r.Log.Info("done returned from updateStatus")
-			return result, err2
-		}
-
-		if workreMcp.Status.ReadyMachineCount != workreMcp.Status.MachineCount {
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
-		}
-	} else {
-		if len(r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList) > 0 {
-			r.Log.Info("Pausing for a minute to make sure parent mcp has started syncing up")
-			time.Sleep(60 * time.Second)
-
-			parentMcp := &mcfgv1.MachineConfigPool{}
-
-			err := r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, parentMcp)
-			if err != nil && k8serrors.IsNotFound(err) {
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, fmt.Errorf("Not able to find parent pool %s", parentMcp.GetName())
-			} else if err != nil {
-				return ctrl.Result{}, err
-			}
-
-			r.Log.Info("Monitoring parent mcp", "parent mcp name", parentMcp.Name, "ready machines", parentMcp.Status.ReadyMachineCount,
-				"total machines", parentMcp.Status.MachineCount)
-			if parentMcp.Status.ReadyMachineCount != parentMcp.Status.MachineCount {
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
-			}
-
-			mcp := r.newMCPforCR()
-			err = r.Client.Delete(context.TODO(), mcp)
-			if err != nil {
-				// error during removing mcp, don't block the uninstall. Just log the error and move on.
-				r.Log.Info("Error found deleting mcp. If the mcp exists after installation it can be safely deleted manually.",
-					"mcp", mcp.Name, "error", err)
-			}
-
-			mc, err := r.newMCForCR(machinePool)
-			err = r.Client.Delete(context.TODO(), mc)
-			if err != nil {
-				// error during removing mc, don't block the uninstall. Just log the error and move on.
-				r.Log.Info("Error found deleting machine config. If the machine config exists after installation it can be safely deleted manually.",
-					"mc", mc.Name, "error", err)
-			}
-		} else {
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
-		}
+	if workreMcp.Status.ReadyMachineCount != workreMcp.Status.MachineCount {
+		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 	}
 
 	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionFalse
-	_, result, err2, done := r.updateStatus(machinePool)
+	_, result, err2, done = r.updateStatus(machinePool)
 	r.clearInstallStatus()
 	if !done {
 		r.Log.Info("done returned from updateStatus")
