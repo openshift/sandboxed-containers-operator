@@ -236,7 +236,7 @@ func (r *KataConfigOpenShiftReconciler) kataOcExists() (bool, error) {
 	return true, nil
 }
 
-func (r *KataConfigOpenShiftReconciler) workerOrMaster() (string, error) {
+func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
 	var role string
 	workerMcp := &mcfgv1.MachineConfigPool{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "worker"}, workerMcp)
@@ -315,7 +315,7 @@ func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
 
 func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.Result, error) {
 	r.Log.Info("KataConfig deletion in progress: ")
-	machinePool, err := r.workerOrMaster()
+	machinePool, err := r.getMcpName()
 	if err != nil {
 		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
@@ -462,7 +462,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 }
 
 func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.Result, error) {
-	machinePool, err := r.workerOrMaster()
+	machinePool, err := r.getMcpName()
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -662,7 +662,7 @@ func (r *KataConfigOpenShiftReconciler) isOldestCR() (bool, error) {
 }
 
 func (r *KataConfigOpenShiftReconciler) getMcp() (*mcfgv1.MachineConfigPool, error) {
-	machinePool, err := r.workerOrMaster()
+	machinePool, err := r.getMcpName()
 	if err != nil {
 		return nil, err
 	}
