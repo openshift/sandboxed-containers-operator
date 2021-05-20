@@ -513,11 +513,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 			r.Log.Info("Waiting till Machine Config Pool is initialized ", "mcp.Name", mcp.Name)
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 		}
-		if foundMcp.Status.MachineCount != foundMcp.Status.ReadyMachineCount {
-			r.Log.Info("Waiting till Machine Config Pool is ready ", "mcp.Name", mcp.Name)
 
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
-		}
 	}
 
 	doReconcile, err, isMcCreated := r.createExtensionMc(machinePool)
