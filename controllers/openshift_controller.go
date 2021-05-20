@@ -237,7 +237,7 @@ func (r *KataConfigOpenShiftReconciler) kataOcExists() (bool, error) {
 }
 
 func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
-	var role string
+	var mcpName string
 	workerMcp := &mcfgv1.MachineConfigPool{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "worker"}, workerMcp)
 	if err != nil && k8serrors.IsNotFound(err) {
@@ -249,11 +249,11 @@ func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
 	}
 
 	if workerMcp.Status.MachineCount > 0 {
-		role = "worker"
+		mcpName = "worker"
 	} else {
-		role = "master"
+		mcpName = "master"
 	}
-	return role, nil
+	return mcpName, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
