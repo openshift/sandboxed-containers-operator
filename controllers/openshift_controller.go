@@ -238,8 +238,15 @@ func (r *KataConfigOpenShiftReconciler) kataOcExists() (bool, error) {
 
 func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
 	var mcpName string
+
+	kataOC, err := r.kataOcExists()
+	if kataOC && err == nil {
+		r.Log.Info("kata-oc machine config pool exists")
+		return "kata-oc", nil
+	}
+
 	workerMcp := &mcfgv1.MachineConfigPool{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "worker"}, workerMcp)
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: "worker"}, workerMcp)
 	if err != nil && k8serrors.IsNotFound(err) {
 		r.Log.Error(err, "No worker machine config pool found!")
 		return "", err
