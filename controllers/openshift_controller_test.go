@@ -140,6 +140,20 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 			By("Creating and marking the second KataConfig CR with same custom node selector label correctly")
 			Expect(kataconfig2.Status.InstallationStatus.Failed.FailedNodesCount).Should(Equal(-1))
 
+			//Delete
+			By("Deleting KataConfig CR successfully")
+			kataConfigKey := types.NamespacedName{Name: kataconfig.Name}
+			Eventually(func() error {
+				k8sClient.Get(context.Background(), kataConfigKey, kataconfig)
+				return k8sClient.Delete(context.Background(), kataconfig)
+			}, 5, time.Second).Should(Succeed())
+
+			By("Deleting KataConfig2 CR successfully")
+			Eventually(func() error {
+				k8sClient.Get(context.Background(), kataConfig2Key, kataconfig2)
+				return k8sClient.Delete(context.Background(), kataconfig2)
+			}, 5, time.Second).Should(Succeed())
+
 		})
 	})
 
