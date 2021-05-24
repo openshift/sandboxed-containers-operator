@@ -167,7 +167,7 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 		It("Should be created after successful CR creation", func() {
 
 			const (
-				name = "example-kataconfig"
+				name     = "example-kataconfig"
 				timeout  = time.Second * 10
 				interval = time.Second * 2
 			)
@@ -385,6 +385,143 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 			Eventually(func() error {
 				return k8sClient.Get(context.Background(), types.NamespacedName{Name: "kata"}, rc)
 			}, timeout, interval).Should(Succeed())
+
+		})
+	})
+	Context("Adding a new worker node", func() {
+		It("Should be part of Kata runtime pool", func() {
+
+			const (
+				name = "example-kataconfig"
+				//MCP pauses for 60sec during delete
+				timeout  = time.Second * 70
+				interval = time.Second * 2
+			)
+
+			// Create New Node
+			node := &corev1.Node{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Node",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "worker1",
+					Labels: map[string]string{"machineconfiguration.openshift.io/role": "worker",
+						"node-role.kubernetes.io/worker": ""},
+					Annotations: map[string]string{"machineconfiguration.openshift.io/state": "",
+						"machineconfiguration.openshift.io/currentConfig": "rendered-worker-00"},
+				},
+			}
+
+			By("Creating node worker1 successfully")
+			Expect(k8sClient.Create(context.Background(), node)).Should(Succeed())
+
+			fmt.Fprintf(GinkgoWriter, "[DEBUG] node: %v\n", node)
+
+			By("Getting the worker MachineConfigPool successfully")
+			mcp := &mcfgv1.MachineConfigPool{}
+			Eventually(func() error {
+				return k8sClient.Get(context.Background(), types.NamespacedName{Name: "worker"}, mcp)
+			}, timeout, interval).Should(Succeed())
+
+			fmt.Fprintf(GinkgoWriter, "[DEBUG] MachineConfigPool: %+v\n", mcp)
+
+			kataConfig := &kataconfigurationv1.KataConfig{}
+			Eventually(func() error {
+				return k8sClient.Get(context.Background(), types.NamespacedName{Name: "example-kataconfig"}, kataConfig)
+			}, timeout, interval).Should(Succeed())
+
+			fmt.Fprintf(GinkgoWriter, "[DEBUG] kataConfig: %+v\n", kataConfig)
+
+			// Change node state to indicate Install in progress
+			By("Updating Node status")
+			nodeRet := &corev1.Node{}
+			Expect(k8sClient.Get(context.Background(), types.NamespacedName{Name: "worker1"}, nodeRet)).Should(Succeed())
+
+			// Set Node annotations
+			nodeRet.Annotations["machineconfiguration.openshift.io/state"] = "Working"
+			node.Annotations["machineconfiguration.openshift.io/currentConfig"] = "rendered-worker-00"
+			Expect(k8sClient.Update(context.Background(), nodeRet)).Should(Succeed())
+
+			fmt.Fprintf(GinkgoWriter, "[DEBUG] Node: %v\n", nodeRet)
+
+			// Change MCP state to indicate Install in progress
+			mcp.Status.UnavailableMachineCount = 1
+			mcp.Status.MachineCount = 2
+			mcp.Status.ReadyMachineCount = 1
+			mcp.Status.UpdatedMachineCount = 1
+			mcp.Status.DegradedMachineCount = 0
+
+			mcp.Status.Conditions = []mcfgv1.MachineConfigPoolCondition{
+				{
+					Type:               mcfgv1.MachineConfigPoolUpdating,
+					Status:             corev1.ConditionTrue,
+					Reason:             "",
+					Message:            "",
+					LastTransitionTime: metav1.Time{Time: time.Now()},
+				},
+			}
+
+			By("Updating MCP status to Updating")
+			Expect(k8sClient.Status().Update(context.Background(), mcp)).Should(Succeed())
+
+			time.Sleep(interval)
+
+			By("Checking the KataConfig CR InstallationStatus")
+			Expect(k8sClient.Get(context.Background(), types.NamespacedName{Name: kataConfig.Name}, kataConfig)).Should(Succeed())
+
+			//TBD InProgressNodesCount is not updated
+			Expect(kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList).Should(ContainElement("worker1"))
+			Expect(kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList).ShouldNot(ContainElement("worker0"))
+
+			// Change node state to indicate Install complete
+			nodeRet = &corev1.Node{}
+			Expect(k8sClient.Get(context.Background(), types.NamespacedName{Name: "worker1"}, nodeRet)).Should(Succeed())
+
+			nodeRet.Annotations["machineconfiguration.openshift.io/state"] = "Done"
+			nodeRet.Annotations["machineconfiguration.openshift.io/currentConfig"] = "rendered-worker-00"
+			Expect(k8sClient.Update(context.Background(), nodeRet)).Should(Succeed())
+
+			// Change MCP state to indicate Install complete
+			mcp.Status.UpdatedMachineCount = 2
+			mcp.Status.ReadyMachineCount = 2
+			mcp.Status.MachineCount = 2
+			mcp.Status.UnavailableMachineCount = 0
+
+			mcp.Status.Conditions = []mcfgv1.MachineConfigPoolCondition{
+				{
+					Type:               mcfgv1.MachineConfigPoolUpdated,
+					Status:             corev1.ConditionTrue,
+					Reason:             "",
+					Message:            "",
+					LastTransitionTime: metav1.Time{Time: time.Now()},
+				},
+			}
+
+			By("Updating MCP status to Updated")
+			Expect(k8sClient.Status().Update(context.Background(), mcp)).Should(Succeed())
+
+			time.Sleep(10 * time.Second)
+
+			By("Checking KataConfig Completed status")
+			Expect(k8sClient.Get(context.Background(), types.NamespacedName{Name: kataConfig.Name}, kataConfig)).Should(Succeed())
+
+			Expect(kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount).Should(Equal(2))
+			Expect(kataConfig.Status.InstallationStatus.Completed.CompletedNodesList).Should(ContainElements("worker0", "worker1"))
+
+			//Delete
+			By("Deleting KataConfig CR successfully")
+			Eventually(func() error {
+				kataConfig := &kataconfigurationv1.KataConfig{}
+				k8sClient.Get(context.Background(), types.NamespacedName{Name: name}, kataConfig)
+				return k8sClient.Delete(context.Background(), kataConfig)
+			}, timeout, interval).Should(Succeed())
+
+			By("Expecting to not find KataConfig CR")
+			Eventually(func() error {
+				kataConfig := &kataconfigurationv1.KataConfig{}
+				return k8sClient.Get(context.Background(), types.NamespacedName{Name: name}, kataConfig)
+			}, timeout, interval).ShouldNot(Succeed())
 
 		})
 	})
