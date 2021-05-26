@@ -387,13 +387,13 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		time.Sleep(60 * time.Second)
 	}
 
-	workreMcp := &mcfgv1.MachineConfigPool{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, workreMcp)
+	workerMcp := &mcfgv1.MachineConfigPool{}
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, workerMcp)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	r.Log.Info("Monitoring worker mcp", "worker mcp name", workreMcp.Name, "ready machines", workreMcp.Status.ReadyMachineCount,
-		"total machines", workreMcp.Status.MachineCount)
+	r.Log.Info("Monitoring worker mcp", "worker mcp name", workerMcp.Name, "ready machines", workerMcp.Status.ReadyMachineCount,
+		"total machines", workerMcp.Status.MachineCount)
 	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
 	r.clearUninstallStatus()
 	_, result, err2, done := r.updateStatus(machinePool)
@@ -402,7 +402,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		return result, err2
 	}
 
-	if workreMcp.Status.ReadyMachineCount != workreMcp.Status.MachineCount {
+	if workerMcp.Status.ReadyMachineCount != workerMcp.Status.MachineCount {
 		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 	}
 
