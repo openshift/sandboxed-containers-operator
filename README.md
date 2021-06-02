@@ -15,8 +15,8 @@ An operator to perform lifecycle management (install/upgrade/uninstall) of [Kata
 
 
    ```
-   git clone https://github.com/openshift/kata-operator 
-   git checkout -b master --track origin/master
+   git clone https://github.com/openshift/sandboxed-containers-operator 
+   git checkout -b release-4.7 --track origin/release-4.7
    ```
 3. Install the Kata Operator on the cluster,
 
