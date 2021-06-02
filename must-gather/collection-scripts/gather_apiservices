@@ -1,0 +1,22 @@
+#!/bin/bash
+
+BASE_COLLECTION_PATH="/must-gather"
+
+# Resource list
+resources=()
+
+for i in $(/usr/bin/oc get apiservices --all-namespaces | grep kata | awk '{ print $1 }')
+do
+  resources+=("$i")
+done
+
+# we use nested loops to nicely output objects partitioned per namespace, kind
+for resource in "${resources[@]}"; do
+  apiservice_collection_path=${BASE_COLLECTION_PATH}/apiservices/
+
+  mkdir -p ${apiservice_collection_path}
+
+  /usr/bin/oc get apiservice "${resource}" -o yaml > "${apiservice_collection_path}/${resource}.yaml"
+done
+
+exit 0

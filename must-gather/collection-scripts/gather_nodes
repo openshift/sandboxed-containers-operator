@@ -1,0 +1,118 @@
+#!/bin/bash
+
+check_node_gather_pods_ready() {
+    line=$(oc get ds node-gather-daemonset -o=custom-columns=DESIRED:.status.desiredNumberScheduled,READY:.status.numberReady --no-headers -n node-gather)
+
+    IFS=$' '
+    read -r desired ready <<< "$line"
+    IFS=$'\n'
+
+    if [[ "$desired" != "0" ]] && [[ "$ready" == "$desired" ]]
+    then
+       return 0
+    else
+       return 1
+    fi
+}
+
+IFS=$'\n'
+
+BASE_COLLECTION_PATH="/must-gather"
+NODES_PATH=${BASE_COLLECTION_PATH}/nodes
+mkdir -p ${NODES_PATH}
+CRD_MANIFEST="/etc/node-gather-crd.yaml"
+DAEMONSET_MANIFEST="/etc/node-gather-ds.yaml"
+NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+POD_NAME=$(oc get pods -l app=must-gather -n "$NAMESPACE" -o'custom-columns=name:metadata.name' --no-headers)
+MUST_GATHER_IMAGE=$(oc get pod -n "$NAMESPACE" "$POD_NAME" -o jsonpath="{.spec.containers[0].image}")
+
+sed -i -e "s#MUST_GATHER_IMAGE#$MUST_GATHER_IMAGE#" $DAEMONSET_MANIFEST
+
+oc create -f $CRD_MANIFEST
+oc adm policy add-scc-to-user privileged -n node-gather -z node-gather
+oc create -f $DAEMONSET_MANIFEST
+
+COUNTER=0
+until check_node_gather_pods_ready || [ $COUNTER -eq 300 ]; do
+    if [[ $(( COUNTER % 20 )) == 0 ]]; then
+        echo "Waiting for node-gather-daemonset to be ready"
+    fi
+    (( COUNTER++ ))
+    sleep 1
+done
+
+for line in $(oc get pod -o=custom-columns=NODE:.spec.nodeName --no-headers --field-selector=status.phase!=Running -n node-gather)
+do
+    echo "Failed to collect node-gather data from node ${line} due to pod scheduling failure." >> ${NODES_PATH}/skipped_nodes.txt
+done
+
+gather_single_pod() {
+    line="$1"
+
+    node=$(echo "$line" | awk -F ' ' '{print $1}')
+    pod=$(echo "$line" | awk -F ' ' '{print $2}')
+    NODE_PATH=${NODES_PATH}/$node
+    mkdir -p "${NODE_PATH}"
+
+    echo "$pod - Gathering node data"
+
+    oc exec "$pod" -n node-gather -- ip a 2>/dev/null >> "$NODE_PATH/ip.txt"
+    oc exec "$pod" -n node-gather -- ip -o link show type bridge 2>/dev/null >> "$NODE_PATH/bridge"
+    oc exec "$pod" -n node-gather -- bridge -j vlan show 2>/dev/null >> "$NODE_PATH/vlan"
+
+    for i in $(oc exec "$pod" -n node-gather -- nft list tables 2>/dev/null);
+    do
+        family=$(echo "$i" | awk -F ' ' '{print $2}' | sed 's/\r//')
+        table=$(echo "$i" | awk -F ' ' '{print $3}' | sed 's/\r//')
+        oc exec "$pod" -n node-gather -- nft list table "$family" "$table" 2>/dev/null > "$NODE_PATH/nft-${family}-${table}"
+    done
+
+    # shellcheck disable=SC2016
+    oc exec "$pod" -n node-gather -- /bin/bash -c 'for dev in /host/sys/bus/pci/devices/*; do if [[ -e $dev/sriov_numvfs ]]; then echo "sriov_numvfs on dev ${dev##*/}: $(cat $dev/sriov_numvfs)"; fi; done' >> "$NODE_PATH/sys_sriov_numvfs"
+    # shellcheck disable=SC2016
+    oc exec "$pod" -n node-gather -- /bin/bash -c 'for dev in /host/sys/bus/pci/devices/*; do if [[ -e $dev/sriov_totalvfs ]]; then echo "sriov_totalvfs on dev ${dev##*/}: $(cat $dev/sriov_totalvfs)"; fi; done' >> "$NODE_PATH/sys_sriov_totalvfs"
+
+    oc exec "$pod" -n node-gather -- /bin/bash -c 'if [[ -d /host/opt/cni/bin ]]; then ls -l /host/opt/cni/bin; fi' > "${NODE_PATH}/opt-cni-bin"
+    oc exec "$pod" -n node-gather -- /bin/bash -c 'if [[ -d /host/var/lib/must-gather/cni/bin ]]; then ls -l /host/var/lib/cni/bin; fi' > "${NODE_PATH}/var-lib-cni-bin"
+
+    config_dirs=(etc/cni/net.d etc/kubernetes/cni/net.d)
+    IFS=$' '
+    for conf_dir in "${config_dirs[@]}"; do
+        oc exec "$pod" -n node-gather -- [ -d "/host/$conf_dir" ] 2>/dev/null
+        if oc exec "$pod" -n node-gather -- [ -d "/host/$conf_dir" ] 2>/dev/null; then
+            CNI_COFIG_PATH=${NODE_PATH}/$conf_dir
+            mkdir -p "${CNI_COFIG_PATH}"
+            oc cp "$pod:/host/$conf_dir ${CNI_COFIG_PATH}" -n node-gather 2>/dev/null
+    fi
+    done
+    IFS=$'\n'
+
+    oc exec "$pod" -n node-gather -- ls -al /host/dev/vfio/ 2>/dev/null >> "$NODE_PATH/dev_vfio"
+    oc exec "$pod" -n node-gather -- dmesg 2>/dev/null >> "$NODE_PATH/dmesg"
+    oc exec "$pod" -n node-gather -- cat /host/proc/cmdline 2>/dev/null >> "$NODE_PATH/proc_cmdline"
+    oc exec "$pod" -n node-gather -- lspci -vv 2>/dev/null >> "$NODE_PATH/lspci"
+
+    if oc exec "$pod" -n node-gather -- [ -f /host/etc/pcidp/config.json ] 2>/dev/null; then
+        oc cp "$pod:/host/etc/pcidp/config.json" "$NODE_PATH/pcidp_config.json" -n node-gather 2>/dev/null
+    fi
+}
+
+for line in $(oc get pod -o=custom-columns=NODE:.spec.nodeName,NAME:.metadata.name --no-headers --field-selector=status.phase=Running -n node-gather)
+do
+    gather_single_pod "$line" &
+done
+
+wait
+
+# Collect journal logs for specified units for all nodes
+NODE_UNITS=(kubelet crio)
+for NODE in $(oc get nodes --no-headers -o custom-columns=':metadata.name'); do
+    NODE_PATH=${NODES_PATH}/$NODE
+    mkdir -p "${NODE_PATH}"
+    for UNIT in "${NODE_UNITS[@]}"; do
+        oc adm node-logs "$NODE" -u "$UNIT" > "${NODE_PATH}/${NODE}_logs_$UNIT" &
+    done
+done
+
+oc delete -f $DAEMONSET_MANIFEST
+oc delete -f $CRD_MANIFEST

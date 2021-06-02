@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# Resource list
+resources=()
+
+# sandboxed containers related namespaces
+resources+=(ns/openshift-operator-lifecycle-manager)
+resources+=(ns/openshift-marketplace)
+
+# ImageStreamTag
+resources+=(istag)
+
+# Nodes and Machines
+resources+=(nodes)
+resources+=(machines)
+
+# Run the collection of resources using must-gather
+for resource in "${resources[@]}"; do
+    echo "Inspecting resource ${resource}..."
+    /usr/bin/oc adm inspect --dest-dir must-gather --all-namespaces "${resource}" &> /dev/null
+done
+
+# Collect CRDs
+/usr/bin/gather_crds
+
+# Collect the apiservices
+/usr/bin/gather_apiservices
+
+# Collect nodes details
+/usr/bin/gather_nodes
+
+# Collect image details
+# Workaround for: https://github.com/openshift/must-gather/issues/122
+/usr/bin/gather_images
+
+exit 0

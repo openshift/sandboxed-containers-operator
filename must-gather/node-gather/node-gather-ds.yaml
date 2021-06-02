@@ -1,0 +1,80 @@
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-gather-daemonset
+  namespace: node-gather
+  labels:
+spec:
+  selector:
+    matchLabels:
+      name: node-gather-daemonset
+  template:
+    metadata:
+      labels:
+        name: node-gather-daemonset
+    spec:
+      serviceaccount: node-gather
+      serviceAccountName: node-gather
+      terminationGracePeriodSeconds: 0
+      hostNetwork: true
+      containers:
+      - name: node-probe
+        image: MUST_GATHER_IMAGE
+        command: ["/bin/bash", "-c", "echo ok > /tmp/healthy && sleep INF"]
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "50Mi"
+          limits:
+            cpu: "100m"
+            memory: "50Mi"
+        readinessProbe:
+          exec:
+            command:
+              - cat
+              - /tmp/healthy
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+          - name: sys
+            mountPath: /host/sys
+          - name: proc
+            mountPath: /host/proc
+          - name: dev
+            mountPath: /host/dev
+          - name: etc
+            mountPath: /host/etc
+          - name: opt
+            mountPath: /host/opt
+          - name: var
+            mountPath: /host/var            
+        securityContext:
+          privileged: true
+      volumes:
+      - name: sys
+        hostPath:
+          path: /sys
+          type: Directory
+      - name: proc
+        hostPath:
+          path: /proc
+          type: Directory
+      - name: dev
+        hostPath:
+          path: /dev
+          type: Directory
+      - name: etc
+        hostPath:
+          path: /etc
+          type: Directory
+      - name: opt
+        hostPath:
+          path: /opt
+          type: Directory
+      - name: var
+        hostPath:
+          path: /var
+          type: Directory
+
