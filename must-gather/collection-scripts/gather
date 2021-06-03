@@ -26,6 +26,9 @@ done
 # Collect the apiservices
 /usr/bin/gather_apiservices
 
+# Collect "audit" details
+/usr/bin/gather_audit_logs
+
 # Collect nodes details
 /usr/bin/gather_nodes
 
