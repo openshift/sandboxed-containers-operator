@@ -1,0 +1,5 @@
+[centos-8-sig-virt-kata-containers]
+name=CentOS 8 - SIG Virt - Kata Containers
+baseurl=http://mirror.centos.org/$contentdir/$releasever/virt/$basearch/kata-containers
+gpgcheck=0
+enabled=1
