@@ -78,7 +78,6 @@ gather_single_pod() {
     config_dirs=(etc/cni/net.d etc/kubernetes/cni/net.d)
     IFS=$' '
     for conf_dir in "${config_dirs[@]}"; do
-        oc exec "$pod" -n node-gather -- [ -d "/host/$conf_dir" ] 2>/dev/null
         if oc exec "$pod" -n node-gather -- [ -d "/host/$conf_dir" ] 2>/dev/null; then
             CNI_COFIG_PATH=${NODE_PATH}/$conf_dir
             mkdir -p "${CNI_COFIG_PATH}"
