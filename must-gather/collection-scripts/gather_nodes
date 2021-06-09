@@ -82,7 +82,7 @@ gather_single_pod() {
             CNI_COFIG_PATH=${NODE_PATH}/$conf_dir
             mkdir -p "${CNI_COFIG_PATH}"
             oc cp "$pod:/host/$conf_dir ${CNI_COFIG_PATH}" -n node-gather 2>/dev/null
-    fi
+        fi
     done
     IFS=$'\n'
 
