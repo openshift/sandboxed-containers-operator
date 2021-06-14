@@ -20,8 +20,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"k8s.io/apimachinery/pkg/labels"
 	"time"
+
+	"k8s.io/apimachinery/pkg/labels"
 
 	ignTypes "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
@@ -287,8 +288,13 @@ func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
 		}
 
 		if r.kataConfig.Spec.KataConfigPoolSelector != nil {
+			r.Log.Info("KataConfigPoolSelector:", "r.kataConfig.Spec.KataConfigPoolSelector", r.kataConfig.Spec.KataConfigPoolSelector)
+			nodeSelector, err := metav1.LabelSelectorAsMap(r.kataConfig.Spec.KataConfigPoolSelector)
+			if err != nil {
+				r.Log.Error(err, "Unable to get nodeSelector for runtimeClass")
+			}
 			rc.Scheduling = &nodeapi.Scheduling{
-				NodeSelector: r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels,
+				NodeSelector: nodeSelector,
 			}
 		}
 		return rc
