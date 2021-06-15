@@ -88,15 +88,6 @@ func main() {
 			setupLog.Error(err, "unable to create KataConfig controller for OpenShift cluster", "controller", "KataConfig")
 			os.Exit(1)
 		}
-	} else {
-		if err = (&controllers.KataConfigKubernetesReconciler{
-			Client: mgr.GetClient(),
-			Log:    ctrl.Log.WithName("controllers").WithName("KataConfig"),
-			Scheme: mgr.GetScheme(),
-		}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create KataConfig controller for Kubernetes cluster", "controller", "KataConfig")
-			os.Exit(1)
-		}
 	}
 	// +kubebuilder:scaffold:builder
 
