@@ -37,15 +37,6 @@ spec:
             description: KataConfigSpec defines the desired state of KataConfig
             nullable: true
             properties:
-              config:
-                description: KataInstallConfig is a placeholder struct
-                properties:
-                  sourceImage:
-                    description: SourceImage is the name of the kata-deploy image
-                    type: string
-                required:
-                - sourceImage
-                type: object
               kataConfigPoolSelector:
                 description: KataConfigPoolSelector is used to filer the worker nodes
                   if not specified, all worker nodes are selected

@@ -29,9 +29,6 @@ type KataConfigSpec struct {
 	// +optional
 	// +nullable
 	KataConfigPoolSelector *metav1.LabelSelector `json:"kataConfigPoolSelector"`
-
-	// +optional
-	Config KataInstallConfig `json:"config"`
 }
 
 // KataConfigStatus defines the observed state of KataConfig
@@ -88,12 +85,6 @@ type KataConfigList struct {
 
 func init() {
 	SchemeBuilder.Register(&KataConfig{}, &KataConfigList{})
-}
-
-// KataInstallConfig is a placeholder struct
-type KataInstallConfig struct {
-	// SourceImage is the name of the kata-deploy image
-	SourceImage string `json:"sourceImage"`
 }
 
 // KataInstallationStatus reflects the status of the ongoing kata installation
