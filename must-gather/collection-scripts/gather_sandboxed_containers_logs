@@ -61,4 +61,5 @@ mkdir -p ${MARKETPLACE_NS}
 
 for pod in $(oc get pods -n openshift-marketplace -o'custom-columns=name:metadata.name' --no-headers); do
     oc logs "${pod}" -n openshift-marketplace > "${MARKETPLACE_NS}/${pod}_logs"
+    oc describe pod "${pod}" -n openshift-marketplace > "${MARKETPLACE_NS}/${pod}_description"
 done
