@@ -54,3 +54,11 @@ mkdir -p ${INSTALLPLAN_NS}
 for installplan in $(oc get installplans -n openshift-sandboxed-containers-operator -o'custom-columns=name:metadata.name' --no-headers); do
     oc describe installplan ${installplan} -n openshift-sandboxed-containers-operator > "${INSTALLPLAN_NS}/${installplan}_description"
 done
+
+# marketplace
+MARKETPLACE_NS=${NAMESPACE_PATH}/openshift-marketplace
+mkdir -p ${MARKETPLACE_NS}
+
+for pod in $(oc get pods -n openshift-marketplace -o'custom-columns=name:metadata.name' --no-headers); do
+    oc logs "${pod}" -n openshift-marketplace > "${MARKETPLACE_NS}/${pod}_logs"
+done
