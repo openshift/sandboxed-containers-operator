@@ -24,7 +24,7 @@ for operator in "${operators[@]}"; do
     mkdir -p ${OPERATOR_NS}
 
     for pod in $(oc get pods -n "${operator}" -o'custom-columns=name:metadata.name' --no-headers); do
-        oc logs "${pod}" -n "${operator}" > "${OPERATOR_NS}/${pod}_logs"
+        oc logs "${pod}" --all-containers -n "${operator}" > "${OPERATOR_NS}/${pod}_logs"
     done
 done
 
@@ -60,7 +60,7 @@ MARKETPLACE_NS=${NAMESPACE_PATH}/openshift-marketplace
 mkdir -p ${MARKETPLACE_NS}
 
 for pod in $(oc get pods -n openshift-marketplace -o'custom-columns=name:metadata.name' --no-headers); do
-    oc logs "${pod}" -n openshift-marketplace > "${MARKETPLACE_NS}/${pod}_logs"
+    oc logs "${pod}" --all-containers -n openshift-marketplace > "${MARKETPLACE_NS}/${pod}_logs"
     oc describe pod "${pod}" -n openshift-marketplace > "${MARKETPLACE_NS}/${pod}_description"
 done
 
@@ -69,6 +69,6 @@ LIFECYCLE_MANAGER_NS=${LIFECYCLE_MANAGER_NS}/openshift-operator-lifecycle-manage
 mkdir -p ${LIFECYCLE_MANAGER_NS}
 
 for pod in $(oc get pods -n openshift-operator-lifecycle-manager -o'custom-columns=name:metadata.name' --no-headers); do
-    oc logs "${pod}" -n openshift-operator-lifecycle-manager > "${LIFECYCLE_MANAGER_NS}/${pod}_logs"
+    oc logs "${pod}" --all-containers -n openshift-operator-lifecycle-manager > "${LIFECYCLE_MANAGER_NS}/${pod}_logs"
     oc describe pod "${pod}" -n openshift-operator-lifecycle-manager > "${LIFECYCLE_MANAGER_NS}/${pod}_description"
 done
