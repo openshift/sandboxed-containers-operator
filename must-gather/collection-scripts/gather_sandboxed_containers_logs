@@ -63,3 +63,11 @@ for pod in $(oc get pods -n openshift-marketplace -o'custom-columns=name:metadat
     oc logs "${pod}" -n openshift-marketplace > "${MARKETPLACE_NS}/${pod}_logs"
     oc describe pod "${pod}" -n openshift-marketplace > "${MARKETPLACE_NS}/${pod}_description"
 done
+
+# lifecycle-manager
+LIFECYCLE_MANAGER_NS=${LIFECYCLE_MANAGER_NS}/openshift-operator-lifecycle-manager
+mkdir -p ${LIFECYCLE_MANAGER_NS}
+
+for pod in $(oc get pods -n openshift-operator-lifecycle-manager -o'custom-columns=name:metadata.name' --no-headers); do
+    oc logs "${pod}" -n openshift-operator-lifecycle-manager > "${LIFECYCLE_MANAGER_NS}/${pod}_logs"
+done
