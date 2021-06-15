@@ -14,7 +14,9 @@ oc describe kataconfig > "${OSC_PATH}/kataconfig_description"
 operators=()
 #  logs from everything in the following operators namespaces
 #  - openshift-sandboxed-containers-operator
+#  - openshift-machine-config-operator
 operators+=(openshift-sandboxed-containers-operator)
+operators+=(openshift-machine-config-operator)
 
 NAMESPACE_PATH=${OSC_PATH}/namespaces
 for operator in "${operators[@]}"; do
