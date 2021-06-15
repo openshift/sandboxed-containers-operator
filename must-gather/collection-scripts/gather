@@ -36,4 +36,7 @@ done
 # Workaround for: https://github.com/openshift/must-gather/issues/122
 /usr/bin/gather_images
 
+# Collect sandboxed-containers details
+/usr/bin/gather_sandboxed_containers_logs
+
 exit 0

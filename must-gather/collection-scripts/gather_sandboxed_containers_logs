@@ -1,0 +1,11 @@
+#!/bin/bash
+
+IFS=$'\n'
+
+BASE_COLLECTION_PATH="/must-gather"
+
+# kataconfig
+OSC_PATH=${BASE_COLLECTION_PATH}/sandboxed-containers
+mkdir -p ${OSC_PATH}
+
+oc describe kataconfig > "${OSC_PATH}/kataconfig_description"
