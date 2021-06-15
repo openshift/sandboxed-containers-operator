@@ -27,3 +27,16 @@ for operator in "${operators[@]}"; do
         oc logs "${pod}" -n "${operator}" > "${OPERATOR_NS}/${pod}_logs"
     done
 done
+
+# mcps
+mcps=()
+#  description of the following mcps
+#  - master
+mcps+=(master)
+
+MCP_PATH=${OSC_PATH}/mcps
+mkdir -p ${MCP_PATH}
+
+for mcp in "${mcps[@]}"; do
+    oc describe mcp $mcp > "${MCP_PATH}/${mcp}_description"
+done
