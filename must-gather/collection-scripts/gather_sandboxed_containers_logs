@@ -9,3 +9,19 @@ OSC_PATH=${BASE_COLLECTION_PATH}/sandboxed-containers
 mkdir -p ${OSC_PATH}
 
 oc describe kataconfig > "${OSC_PATH}/kataconfig_description"
+
+# operators
+operators=()
+#  logs from everything in the following operators namespaces
+#  - openshift-sandboxed-containers-operator
+operators+=(openshift-sandboxed-containers-operator)
+
+NAMESPACE_PATH=${OSC_PATH}/namespaces
+for operator in "${operators[@]}"; do
+    OPERATOR_NS=${NAMESPACE_PATH}/${operator}
+    mkdir -p ${OPERATOR_NS}
+
+    for pod in $(oc get pods -n "${operator}" -o'custom-columns=name:metadata.name' --no-headers); do
+        oc logs "${pod}" -n "${operator}" > "${OPERATOR_NS}/${pod}_logs"
+    done
+done
