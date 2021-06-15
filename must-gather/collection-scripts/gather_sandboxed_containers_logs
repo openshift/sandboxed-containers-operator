@@ -33,12 +33,16 @@ mcps=()
 #  description of the following mcps
 #  - master
 #  - worker
+#  - kata-oc
 mcps+=(master)
 mcps+=(worker)
+mcps+=(kata-oc)
 
 MCP_PATH=${OSC_PATH}/mcps
 mkdir -p ${MCP_PATH}
 
 for mcp in "${mcps[@]}"; do
-    oc describe mcp $mcp > "${MCP_PATH}/${mcp}_description"
+    if $(oc get mcp $mcp &>/dev/null); then
+        oc describe mcp $mcp > "${MCP_PATH}/${mcp}_description"
+    fi	    
 done
