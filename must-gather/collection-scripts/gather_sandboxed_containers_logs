@@ -46,3 +46,11 @@ for mcp in "${mcps[@]}"; do
         oc describe mcp $mcp > "${MCP_PATH}/${mcp}_description"
     fi	    
 done
+
+# installplans
+INSTALLPLAN_NS=${NAMESPACE_PATH}/openshift-sandboxed-containers-operator
+mkdir -p ${INSTALLPLAN_NS}
+
+for installplan in $(oc get installplans -n openshift-sandboxed-containers-operator -o'custom-columns=name:metadata.name' --no-headers); do
+    oc describe installplan ${installplan} -n openshift-sandboxed-containers-operator > "${INSTALLPLAN_NS}/${installplan}_description"
+done
