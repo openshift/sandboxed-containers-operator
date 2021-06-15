@@ -32,7 +32,9 @@ done
 mcps=()
 #  description of the following mcps
 #  - master
+#  - worker
 mcps+=(master)
+mcps+=(worker)
 
 MCP_PATH=${OSC_PATH}/mcps
 mkdir -p ${MCP_PATH}
