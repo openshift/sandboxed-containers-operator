@@ -17,16 +17,25 @@ limitations under the License.
 package v1
 
 import (
+	"context"
+	"fmt"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
-// log is for logging in this package.
-var kataconfiglog = logf.Log.WithName("kataconfig-resource")
+var (
+	// log is for logging in this package.
+	kataconfiglog = logf.Log.WithName("kataconfig-resource")
+	clientInst    client.Client
+)
 
 func (r *KataConfig) SetupWebhookWithManager(mgr ctrl.Manager) error {
+	clientInst = mgr.GetClient()
+
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(r).
 		Complete()
@@ -35,7 +44,7 @@ func (r *KataConfig) SetupWebhookWithManager(mgr ctrl.Manager) error {
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
-//+kubebuilder:webhook:verbs=create;update,path=/validate-kataconfiguration-kataconfiguration-openshift-io-v1-kataconfig,mutating=false,failurePolicy=fail,groups=kataconfiguration.kataconfiguration.openshift.io,resources=kataconfigs,versions=v1,name=vkataconfig.kb.io
+//+kubebuilder:webhook:verbs=create,path=/validate-kataconfiguration-openshift-io-v1-kataconfig,mutating=false,failurePolicy=fail,groups=kataconfiguration.openshift.io,resources=kataconfigs,versions=v1,name=vkataconfig.kb.io
 
 var _ webhook.Validator = &KataConfig{}
 
@@ -43,7 +52,18 @@ var _ webhook.Validator = &KataConfig{}
 func (r *KataConfig) ValidateCreate() error {
 	kataconfiglog.Info("validate create", "name", r.Name)
 
-	// TODO(user): fill in your validation logic upon object creation.
+	kataConfigList := &KataConfigList{}
+	listOpts := []client.ListOption{
+		client.InNamespace(corev1.NamespaceAll),
+	}
+	if err := clientInst.List(context.TODO(), kataConfigList, listOpts...); err != nil {
+		return fmt.Errorf("Failed to list KataConfig custom resources: %v", err)
+	}
+
+	if len(kataConfigList.Items) == 1 {
+		return fmt.Errorf("A KataConfig instance already exists, refusing to create a duplicate")
+	}
+
 	return nil
 }
 
