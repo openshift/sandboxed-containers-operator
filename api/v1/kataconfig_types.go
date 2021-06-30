@@ -15,6 +15,7 @@ limitations under the License.
 package v1
 
 import (
+	operatorv1 "github.com/openshift/api/operator/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -58,6 +59,8 @@ type KataConfigStatus struct {
 	Upgradestatus KataUpgradeStatus `json:"upgradeStatus,omitempty"`
 
 	BaseMcpGeneration int64 `json:"prevMcpGeneration"`
+
+	Conditions []operatorv1.OperatorCondition `json:"conditions,omitempty"`
 }
 
 // +genclient
