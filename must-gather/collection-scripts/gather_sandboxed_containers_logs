@@ -1,0 +1,74 @@
+#!/bin/bash
+
+IFS=$'\n'
+
+BASE_COLLECTION_PATH="/must-gather"
+
+# kataconfig
+OSC_PATH=${BASE_COLLECTION_PATH}/sandboxed-containers
+mkdir -p ${OSC_PATH}
+
+oc describe kataconfig > "${OSC_PATH}/kataconfig_description"
+
+# operators
+operators=()
+#  logs from everything in the following operators namespaces
+#  - openshift-sandboxed-containers-operator
+#  - openshift-machine-config-operator
+operators+=(openshift-sandboxed-containers-operator)
+operators+=(openshift-machine-config-operator)
+
+NAMESPACE_PATH=${OSC_PATH}/namespaces
+for operator in "${operators[@]}"; do
+    OPERATOR_NS=${NAMESPACE_PATH}/${operator}
+    mkdir -p ${OPERATOR_NS}
+
+    for pod in $(oc get pods -n "${operator}" -o'custom-columns=name:metadata.name' --no-headers); do
+        oc logs "${pod}" --all-containers -n "${operator}" > "${OPERATOR_NS}/${pod}_logs"
+    done
+done
+
+# mcps
+mcps=()
+#  description of the following mcps
+#  - master
+#  - worker
+#  - kata-oc
+mcps+=(master)
+mcps+=(worker)
+mcps+=(kata-oc)
+
+MCP_PATH=${OSC_PATH}/mcps
+mkdir -p ${MCP_PATH}
+
+for mcp in "${mcps[@]}"; do
+    if $(oc get mcp $mcp &>/dev/null); then
+        oc describe mcp $mcp > "${MCP_PATH}/${mcp}_description"
+    fi	    
+done
+
+# installplans
+INSTALLPLAN_NS=${NAMESPACE_PATH}/openshift-sandboxed-containers-operator
+mkdir -p ${INSTALLPLAN_NS}
+
+for installplan in $(oc get installplans -n openshift-sandboxed-containers-operator -o'custom-columns=name:metadata.name' --no-headers); do
+    oc describe installplan ${installplan} -n openshift-sandboxed-containers-operator > "${INSTALLPLAN_NS}/${installplan}_description"
+done
+
+# marketplace
+MARKETPLACE_NS=${NAMESPACE_PATH}/openshift-marketplace
+mkdir -p ${MARKETPLACE_NS}
+
+for pod in $(oc get pods -n openshift-marketplace -o'custom-columns=name:metadata.name' --no-headers); do
+    oc logs "${pod}" --all-containers -n openshift-marketplace > "${MARKETPLACE_NS}/${pod}_logs"
+    oc describe pod "${pod}" -n openshift-marketplace > "${MARKETPLACE_NS}/${pod}_description"
+done
+
+# lifecycle-manager
+LIFECYCLE_MANAGER_NS=${LIFECYCLE_MANAGER_NS}/openshift-operator-lifecycle-manager
+mkdir -p ${LIFECYCLE_MANAGER_NS}
+
+for pod in $(oc get pods -n openshift-operator-lifecycle-manager -o'custom-columns=name:metadata.name' --no-headers); do
+    oc logs "${pod}" --all-containers -n openshift-operator-lifecycle-manager > "${LIFECYCLE_MANAGER_NS}/${pod}_logs"
+    oc describe pod "${pod}" -n openshift-operator-lifecycle-manager > "${LIFECYCLE_MANAGER_NS}/${pod}_description"
+done
