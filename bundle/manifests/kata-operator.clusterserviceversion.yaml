@@ -231,6 +231,27 @@ spec:
     type: MultiNamespace
   - supported: false
     type: AllNamespaces
+  webhookdefinitions:
+  - type: ValidatingAdmissionWebhook
+    admissionReviewVersions:
+    - v1beta1
+    - v1
+    containerPort: 443
+    targetPort: 9443
+    deploymentName: sandboxed-containers-operator-controller-manager
+    failurePolicy: Fail
+    generateName: vkataconfig.kb.io
+    rules:
+    - apiGroups:
+      - kataconfiguration.openshift.io
+      apiVersions:
+      - v1
+      operations:
+      - CREATE
+      resources:
+      - kataconfigs
+    sideEffects: None
+    webhookPath: /validate-kataconfiguration-openshift-io-v1-kataconfig
   keywords:
   - kernel-isolated containers
   links:
