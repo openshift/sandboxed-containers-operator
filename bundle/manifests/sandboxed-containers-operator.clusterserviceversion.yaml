@@ -163,7 +163,7 @@ spec:
                 - --enable-leader-election
                 command:
                 - /manager
-                image: registry-proxy.engineering.redhat.com/rh-osbs/openshift-sandboxed-containers-operator:1.0.0-5
+                image: IMAGE_REG/openshift-sandboxed-containers-operator:latest
                 imagePullPolicy: Always
                 name: manager
                 resources:
