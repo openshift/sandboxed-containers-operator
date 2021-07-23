@@ -4,11 +4,24 @@ IFS=$'\n'
 
 BASE_COLLECTION_PATH="/must-gather"
 
-# kataconfig
 OSC_PATH=${BASE_COLLECTION_PATH}/sandboxed-containers
 mkdir -p ${OSC_PATH}
 
-oc describe kataconfig > "${OSC_PATH}/kataconfig_description"
+operator_resources=()
+operator_resources+=(kataconfig)
+operator_resources+=(clusterserviceversion)
+operator_resources+=(subscription)
+operator_resources+=(services)
+
+for operator_resource in "${operator_resources[@]}"; do
+	oc describe ${operator_resource} -n openshift-sandboxed-containers-operator > "${OSC_PATH}/${operator_resource}_description"
+done
+
+# NOTE Jul 16, 2021: a single one is expected as of this writing, with more
+# possibly being added in the future
+KATA_WEBHOOK_CONFIGS=$(oc get validatingwebhookconfigurations -A -o'custom-columns=name:metadata.name' --no-headers | grep kata)
+oc describe validatingwebhookconfigurations ${KATA_WEBHOOK_CONFIGS} > "${OSC_PATH}/validatingwebhookconfigurations_description"
+
 
 # operators
 operators=()
@@ -71,4 +84,18 @@ mkdir -p ${LIFECYCLE_MANAGER_NS}
 for pod in $(oc get pods -n openshift-operator-lifecycle-manager -o'custom-columns=name:metadata.name' --no-headers); do
     oc logs "${pod}" --all-containers -n openshift-operator-lifecycle-manager > "${LIFECYCLE_MANAGER_NS}/${pod}_logs"
     oc describe pod "${pod}" -n openshift-operator-lifecycle-manager > "${LIFECYCLE_MANAGER_NS}/${pod}_description"
+done
+
+# sandboxed containers operator deployment resources
+
+DEPLOYMENT_UNIT_PATH=${NAMESPACE_PATH}/openshift-sandboxed-containers-operator/deployments
+mkdir -p ${DEPLOYMENT_UNIT_PATH}
+
+deploymentUnits=(pods deployments statefulsets deploymentconfigs)
+
+for deploymentUnit in "${deploymentUnits[@]}"; do
+	echo "$deploymentUnit using kata runtime class still running:"
+
+	oc get $deploymentUnit -A -o json | jq -r '.items[] | select(.spec.runtimeClassName | test("kata")).metadata.name' 2>/dev/null > ${DEPLOYMENT_UNIT_PATH}/${deploymentUnit}
+
 done
