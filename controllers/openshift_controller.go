@@ -24,6 +24,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/labels"
 
+	operatorv1 "github.com/openshift/api/operator/v1"
+	cov1helpers "github.com/openshift/library-go/pkg/operator/v1helpers"
+
 	ignTypes "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -329,6 +332,26 @@ func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
 	return ctrl.Result{}, nil
 }
 
+func (r *KataConfigOpenShiftReconciler) setUpgradeableTrue() {
+	cov1helpers.SetOperatorCondition(&r.kataConfig.Status.Conditions, operatorv1.OperatorCondition{
+		Type:               "Upgradeable",
+		Status:             operatorv1.ConditionStatus(metav1.ConditionTrue),
+		LastTransitionTime: metav1.Time{},
+		Reason:             "No operation ongoing",
+		Message:            "Operator is upgradeable",
+	})
+}
+
+func (r *KataConfigOpenShiftReconciler) setUpgradeableFalse(operation string) {
+	cov1helpers.SetOperatorCondition(&r.kataConfig.Status.Conditions, operatorv1.OperatorCondition{
+		Type:               "Upgradeable",
+		Status:             operatorv1.ConditionStatus(metav1.ConditionFalse),
+		LastTransitionTime: metav1.Time{},
+		Reason:             "operation ongoing: " + operation,
+		Message:            "Operator is not upgradeable",
+	})
+}
+
 func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.Result, error) {
 	r.Log.Info("KataConfig deletion in progress: ")
 	machinePool, err := r.getMcpName()
@@ -416,15 +439,18 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 	}
 
+	r.setUpgradeableTrue()
 	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionFalse
 	_, result, err2, done = r.updateStatus(machinePool)
 	r.clearInstallStatus()
 	if !done {
+		r.setUpgradeableFalse("uninstallation")
 		return result, err2
 	}
 	err = r.Client.Status().Update(context.TODO(), r.kataConfig)
 	if err != nil {
 		r.Log.Error(err, "Unable to update KataConfig status")
+		r.setUpgradeableFalse("uninstallation")
 		return ctrl.Result{}, err
 	}
 
@@ -514,6 +540,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		foundMcp.Status.UpdatedMachineCount == foundMcp.Status.MachineCount {
 		r.Log.Info("set runtime class")
 		r.kataConfig.Status.InstallationStatus.IsInProgress = "false"
+		r.setUpgradeableTrue()
 		return r.setRuntimeClass()
 	} else {
 		r.Log.Info("Waiting for MachineConfigPool to be fully updated")
@@ -690,6 +717,7 @@ func (r *KataConfigOpenShiftReconciler) updateStatus(machinePool string) (*mcfgv
 
 	/* installation status */
 	if corev1.ConditionTrue == r.kataConfig.Status.InstallationStatus.IsInProgress {
+		r.setUpgradeableFalse("installation")
 		err, _ := r.updateInstallStatus()
 		if err != nil {
 			return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
@@ -705,6 +733,7 @@ func (r *KataConfigOpenShiftReconciler) updateStatus(machinePool string) (*mcfgv
 
 	/* uninstallation status */
 	if corev1.ConditionTrue == r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress {
+		r.setUpgradeableFalse("uninstallation")
 		err, _ := r.updateUninstallStatus()
 		if err != nil {
 			return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
