@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM golang:1.13 as builder
+FROM quay.io/bitnami/golang:1.13 as builder
 
 WORKDIR /workspace
 # Copy the Go Modules manifests

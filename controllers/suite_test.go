@@ -58,11 +58,16 @@ var _ = BeforeSuite(func(done Done) {
 	logf.SetLogger(zap.LoggerTo(GinkgoWriter, true))
 
 	By("bootstrapping test environment")
+	webhookOptions := envtest.WebhookInstallOptions{
+		DirectoryPaths: []string{filepath.Join("..", "config", "webhook")},
+	}
+
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases"),
 			filepath.Join("..", "config", "extension-crds", "machineconfig.crd.yaml"),
 			filepath.Join("..", "config", "extension-crds", "machineconfigpool.crd.yaml"),
 		},
+		WebhookInstallOptions: webhookOptions,
 	}
 
 	var err error
@@ -84,7 +89,10 @@ var _ = BeforeSuite(func(done Done) {
 	// +kubebuilder:scaffold:scheme
 
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
-		Scheme: scheme.Scheme,
+		Scheme:  scheme.Scheme,
+		Port:    testEnv.WebhookInstallOptions.LocalServingPort,
+		Host:    testEnv.WebhookInstallOptions.LocalServingHost,
+		CertDir: testEnv.WebhookInstallOptions.LocalServingCertDir,
 	})
 	Expect(err).ToNot(HaveOccurred())
 
@@ -93,6 +101,9 @@ var _ = BeforeSuite(func(done Done) {
 		Log:    ctrl.Log.WithName("controllers").WithName("KataConfig"),
 		Scheme: k8sManager.GetScheme(),
 	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	err = (&kataconfigurationv1.KataConfig{}).SetupWebhookWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
 	go func() {
