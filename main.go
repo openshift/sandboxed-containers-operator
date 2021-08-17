@@ -89,6 +89,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
+
 	if err = (&kataconfigurationv1.KataConfig{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "KataConfig")
 		os.Exit(1)
