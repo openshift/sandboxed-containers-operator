@@ -19,6 +19,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	appsv1 "k8s.io/api/apps/v1"
+	"os"
 	"time"
 
 	"k8s.io/apimachinery/pkg/labels"
@@ -101,8 +103,123 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 			return ctrl.Result{}, updateErr
 		}
 
+		ds := r.processDaemonsetForMonitor()
+		// Set KataConfig instance as the owner and controller
+		if ds != nil {
+			r.Log.Info("daemonset is not nil")
+			if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
+				r.Log.Error(err, "setcontrollerreference failed")
+				return ctrl.Result{}, err
+			}
+			r.Log.Info("setcontrollerreference successful")
+		} else {
+			r.Log.Info("ds returned was nil")
+			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+		}
+		foundDs := &appsv1.DaemonSet{}
+		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDs)
+		if err != nil && k8serrors.IsNotFound(err) {
+			r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
+			err = r.Client.Create(context.TODO(), ds)
+			if err != nil {
+				r.Log.Error(err, "error when creating monitor daemonset")
+				res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+			}
+		} else if err != nil {
+			r.Log.Info("could not get monitor daemonset, try again", err)
+			res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+		}
+
 		return res, err
 	}()
+}
+
+func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.DaemonSet {
+	var (
+		runPrivileged = true
+		monitorImage  = os.Getenv("OSC_MONITOR_IMAGE")
+	)
+
+	if monitorImage == "" {
+		r.Log.Info("OSC_MONITOR_IMAGE is not set, using default image")
+		monitorImage = "quay.io/openshift_sandboxed_monitors/openshift-sandboxed-containers-monitor:latest"
+	}
+	dsName := "openshift-sandboxed-containers-monitor"
+	dsLabels := map[string]string{
+		"name": dsName,
+	}
+
+	var nodeSelector map[string]string
+	if r.kataConfig.Spec.KataConfigPoolSelector != nil {
+		nodeSelector = r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels
+	} else {
+		nodeSelector = map[string]string{
+			"node-role.kubernetes.io/worker": "",
+		}
+	}
+
+	return &appsv1.DaemonSet{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "apps/v1",
+			Kind:       "DaemonSet",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      dsName,
+			Namespace: "openshift-sandboxed-containers-operator",
+		},
+		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: dsLabels,
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: dsLabels,
+				},
+				Spec: corev1.PodSpec{
+					ServiceAccountName: "default",
+					NodeSelector:       nodeSelector,
+					Containers: []corev1.Container{
+						{
+							Name:            "kata-monitor",
+							Image:           monitorImage,
+							ImagePullPolicy: "Always",
+							SecurityContext: &corev1.SecurityContext{
+								Privileged: &runPrivileged,
+							},
+							Command: []string{"/usr/bin/kata-monitor", "--log-level=debug", "--runtime-endpoint=/run/crio/crio.sock"},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "crio-sock",
+									MountPath: "/run/crio/",
+								},
+								{
+									Name:      "sbs",
+									MountPath: "/run/vc/sbs/",
+								}},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "crio-sock",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/run/crio/",
+								},
+							},
+						},
+						{
+							Name: "sbs",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/run/vc/sbs/",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 func (r *KataConfigOpenShiftReconciler) newMCPforCR() (*mcfgv1.MachineConfigPool, error) {
@@ -508,6 +625,19 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	if err != nil {
 		r.Log.Error(err, "Unable to update KataConfig status")
 		return ctrl.Result{}, err
+	}
+
+	ds := r.processDaemonsetForMonitor()
+	if ds == nil {
+		r.Log.Error(err, "error deleting monitor Daemonset")
+		return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, nil
+	}
+	err = r.Client.Delete(context.TODO(), ds)
+	if err != nil && k8serrors.IsNotFound(err) {
+		r.Log.Info("monitor daemonset was already deleted")
+	} else if err != nil {
+		r.Log.Error(err, "error when deleting monitor Daemonset, try again")
+		return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
 	}
 
 	r.Log.Info("Uninstallation completed. Proceeding with the KataConfig deletion")
