@@ -36,9 +36,6 @@ type KataConfigStatus struct {
 	// RuntimeClass is the name of the runtime class used in CRIO configuration
 	RuntimeClass string `json:"runtimeClass"`
 
-	// KataImage is the image used for delivering kata binaries
-	KataImage string `json:"kataImage"`
-
 	// TotalNodesCounts is the total number of worker nodes targeted by this CR
 	TotalNodesCount int `json:"totalNodesCount"`
 

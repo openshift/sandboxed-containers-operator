@@ -160,9 +160,6 @@ spec:
                 required:
                 - IsInProgress
                 type: object
-              kataImage:
-                description: KataImage is the image used for delivering kata binaries
-                type: string
               prevMcpGeneration:
                 format: int64
                 type: integer
@@ -252,7 +249,6 @@ spec:
                   upgrade
                 type: object
             required:
-            - kataImage
             - prevMcpGeneration
             - runtimeClass
             - totalNodesCount
