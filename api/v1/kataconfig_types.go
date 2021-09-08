@@ -24,7 +24,7 @@ import (
 
 // KataConfigSpec defines the desired state of KataConfig
 type KataConfigSpec struct {
-	// KataConfigPoolSelector is used to filer the worker nodes
+	// KataConfigPoolSelector is used to filter the worker nodes
 	// if not specified, all worker nodes are selected
 	// +optional
 	// +nullable

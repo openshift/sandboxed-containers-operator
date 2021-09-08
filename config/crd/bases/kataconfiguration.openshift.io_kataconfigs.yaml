@@ -38,7 +38,7 @@ spec:
             nullable: true
             properties:
               kataConfigPoolSelector:
-                description: KataConfigPoolSelector is used to filer the worker nodes
+                description: KataConfigPoolSelector is used to filter the worker nodes
                   if not specified, all worker nodes are selected
                 nullable: true
                 properties:
