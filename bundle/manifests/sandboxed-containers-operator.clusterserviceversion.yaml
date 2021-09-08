@@ -163,7 +163,7 @@ spec:
                 - --leader-elect
                 command:
                 - /manager
-                image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator:0.0.1
+                image: controller:latest
                 imagePullPolicy: Always
                 name: manager
                 ports:
@@ -219,13 +219,17 @@ spec:
           - patch
           - delete
         - apiGroups:
-          - ""
+          - "coordination.k8s.io"
           resources:
-          - configmaps/status
+          - leases
           verbs:
           - get
+          - list
+          - watch
+          - create
           - update
           - patch
+          - delete
         - apiGroups:
           - ""
           resources:
