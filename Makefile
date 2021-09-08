@@ -36,7 +36,7 @@ IMAGE_TAG_BASE ?= quay.io/openshift_sandboxed_containers/openshift-sandboxed-con
 BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
 
 # Image URL to use all building/pushing image targets
-IMG ?=quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator:$(VERSION)
+IMG ?= controller:latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
