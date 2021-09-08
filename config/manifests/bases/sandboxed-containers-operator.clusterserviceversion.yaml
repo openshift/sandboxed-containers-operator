@@ -1,0 +1,43 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+  name: sandboxed-containers-operator.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions: {}
+  description: An operator to perform lifecycle management (install/upgrade/uninstall)
+    of Sandboxed Containers Runtime on Openshift cluster
+  displayName: OpenShift sandboxed containers Operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - sandboxed-containers
+  - kata
+  links:
+  - name: Sandboxed Containers Operator
+    url: https://sandboxed-containers-operator.domain
+  maintainers:
+  - email: support@redhat.com'
+    name: '''Red Hat'
+  maturity: alpha
+  provider:
+    name: Red Hat
+  version: 0.0.0

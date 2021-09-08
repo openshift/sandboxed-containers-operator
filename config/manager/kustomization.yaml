@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator
-  newTag: latest
+  newTag: 0.0.1
