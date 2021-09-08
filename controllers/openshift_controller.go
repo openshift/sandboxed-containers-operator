@@ -553,12 +553,12 @@ func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (c
 
 func (r *KataConfigOpenShiftReconciler) mapKataConfigToRequests(kataConfigObj client.Object) []reconcile.Request {
 
-         kataConfigList := &kataconfigurationv1.KataConfigList{}
+	kataConfigList := &kataconfigurationv1.KataConfigList{}
 
-         err := r.Client.List(context.TODO(), kataConfigList)
-         if err != nil {
-               return []reconcile.Request{}
-         }
+	err := r.Client.List(context.TODO(), kataConfigList)
+	if err != nil {
+		return []reconcile.Request{}
+	}
 
 	reconcileRequests := make([]reconcile.Request, len(kataConfigList.Items))
 	for _, kataconfig := range kataConfigList.Items {
@@ -571,13 +571,12 @@ func (r *KataConfigOpenShiftReconciler) mapKataConfigToRequests(kataConfigObj cl
 	return reconcileRequests
 }
 
-
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
 		Watches(
-                        &source.Kind{Type: &mcfgv1.MachineConfigPool{}}, 
-                        handler.EnqueueRequestsFromMapFunc(r.mapKataConfigToRequests)).
+			&source.Kind{Type: &mcfgv1.MachineConfigPool{}},
+			handler.EnqueueRequestsFromMapFunc(r.mapKataConfigToRequests)).
 		Complete(r)
 }
 

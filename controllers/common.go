@@ -1,8 +1,8 @@
 package controllers
 
 const (
-        // https://sdk.operatorframework.io/docs/upgrading-sdk-version/v1.4.0/
-        // https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#finalizers
+	// https://sdk.operatorframework.io/docs/upgrading-sdk-version/v1.4.0/
+	// https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#finalizers
 	kataConfigFinalizer = "kataconfiguration.openshift.io/finalizer"
 )
 
