@@ -588,9 +588,23 @@ func (r *KataConfigOpenShiftReconciler) getMcp() (*mcfgv1.MachineConfigPool, err
 	return foundMcp, nil
 }
 
+func (r *KataConfigOpenShiftReconciler) poolSelectorLabels() (map[string]string) {
+	flat := map[string]string{}
+	for key, value := range r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels {
+		flat[key] = value
+	}
+
+	return flat
+}
+
 func (r *KataConfigOpenShiftReconciler) getNodes() (error, *corev1.NodeList) {
 	nodes := &corev1.NodeList{}
-	labelSelector := labels.SelectorFromSet(map[string]string{"node-role.kubernetes.io/worker": ""})
+	nodesLabels := r.poolSelectorLabels()
+	if len(nodesLabels) == 0 {
+		return nil, nodes
+	}
+
+	labelSelector := labels.SelectorFromSet(nodesLabels)
 	listOpts := []client.ListOption{
 		client.MatchingLabelsSelector{Selector: labelSelector},
 	}
