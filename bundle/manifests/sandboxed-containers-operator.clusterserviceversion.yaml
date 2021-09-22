@@ -17,7 +17,7 @@ metadata:
     operators.operatorframework.io/builder: operator-sdk-v1.10.0+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/sandboxed-containers-operator
-  name: sandboxed-containers-operator.v0.0.1
+  name: sandboxed-containers-operator.v1.0.1
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
@@ -288,7 +288,8 @@ spec:
   maturity: alpha
   provider:
     name: Red Hat
-  version: 0.0.1
+  replaces: sandboxed-containers-operator.v1.0.0
+  version: 1.0.1
   webhookdefinitions:
   - admissionReviewVersions:
     - v1
