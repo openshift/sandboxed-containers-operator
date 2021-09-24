@@ -207,6 +207,10 @@ spec:
                 image: controller:latest
                 imagePullPolicy: Always
                 name: manager
+                ports:
+                - containerPort: 9443
+                  name: webhook-server
+                  protocol: TCP
                 resources:
                   limits:
                     cpu: 200m
@@ -214,6 +218,10 @@ spec:
                   requests:
                     cpu: 100m
                     memory: 40Mi
+                volumeMounts:
+                - mountPath: /tmp/k8s-webhook-server/serving-certs
+                  name: cert
+                  readOnly: true
               nodeSelector:
                 node-role.kubernetes.io/master: ""
               terminationGracePeriodSeconds: 10
@@ -232,6 +240,11 @@ spec:
               - effect: NoSchedule
                 key: node.kubernetes.io/memory-pressure
                 operator: Exists
+              volumes:
+              - name: cert
+                secret:
+                  defaultMode: 420
+                  secretName: webhook-server-cert
       permissions:
       - rules:
         - apiGroups:
