@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.4.0
+    controller-gen.kubebuilder.io/version: v0.6.1
   creationTimestamp: null
   name: kataconfigs.kataconfiguration.openshift.io
 spec:
@@ -38,7 +38,7 @@ spec:
             nullable: true
             properties:
               kataConfigPoolSelector:
-                description: KataConfigPoolSelector is used to filer the worker nodes
+                description: KataConfigPoolSelector is used to filter the worker nodes
                   if not specified, all worker nodes are selected
                 nullable: true
                 properties:
@@ -91,6 +91,10 @@ spec:
                 description: InstallationStatus reflects the status of the ongoing
                   kata installation
                 properties:
+                  IsInProgress:
+                    description: IsInProgress reflects the current state of installing
+                      or not installing
+                    type: string
                   completed:
                     description: Completed reflects the status of nodes that have
                       completed kata installation
@@ -133,8 +137,10 @@ spec:
                           - name
                           type: object
                         type: array
+                      failedNodesReason:
+                        type: string
                     type: object
-                  inProgress:
+                  inprogress:
                     description: InProgress reflects the status of nodes that are
                       in the process of kata installation
                     properties:
@@ -146,11 +152,17 @@ spec:
                         description: InProgressNodesCount reflects the number of nodes
                           that are in the process of kata installation
                         type: integer
+                      isInProgress:
+                        description: IsInProgress reflects if installation is still
+                          in progress
+                        type: boolean
                     type: object
+                required:
+                - IsInProgress
                 type: object
-              kataImage:
-                description: KataImage is the image used for delivering kata binaries
-                type: string
+              prevMcpGeneration:
+                format: int64
+                type: integer
               runtimeClass:
                 description: RuntimeClass is the name of the runtime class used in
                   CRIO configuration
@@ -178,6 +190,14 @@ spec:
                           type: string
                         type: array
                     type: object
+                  errorMessage:
+                    description: Stores an error message if any.  Note that this is
+                      currently meant for a single failure source when kata uninstallation
+                      is blocked by existing kata-based pods, so handling of this
+                      field in the controller code is correspondingly simple.  A review
+                      might be necessary if this field were ever to store messages
+                      coming from another source.
+                    type: string
                   failed:
                     description: Failed reflects the status of nodes that have failed
                       kata uninstallation
@@ -205,6 +225,8 @@ spec:
                           - name
                           type: object
                         type: array
+                      failedNodesReason:
+                        type: string
                     type: object
                   inProgress:
                     description: InProgress reflects the status of nodes that are
@@ -216,17 +238,18 @@ spec:
                         type: array
                       inProgressNodesCount:
                         type: integer
+                      status:
+                        type: string
+                    required:
+                    - status
                     type: object
-                  errorMessage:
-                    description: Cause of uninstallation failure
-                    type: string
                 type: object
               upgradeStatus:
                 description: Upgradestatus reflects the status of the ongoing kata
                   upgrade
                 type: object
             required:
-            - kataImage
+            - prevMcpGeneration
             - runtimeClass
             - totalNodesCount
             type: object

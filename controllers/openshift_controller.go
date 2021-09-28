@@ -65,8 +65,7 @@ type KataConfigOpenShiftReconciler struct {
 // +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get
 // +kubebuilder:rbac:groups="";machineconfiguration.openshift.io,resources=nodes;machineconfigs;machineconfigpools;pods;services;services/finalizers;endpoints;persistentvolumeclaims;events;configmaps;secrets,verbs=get;list;watch;create;update;patch;delete
 
-func (r *KataConfigOpenShiftReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	_ = context.Background()
+func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = r.Log.WithValues("kataconfig", req.NamespacedName)
 	r.Log.Info("Reconciling KataConfig in OpenShift Cluster")
 
@@ -544,29 +543,32 @@ func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (c
 	return ctrl.Result{}, nil, false
 }
 
+func (r *KataConfigOpenShiftReconciler) mapKataConfigToRequests(kataConfigObj client.Object) []reconcile.Request {
+
+	kataConfigList := &kataconfigurationv1.KataConfigList{}
+
+	err := r.Client.List(context.TODO(), kataConfigList)
+	if err != nil {
+		return []reconcile.Request{}
+	}
+
+	reconcileRequests := make([]reconcile.Request, len(kataConfigList.Items))
+	for _, kataconfig := range kataConfigList.Items {
+		reconcileRequests = append(reconcileRequests, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name: kataconfig.Name,
+			},
+		})
+	}
+	return reconcileRequests
+}
+
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
-		Watches(&source.Kind{Type: &mcfgv1.MachineConfigPool{}}, &handler.EnqueueRequestsFromMapFunc{
-			ToRequests: handler.ToRequestsFunc(func(kataConfigObj handler.MapObject) []reconcile.Request {
-				kataConfigList := &kataconfigurationv1.KataConfigList{}
-
-				err := r.Client.List(context.TODO(), kataConfigList)
-				if err != nil {
-					return []reconcile.Request{}
-				}
-
-				reconcileRequests := make([]reconcile.Request, len(kataConfigList.Items))
-				for _, kataconfig := range kataConfigList.Items {
-					reconcileRequests = append(reconcileRequests, reconcile.Request{
-						NamespacedName: types.NamespacedName{
-							Name: kataconfig.Name,
-						},
-					})
-				}
-				return reconcileRequests
-			}),
-		}).
+		Watches(
+			&source.Kind{Type: &mcfgv1.MachineConfigPool{}},
+			handler.EnqueueRequestsFromMapFunc(r.mapKataConfigToRequests)).
 		Complete(r)
 }
 
