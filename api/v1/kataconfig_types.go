@@ -24,7 +24,7 @@ import (
 
 // KataConfigSpec defines the desired state of KataConfig
 type KataConfigSpec struct {
-	// KataConfigPoolSelector is used to filer the worker nodes
+	// KataConfigPoolSelector is used to filter the worker nodes
 	// if not specified, all worker nodes are selected
 	// +optional
 	// +nullable
@@ -35,9 +35,6 @@ type KataConfigSpec struct {
 type KataConfigStatus struct {
 	// RuntimeClass is the name of the runtime class used in CRIO configuration
 	RuntimeClass string `json:"runtimeClass"`
-
-	// KataImage is the image used for delivering kata binaries
-	KataImage string `json:"kataImage"`
 
 	// TotalNodesCounts is the total number of worker nodes targeted by this CR
 	TotalNodesCount int `json:"totalNodesCount"`
