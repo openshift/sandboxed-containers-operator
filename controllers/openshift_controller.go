@@ -85,14 +85,6 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	return func() (ctrl.Result, error) {
-		oldest, err := r.isOldestCR()
-		if !oldest && err != nil {
-			return reconcile.Result{Requeue: true}, err
-		} else if !oldest && err == nil {
-			r.Log.Info("not oldest CR")
-			return reconcile.Result{}, nil
-		}
-
 		// Check if the KataConfig instance is marked to be deleted, which is
 		// indicated by the deletion timestamp being set.
 		if r.kataConfig.GetDeletionTimestamp() != nil {
@@ -578,65 +570,6 @@ func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error
 			&source.Kind{Type: &mcfgv1.MachineConfigPool{}},
 			handler.EnqueueRequestsFromMapFunc(r.mapKataConfigToRequests)).
 		Complete(r)
-}
-
-func (r *KataConfigOpenShiftReconciler) isOldestCR() (bool, error) {
-	kataConfigList := &kataconfigurationv1.KataConfigList{}
-	listOpts := []client.ListOption{
-		client.InNamespace(corev1.NamespaceAll),
-	}
-	if err := r.Client.List(context.TODO(), kataConfigList, listOpts...); err != nil {
-		return false, fmt.Errorf("Failed to list KataConfig custom resources: %v", err)
-	}
-
-	if len(kataConfigList.Items) == 1 {
-		return true, nil
-	}
-
-	// Creation time of the CR of the current reconciliation request
-	tkccd := r.kataConfig.GetCreationTimestamp()
-
-	// holds the oldest CR found so far
-	var oldestCR *kataconfigurationv1.KataConfig
-
-	for index := range kataConfigList.Items {
-		if kataConfigList.Items[index].Name == r.kataConfig.Name {
-			continue
-		}
-
-		// Creation time of this instance of CR in the loop
-		ckccd := kataConfigList.Items[index].GetCreationTimestamp()
-
-		if oldestCR == nil {
-			oldestCR = &kataConfigList.Items[index]
-		} else {
-			oldestCreationDateSoFar := oldestCR.GetCreationTimestamp()
-			if !oldestCreationDateSoFar.Before(&ckccd) {
-				oldestCR = &kataConfigList.Items[index]
-			}
-		}
-	}
-
-	oldestCRCreationDate := oldestCR.GetCreationTimestamp()
-	if !tkccd.Before(&oldestCRCreationDate) && oldestCR != nil {
-		if r.kataConfig.Status.InstallationStatus.Failed.FailedNodesCount != -1 {
-			r.kataConfig.Status.InstallationStatus.Failed.FailedNodesCount = -1
-			r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList = []kataconfigurationv1.FailedNodeStatus{
-				{
-					Name:  "",
-					Error: fmt.Sprintf("Multiple KataConfig CRs are not supported, %s already exists", oldestCR.Name),
-				},
-			}
-
-			err := r.Client.Status().Update(context.TODO(), r.kataConfig)
-			if err != nil {
-				return false, err
-			}
-			return false, nil
-		}
-	}
-
-	return true, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) getMcp() (*mcfgv1.MachineConfigPool, error) {
