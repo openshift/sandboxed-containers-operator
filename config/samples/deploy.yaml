@@ -1,0 +1,39 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+ name:  my-operator-catalog
+ namespace: openshift-marketplace
+spec:
+ DisplayName: My Operator Catalog
+ sourceType: grpc
+ image:  quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator-catalog:v1.2.0
+ updateStrategy:
+   registryPoll:
+      interval: 5m
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-sandboxed-containers-operator
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-sandboxed-containers-operator
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  targetNamespaces:
+  - openshft-sandboxed-containers-operator
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: sandboxed-containers-operator
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  channel: "preview-1.0"
+  installPlanApproval: Automatic
+  name: sandboxed-containers-operator
+  source: my-operator-catalog
+  sourceNamespace: openshift-marketplace
+  startingCSV: sandboxed-containers-operator.v1.2.0
