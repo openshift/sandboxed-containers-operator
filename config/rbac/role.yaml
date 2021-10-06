@@ -62,18 +62,6 @@ rules:
   - kataconfiguration.openshift.io
   resources:
   - kataconfigs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - kataconfiguration.openshift.io
-  resources:
-  - kataconfigs
   - kataconfigs/finalizers
   verbs:
   - create
