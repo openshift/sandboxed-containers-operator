@@ -31,16 +31,15 @@ spec:
       version: v1
   displayName: OpenShift sandboxed containers Operator
   description: |-
-    # Requirements
-    Your cluster must be installed on bare metal infrastructure with Red Hat Enterprise Linux CoreOS workers.
-
-    # Details
     OpenShift sandboxed containers based on the Kata Containers open source
     project, provides an Open Container Initiative (OCI) compliant container
     runtime using lightweight virtual machines, running your workloads in their own
     isolated kernel and therefore contributing an additional layer of isolation
     back to OpenShift’s Defense-in-Depth strategy. For more information
     [see](https://catalog.redhat.com/software/operators/detail/5ee0d499fdbe7cddc2c91cf5).
+
+    # Requirements
+    Your cluster must be installed on bare metal infrastructure with Red Hat Enterprise Linux CoreOS workers.
 
     # Features & benefits
     - **Isolated Developer Environments & Priviliges Scoping**
