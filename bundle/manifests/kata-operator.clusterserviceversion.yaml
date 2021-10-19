@@ -20,7 +20,6 @@ metadata:
     certified: 'false'
     repository: https://github.com/openshift/sandboxed-containers-operator
     support: Red Hat
-    olm.skipRange: "<1.0.2"
   name: sandboxed-containers-operator.v1.1.0
 spec:
   apiservicedefinitions: {}
