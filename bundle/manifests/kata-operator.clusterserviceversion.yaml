@@ -336,3 +336,4 @@ spec:
     name: Red Hat
     url: https://www.github.com/openshift/sandboxed-containers-operator
   version: 1.1.0
+  replaces: sandboxed-containers-operator.v1.0.2
