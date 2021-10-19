@@ -12,7 +12,7 @@ metadata:
           }
         }
       ]
-    capabilities: Basic Install
+    capabilities: Seamless Upgrades
     operators.operatorframework.io/builder: operator-sdk-v1.2.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v2
     operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
@@ -20,7 +20,6 @@ metadata:
     certified: 'false'
     repository: https://github.com/openshift/sandboxed-containers-operator
     support: Red Hat
-    olm.skipRange: "<1.0.2"
   name: sandboxed-containers-operator.v1.1.0
 spec:
   apiservicedefinitions: {}
@@ -32,10 +31,6 @@ spec:
       version: v1
   displayName: OpenShift sandboxed containers Operator
   description: |-
-    # Requirements
-    Your cluster must be installed on bare metal infrastructure with Red Hat Enterprise Linux CoreOS workers.
-
-    # Details
     OpenShift sandboxed containers based on the Kata Containers open source
     project, provides an Open Container Initiative (OCI) compliant container
     runtime using lightweight virtual machines, running your workloads in their own
@@ -43,10 +38,13 @@ spec:
     back to OpenShift’s Defense-in-Depth strategy. For more information
     [see](https://catalog.redhat.com/software/operators/detail/5ee0d499fdbe7cddc2c91cf5).
 
+    # Requirements
+    Your cluster must be installed on bare metal infrastructure with Red Hat Enterprise Linux CoreOS workers.
+
     # Features & benefits
-    - **Isolated Developer Environments & Priviliges Scoping**
+    - **Isolated Developer Environments & Privileges Scoping**
       As a developer working on debugging an application using state-of-the-art
-      tooling you might need elevated privileges such as CAP_ADMIN or CAP_BPF. With
+      tooling you might need elevated privileges such as `CAP_ADMIN` or `CAP_BPF`. With
       OpenShift sandboxed containers, any impact will be limited to a separate
       dedicated kernel.
 
@@ -73,16 +71,16 @@ spec:
 
       On the Install Operator page:
 
-      - Select preview-1.0 from the list of available Update Channel options.
-      This ensures that you install the version of OpenShift sandboxed containers
+      - Select `preview-1.1` from the list of available Update Channel options.
+      This ensures that you install the latest version of OpenShift sandboxed containers
       that is compatible with your OpenShift Container Platform version.
 
       - For Installed Namespace, ensure that the Operator recommended namespace
         option is selected. This installs the Operator in the mandatory
-        openshift-sandboxed-containers-operator namespace, which is automatically
+        `openshift-sandboxed-containers-operator` namespace, which is automatically
         created if it does not exist. Attempting to install the OpenShift
         sandboxed containers Operator in a namespace other than
-        openshift-sandboxed-containers-operator causes the installation to fail.
+        `openshift-sandboxed-containers-operator` causes the installation to fail.
 
       - For Approval Strategy, ensure that Automatic, which is the default value,
         is selected. OpenShift sandboxed containers automatically updates when a new
@@ -93,7 +91,7 @@ spec:
 
       - The OpenShift sandboxed containers Operator is now installed on your
         cluster. You can trigger the Operator by enabling the runtime on your cluster.
-        You can do this by creating a KataConfig CRD instance. For this click
+        You can do this by creating a `KataConfig` CRD instance. For this click
         on "create instance" on the operator overview page.
 
     # Documentation
@@ -336,3 +334,4 @@ spec:
     name: Red Hat
     url: https://www.github.com/openshift/sandboxed-containers-operator
   version: 1.1.0
+  replaces: sandboxed-containers-operator.v1.0.2
