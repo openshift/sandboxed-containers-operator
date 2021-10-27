@@ -1,0 +1,101 @@
+#!/bin/bash
+
+IFS=$'\n'
+
+BASE_COLLECTION_PATH="/must-gather"
+
+OSC_PATH=${BASE_COLLECTION_PATH}/sandboxed-containers
+mkdir -p ${OSC_PATH}
+
+operator_resources=()
+operator_resources+=(kataconfig)
+operator_resources+=(clusterserviceversion)
+operator_resources+=(subscription)
+operator_resources+=(services)
+
+for operator_resource in "${operator_resources[@]}"; do
+	oc describe ${operator_resource} -n openshift-sandboxed-containers-operator > "${OSC_PATH}/${operator_resource}_description"
+done
+
+# NOTE Jul 16, 2021: a single one is expected as of this writing, with more
+# possibly being added in the future
+KATA_WEBHOOK_CONFIGS=$(oc get validatingwebhookconfigurations -A -o'custom-columns=name:metadata.name' --no-headers | grep kata)
+oc describe validatingwebhookconfigurations ${KATA_WEBHOOK_CONFIGS} > "${OSC_PATH}/validatingwebhookconfigurations_description"
+
+
+# operators
+operators=()
+#  logs from everything in the following operators namespaces
+#  - openshift-sandboxed-containers-operator
+#  - openshift-machine-config-operator
+operators+=(openshift-sandboxed-containers-operator)
+operators+=(openshift-machine-config-operator)
+
+NAMESPACE_PATH=${OSC_PATH}/namespaces
+for operator in "${operators[@]}"; do
+    OPERATOR_NS=${NAMESPACE_PATH}/${operator}
+    mkdir -p ${OPERATOR_NS}
+
+    for pod in $(oc get pods -n "${operator}" -o'custom-columns=name:metadata.name' --no-headers); do
+        oc logs "${pod}" --all-containers -n "${operator}" > "${OPERATOR_NS}/${pod}_logs"
+    done
+done
+
+# mcps
+mcps=()
+#  description of the following mcps
+#  - master
+#  - worker
+#  - kata-oc
+mcps+=(master)
+mcps+=(worker)
+mcps+=(kata-oc)
+
+MCP_PATH=${OSC_PATH}/mcps
+mkdir -p ${MCP_PATH}
+
+for mcp in "${mcps[@]}"; do
+    if $(oc get mcp $mcp &>/dev/null); then
+        oc describe mcp $mcp > "${MCP_PATH}/${mcp}_description"
+    fi	    
+done
+
+# installplans
+INSTALLPLAN_NS=${NAMESPACE_PATH}/openshift-sandboxed-containers-operator
+mkdir -p ${INSTALLPLAN_NS}
+
+for installplan in $(oc get installplans -n openshift-sandboxed-containers-operator -o'custom-columns=name:metadata.name' --no-headers); do
+    oc describe installplan ${installplan} -n openshift-sandboxed-containers-operator > "${INSTALLPLAN_NS}/${installplan}_description"
+done
+
+# marketplace
+MARKETPLACE_NS=${NAMESPACE_PATH}/openshift-marketplace
+mkdir -p ${MARKETPLACE_NS}
+
+for pod in $(oc get pods -n openshift-marketplace -o'custom-columns=name:metadata.name' --no-headers); do
+    oc logs "${pod}" --all-containers -n openshift-marketplace > "${MARKETPLACE_NS}/${pod}_logs"
+    oc describe pod "${pod}" -n openshift-marketplace > "${MARKETPLACE_NS}/${pod}_description"
+done
+
+# lifecycle-manager
+LIFECYCLE_MANAGER_NS=${LIFECYCLE_MANAGER_NS}/openshift-operator-lifecycle-manager
+mkdir -p ${LIFECYCLE_MANAGER_NS}
+
+for pod in $(oc get pods -n openshift-operator-lifecycle-manager -o'custom-columns=name:metadata.name' --no-headers); do
+    oc logs "${pod}" --all-containers -n openshift-operator-lifecycle-manager > "${LIFECYCLE_MANAGER_NS}/${pod}_logs"
+    oc describe pod "${pod}" -n openshift-operator-lifecycle-manager > "${LIFECYCLE_MANAGER_NS}/${pod}_description"
+done
+
+# sandboxed containers operator deployment resources
+
+DEPLOYMENT_UNIT_PATH=${NAMESPACE_PATH}/openshift-sandboxed-containers-operator/deployments
+mkdir -p ${DEPLOYMENT_UNIT_PATH}
+
+deploymentUnits=(pods deployments statefulsets deploymentconfigs)
+
+for deploymentUnit in "${deploymentUnits[@]}"; do
+	echo "$deploymentUnit using kata runtime class still running:"
+
+	oc get $deploymentUnit -A -o json | jq -r '.items[] | select(.spec.runtimeClassName | test("kata")).metadata.name' 2>/dev/null > ${DEPLOYMENT_UNIT_PATH}/${deploymentUnit}
+
+done

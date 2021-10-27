@@ -32,7 +32,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
-	nodeapi "k8s.io/api/node/v1beta1"
+	nodeapi "k8s.io/api/node/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -68,8 +68,7 @@ type KataConfigOpenShiftReconciler struct {
 // +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get
 // +kubebuilder:rbac:groups="";machineconfiguration.openshift.io,resources=nodes;machineconfigs;machineconfigpools;pods;services;services/finalizers;endpoints;persistentvolumeclaims;events;configmaps;secrets,verbs=get;list;watch;create;update;patch;delete
 
-func (r *KataConfigOpenShiftReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	_ = context.Background()
+func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = r.Log.WithValues("kataconfig", req.NamespacedName)
 	r.Log.Info("Reconciling KataConfig in OpenShift Cluster")
 
@@ -89,14 +88,6 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(req ctrl.Request) (ctrl.Result
 	}
 
 	return func() (ctrl.Result, error) {
-		oldest, err := r.isOldestCR()
-		if !oldest && err != nil {
-			return reconcile.Result{Requeue: true}, err
-		} else if !oldest && err == nil {
-			r.Log.Info("not oldest CR")
-			return reconcile.Result{}, nil
-		}
-
 		// Check if the KataConfig instance is marked to be deleted, which is
 		// indicated by the deletion timestamp being set.
 		if r.kataConfig.GetDeletionTimestamp() != nil {
@@ -276,7 +267,7 @@ func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
 	rc := func() *nodeapi.RuntimeClass {
 		rc := &nodeapi.RuntimeClass{
 			TypeMeta: metav1.TypeMeta{
-				APIVersion: "node.k8s.io/v1beta1",
+				APIVersion: "node.k8s.io/v1",
 				Kind:       "RuntimeClass",
 			},
 			ObjectMeta: metav1.ObjectMeta{
@@ -579,89 +570,33 @@ func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (c
 	return ctrl.Result{}, nil, false
 }
 
+func (r *KataConfigOpenShiftReconciler) mapKataConfigToRequests(kataConfigObj client.Object) []reconcile.Request {
+
+	kataConfigList := &kataconfigurationv1.KataConfigList{}
+
+	err := r.Client.List(context.TODO(), kataConfigList)
+	if err != nil {
+		return []reconcile.Request{}
+	}
+
+	reconcileRequests := make([]reconcile.Request, len(kataConfigList.Items))
+	for _, kataconfig := range kataConfigList.Items {
+		reconcileRequests = append(reconcileRequests, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name: kataconfig.Name,
+			},
+		})
+	}
+	return reconcileRequests
+}
+
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
-		Watches(&source.Kind{Type: &mcfgv1.MachineConfigPool{}}, &handler.EnqueueRequestsFromMapFunc{
-			ToRequests: handler.ToRequestsFunc(func(kataConfigObj handler.MapObject) []reconcile.Request {
-				kataConfigList := &kataconfigurationv1.KataConfigList{}
-
-				err := r.Client.List(context.TODO(), kataConfigList)
-				if err != nil {
-					return []reconcile.Request{}
-				}
-
-				reconcileRequests := make([]reconcile.Request, len(kataConfigList.Items))
-				for _, kataconfig := range kataConfigList.Items {
-					reconcileRequests = append(reconcileRequests, reconcile.Request{
-						NamespacedName: types.NamespacedName{
-							Name: kataconfig.Name,
-						},
-					})
-				}
-				return reconcileRequests
-			}),
-		}).
+		Watches(
+			&source.Kind{Type: &mcfgv1.MachineConfigPool{}},
+			handler.EnqueueRequestsFromMapFunc(r.mapKataConfigToRequests)).
 		Complete(r)
-}
-
-func (r *KataConfigOpenShiftReconciler) isOldestCR() (bool, error) {
-	kataConfigList := &kataconfigurationv1.KataConfigList{}
-	listOpts := []client.ListOption{
-		client.InNamespace(corev1.NamespaceAll),
-	}
-	if err := r.Client.List(context.TODO(), kataConfigList, listOpts...); err != nil {
-		return false, fmt.Errorf("Failed to list KataConfig custom resources: %v", err)
-	}
-
-	if len(kataConfigList.Items) == 1 {
-		return true, nil
-	}
-
-	// Creation time of the CR of the current reconciliation request
-	tkccd := r.kataConfig.GetCreationTimestamp()
-
-	// holds the oldest CR found so far
-	var oldestCR *kataconfigurationv1.KataConfig
-
-	for index := range kataConfigList.Items {
-		if kataConfigList.Items[index].Name == r.kataConfig.Name {
-			continue
-		}
-
-		// Creation time of this instance of CR in the loop
-		ckccd := kataConfigList.Items[index].GetCreationTimestamp()
-
-		if oldestCR == nil {
-			oldestCR = &kataConfigList.Items[index]
-		} else {
-			oldestCreationDateSoFar := oldestCR.GetCreationTimestamp()
-			if !oldestCreationDateSoFar.Before(&ckccd) {
-				oldestCR = &kataConfigList.Items[index]
-			}
-		}
-	}
-
-	oldestCRCreationDate := oldestCR.GetCreationTimestamp()
-	if !tkccd.Before(&oldestCRCreationDate) && oldestCR != nil {
-		if r.kataConfig.Status.InstallationStatus.Failed.FailedNodesCount != -1 {
-			r.kataConfig.Status.InstallationStatus.Failed.FailedNodesCount = -1
-			r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList = []kataconfigurationv1.FailedNodeStatus{
-				{
-					Name:  "",
-					Error: fmt.Sprintf("Multiple KataConfig CRs are not supported, %s already exists", oldestCR.Name),
-				},
-			}
-
-			err := r.Client.Status().Update(context.TODO(), r.kataConfig)
-			if err != nil {
-				return false, err
-			}
-			return false, nil
-		}
-	}
-
-	return true, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) getMcp() (*mcfgv1.MachineConfigPool, error) {

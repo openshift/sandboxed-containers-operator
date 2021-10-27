@@ -1,24 +1,9 @@
 package controllers
 
-import (
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
-)
-
-// DaemonOperation represents the operation kata daemon is going to perform
-type DaemonOperation string
-
 const (
-	// InstallOperation denotes kata installation operation
-	InstallOperation DaemonOperation = "install"
-
-	// UninstallOperation denotes kata uninstallation operation
-	UninstallOperation DaemonOperation = "uninstall"
-
-	// UpgradeOperation denotes kata upgrade operation
-	UpgradeOperation DaemonOperation = "upgrade"
-
-	kataConfigFinalizer = "finalizer.kataconfiguration.openshift.io"
+	// https://sdk.operatorframework.io/docs/upgrading-sdk-version/v1.4.0/
+	// https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#finalizers
+	kataConfigFinalizer = "kataconfiguration.openshift.io/finalizer"
 )
 
 func contains(list []string, s string) bool {
@@ -28,18 +13,4 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
-}
-
-func getClientSet() (*kubernetes.Clientset, error) {
-	config, err := clientcmd.BuildConfigFromFlags("", "")
-	if err != nil {
-		return nil, err
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, err
-	}
-
-	return clientset, nil
 }

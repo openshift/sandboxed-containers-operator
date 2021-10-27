@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Resource list
+resources=()
+
+for i in $(/usr/bin/oc get crd | grep kata | awk '{print $1}')
+do
+  resources+=("crd/$i")
+done
+
+# Run the collection of resources using must-gather
+for resource in "${resources[@]}"; do
+  /usr/bin/oc adm inspect --dest-dir must-gather "${resource}"
+done
+
+exit 0

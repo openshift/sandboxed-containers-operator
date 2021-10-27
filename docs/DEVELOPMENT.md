@@ -1,70 +1,90 @@
 # Hacking on the sandboxed-containers-operator
 
-## Using a custom sandboxed-containers-operator-payload image
+## Prerequisites
+- Golang - 1.16.x
+- Operator SDK version - 1.12.0
+- podman, podman-docker or docker
+- Access to OpenShift cluster (4.8+)
+- Container registry to storage images
 
-Sometimes we need to test new builds of RPMs, for example to
-verify a bug in QEMU, kata-runtime or other packages.
 
-The ConfigMap will be added to the Pod spec of the installer daemon pods as
-an environment variable. If the variable is set the daemon will use it. If not
-the default mechanism for choosing the payload image is used.
-
-The purpose of this feature is for development purposes only. When the
-ConfigMap is used the operator will print a warning that using self-built RPMs
-taints the kataconfig installation.
-
-To set a custom image create a configmap. Open the file deploy/configmap_payload.yaml and
-change
-
-    daemon.payload: quay.io/<username>/mykatapayload:mytag
-
-## Payload container images in private repositories
-
-When a payload image is stored in a private repository the daemon
-needs to authenticate with the registry to be able to download it.
-
-There are two environment variables defined in the daemons pod specification.
-These variables are populated by a Kubernetes secret that the user can create.
-It has to be created before the daemon pods are created.
-
-Steps to use a payload image in a private repository:
-
-1. deploy the operator as usual
-2. create the payload configmap and set daemon.payload to the path in
-   the private repository, for example
-   quay.io/jensfr/sandboxed-containers-operator-payload:special
-3. create the kubernetes secret with the credentials to above private
-   repository. An example:
-
+## Set Environment Variables
 ```
-   apiVersion: v1
-     kind: Secret
-   metadata:
-     name: payload-secret   <- has to have this exact name
-   data:
-     username: ajVXe2ZyCg=y <- base64 encoded
-     password: emFmekIaOKMN <- base64 encoded
+export IMAGE_TAG_BASE=quay.io/user/openshift-sandboxed-containers-operator
+export IMG=quay.io/user/openshift-sandboxed-containers-operator
 ```
 
-4. create the Kataconfig custom ressource. From here on the
-   installation works as usual.
+## Viewing available Make targets
+```
+make help
+```
 
-## How to create a custom payload container image
+## Building Operator image
+```
+make docker-build
+make docker-push
+```
 
-Based on an existing and known to work set of RPMs it is possible to replace
-packages.
+## Building Operator bundle image
+```
+make bundle-build
+make bundle-push
+```
 
-Note: it is not possible to add additonal RPMs this way
-Note: the example below is using podman but docker could be used as well
+## Building Catalog image
+```
+make catalog-build
+make catalog-push
+```
 
-An example:
+## Installing the Operator using OpenShift Web console 
 
-1. skopeo copy docker://quay.io/jensfr/sandboxed-containers-operator-payload:4.7.0 oci:/tmp/sandboxed-containers-operator-payload:4.7.0
-2. oci-image-tool unpack --ref name=4.7.0  /tmp/sandboxed-containers-operator-payload sandboxed-containers-operator-payload-unpacked-4.7.0
-3. cp -r /tmp/sandboxed-containers-operator-payload-unpacked-4.7.0/packages $KATA_OPERATOR_REPO/images/payload
-4. cd $KATA_OPERATOR_REPO/images/payload
-5. replace RPMs in packages/ with custom RPMs
-6. podman build --no-cache -f Dockerfile.custom quay.io/<username>/mykatapayload:mytag
-7. podman push quay.io/<username>/mykatapayload:mytag
+### Create Custom Operator Catalog
 
-To use the custom payload container image use the payload-config configmap as described above
+Create a new `CatalogSource` yaml. Replace `user` with your quay.io user
+```
+cat > my_catalog.yaml <<EOF
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+ name:  my-operator-catalog
+ namespace: openshift-marketplace
+spec:
+ DisplayName: My Operator Catalog
+ sourceType: grpc
+ image:  quay.io/user/openshift-sandboxed-containers-operator-catalog:v1.0.1
+ updateStrategy:
+   registryPoll:
+      interval: 5m
+
+EOF
+```
+Deploy the catalog
+```
+oc create -f my_catalog.yaml
+```
+
+The new operator should be now available for installation from the OpenShift web console
+
+
+## Installing the Operator using CLI
+
+When deploying the Operator using CLI, cert-manager needs to be installed otherwise
+webhook will not start. `cert-manager` is not required when deploying via the web console as OLM 
+takes care of webhook certificate management. You can read more on this [here]( https://olm.operatorframework.io/docs/advanced-tasks/adding-admission-and-conversion-webhooks/#deploying-an-operator-with-webhooks-using-olm)
+
+### Install cert-manager 
+```
+ oc apply -f https://github.com/jetstack/cert-manager/releases/download/v1.5.3/cert-manager.yaml
+```
+
+### Modify YAMLs
+Uncomment all entries marked with `[CERTMANAGER]` in manifest files under `config/*`
+
+### Deploy Operator
+```
+make install && make deploy
+```
+
+
+

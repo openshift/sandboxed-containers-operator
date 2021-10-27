@@ -19,9 +19,11 @@ package controllers
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gexec"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -55,14 +57,19 @@ func TestAPIs(t *testing.T) {
 }
 
 var _ = BeforeSuite(func(done Done) {
-	logf.SetLogger(zap.LoggerTo(GinkgoWriter, true))
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	By("bootstrapping test environment")
+	webhookOptions := envtest.WebhookInstallOptions{
+		Paths: []string{filepath.Join("..", "config", "webhook")},
+	}
+
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases"),
 			filepath.Join("..", "config", "extension-crds", "machineconfig.crd.yaml"),
 			filepath.Join("..", "config", "extension-crds", "machineconfigpool.crd.yaml"),
 		},
+		WebhookInstallOptions: webhookOptions,
 	}
 
 	var err error
@@ -84,7 +91,10 @@ var _ = BeforeSuite(func(done Done) {
 	// +kubebuilder:scaffold:scheme
 
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
-		Scheme: scheme.Scheme,
+		Scheme:  scheme.Scheme,
+		Port:    testEnv.WebhookInstallOptions.LocalServingPort,
+		Host:    testEnv.WebhookInstallOptions.LocalServingHost,
+		CertDir: testEnv.WebhookInstallOptions.LocalServingCertDir,
 	})
 	Expect(err).ToNot(HaveOccurred())
 
@@ -95,8 +105,19 @@ var _ = BeforeSuite(func(done Done) {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
+	err = (&kataconfigurationv1.KataConfig{}).SetupWebhookWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
 	go func() {
+		defer GinkgoRecover()
 		err = k8sManager.Start(ctrl.SetupSignalHandler())
+		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
+		gexec.KillAndWait(4 * time.Second)
+
+		// Teardown the test environment once controller is fnished.
+		// Otherwise from Kubernetes 1.21+, teardon timeouts waiting on
+		// kube-apiserver to return
+		err := testEnv.Stop()
 		Expect(err).ToNot(HaveOccurred())
 	}()
 
@@ -108,6 +129,4 @@ var _ = BeforeSuite(func(done Done) {
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
-	err := testEnv.Stop()
-	Expect(err).ToNot(HaveOccurred())
 })
