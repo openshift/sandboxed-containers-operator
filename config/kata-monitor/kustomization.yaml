@@ -1,0 +1,3 @@
+resources:
+- kata-monitor-service.yaml
+- kata-monitor-servicemonitor.yaml

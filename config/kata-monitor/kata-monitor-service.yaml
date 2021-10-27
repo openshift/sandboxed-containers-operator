@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: metrics
+  namespace: openshift-sandboxed-containers-operator
+  labels:
+    name: openshift-sandboxed-containers-monitor
+spec:
+  selector:
+    name: openshift-sandboxed-containers-monitor
+  ports:
+    - name: metrics
+      port: 8090
+      protocol: TCP
