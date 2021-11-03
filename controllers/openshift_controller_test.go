@@ -592,4 +592,25 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 
 		})
 	})
+	Context("Custom KataConfig with CheckNodeEligibility create", func() {
+		It("Should support KataConfig with CheckNodeEligibility set", func() {
+
+			kataConfig := &kataconfigurationv1.KataConfig{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "kataconfiguration.openshift.io/v1",
+					Kind:       "KataConfig",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name,
+				},
+				Spec: kataconfigurationv1.KataConfigSpec{
+					CheckNodeEligibility: true,
+				},
+			}
+
+			By("Creating the KataConfig CR successfully")
+			Expect(k8sClient.Create(context.Background(), kataConfig)).Should(Succeed())
+
+		})
+	})
 })
