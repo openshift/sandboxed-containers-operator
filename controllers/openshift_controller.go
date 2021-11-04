@@ -20,8 +20,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"k8s.io/apimachinery/pkg/labels"
 	"time"
+
+	"k8s.io/apimachinery/pkg/labels"
 
 	ignTypes "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
@@ -80,6 +81,7 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(req ctrl.Request) (ctrl.Result
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
+		r.Log.Error(err, "Cannot retrieve kataConfig")
 		return ctrl.Result{}, err
 	}
 
@@ -146,6 +148,7 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool 
 }
 
 func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
+	r.Log.Info("Creating MachineConfig for Custom Resource")
 	kataOC, err := r.kataOcExists()
 	if err != nil {
 		return nil, err
@@ -154,7 +157,7 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 	if kataOC {
 		machinePool = "kata-oc"
 	} else if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/"+machinePool]; !ok {
-		r.Log.Error(err, "no valid role for mc found")
+		r.Log.Error(err, "no valid role for MachineConfig found")
 	}
 
 	ic := ignTypes.Config{
@@ -229,7 +232,7 @@ func (r *KataConfigOpenShiftReconciler) kataOcExists() (bool, error) {
 	if err != nil && k8serrors.IsNotFound(err) {
 		return false, nil
 	} else if err != nil {
-		r.Log.Error(err, "Could not get the kata-oc machine config pool!")
+		r.Log.Error(err, "Could not get the kata-oc MachineConfigPool")
 		return false, err
 	}
 
@@ -237,21 +240,22 @@ func (r *KataConfigOpenShiftReconciler) kataOcExists() (bool, error) {
 }
 
 func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
+	r.Log.Info("Getting MachineConfigPool Name")
 	var mcpName string
 
 	kataOC, err := r.kataOcExists()
 	if kataOC && err == nil {
-		r.Log.Info("kata-oc machine config pool exists")
+		r.Log.Info("kata-oc MachineConfigPool exists")
 		return "kata-oc", nil
 	}
 
 	workerMcp := &mcfgv1.MachineConfigPool{}
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: "worker"}, workerMcp)
 	if err != nil && k8serrors.IsNotFound(err) {
-		r.Log.Error(err, "No worker machine config pool found!")
+		r.Log.Error(err, "No worker MachineConfigPool found!")
 		return "", err
 	} else if err != nil {
-		r.Log.Error(err, "Could not get the worker machine config pool!")
+		r.Log.Error(err, "Could not get the worker MachineConfigPool!")
 		return "", err
 	}
 
@@ -287,8 +291,13 @@ func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
 		}
 
 		if r.kataConfig.Spec.KataConfigPoolSelector != nil {
+			r.Log.Info("KataConfigPoolSelector:", "r.kataConfig.Spec.KataConfigPoolSelector", r.kataConfig.Spec.KataConfigPoolSelector)
+			nodeSelector, err := metav1.LabelSelectorAsMap(r.kataConfig.Spec.KataConfigPoolSelector)
+			if err != nil {
+				r.Log.Error(err, "Unable to get nodeSelector for runtimeClass")
+			}
 			rc.Scheduling = &nodeapi.Scheduling{
-				NodeSelector: r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels,
+				NodeSelector: nodeSelector,
 			}
 		}
 		return rc
@@ -342,6 +351,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 			if updErr != nil {
 				return ctrl.Result{}, updErr
 			}
+			r.Log.Info("Kata PODs are present. Requeue for reconciliation ")
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 		} else {
 			if r.kataConfig.Status.UnInstallationStatus.ErrorMessage != "" {
@@ -379,8 +389,8 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		err = r.Client.Delete(context.TODO(), mc)
 		if err != nil {
 			// error during removing mc, don't block the uninstall. Just log the error and move on.
-			r.Log.Info("Error found deleting machine config. If the machine config exists after installation it can be safely deleted manually.",
-				"mc", mc.Name, "error", err)
+			r.Log.Error(err, "Error found deleting machine config. If the machine config exists after installation it can be safely deleted manually.",
+				"mc", mc.Name)
 		}
 		// Sleep for MCP to reflect the changes
 		r.Log.Info("Pausing for a minute to make sure worker mcp has started syncing up")
@@ -390,6 +400,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	workerMcp := &mcfgv1.MachineConfigPool{}
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, workerMcp)
 	if err != nil {
+		r.Log.Error(err, "Unable to get MachineConfigPool ", "machinePool", machinePool)
 		return ctrl.Result{}, err
 	}
 	r.Log.Info("Monitoring worker mcp", "worker mcp name", workerMcp.Name, "ready machines", workerMcp.Status.ReadyMachineCount,
@@ -398,7 +409,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	r.clearUninstallStatus()
 	_, result, err2, done := r.updateStatus(machinePool)
 	if !done {
-		r.Log.Info("done returned from updateStatus")
 		return result, err2
 	}
 
@@ -410,11 +420,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	_, result, err2, done = r.updateStatus(machinePool)
 	r.clearInstallStatus()
 	if !done {
-		r.Log.Info("done returned from updateStatus")
 		return result, err2
 	}
 	err = r.Client.Status().Update(context.TODO(), r.kataConfig)
 	if err != nil {
+		r.Log.Error(err, "Unable to update KataConfig status")
 		return ctrl.Result{}, err
 	}
 
@@ -423,12 +433,14 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 
 	err = r.Client.Update(context.TODO(), r.kataConfig)
 	if err != nil {
+		r.Log.Error(err, "Unable to update KataConfig")
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.Result, error) {
+	r.Log.Info("Kata installation in progress")
 	machinePool, err := r.getMcpName()
 	if err != nil {
 		return reconcile.Result{}, err
@@ -450,27 +462,28 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	/* create custom Machine Config Pool if configured by user */
 	if _, ok := r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels["node-role.kubernetes.io/"+machinePool]; !ok {
-		r.Log.Info("creating new Mcp")
+		r.Log.Info("Creating new MachineConfigPool")
 		mcp := r.newMCPforCR()
 
 		foundMcp := &mcfgv1.MachineConfigPool{}
 		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcp.Name}, foundMcp)
 		if err != nil && k8serrors.IsNotFound(err) {
-			r.Log.Info("Creating a new Machine Config Pool ", "mcp.Name", mcp.Name)
+			r.Log.Info("Creating a new MachineConfigPool ", "mcp.Name", mcp.Name)
 			err = r.Client.Create(context.TODO(), mcp)
 			if err != nil {
+				r.Log.Error(err, "Error in creating new MachineConfigPool ", "mcp.Name", mcp.Name)
 				return ctrl.Result{}, err
 			}
 			// mcp created successfully - requeue to check the status later
 			return ctrl.Result{Requeue: true, RequeueAfter: 20 * time.Second}, nil
 		} else if err != nil {
-			r.Log.Info("other error")
+			r.Log.Error(err, "Error in retreiving MachineConfigPool ", "mcp.Name", mcp.Name)
 			return ctrl.Result{}, err
 		}
 
 		// Wait till MCP is ready
 		if foundMcp.Status.MachineCount == 0 {
-			r.Log.Info("Waiting till Machine Config Pool is initialized ", "mcp.Name", mcp.Name)
+			r.Log.Info("Waiting till MachineConfigPool is initialized ", "mcp.Name", mcp.Name)
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 		}
 
@@ -483,7 +496,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	foundMcp, doReconcile, err, done := r.updateStatus(machinePool)
 	if !done {
-		r.Log.Info("done returned from updateStatus")
 		return doReconcile, err
 	}
 
@@ -504,12 +516,13 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.kataConfig.Status.InstallationStatus.IsInProgress = "false"
 		return r.setRuntimeClass()
 	} else {
-		r.Log.Info("waiting for machine config pool to be fully updated")
+		r.Log.Info("Waiting for MachineConfigPool to be fully updated")
 		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 	}
 }
 
 func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (ctrl.Result, error, bool) {
+	r.Log.Info("creating RHCOS extension MachineConfig")
 	mc, err := r.newMCForCR(machinePool)
 	if err != nil {
 		return ctrl.Result{}, err, true
@@ -518,7 +531,7 @@ func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (c
 	foundMcp := &mcfgv1.MachineConfigPool{}
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
 	if err != nil && k8serrors.IsNotFound(err) {
-		r.Log.Info("MCP not found")
+		r.Log.Info("MachineConfigPool not found")
 		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil, false
 	}
 
@@ -528,7 +541,7 @@ func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (c
 	if err != nil && (k8serrors.IsNotFound(err) || k8serrors.IsGone(err)) {
 		err = r.Client.Create(context.TODO(), mc)
 		if err != nil {
-			r.Log.Info("failed to create a new Machine Config ", "mc.Name", mc.Name)
+			r.Log.Error(err, "Failed to create a new MachineConfig ", "mc.Name", mc.Name)
 			return ctrl.Result{}, err, true
 		}
 		/* mc created successfully - it will take a moment to finalize, requeue to create runtimeclass */
@@ -633,6 +646,7 @@ func (r *KataConfigOpenShiftReconciler) getMcp() (*mcfgv1.MachineConfigPool, err
 	foundMcp := &mcfgv1.MachineConfigPool{}
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
 	if err != nil {
+		r.Log.Error(err, "Getting MachineConfigPool failed ", "machinePool", machinePool)
 		return nil, err
 	}
 
@@ -661,7 +675,7 @@ func (r *KataConfigOpenShiftReconciler) getNodes() (error, *corev1.NodeList) {
 	}
 
 	if err := r.Client.List(context.TODO(), nodes, listOpts...); err != nil {
-		r.Log.Info("get list of nodes failed")
+		r.Log.Error(err, "Getting list of nodes failed")
 		return err, &corev1.NodeList{}
 	}
 	return nil, nodes
@@ -684,7 +698,7 @@ func (r *KataConfigOpenShiftReconciler) updateStatus(machinePool string) (*mcfgv
 	foundMcp := &mcfgv1.MachineConfigPool{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
 	if err != nil && k8serrors.IsNotFound(err) {
-		r.Log.Info("MCP not found")
+		r.Log.Error(err, "Unable to get MachineConfigPool ", "machinePool", machinePool)
 		return nil, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil, true
 	}
 
@@ -692,7 +706,6 @@ func (r *KataConfigOpenShiftReconciler) updateStatus(machinePool string) (*mcfgv
 	if corev1.ConditionTrue == r.kataConfig.Status.InstallationStatus.IsInProgress {
 		err, _ := r.updateInstallStatus()
 		if err != nil {
-			r.Log.Info("updateinstallstatus failed")
 			return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
 		}
 		if foundMcp.Status.DegradedMachineCount > 0 || mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions,
@@ -708,7 +721,6 @@ func (r *KataConfigOpenShiftReconciler) updateStatus(machinePool string) (*mcfgv
 	if corev1.ConditionTrue == r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress {
 		err, _ := r.updateUninstallStatus()
 		if err != nil {
-			r.Log.Info("update Uninstallstatus failed")
 			return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
 		}
 		if foundMcp.Status.DegradedMachineCount > 0 || mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions,
@@ -727,7 +739,6 @@ func (r *KataConfigOpenShiftReconciler) updateUninstallStatus() (error, bool) {
 	var err error
 	err, nodeList := r.getNodes()
 	if err != nil {
-		r.Log.Info("getNodes failed")
 		return err, false
 	}
 
@@ -746,7 +757,8 @@ func (r *KataConfigOpenShiftReconciler) updateUninstallStatus() (error, bool) {
 				err, r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList =
 					r.updateInProgressNodes(&node, r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList)
 			default:
-				r.Log.Info("error updating status, invalid machine config node state")
+				err = fmt.Errorf("Invalid machineconfig state: %v ", annotation)
+				r.Log.Error(err, "Error updating Uninstall status")
 			}
 		}
 	}
@@ -807,7 +819,6 @@ func (r *KataConfigOpenShiftReconciler) updateInstallStatus() (error, bool) {
 	var err error
 	err, nodeList := r.getNodes()
 	if err != nil {
-		r.Log.Info("getNodes failed")
 		return err, false
 	}
 
@@ -826,7 +837,8 @@ func (r *KataConfigOpenShiftReconciler) updateInstallStatus() (error, bool) {
 				err, r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList =
 					r.updateInProgressNodes(&node, r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList)
 			default:
-				r.Log.Info("error updating status, invalid machine config node state")
+				err = fmt.Errorf("Invalid machineconfig state: %v ", annotation)
+				r.Log.Error(err, "Error updating Install status")
 			}
 		}
 	}
@@ -836,7 +848,7 @@ func (r *KataConfigOpenShiftReconciler) updateInstallStatus() (error, bool) {
 func (r *KataConfigOpenShiftReconciler) updateFailedStatus(status kataconfigurationv1.KataFailedNodeStatus) (error, kataconfigurationv1.KataFailedNodeStatus) {
 	foundMcp, err := r.getMcp()
 	if err != nil {
-		r.Log.Info("couldn't get MCP information")
+		r.Log.Error(err, "couldn't get MachineConfigPool information")
 		return err, status
 	}
 
