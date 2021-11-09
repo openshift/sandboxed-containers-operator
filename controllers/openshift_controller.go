@@ -106,28 +106,30 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		ds := r.processDaemonsetForMonitor()
 		// Set KataConfig instance as the owner and controller
 		if ds != nil {
-			r.Log.Info("daemonset is not nil")
+			r.Log.Info("successfully generated the monitor daemonset")
 			if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
-				r.Log.Error(err, "setcontrollerreference failed")
+				r.Log.Error(err, "failed to set controller reference on the monitor daemonset")
 				return ctrl.Result{}, err
 			}
-			r.Log.Info("setcontrollerreference successful")
+			r.Log.Info("controller reference set for the monitor daemonset")
 		} else {
-			r.Log.Info("ds returned was nil")
+			r.Log.Info("failed to generate the daemonset")
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 		}
 		foundDs := &appsv1.DaemonSet{}
 		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDs)
-		if err != nil && k8serrors.IsNotFound(err) {
-			r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-			err = r.Client.Create(context.TODO(), ds)
-			if err != nil {
-				r.Log.Error(err, "error when creating monitor daemonset")
+		if err != nil {
+			if k8serrors.IsNotFound(err) {
+				r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
+				err = r.Client.Create(context.TODO(), ds)
+				if err != nil {
+					r.Log.Error(err, "error when creating monitor daemonset")
+					res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+				}
+			} else {
+				r.Log.Error(err, "could not get monitor daemonset, try again")
 				res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
 			}
-		} else if err != nil {
-			r.Log.Error(err, "could not get monitor daemonset, try again")
-			res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
 		}
 
 		return res, err
@@ -141,9 +143,10 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 	)
 
 	if monitorImage == "" {
-		r.Log.Info("OSC_MONITOR_IMAGE is not set, using default image")
+		r.Log.Info("OSC_MONITOR_IMAGE is not set")
 		monitorImage = "quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest"
 	}
+	r.Log.Info("Creating monitor DaemonSet with image file: " + monitorImage)
 	dsName := "openshift-sandboxed-containers-monitor"
 	dsLabels := map[string]string{
 		"name": dsName,
@@ -633,11 +636,13 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, nil
 	}
 	err = r.Client.Delete(context.TODO(), ds)
-	if err != nil && k8serrors.IsNotFound(err) {
-		r.Log.Info("monitor daemonset was already deleted")
-	} else if err != nil {
-		r.Log.Error(err, "error when deleting monitor Daemonset, try again")
-		return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("monitor daemonset was already deleted")
+		} else {
+			r.Log.Error(err, "error when deleting monitor Daemonset, try again")
+			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
+		}
 	}
 
 	r.Log.Info("Uninstallation completed. Proceeding with the KataConfig deletion")
