@@ -142,7 +142,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 
 	if monitorImage == "" {
 		r.Log.Info("OSC_MONITOR_IMAGE is not set, using default image")
-		monitorImage = "quay.io/openshift_sandboxed_monitors/openshift-sandboxed-containers-monitor:latest"
+		monitorImage = "quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest"
 	}
 	dsName := "openshift-sandboxed-containers-monitor"
 	dsLabels := map[string]string{
