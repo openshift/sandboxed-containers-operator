@@ -29,6 +29,12 @@ type KataConfigSpec struct {
 	// +optional
 	// +nullable
 	KataConfigPoolSelector *metav1.LabelSelector `json:"kataConfigPoolSelector"`
+
+	// CheckNodeEligibility is used to detect the node(s) readiness to run
+	// Kata containers. If set to true then, NFD operator is used to check
+	// the readiness
+	// +kubebuilder:default:=false
+	CheckNodeEligibility bool `json:"checkNodeEligibility"`
 }
 
 // KataConfigStatus defines the observed state of KataConfig
