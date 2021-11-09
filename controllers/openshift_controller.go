@@ -126,7 +126,7 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 				res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
 			}
 		} else if err != nil {
-			r.Log.Info("could not get monitor daemonset, try again", err)
+			r.Log.Error(err, "could not get monitor daemonset, try again")
 			res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
 		}
 
