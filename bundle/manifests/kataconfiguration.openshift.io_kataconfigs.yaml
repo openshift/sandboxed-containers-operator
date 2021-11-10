@@ -35,6 +35,12 @@ spec:
             description: KataConfigSpec defines the desired state of KataConfig
             nullable: true
             properties:
+              checkNodeEligibility:
+                default: false
+                description: CheckNodeEligibility is used to detect the node(s) readiness
+                  to run Kata containers. If set to true then, NFD operator is used
+                  to check the readiness
+                type: boolean
               kataConfigPoolSelector:
                 description: KataConfigPoolSelector is used to filter the worker nodes
                   if not specified, all worker nodes are selected
@@ -81,6 +87,8 @@ spec:
                       are ANDed.
                     type: object
                 type: object
+            required:
+            - checkNodeEligibility
             type: object
           status:
             description: KataConfigStatus defines the observed state of KataConfig
