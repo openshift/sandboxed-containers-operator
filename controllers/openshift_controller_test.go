@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	appsv1 "k8s.io/api/apps/v1"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -28,6 +29,16 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 	Context("KataConfig create", func() {
 		It("Should not support multiple KataConfig CRs", func() {
 
+			// Create the Namespace
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "openshift-sandboxed-containers-operator",
+				},
+			}
+
+			By("Creating the namespace successfully")
+			Expect(k8sClient.Create(context.Background(), ns)).Should(Succeed())
+
 			masterMcp := &mcfgv1.MachineConfigPool{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "machineconfiguration.openshift.io/v1",
@@ -35,7 +46,7 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "master",
-					Namespace: "openshift-sandboxed-containers", //This is needed otherwise MCP creation will fail
+					Namespace: "openshift-sandboxed-containers-operator", //This is needed otherwise MCP creation will fail
 					Labels:    map[string]string{"pools.operator.machineconfiguration.openshift.io/master": ""},
 				},
 				Spec: mcfgv1.MachineConfigPoolSpec{
@@ -99,7 +110,7 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "worker",
-					Namespace: "openshift-sandboxed-containers", //This is needed otherwise MCP creation will fail
+					Namespace: "openshift-sandboxed-containers-operator", //This is needed otherwise MCP creation will fail
 					Labels:    map[string]string{"pools.operator.machineconfiguration.openshift.io/worker": ""},
 				},
 				Spec: mcfgv1.MachineConfigPoolSpec{
@@ -264,7 +275,7 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
-					Namespace: "openshift-sandboxed-containers",
+					Namespace: "openshift-sandboxed-containers-operator",
 				},
 			}
 
@@ -403,6 +414,15 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 				return k8sClient.Get(context.Background(), types.NamespacedName{Name: "kata"}, rc)
 			}, timeout, interval).Should(Succeed())
 
+			time.Sleep(10 * time.Second)
+
+			By("Creating the monitor DS successfully")
+			ds := &appsv1.DaemonSet{}
+			Eventually(func() error {
+				return k8sClient.Get(context.Background(),
+					types.NamespacedName{Name: "openshift-sandboxed-containers-monitor",
+						Namespace: "openshift-sandboxed-containers-operator"}, ds)
+			}, timeout, interval).Should(Succeed())
 		})
 	})
 	Context("Adding a new worker node", func() {
