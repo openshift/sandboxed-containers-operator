@@ -152,14 +152,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 		"name": dsName,
 	}
 
-	var nodeSelector map[string]string
-	if r.kataConfig.Spec.KataConfigPoolSelector != nil {
-		nodeSelector = r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels
-	} else {
-		nodeSelector = map[string]string{
-			"node-role.kubernetes.io/worker": "",
-		}
-	}
+	nodeSelector := r.getNodeSelectorAsMap()
 
 	return &appsv1.DaemonSet{
 		TypeMeta: metav1.TypeMeta{
@@ -406,6 +399,40 @@ func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
 	return nil
 }
 
+func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsMap() map[string]string {
+	r.Log.Info("Getting NodeSelector")
+
+	// NodeSelector field in RuntimeClass and PodSpec is key:value map
+	nodeSelector := make(map[string]string)
+
+	isConvergedCluster, err := r.checkConvergedCluster()
+	if err == nil && isConvergedCluster {
+		// master MCP cannot be customized
+		nodeSelector["node-role.kubernetes.io/master"] = ""
+	} else {
+		nodeSelector["node-role.kubernetes.io/kata-oc"] = ""
+
+		if r.kataConfig.Spec.CheckNodeEligibility {
+			nodeSelector["feature.node.kubernetes.io/runtime.kata"] = "true"
+		}
+
+		if r.kataConfig.Spec.KataConfigPoolSelector != nil {
+			r.Log.Info("KataConfigPoolSelector:", "r.kataConfig.Spec.KataConfigPoolSelector", r.kataConfig.Spec.KataConfigPoolSelector)
+			lsMap, err := metav1.LabelSelectorAsMap(r.kataConfig.Spec.KataConfigPoolSelector)
+			if err != nil {
+				r.Log.Error(err, "Unable to get nodeSelector from KataConfigPoolSelector ")
+			} else {
+				// Add the labels to nodeSelector
+				for k, v := range lsMap {
+					nodeSelector[k] = v
+				}
+			}
+		}
+	}
+	r.Log.Info("Nodeselector", "nodeSelector", nodeSelector)
+	return nodeSelector
+}
+
 func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
 	r.Log.Info("Getting MachineConfigPool Name")
 
@@ -446,32 +473,7 @@ func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
 			},
 		}
 
-		nodeSelector := make(map[string]string)
-
-		isConvergedCluster, err := r.checkConvergedCluster()
-		if err == nil && isConvergedCluster {
-			// master MCP cannot be customized
-			nodeSelector["node-role.kubernetes.io/master"] = ""
-		} else {
-			nodeSelector["node-role.kubernetes.io/kata-oc"] = ""
-
-			if r.kataConfig.Spec.CheckNodeEligibility {
-				nodeSelector["feature.node.kubernetes.io/runtime.kata"] = "true"
-			}
-
-			if r.kataConfig.Spec.KataConfigPoolSelector != nil {
-				r.Log.Info("KataConfigPoolSelector:", "r.kataConfig.Spec.KataConfigPoolSelector", r.kataConfig.Spec.KataConfigPoolSelector)
-				lsMap, err := metav1.LabelSelectorAsMap(r.kataConfig.Spec.KataConfigPoolSelector)
-				if err != nil {
-					r.Log.Error(err, "Unable to get nodeSelector for runtimeClass")
-				}
-
-				// Add the labels to nodeSelector
-				for k, v := range lsMap {
-					nodeSelector[k] = v
-				}
-			}
-		}
+		nodeSelector := r.getNodeSelectorAsMap()
 
 		rc.Scheduling = &nodeapi.Scheduling{
 			NodeSelector: nodeSelector,
