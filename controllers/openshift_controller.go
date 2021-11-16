@@ -391,10 +391,11 @@ func (r *KataConfigOpenShiftReconciler) checkConvergedCluster() (bool, error) {
 }
 
 func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
-	// Check if NFD label exists
-	err, nodes := r.getNodesWithLabels(map[string]string{"node-role.kubernetes.io/runtime.kata": "true"})
+	r.Log.Info("Check Node Eligibility to run Kata containers")
+	// Check if node eligibility label exists
+	err, nodes := r.getNodesWithLabels(map[string]string{"feature.node.kubernetes.io/runtime.kata": "true"})
 	if err != nil {
-		r.Log.Error(err, "Error in getting list of nodes with label: node-role.kubernetes.io/runtime.kata")
+		r.Log.Error(err, "Error in getting list of nodes with label: feature.node.kubernetes.io/runtime.kata")
 		return err
 	}
 	if len(nodes.Items) == 0 {
@@ -663,14 +664,16 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	if r.kataConfig.Spec.CheckNodeEligibility {
 		err := r.checkNodeEligibility()
 		if err != nil {
-			return reconcile.Result{}, err
+			r.Log.Error(err, "Failed to check Node eligibility for running Kata containers")
+			return ctrl.Result{}, err
 		}
 	}
 
 	// If converged cluster, then MCP == master, otherwise "kata-oc" if it exists
 	machinePool, err := r.getMcpName()
 	if err != nil {
-		return reconcile.Result{}, err
+		r.Log.Error(err, "Failed to get the MachineConfigPool")
+		return ctrl.Result{}, err
 	}
 
 	// Add finalizer for this CR
