@@ -31,7 +31,7 @@ metadata:
   name: sandboxed-containers-operator
   namespace: openshift-sandboxed-containers-operator
 spec:
-  channel: "preview-1.0"
+  channel: "candidate"
   installPlanApproval: Automatic
   name: sandboxed-containers-operator
   source: my-operator-catalog
