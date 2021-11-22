@@ -152,14 +152,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 		"name": dsName,
 	}
 
-	var nodeSelector map[string]string
-	if r.kataConfig.Spec.KataConfigPoolSelector != nil {
-		nodeSelector = r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels
-	} else {
-		nodeSelector = map[string]string{
-			"node-role.kubernetes.io/worker": "",
-		}
-	}
+	nodeSelector := r.getNodeSelectorAsMap()
 
 	return &appsv1.DaemonSet{
 		TypeMeta: metav1.TypeMeta{
@@ -391,10 +384,11 @@ func (r *KataConfigOpenShiftReconciler) checkConvergedCluster() (bool, error) {
 }
 
 func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
-	// Check if NFD label exists
-	err, nodes := r.getNodesWithLabels(map[string]string{"node-role.kubernetes.io/runtime.kata": "true"})
+	r.Log.Info("Check Node Eligibility to run Kata containers")
+	// Check if node eligibility label exists
+	err, nodes := r.getNodesWithLabels(map[string]string{"feature.node.kubernetes.io/runtime.kata": "true"})
 	if err != nil {
-		r.Log.Error(err, "Error in getting list of nodes with label: node-role.kubernetes.io/runtime.kata")
+		r.Log.Error(err, "Error in getting list of nodes with label: feature.node.kubernetes.io/runtime.kata")
 		return err
 	}
 	if len(nodes.Items) == 0 {
@@ -403,6 +397,40 @@ func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
 	}
 
 	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsMap() map[string]string {
+	r.Log.Info("Getting NodeSelector")
+
+	// NodeSelector field in RuntimeClass and PodSpec is key:value map
+	nodeSelector := make(map[string]string)
+
+	isConvergedCluster, err := r.checkConvergedCluster()
+	if err == nil && isConvergedCluster {
+		// master MCP cannot be customized
+		nodeSelector["node-role.kubernetes.io/master"] = ""
+	} else {
+		nodeSelector["node-role.kubernetes.io/kata-oc"] = ""
+
+		if r.kataConfig.Spec.CheckNodeEligibility {
+			nodeSelector["feature.node.kubernetes.io/runtime.kata"] = "true"
+		}
+
+		if r.kataConfig.Spec.KataConfigPoolSelector != nil {
+			r.Log.Info("KataConfigPoolSelector:", "r.kataConfig.Spec.KataConfigPoolSelector", r.kataConfig.Spec.KataConfigPoolSelector)
+			lsMap, err := metav1.LabelSelectorAsMap(r.kataConfig.Spec.KataConfigPoolSelector)
+			if err != nil {
+				r.Log.Error(err, "Unable to get nodeSelector from KataConfigPoolSelector ")
+			} else {
+				// Add the labels to nodeSelector
+				for k, v := range lsMap {
+					nodeSelector[k] = v
+				}
+			}
+		}
+	}
+	r.Log.Info("Nodeselector", "nodeSelector", nodeSelector)
+	return nodeSelector
 }
 
 func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
@@ -445,32 +473,7 @@ func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
 			},
 		}
 
-		nodeSelector := make(map[string]string)
-
-		isConvergedCluster, err := r.checkConvergedCluster()
-		if err == nil && isConvergedCluster {
-			// master MCP cannot be customized
-			nodeSelector["node-role.kubernetes.io/master"] = ""
-		} else {
-			nodeSelector["node-role.kubernetes.io/kata-oc"] = ""
-
-			if r.kataConfig.Spec.CheckNodeEligibility {
-				nodeSelector["feature.node.kubernetes.io/runtime.kata"] = "true"
-			}
-
-			if r.kataConfig.Spec.KataConfigPoolSelector != nil {
-				r.Log.Info("KataConfigPoolSelector:", "r.kataConfig.Spec.KataConfigPoolSelector", r.kataConfig.Spec.KataConfigPoolSelector)
-				lsMap, err := metav1.LabelSelectorAsMap(r.kataConfig.Spec.KataConfigPoolSelector)
-				if err != nil {
-					r.Log.Error(err, "Unable to get nodeSelector for runtimeClass")
-				}
-
-				// Add the labels to nodeSelector
-				for k, v := range lsMap {
-					nodeSelector[k] = v
-				}
-			}
-		}
+		nodeSelector := r.getNodeSelectorAsMap()
 
 		rc.Scheduling = &nodeapi.Scheduling{
 			NodeSelector: nodeSelector,
@@ -663,14 +666,17 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	if r.kataConfig.Spec.CheckNodeEligibility {
 		err := r.checkNodeEligibility()
 		if err != nil {
-			return reconcile.Result{}, err
+			// If no nodes are found, requeue to check again for eligible nodes
+			r.Log.Error(err, "Failed to check Node eligibility for running Kata containers")
+			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 20}, err
 		}
 	}
 
 	// If converged cluster, then MCP == master, otherwise "kata-oc" if it exists
 	machinePool, err := r.getMcpName()
 	if err != nil {
-		return reconcile.Result{}, err
+		r.Log.Error(err, "Failed to get the MachineConfigPool")
+		return ctrl.Result{}, err
 	}
 
 	// Add finalizer for this CR
