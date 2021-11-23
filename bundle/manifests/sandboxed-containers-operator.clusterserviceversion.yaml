@@ -16,7 +16,7 @@ metadata:
     olm.skipRange: '>=1.1.0 <1.2.0'
     operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
     operators.openshift.io/infrastructure-features: '["disconnected", "fips"]'
-    operators.operatorframework.io/builder: operator-sdk-v1.13.0+git
+    operators.operatorframework.io/builder: operator-sdk-v1.15.0+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/sandboxed-containers-operator
   labels:
