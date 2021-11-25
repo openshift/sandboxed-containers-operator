@@ -1,7 +1,8 @@
-# Build the manager binary
-FROM quay.io/bitnami/golang:1.16 as builder
+# Use OpenShift golang builder image
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.16-openshift-4.10 AS builder
 
 WORKDIR /workspace
+
 # Copy the Go Modules manifests
 COPY go.mod go.mod
 COPY go.sum go.sum
@@ -15,13 +16,15 @@ COPY api/ api/
 COPY controllers/ controllers/
 
 # Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o manager main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -mod=mod -a -o manager main.go
 
-# Use distroless as minimal base image to package the manager binary
-# Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot
+# Use OpenShift base image
+FROM registry.ci.openshift.org/ocp/4.10:base
 WORKDIR /
 COPY --from=builder /workspace/manager .
-USER nonroot:nonroot
 
+RUN useradd  -r -u 499 nonroot
+RUN getent group nonroot || groupadd -o -g 499 nonroot
+
+USER nonroot:nonroot
 ENTRYPOINT ["/manager"]
