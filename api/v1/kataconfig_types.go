@@ -19,7 +19,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // KataConfigSpec defines the desired state of KataConfig
@@ -67,6 +66,10 @@ type KataConfigStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:path=kataconfigs,scope=Cluster
+// +kubebuilder:printcolumn:name="InProgress",type=string,JSONPath=".status.installationStatus.IsInProgress",description="Status of Kata runtime installation"
+// +kubebuilder:printcolumn:name="Completed",type=integer,JSONPath=".status.installationStatus.completed.completedNodesCount",description="Number of nodes with Kata runtime installed"
+// +kubebuilder:printcolumn:name="Total",type=integer,JSONPath=".status.totalNodesCount",description="Total number of nodes"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp",description="Age of the KataConfig Custom Resource"
 type KataConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

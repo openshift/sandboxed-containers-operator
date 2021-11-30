@@ -16,7 +16,24 @@ spec:
     singular: kataconfig
   scope: Cluster
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - description: Status of Kata runtime installation
+      jsonPath: .status.installationStatus.IsInProgress
+      name: InProgress
+      type: string
+    - description: Number of nodes with Kata runtime installed
+      jsonPath: .status.installationStatus.completed.completedNodesCount
+      name: Completed
+      type: integer
+    - description: Total number of nodes
+      jsonPath: .status.totalNodesCount
+      name: Total
+      type: integer
+    - description: Age of the KataConfig Custom Resource
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
         description: KataConfig is the Schema for the kataconfigs API
