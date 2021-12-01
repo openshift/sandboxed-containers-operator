@@ -1,125 +1,81 @@
-## :information_source: If you are using OCP 4.7 please follow this [README](https://github.com/openshift/sandboxed-containers-operator/blob/release-4.7/README.md)
-## :information_source: If you are using OCP 4.6 please follow this [README](https://github.com/openshift/sandboxed-containers-operator/blob/release-4.6/README.md)
-
-# OpenShift sandboxed containers operator
-
-An operator to perform lifecycle management (install/upgrade/uninstall) of [Kata Runtime](https://katacontainers.io/) on Openshift clusters.
-
-## Deploy the operator
-
-### Using Openshift CLI
-
-- Make sure that `oc` is configured to talk to the cluster
-- Deploy the operator by running the following
-  ```
-  oc apply -f https://raw.githubusercontent.com/openshift/sandboxed-containers-operator/master/config/samples/deploy.yaml 
-  ```
-
-- Check if operator pods are up (usually takes few minutes)
-  ```
-  oc get pods -n openshift-sandboxed-containers-operator
-  ```
-  Sample output
-  ```
-  NAME                                 READY   STATUS    RESTARTS   AGE
-  controller-manager-64888847f-j6256   2/2     Running   0          35s
-  ```
-
-### Using Openshift Web Console
-
-- Switch to `Administrator` perspective and navigate to `Admininstration -> Cluster Settings`.
-- In the `Cluster Settings` page, switch to `Configuration` tab and search for `OperatorHub`
-- Click `OperatorHub` and navigate to `Sources` tab.
-- Click `Create CatalogSource` and use the following `Image`
-  ```
-  quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator-catalog:v1.2.0
-  ```
-
-- Ensure `Cluster-wide CatalogSource` is selected.
-
-- Click `Create` to create the catalog. 
-
-The sandboxed container operator will be available under `Operators -> OperatorHub`
+<!-- TOC start -->
+- [Introduction to sandboxed containers](#introduction-to-sandboxed-containers)
+  * [Features & benefits of sandboxed containers](#features-benefits-of-sandboxed-containers)
+- [OpenShift sandboxed containers Operator](#openshift-sandboxed-containers-operator)
+  * [Operator Architecture](#operator-architecture)
+  * [KataConfig Custom Resource Definition](#kataconfig-custom-resource-definition)
+  * [Getting Started](#getting-started)
+- [Operator Development](#operator-development)
+- [Demos](#demos)
+- [Further Reading](#further-reading)
+<!-- TOC end -->
 
 
-## Install Kata containers runtime
+## Introduction to sandboxed containers
 
-### Create the `KataConfig` CR to start the installation
-  
-``` 
-oc apply -f https://raw.githubusercontent.com/openshift/sandboxed-containers-operator/master/config/samples/kataconfiguration_v1_kataconfig.yaml
-```
-
-Please follow [this](#selectively-install-the-kata-runtime-on-specific-workers) section if you wish to install the Kata Runtime only on selected worker nodes.
-
-#### Monitoring the Kata Runtime Installation
-Watch the description of the `KataConfig` custom resource
-```
-oc describe kataconfig example-kataconfig
-```
-and look at the field `Completed nodes` in the status. If the value matches the number of worker nodes the installation is completed.
-
-#### Runtime Class
-Once the sandboxed-containers extension is enabled successfully on the intended workers, the sandboxed containers operator will create a [runtime class](https://kubernetes.io/docs/concepts/containers/runtime-class/) `kata`. This runtime class can be used to deploy the pods that will use the Kata Runtime.
-
-#### Run an Example Pod using the Kata Runtime
-```
-oc apply -f https://raw.githubusercontent.com/openshift/sandboxed-containers-operator/master/config/samples/example-fedora.yaml
-```  
-
-## Selectively Install the Kata Runtime on Specific Workers
-
-### Edit the custom resource file `config/samples/kataconfiguration_v1_kataconfig.yaml`
-   and uncomment the kata pool selector fields in the spec as follows,
-
-   ```yaml
-   apiVersion: kataconfiguration.openshift.io/v1alpha1
-   kind: KataConfig
-   metadata:
-     name: example-kataconfig
-   spec:
-     kataConfigPoolSelector:
-       matchLabels:
-          custom-kata1: test
-   ```
-
-   If you wish, you can change the label "custom-kata1:test" to something of your choice.
-
-### Apply the chosen label to the desired nodes. e.g. `oc label node <worker_node_name> custom-kata1=test`
-
-### Create the custom resource to start the installation,
-   ```
-   oc apply -f config/samples/kataconfiguration_v1_kataconfig.yaml
-   ```
-
-## Uninstall
-
-### Uninstall Kata runtime
-Delete the `KataConfig` CR
-```
-oc delete kataconfig <KataConfig_CR_Name>
-```
-e.g.
-```
-oc delete kataconfig example-kataconfig
-```
-
-### Uninstall the Operator
-
-If using the web console, then navigate to `Operators -> Install Operators` and uninstall the operator
-If using CLI, then run the following command
-```
-oc delete -f https://raw.githubusercontent.com/openshift/sandboxed-containers-operator/master/config/samples/deploy.yaml
-```
-
-## Developing
-Please check the development [doc](./docs/DEVELOPMENT.md)
-
-## Troubleshooting
-
-### Openshift
-1. During the installation you can watch the values of the `KataConfig` CR. Do `watch oc describe kataconfig example-kataconfig`.
-2. To check if the nodes in the machine config pool are going through a config update watch the machine config pool resource. For this do `watch oc get mcp kata-oc`
-3. Check the logs of the sandboxed containers operator controller pod to see detailled messages about what steps it is executing. To find out the name of the controller pod, `oc get pods -n openshift-sandboxed-containers-operator | grep controller-manager` and then monitor the logs of the container `manager` in that pod.
+[OpenShift sandboxed containers](https://www.redhat.com/en/openshift-sandboxed-containers), based on the [Kata Containers](https://katacontainers.io/) open source project, provides an Open Container Initiative (OCI) compliant container runtime using lightweight virtual machines, running your workloads in their own isolated kernel and therefore contributing an additional layer of isolation back to OpenShift’s Defense-in-Depth strategy. 
 
 
+### Features & benefits of sandboxed containers
+
+- **Isolated Developer Environments & Privileges Scoping** 
+As a developer working on debugging an application using state-of-the-art tooling you might need elevated privileges such as `CAP_ADMIN` or `CAP_BPF`. With OpenShift sandboxed containers, any impact will be limited to a separate dedicated kernel.
+
+- **Legacy Containerized Workload Isolation** 
+You are mid-way in converting a containerized monolith into cloud-native microservices. However, the monolith still runs on your cluster unpatched and unmaintained. OpenShift sandboxed containers helps isolate it in its own kernel to reduce risk.
+
+- **Safe Multi-tenancy & Resource Sharing (CI/CD Jobs, CNFs, ..)** 
+If you are providing a service to multiple tenants, it could mean that the service workloads are sharing the same resources (e.g., worker node). By deploying in a dedicated kernel, the impact of these workloads have on one another is greatly reduced.
+
+- **Additional Isolation with Native Kubernetes User Experience**
+OpenShift sandboxed containers is used as a compliant OCI runtime. Therefore, many operational patterns used with normal containers are still preserved including but not limited to image scanning, GitOps, Imagestreams, and so on.
+
+Please refer to this [blog](https://cloud.redhat.com/blog/the-dawn-of-openshift-sandboxed-containers-overview) for a detailed overview of sandboxed containers use cases and other related details.
+
+## OpenShift sandboxed containers Operator
+
+The operator manages the lifecycle (`install/configure/update`) of sandboxed containers runtime (`Kata containers`) on OpenShift clusters.
+
+### Operator Architecture
+
+The following diagram shows how the operator components are connected to the OpenShift overall architecture:
+
+![High Level Overview](./docs/arch.png)
+
+
+Here is a brief summary of the components:
+
+- OpenShift clusters consist of controller and worker nodes organized as  machine config pools. 
+- The Machine Config Operator (MCO) manages the operating system and keeps the cluster up to date and configured.
+- The control-plane nodes run all the services that are required to control the cluster such as the API server, etcd, controller-manager, and the scheduler. 
+- The OpenShift sandboxed containers operator runs on a control plane node.
+- The cluster worker nodes run all the end-user workloads. 
+- The container engine `CRI-O` uses either the default container runtime `runc` or, in sandboxed containers case, the `Kata` containers runtime.
+
+### KataConfig Custom Resource Definition
+
+The operator owns and control the `KataConfig` Custom Resource Definition (CRD).
+Please refer to the [code](https://github.com/openshift/sandboxed-containers-operator/blob/master/api/v1/kataconfig_types.go) to find details of the `KataConfig` CRD. 
+
+### Getting Started
+
+Please refer to the OpenShift release specific documentation for getting started with sandboxed containers. 
+- For OpenShift 4.9 please follow this [doc](https://docs.openshift.com/container-platform/4.9/sandboxed_containers/deploying-sandboxed-container-workloads.html)
+
+Further note that starting with OpenShift 4.9, the branch naming is tied to the operator version and not the OpenShift version.
+For example `release-1.1` corresponds to the Operator release verson `1.1.x`.
+
+## Operator Development
+
+Please take a look at the following [doc](./docs/DEVELOPMENT.md). 
+Contributions are most welcome!!
+
+## Demos
+
+You can find various demos in the following [youtube channel](https://www.youtube.com/channel/UC6PCt2zbug9cF4SpnMrE68A).
+
+## Further Reading
+
+- [OpenShift sandboxed containers 101](https://cloud.redhat.com/blog/openshift-sandboxed-containers-101)
+- [Operator overview](https://cloud.redhat.com/blog/openshift-sandboxed-containers-operator-from-zero-to-hero-the-hard-way)
+- [Troubleshooting](https://cloud.redhat.com/blog/sandboxed-containers-operator-from-zero-to-hero-the-hard-way-part-2)
