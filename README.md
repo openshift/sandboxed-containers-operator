@@ -92,8 +92,25 @@ and look at the field `Completed nodes` in the status. If the value matches the 
 Once the sandboxed-containers extension is enabled successfully on the intended workers, the sandboxed containers operator will create a [runtime class](https://kubernetes.io/docs/concepts/containers/runtime-class/) `kata`. This runtime class can be used to deploy the pods that will use the Kata Runtime.
 
 #### Run an Example Pod using the Kata Runtime
-```
-oc apply -f https://raw.githubusercontent.com/openshift/sandboxed-containers-operator/master/config/samples/example-fedora.yaml
+```yaml
+cat << EOF | oc create -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example-fedora
+  labels:
+    app: example-fedora-app
+  namespace: default
+spec:
+  containers:
+    - name: example-fedora
+      image: quay.io/fedora/fedora:35
+      ports:
+        - containerPort: 8080
+      command: ["python3"]
+      args: [ "-m", "http.server", "8080"]
+  runtimeClassName: kata
+EOF
 ```  
 
 ## Selectively Install the Kata Runtime on Specific Workers
