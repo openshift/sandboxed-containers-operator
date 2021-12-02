@@ -15,7 +15,6 @@
 
 [OpenShift sandboxed containers](https://www.redhat.com/en/openshift-sandboxed-containers), based on the [Kata Containers](https://katacontainers.io/) open source project, provides an Open Container Initiative (OCI) compliant container runtime using lightweight virtual machines, running your workloads in their own isolated kernel and therefore contributing an additional layer of isolation back to OpenShift’s Defense-in-Depth strategy. 
 
-
 ### Features & benefits of sandboxed containers
 
 - **Isolated Developer Environments & Privileges Scoping** 
@@ -79,3 +78,4 @@ You can find various demos in the following [youtube channel](https://www.youtub
 - [OpenShift sandboxed containers 101](https://cloud.redhat.com/blog/openshift-sandboxed-containers-101)
 - [Operator overview](https://cloud.redhat.com/blog/openshift-sandboxed-containers-operator-from-zero-to-hero-the-hard-way)
 - [Troubleshooting](https://cloud.redhat.com/blog/sandboxed-containers-operator-from-zero-to-hero-the-hard-way-part-2)
+- [Hybrid Cloud Blog Series](https://www.redhat.com/en/openshift-sandboxed-containers)
