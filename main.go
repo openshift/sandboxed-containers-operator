@@ -17,17 +17,22 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
+	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	nodeapi "k8s.io/kubernetes/pkg/apis/node/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	"github.com/openshift/sandboxed-containers-operator/controllers"
@@ -43,6 +48,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(nodeapi.AddToScheme(scheme))
+
+	utilruntime.Must(secv1.AddToScheme(scheme))
 
 	utilruntime.Must(mcfgapi.Install(scheme))
 
@@ -80,6 +87,16 @@ func main() {
 	}
 
 	if isOpenshift {
+		// Create the custom SCC
+
+		err = createScc(context.TODO(), mgr)
+		if err != nil {
+			setupLog.Error(err, "unable to create SCC")
+			os.Exit(1)
+		}
+
+		setupLog.Info("created SCC")
+
 		if err = (&controllers.KataConfigOpenShiftReconciler{
 			Client: mgr.GetClient(),
 			Log:    ctrl.Log.WithName("controllers").WithName("KataConfig"),
@@ -101,4 +118,16 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func createScc(ctx context.Context, mgr manager.Manager) error {
+
+	scc := controllers.GetScc()
+	err := mgr.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(scc), scc)
+	if err != nil && k8serrors.IsNotFound(err) {
+		setupLog.Info("Creating SCC")
+		return mgr.GetClient().Create(ctx, scc, &client.CreateOptions{})
+	}
+
+	return err
 }

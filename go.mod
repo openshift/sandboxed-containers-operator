@@ -8,6 +8,7 @@ require (
 	github.com/go-logr/logr v0.4.0
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.15.0
+	github.com/openshift/api v0.0.0-20210924154557-a4f696157341
 	github.com/openshift/machine-config-operator v0.0.1-0.20211015230756-5353b8ec1122
 	github.com/vincent-petithory/dataurl v0.0.0-20191104211930-d1553a71de50 // indirect
 	golang.org/x/oauth2 v0.0.0-20210402161424-2e8d93401602 // indirect

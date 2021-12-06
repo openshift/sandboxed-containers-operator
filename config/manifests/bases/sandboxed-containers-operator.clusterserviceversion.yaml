@@ -107,6 +107,14 @@ spec:
       clusterPermissions:
       - rules:
         - apiGroups:
+          - security.openshift.io
+          resourceNames:
+          - sandboxed-containers-operator-scc
+          resources:
+          - securitycontextconstraints
+          verbs:
+          - use
+        - apiGroups:
           - ""
           - machineconfiguration.openshift.io
           resources:
