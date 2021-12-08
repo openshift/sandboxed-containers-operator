@@ -37,5 +37,6 @@ func GetScc() *secv1.SecurityContextConstraints {
 			},
 		},
 		Volumes: []secv1.FSType{secv1.FSTypeAll},
+		Users:   []string{"system:serviceaccount:openshift-sandboxed-containers-operator:monitor"},
 	}
 }

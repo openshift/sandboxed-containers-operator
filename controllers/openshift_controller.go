@@ -173,7 +173,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 					Labels: dsLabels,
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName: "default",
+					ServiceAccountName: "monitor",
 					NodeSelector:       nodeSelector,
 					Containers: []corev1.Container{
 						{
