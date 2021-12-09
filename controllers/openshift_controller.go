@@ -139,7 +139,7 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 
 func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.DaemonSet {
 	var (
-		runPrivileged = true
+		runPrivileged = false
 		monitorImage  = os.Getenv("OSC_MONITOR_IMAGE")
 	)
 
