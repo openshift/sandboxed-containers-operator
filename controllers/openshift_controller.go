@@ -140,6 +140,8 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.DaemonSet {
 	var (
 		runPrivileged = false
+		runUserID     = int64(1001)
+		runGroupID    = int64(1001)
 		monitorImage  = os.Getenv("OSC_MONITOR_IMAGE")
 	)
 
@@ -182,6 +184,8 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 							ImagePullPolicy: "Always",
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
+								RunAsUser:  &runUserID,
+								RunAsGroup: &runGroupID,
 							},
 							Command: []string{"/usr/bin/kata-monitor", "--log-level=debug", "--runtime-endpoint=/run/crio/crio.sock"},
 							VolumeMounts: []corev1.VolumeMount{
