@@ -114,6 +114,8 @@ spec:
           - securitycontextconstraints
           verbs:
           - use
+        serviceAccountName: monitor
+      - rules:
         - apiGroups:
           - ""
           - machineconfiguration.openshift.io
@@ -198,6 +200,19 @@ spec:
           - list
           - patch
           - update
+          - watch
+        - apiGroups:
+          - security.openshift.io
+          resources:
+          - securitycontextconstraints
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - use
           - watch
         - apiGroups:
           - authentication.k8s.io
