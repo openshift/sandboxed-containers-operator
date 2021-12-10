@@ -23,7 +23,9 @@ import (
 
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -37,6 +39,10 @@ import (
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	"github.com/openshift/sandboxed-containers-operator/controllers"
 	// +kubebuilder:scaffold:imports
+)
+
+const (
+	OperatorNamespace = "openshift-sandboxed-containers-operator"
 )
 
 var (
@@ -97,6 +103,14 @@ func main() {
 
 		setupLog.Info("created SCC")
 
+		err = labelNamespace(context.TODO(), mgr)
+		if err != nil {
+			setupLog.Error(err, "unable to add labels to namespace")
+			os.Exit(1)
+		}
+
+		setupLog.Info("added labels")
+
 		if err = (&controllers.KataConfigOpenShiftReconciler{
 			Client: mgr.GetClient(),
 			Log:    ctrl.Log.WithName("controllers").WithName("KataConfig"),
@@ -130,4 +144,26 @@ func createScc(ctx context.Context, mgr manager.Manager) error {
 	}
 
 	return err
+}
+
+func labelNamespace(ctx context.Context, mgr manager.Manager) error {
+
+	//label := map[string]string{"openshift.io/cluster-monitoring": "true"}
+
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: OperatorNamespace,
+		},
+	}
+	err := mgr.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(ns), ns)
+	if err != nil {
+		setupLog.Error(err, "Unable to add label to the namespace")
+		return err
+	}
+
+	setupLog.Info("Labelling Namespace")
+	setupLog.Info("Labels: ", "Labels", ns.ObjectMeta.Labels)
+	//ns.ObjectMeta.Labels = label
+	ns.ObjectMeta.Labels["openshift.io/cluster-monitoring"] = "true"
+	return mgr.GetClient().Update(ctx, ns)
 }
