@@ -8,7 +8,7 @@ import (
 
 func GetScc() *secv1.SecurityContextConstraints {
 
-	trueVar := true
+	trueVar := false
 	sccName := "sandboxed-containers-operator-scc"
 
 	return &secv1.SecurityContextConstraints{
