@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	appsv1 "k8s.io/api/apps/v1"
-	"os"
 	"time"
 
 	"k8s.io/apimachinery/pkg/labels"
@@ -142,14 +141,9 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 		runPrivileged = false
 		runUserID     = int64(1001)
 		runGroupID    = int64(1001)
-		monitorImage  = os.Getenv("OSC_MONITOR_IMAGE")
 	)
 
-	if monitorImage == "" {
-		r.Log.Info("OSC_MONITOR_IMAGE is not set")
-		monitorImage = "quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest"
-	}
-	r.Log.Info("Creating monitor DaemonSet with image file: " + monitorImage)
+	r.Log.Info("Creating monitor DaemonSet with image file: " + r.kataConfig.Spec.KataMonitorImage)
 	dsName := "openshift-sandboxed-containers-monitor"
 	dsLabels := map[string]string{
 		"name": dsName,
@@ -180,7 +174,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 					Containers: []corev1.Container{
 						{
 							Name:            "kata-monitor",
-							Image:           monitorImage,
+							Image:           r.kataConfig.Spec.KataMonitorImage,
 							ImagePullPolicy: "Always",
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,

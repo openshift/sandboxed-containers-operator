@@ -34,6 +34,10 @@ type KataConfigSpec struct {
 	// the readiness
 	// +kubebuilder:default:=false
 	CheckNodeEligibility bool `json:"checkNodeEligibility"`
+
+	// KataMonitorImage is used to specify the container image used for kata-monitor
+	// +kubebuilder:default:="quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest"
+	KataMonitorImage string `json:"kataMonitorImage"`
 }
 
 // KataConfigStatus defines the observed state of KataConfig
