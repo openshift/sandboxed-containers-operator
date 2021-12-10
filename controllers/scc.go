@@ -27,6 +27,7 @@ func GetScc() *secv1.SecurityContextConstraints {
 		AllowPrivilegeEscalation: &trueVar,
 		AllowPrivilegedContainer: false,
 		RequiredDropCapabilities: []corev1.Capability{"MKNOD", "FSETID", "KILL", "FOWNER"},
+		AllowedCapabilities:      []corev1.Capability{"DAC_READ_OVERRIDE"},
 		RunAsUser: secv1.RunAsUserStrategyOptions{
 			Type: secv1.RunAsUserStrategyMustRunAsNonRoot,
 		},
