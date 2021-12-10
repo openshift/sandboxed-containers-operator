@@ -277,6 +277,9 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 					Name:      name,
 					Namespace: "openshift-sandboxed-containers-operator",
 				},
+				Spec: kataconfigurationv1.KataConfigSpec{
+					KataMonitorImage: "quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest",
+				},
 			}
 
 			By("Creating the KataConfig CR successfully")
