@@ -1,3 +1,4 @@
 resources:
 - kata-monitor-service.yaml
 - kata-monitor-servicemonitor.yaml
+- osc-dashboard.yaml
