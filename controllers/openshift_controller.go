@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	appsv1 "k8s.io/api/apps/v1"
-	"os"
 	"time"
 
 	"k8s.io/apimachinery/pkg/labels"
@@ -65,6 +64,8 @@ type KataConfigOpenShiftReconciler struct {
 // +kubebuilder:rbac:groups=node.k8s.io,resources=runtimeclasses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get
 // +kubebuilder:rbac:groups="";machineconfiguration.openshift.io,resources=nodes;machineconfigs;machineconfigpools;pods;services;services/finalizers;endpoints;persistentvolumeclaims;events;configmaps;secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=use;get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;update
 
 func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = r.Log.WithValues("kataconfig", req.NamespacedName)
@@ -138,15 +139,12 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 
 func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.DaemonSet {
 	var (
-		runPrivileged = true
-		monitorImage  = os.Getenv("OSC_MONITOR_IMAGE")
+		runPrivileged = false
+		runUserID     = int64(1001)
+		runGroupID    = int64(1001)
 	)
 
-	if monitorImage == "" {
-		r.Log.Info("OSC_MONITOR_IMAGE is not set")
-		monitorImage = "quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest"
-	}
-	r.Log.Info("Creating monitor DaemonSet with image file: " + monitorImage)
+	r.Log.Info("Creating monitor DaemonSet with image file: " + r.kataConfig.Spec.KataMonitorImage)
 	dsName := "openshift-sandboxed-containers-monitor"
 	dsLabels := map[string]string{
 		"name": dsName,
@@ -172,15 +170,17 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 					Labels: dsLabels,
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName: "default",
+					ServiceAccountName: "monitor",
 					NodeSelector:       nodeSelector,
 					Containers: []corev1.Container{
 						{
 							Name:            "kata-monitor",
-							Image:           monitorImage,
+							Image:           r.kataConfig.Spec.KataMonitorImage,
 							ImagePullPolicy: "Always",
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
+								RunAsUser:  &runUserID,
+								RunAsGroup: &runGroupID,
 							},
 							Command: []string{"/usr/bin/kata-monitor", "--log-level=debug", "--runtime-endpoint=/run/crio/crio.sock"},
 							VolumeMounts: []corev1.VolumeMount{

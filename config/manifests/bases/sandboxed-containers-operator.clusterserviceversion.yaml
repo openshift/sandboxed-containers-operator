@@ -107,6 +107,23 @@ spec:
       clusterPermissions:
       - rules:
         - apiGroups:
+          - security.openshift.io
+          resourceNames:
+          - sandboxed-containers-operator-scc
+          resources:
+          - securitycontextconstraints
+          verbs:
+          - use
+        serviceAccountName: monitor
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - namespaces
+          verbs:
+          - get
+          - update
+        - apiGroups:
           - ""
           - machineconfiguration.openshift.io
           resources:
@@ -190,6 +207,19 @@ spec:
           - list
           - patch
           - update
+          - watch
+        - apiGroups:
+          - security.openshift.io
+          resources:
+          - securitycontextconstraints
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - use
           - watch
         - apiGroups:
           - authentication.k8s.io

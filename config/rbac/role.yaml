@@ -8,6 +8,13 @@ metadata:
 rules:
 - apiGroups:
   - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - update
+- apiGroups:
+  - ""
   - machineconfiguration.openshift.io
   resources:
   - configmaps
@@ -90,4 +97,17 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - security.openshift.io
+  resources:
+  - securitycontextconstraints
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - use
   - watch
