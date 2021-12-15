@@ -7,6 +7,17 @@
 - Access to OpenShift cluster (4.8+)
 - Container registry to storage images
 
+### Get a token on registry.ci.openshift.org
+Our builder and base images are curated images from OpenShift.
+They are pulled from registry.ci.openshift.org, which require an authentication.
+To get access to these images, you have to login and retrieve a token, following [these steps](https://docs.ci.openshift.org/docs/how-tos/use-registries-in-build-farm/#how-do-i-log-in-to-pull-images-that-require-authentication)
+
+In summary:
+- login to one of the clusters' console
+- use the console's shortcut to get the commandline login command
+- log in from the command line with the provided command
+- use "oc registry login" to save the token locally
+
 
 ## Set Environment Variables
 ```
