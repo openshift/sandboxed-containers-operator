@@ -58,6 +58,11 @@ type KataConfigOpenShiftReconciler struct {
 	kataConfig *kataconfigurationv1.KataConfig
 }
 
+const (
+	dashboard_configmap_name      = "grafana-dashboard-sandboxed-containers"
+	dashboard_configmap_namespace = "openshift-config-managed"
+)
+
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs;kataconfigs/finalizers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments;daemonsets;replicasets;statefulsets,verbs=get;list;watch;create;update;patch;delete
@@ -242,15 +247,13 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 func (r *KataConfigOpenShiftReconciler) processDashboardConfigMap() *corev1.ConfigMap {
 
 	r.Log.Info("Creating sandboxed containers dashboard in the OpenShift console")
-	cmName := "grafana-dashboard-sandboxed-containers"
 	cmLabels := map[string]string{
 		"console.openshift.io/dashboard": "true",
 	}
-	cmNamespace := "openshift-config-managed"
 
 	// retrieve content of the dashboard from our own namespace
 	foundCm := &corev1.ConfigMap{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: cmName, Namespace: "openshift-sandboxed-containers-operator"}, foundCm)
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: dashboard_configmap_name, Namespace: "openshift-sandboxed-containers-operator"}, foundCm)
 	if err != nil {
 		r.Log.Error(err, "could not get dashboard data")
 		return nil
@@ -262,8 +265,8 @@ func (r *KataConfigOpenShiftReconciler) processDashboardConfigMap() *corev1.Conf
 			Kind:       "ConfigMap",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cmName,
-			Namespace: cmNamespace,
+			Name:      dashboard_configmap_name,
+			Namespace: dashboard_configmap_namespace,
 			Labels:    cmLabels,
 		},
 		Data: foundCm.Data,
