@@ -19,8 +19,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	appsv1 "k8s.io/api/apps/v1"
 	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
 
 	"k8s.io/apimachinery/pkg/labels"
 
@@ -56,6 +57,11 @@ type KataConfigOpenShiftReconciler struct {
 	clientset  kubernetes.Interface
 	kataConfig *kataconfigurationv1.KataConfig
 }
+
+const (
+	dashboard_configmap_name      = "grafana-dashboard-sandboxed-containers"
+	dashboard_configmap_namespace = "openshift-config-managed"
+)
 
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs;kataconfigs/finalizers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs/status,verbs=get;update;patch
@@ -133,6 +139,26 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 			}
 		}
 
+		cMap := r.processDashboardConfigMap()
+		if cMap == nil {
+			r.Log.Info("failed to generate config map for metrics dashboard")
+			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+		}
+		foundCm := &corev1.ConfigMap{}
+		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: cMap.Name, Namespace: cMap.Namespace}, foundCm)
+		if err != nil {
+			if k8serrors.IsNotFound(err) {
+				r.Log.Info("Installing metrics dashboard")
+				err = r.Client.Create(context.TODO(), cMap)
+				if err != nil {
+					r.Log.Error(err, "Error when creating the dashboard configmap")
+					res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+				}
+			} else {
+				r.Log.Error(err, "could not get dashboard info, try again")
+				res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+			}
+		}
 		return res, err
 	}()
 }
@@ -215,6 +241,35 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 				},
 			},
 		},
+	}
+}
+
+func (r *KataConfigOpenShiftReconciler) processDashboardConfigMap() *corev1.ConfigMap {
+
+	r.Log.Info("Creating sandboxed containers dashboard in the OpenShift console")
+	cmLabels := map[string]string{
+		"console.openshift.io/dashboard": "true",
+	}
+
+	// retrieve content of the dashboard from our own namespace
+	foundCm := &corev1.ConfigMap{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: dashboard_configmap_name, Namespace: "openshift-sandboxed-containers-operator"}, foundCm)
+	if err != nil {
+		r.Log.Error(err, "could not get dashboard data")
+		return nil
+	}
+
+	return &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "apps/v1",
+			Kind:       "ConfigMap",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      dashboard_configmap_name,
+			Namespace: dashboard_configmap_namespace,
+			Labels:    cmLabels,
+		},
+		Data: foundCm.Data,
 	}
 }
 
