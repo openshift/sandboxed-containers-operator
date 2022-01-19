@@ -34,7 +34,7 @@ func GetScc() *secv1.SecurityContextConstraints {
 		SELinuxContext: secv1.SELinuxContextStrategyOptions{
 			Type: secv1.SELinuxStrategyMustRunAs,
 			SELinuxOptions: &corev1.SELinuxOptions{
-				Type: "spc_t",
+				Type: "osc_monitor.process",
 			},
 		},
 		Volumes: []secv1.FSType{secv1.FSTypeAll},
