@@ -54,9 +54,11 @@ spec:
             properties:
               checkNodeEligibility:
                 default: false
-                description: CheckNodeEligibility is used to detect the node(s) readiness
-                  to run Kata containers. If set to true then, NFD operator is used
-                  to check the readiness
+                description: CheckNodeEligibility is used to detect the node(s) eligibility
+                  to run Kata containers. This is currently done through the use of
+                  the Node Feature Discovery Operator (NFD). For more information
+                  on how the check works, please refer to the sandboxed containers
+                  documentation - https://docs.openshift.com/container-platform/latest/sandboxed_containers/deploying-sandboxed-container-workloads.html
                 type: boolean
               kataConfigPoolSelector:
                 description: KataConfigPoolSelector is used to filter the worker nodes
