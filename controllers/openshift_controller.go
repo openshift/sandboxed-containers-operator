@@ -773,6 +773,17 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 			return ctrl.Result{}, err
 		}
 
+		// Update node selector in machine config pool with value from kataconfig instance
+		r.Log.Info("Updating machine config pool")
+		if foundMcp != nil {
+			*foundMcp.Spec.NodeSelector = *r.kataConfig.Spec.KataConfigPoolSelector
+			err = r.Client.Update(context.TODO(), foundMcp)
+			if err != nil {
+				r.Log.Error(err, "Error when updating MachineConfigPool")
+				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			}
+		}
+
 		// Wait till MCP is ready
 		if foundMcp.Status.MachineCount == 0 {
 			r.Log.Info("Waiting till MachineConfigPool is initialized ", "machinePool", machinePool)
