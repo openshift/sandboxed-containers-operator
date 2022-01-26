@@ -776,7 +776,9 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		// Update node selector in machine config pool with value from kataconfig instance
 		r.Log.Info("Updating machine config pool")
 		if foundMcp != nil {
-			*foundMcp.Spec.NodeSelector = *r.kataConfig.Spec.KataConfigPoolSelector
+			if foundMcp.Spec.NodeSelector != nil {
+				foundMcp.Spec.NodeSelector = r.kataConfig.Spec.KataConfigPoolSelector.DeepCopy()
+			}
 			err = r.Client.Update(context.TODO(), foundMcp)
 			if err != nil {
 				r.Log.Error(err, "Error when updating MachineConfigPool")
