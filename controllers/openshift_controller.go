@@ -61,6 +61,7 @@ type KataConfigOpenShiftReconciler struct {
 const (
 	dashboard_configmap_name      = "grafana-dashboard-sandboxed-containers"
 	dashboard_configmap_namespace = "openshift-config-managed"
+	container_runtime_config_name = "kata-crio-config"
 )
 
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs;kataconfigs/finalizers,verbs=get;list;watch;create;update;patch;delete
@@ -69,7 +70,7 @@ const (
 // +kubebuilder:rbac:groups=apps,resources=daemonsets/finalizers,resourceNames=manager-role,verbs=update
 // +kubebuilder:rbac:groups=node.k8s.io,resources=runtimeclasses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get
-// +kubebuilder:rbac:groups="";machineconfiguration.openshift.io,resources=nodes;machineconfigs;machineconfigpools;pods;services;services/finalizers;endpoints;persistentvolumeclaims;events;configmaps;secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="";machineconfiguration.openshift.io,resources=nodes;machineconfigs;machineconfigpools;containerruntimeconfigs;pods;services;services/finalizers;endpoints;persistentvolumeclaims;events;configmaps;secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=use;get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;update
 
@@ -159,8 +160,102 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 				res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
 			}
 		}
+
+		err = r.processLogLevel(r.kataConfig.Spec.LogLevel)
+		if err != nil {
+			res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+		}
+
 		return res, err
 	}()
+}
+
+func makeContainerRuntimeConfig(desiredLogLevel string, mcpSelector *metav1.LabelSelector) *mcfgv1.ContainerRuntimeConfig {
+	return &mcfgv1.ContainerRuntimeConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "machineconfiguration.openshift.io/v1",
+			Kind:       "ContainerRuntimeConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: container_runtime_config_name,
+		},
+		Spec: mcfgv1.ContainerRuntimeConfigSpec{
+			MachineConfigPoolSelector: mcpSelector,
+			ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+				LogLevel: desiredLogLevel,
+			},
+		},
+	}
+}
+
+func (r *KataConfigOpenShiftReconciler) processLogLevel(desiredLogLevel string) error {
+
+	if desiredLogLevel == "" {
+		r.Log.Info("desired logLevel value is empty, setting to default ('info')")
+		desiredLogLevel = "info"
+	}
+
+	ctrRuntimeCfg := &mcfgv1.ContainerRuntimeConfig{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: container_runtime_config_name}, ctrRuntimeCfg)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			r.Log.Error(err, "could not get ContainerRuntimeConfig, try again")
+			return err
+		}
+
+		r.Log.Info("no existing ContainerRuntimeConfig found")
+
+		if desiredLogLevel == "info" {
+			// if there's no ContainerRuntimeConfig - meaning that logLevel
+			// wasn't set yet and thus is at the default value in the cluster -
+			// *and* the desired value is the default one as well, there's
+			// nothing to do
+			r.Log.Info("current and desired logLevel values are both default, no action necessary")
+			return nil
+		}
+
+		machineConfigPoolSelectorLabels := map[string]string{"pools.operator.machineconfiguration.openshift.io/kata-oc": ""}
+		isConvergedCluster, err := r.checkConvergedCluster()
+		if isConvergedCluster && err == nil {
+			machineConfigPoolSelectorLabels = map[string]string{"pools.operator.machineconfiguration.openshift.io/master": ""}
+		}
+
+		machineConfigPoolSelector := &metav1.LabelSelector{
+			MatchLabels: machineConfigPoolSelectorLabels,
+		}
+
+		ctrRuntimeCfg = makeContainerRuntimeConfig(desiredLogLevel, machineConfigPoolSelector)
+
+		r.Log.Info("creating ContainerRuntimeConfig")
+		err = r.Client.Create(context.TODO(), ctrRuntimeCfg)
+		if err != nil {
+			r.Log.Error(err, "error creating ContainerRuntimeConfig")
+			return err
+		}
+		r.Log.Info("ContainerRuntimeConfig created successfully")
+	} else {
+		r.Log.Info("existing ContainerRuntimeConfig found")
+		if ctrRuntimeCfg.Spec.ContainerRuntimeConfig.LogLevel == desiredLogLevel {
+			r.Log.Info("existing ContainerRuntimeConfig is up-to-date, no action necessary")
+			return nil
+		}
+		// We only update LogLevel and don't touch MachineConfigPoolSelector
+		// as that shouldn't be necessary.  It selects an MCP based only on
+		// whether the cluster is converged or not.  Assuming that being
+		// converged is an immutable property of any given cluster, the initial
+		// choice of MachineConfigPoolSelector value should always be valid.
+		ctrRuntimeCfg.Spec.ContainerRuntimeConfig.LogLevel = desiredLogLevel
+
+		r.Log.Info("updating ContainerRuntimeConfig")
+		err = r.Client.Update(context.TODO(), ctrRuntimeCfg)
+		if err != nil {
+			r.Log.Error(err, "error updating ContainerRuntimeConfig")
+			return err
+		}
+		r.Log.Info("ContainerRuntimeConfig updated successfully")
+	}
+
+	return nil
 }
 
 func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.DaemonSet {
@@ -314,6 +409,14 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() (*mcfgv1.MachineConfigPool
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "kata-oc",
+			Labels: map[string]string{
+				// This label is added to make it possible to form a label
+				// selector that selects this MCP.  One use case is the
+				// ContainerRuntimeConfig resource which selects MCPs based
+				// on labels and is used to implement KataConfig.spec.logLevel
+				// handling.
+				"pools.operator.machineconfiguration.openshift.io/kata-oc": "",
+			},
 		},
 
 		Spec: mcfgv1.MachineConfigPoolSpec{

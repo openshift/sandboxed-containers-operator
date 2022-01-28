@@ -18,6 +18,7 @@ rules:
   - machineconfiguration.openshift.io
   resources:
   - configmaps
+  - containerruntimeconfigs
   - endpoints
   - events
   - machineconfigpools

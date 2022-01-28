@@ -113,6 +113,11 @@ spec:
                 description: KataMonitorImage is used to specify the container image
                   used for kata-monitor
                 type: string
+              logLevel:
+                default: info
+                description: Sets log level on kata-equipped nodes.  Valid values
+                  are the same as for `crio --log-level`.
+                type: string
             required:
             - checkNodeEligibility
             - kataMonitorImage
