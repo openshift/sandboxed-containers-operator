@@ -137,8 +137,14 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 				r.Log.Error(err, "could not get monitor daemonset, try again")
 				res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
 			}
+		} else {
+			r.Log.Info("Updating monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
+			err = r.Client.Update(context.TODO(), ds)
+			if err != nil {
+				r.Log.Error(err, "error when updating monitor daemonset")
+				res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+			}
 		}
-
 		cMap := r.processDashboardConfigMap()
 		if cMap == nil {
 			r.Log.Info("failed to generate config map for metrics dashboard")
