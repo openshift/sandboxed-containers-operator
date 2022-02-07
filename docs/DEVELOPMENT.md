@@ -20,9 +20,15 @@ In summary:
 
 
 ## Set Environment Variables
+
+Set your github userid
 ```
-export IMAGE_TAG_BASE=quay.io/user/openshift-sandboxed-containers-operator
-export IMG=quay.io/user/openshift-sandboxed-containers-operator
+export QUAY_USERID=<user>
+```
+
+```
+export IMAGE_TAG_BASE=quay.io/${QUAY_USERID}/openshift-sandboxed-containers-operator
+export IMG=quay.io/${QUAY_USERID}/openshift-sandboxed-containers-operator
 ```
 
 ## Viewing available Make targets
