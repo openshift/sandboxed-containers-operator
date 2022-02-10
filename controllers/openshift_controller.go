@@ -883,11 +883,18 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		}
 
 		// Update node selector in machine config pool with value from kataconfig instance
-		r.Log.Info("Updating machine config pool")
+		r.Log.Info("Updating machine config pool name ", "found Mcp name", foundMcp.Name)
 		if foundMcp != nil {
-			if foundMcp.Spec.NodeSelector != nil {
-				foundMcp.Spec.NodeSelector = r.kataConfig.Spec.KataConfigPoolSelector.DeepCopy()
+			foundMcp.Spec.NodeSelector.MatchLabels = make(map[string]string)
+			if r.kataConfig.Spec.KataConfigPoolSelector != nil {
+				for key, value := range r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels {
+					foundMcp.Spec.NodeSelector.MatchLabels[key] = value
+				}
+				foundMcp.Spec.NodeSelector.MatchExpressions = r.kataConfig.Spec.KataConfigPoolSelector.MatchExpressions
 			}
+			foundMcp.Spec.NodeSelector.MatchLabels["node-role.kubernetes.io/worker"] = ""
+			foundMcp.Spec.NodeSelector.MatchLabels["node-role.kubernetes.io/kata-oc"] = ""
+
 			err = r.Client.Update(context.TODO(), foundMcp)
 			if err != nil {
 				r.Log.Error(err, "Error when updating MachineConfigPool")
