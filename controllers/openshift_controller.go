@@ -331,7 +331,7 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() (*mcfgv1.MachineConfigPool
 	}
 
 	// Add the anchor label: "node-role.kubernetes.io/kata-oc" to Nodes for MCP handling
-	err := r.labelNode(nodeSelector)
+	err := r.labelNodes(nodeSelector)
 	return mcp, err
 }
 
@@ -936,7 +936,7 @@ func (r *KataConfigOpenShiftReconciler) getNodesWithLabels(nodeLabels map[string
 	return nil, nodes
 }
 
-func (r *KataConfigOpenShiftReconciler) labelNode(nodeSelector *metav1.LabelSelector) (err error) {
+func (r *KataConfigOpenShiftReconciler) labelNodes(nodeSelector *metav1.LabelSelector) (err error) {
 	labelSelector, _ := metav1.LabelSelectorAsSelector(nodeSelector)
 	nodeList := &corev1.NodeList{}
 	listOpts := []client.ListOption{
