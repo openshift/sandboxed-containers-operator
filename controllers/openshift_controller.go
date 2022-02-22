@@ -127,7 +127,11 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		foundDs := &appsv1.DaemonSet{}
 		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDs)
 		if err != nil {
-			if k8serrors.IsNotFound(err) {
+			//The DaemonSet (DS) should be ideally created after the required SeLinux policy is installed on the
+			//node. One of the ways to ensure this is to check for the existence of "kata" runtimeclass before
+			//creating the DS
+			//Alternatively we can create the DS post execution of setRuntimeClass()
+			if k8serrors.IsNotFound(err) && r.kataConfig.Status.RuntimeClass == "kata" {
 				r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
 				err = r.Client.Create(context.TODO(), ds)
 				if err != nil {
