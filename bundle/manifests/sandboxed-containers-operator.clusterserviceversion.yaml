@@ -284,8 +284,6 @@ spec:
                 - mountPath: /tmp/k8s-webhook-server/serving-certs
                   name: cert
                   readOnly: true
-              nodeSelector:
-                node-role.kubernetes.io/master: ""
               terminationGracePeriodSeconds: 10
               tolerations:
               - effect: NoSchedule
