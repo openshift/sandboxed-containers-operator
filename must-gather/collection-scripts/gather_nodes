@@ -119,6 +119,8 @@ for NODE in $(oc get nodes --no-headers -o custom-columns=':metadata.name'); do
     for UNIT in "${NODE_UNITS[@]}"; do
         oc adm node-logs "$NODE" -u "$UNIT" > "${NODE_PATH}/${NODE}_logs_$UNIT" &
     done
+
+    oc debug node/${NODE} -- sh -c "(chroot /host rpm -qa | egrep '(kata-containers|qemu)' | sort)" > "${NODE_PATH}/version"
 done
 
 oc delete -f $DAEMONSET_MANIFEST
