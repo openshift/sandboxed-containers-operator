@@ -313,7 +313,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 								RunAsUser:  &runUserID,
 								RunAsGroup: &runGroupID,
 							},
-							Command: []string{"/usr/bin/kata-monitor", "--log-level=debug", "--runtime-endpoint=/run/crio/crio.sock"},
+							Command: []string{"/usr/bin/kata-monitor", "--listen-address=:8090", "--log-level=debug", "--runtime-endpoint=/run/crio/crio.sock"},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "crio-sock",
