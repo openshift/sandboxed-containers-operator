@@ -104,6 +104,7 @@ func runManager() int {
 			setupLog.Error(err, "unable to create SCC")
 			return 1
 		}
+		defer deleteScc(context.TODO(), mgr)
 
 		setupLog.Info("created SCC")
 
@@ -150,6 +151,13 @@ func createScc(ctx context.Context, mgr manager.Manager) error {
 	}
 
 	return err
+}
+
+func deleteScc(ctx context.Context, mgr manager.Manager) error {
+
+	scc := controllers.GetScc()
+	setupLog.Info("Deleting SCC")
+	return mgr.GetClient().Delete(ctx, scc, &client.DeleteOptions{})
 }
 
 func labelNamespace(ctx context.Context, mgr manager.Manager) error {
