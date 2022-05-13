@@ -64,6 +64,10 @@ func init() {
 }
 
 func main() {
+	os.Exit(runManager())
+}
+
+func runManager() int {
 	var metricsAddr string
 	var enableLeaderElection bool
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -83,13 +87,13 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
+		return 1
 	}
 
 	isOpenshift, err := controllers.IsOpenShift()
 	if err != nil {
 		setupLog.Error(err, "unable to use discovery client")
-		os.Exit(1)
+		return 1
 	}
 
 	if isOpenshift {
@@ -98,7 +102,7 @@ func main() {
 		err = createScc(context.TODO(), mgr)
 		if err != nil {
 			setupLog.Error(err, "unable to create SCC")
-			os.Exit(1)
+			return 1
 		}
 
 		setupLog.Info("created SCC")
@@ -106,7 +110,7 @@ func main() {
 		err = labelNamespace(context.TODO(), mgr)
 		if err != nil {
 			setupLog.Error(err, "unable to add labels to namespace")
-			os.Exit(1)
+			return 1
 		}
 
 		setupLog.Info("added labels")
@@ -117,21 +121,23 @@ func main() {
 			Scheme: mgr.GetScheme(),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create KataConfig controller for OpenShift cluster", "controller", "KataConfig")
-			os.Exit(1)
+			return 1
 		}
 	}
 
 	if err = (&kataconfigurationv1.KataConfig{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "KataConfig")
-		os.Exit(1)
+		return 1
 	}
 	// +kubebuilder:scaffold:builder
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+		return 1
 	}
+
+	return 0
 }
 
 func createScc(ctx context.Context, mgr manager.Manager) error {
