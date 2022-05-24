@@ -16,7 +16,7 @@ metadata:
     olm.skipRange: '>=1.1.0 <1.2.0'
     operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
     operators.openshift.io/infrastructure-features: '["disconnected", "fips"]'
-    operators.operatorframework.io/builder: operator-sdk-v1.15.0+git
+    operators.operatorframework.io/builder: operator-sdk-v1.19.0+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/sandboxed-containers-operator
   labels:
@@ -105,16 +105,6 @@ spec:
   install:
     spec:
       clusterPermissions:
-      - rules:
-        - apiGroups:
-          - security.openshift.io
-          resourceNames:
-          - sandboxed-containers-operator-scc
-          resources:
-          - securitycontextconstraints
-          verbs:
-          - use
-        serviceAccountName: monitor
       - rules:
         - apiGroups:
           - ""
@@ -236,7 +226,9 @@ spec:
           - create
         serviceAccountName: default
       deployments:
-      - name: controller-manager
+      - label:
+          control-plane: controller-manager
+        name: controller-manager
         spec:
           replicas: 1
           selector:
@@ -253,20 +245,26 @@ spec:
                 - --secure-listen-address=0.0.0.0:8443
                 - --upstream=http://127.0.0.1:8080/
                 - --logtostderr=true
-                - --v=10
+                - --v=0
                 image: gcr.io/kubebuilder/kube-rbac-proxy@sha256:db06cc4c084dd0253134f156dddaaf53ef1c3fb3cc809e5d81711baa4029ea4c
                 name: kube-rbac-proxy
                 ports:
                 - containerPort: 8443
                   name: https
                   protocol: TCP
-                resources: {}
+                resources:
+                  limits:
+                    cpu: 500m
+                    memory: 128Mi
+                  requests:
+                    cpu: 5m
+                    memory: 64Mi
               - args:
                 - --metrics-bind-address=127.0.0.1:8080
                 - --leader-elect
                 command:
                 - /manager
-                image: controller:latest
+                image: quay.io/bpradipt/sandboxed-containers-operator:latest
                 imagePullPolicy: Always
                 name: manager
                 ports:
