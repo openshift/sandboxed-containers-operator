@@ -130,7 +130,7 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 			//The DaemonSet (DS) should be ideally created after the required SeLinux policy is installed on the
 			//node. One of the ways to ensure this is to check for the existence of "kata" runtimeclass before
 			//creating the DS
-			//Alternatively we can create the DS post execution of setRuntimeClass()
+			//Alternatively we can create the DS post execution of createRuntimeClass()
 			if k8serrors.IsNotFound(err) && r.kataConfig.Status.RuntimeClass == "kata" {
 				r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
 				err = r.Client.Create(context.TODO(), ds)
@@ -618,7 +618,7 @@ func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
 	return "", err
 }
 
-func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
+func (r *KataConfigOpenShiftReconciler) createRuntimeClass() error {
 	runtimeClassName := "kata"
 
 	rc := func() *nodeapi.RuntimeClass {
@@ -654,7 +654,7 @@ func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
 
 	// Set Kataconfig r.kataConfig as the owner and controller
 	if err := controllerutil.SetControllerReference(r.kataConfig, rc, r.Scheme); err != nil {
-		return ctrl.Result{}, err
+		return err
 	}
 
 	foundRc := &nodeapi.RuntimeClass{}
@@ -663,7 +663,7 @@ func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
 		r.Log.Info("Creating a new RuntimeClass", "rc.Name", rc.Name)
 		err = r.Client.Create(context.TODO(), rc)
 		if err != nil {
-			return ctrl.Result{}, err
+			return err
 		}
 	}
 
@@ -671,11 +671,11 @@ func (r *KataConfigOpenShiftReconciler) setRuntimeClass() (ctrl.Result, error) {
 		r.kataConfig.Status.RuntimeClass = runtimeClassName
 		err = r.Client.Status().Update(context.TODO(), r.kataConfig)
 		if err != nil {
-			return ctrl.Result{}, err
+			return err
 		}
 	}
 
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.Result, error) {
@@ -936,13 +936,17 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) &&
 		foundMcp.Status.ObservedGeneration > r.kataConfig.Status.BaseMcpGeneration &&
 		foundMcp.Status.UpdatedMachineCount == foundMcp.Status.MachineCount {
-		r.Log.Info("set runtime class")
+		r.Log.Info("create runtime class")
 		r.kataConfig.Status.InstallationStatus.IsInProgress = "false"
-		return r.setRuntimeClass()
+		err := r.createRuntimeClass()
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	} else {
 		r.Log.Info("Waiting for MachineConfigPool to be fully updated", "machinePool", machinePool)
 		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 	}
+	return ctrl.Result{}, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (ctrl.Result, error, bool) {
