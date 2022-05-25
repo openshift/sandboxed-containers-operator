@@ -27,6 +27,7 @@ import (
 
 	ignTypes "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
+	secv1 "github.com/openshift/api/security/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -618,6 +619,28 @@ func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
 	return "", err
 }
 
+func (r *KataConfigOpenShiftReconciler) createScc() error {
+
+	scc := GetScc()
+	// Set Kataconfig r.kataConfig as the owner and controller
+	if err := controllerutil.SetControllerReference(r.kataConfig, scc, r.Scheme); err != nil {
+		return err
+	}
+
+	foundScc := &secv1.SecurityContextConstraints{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: scc.Name}, foundScc)
+	if err != nil && k8serrors.IsNotFound(err) {
+		r.Log.Info("Creating a new Scc", "scc.Name", scc.Name)
+		err = r.Client.Create(context.TODO(), scc)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+
+}
+
 func (r *KataConfigOpenShiftReconciler) createRuntimeClass() error {
 	runtimeClassName := "kata"
 
@@ -940,8 +963,16 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.kataConfig.Status.InstallationStatus.IsInProgress = "false"
 		err := r.createRuntimeClass()
 		if err != nil {
-			return ctrl.Result{}, err
+			// Give sometime for the error to go away before reconciling again
+			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 		}
+		r.Log.Info("create Scc")
+		err = r.createScc()
+		if err != nil {
+			// Give sometime for the error to go away before reconciling again
+			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
+
 	} else {
 		r.Log.Info("Waiting for MachineConfigPool to be fully updated", "machinePool", machinePool)
 		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
