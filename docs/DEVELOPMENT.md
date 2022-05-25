@@ -3,6 +3,10 @@
 ## Prerequisites
 - Golang - 1.16.x
 - Operator SDK version - 1.12.0
+```
+curl -O https://github.com/operator-framework/operator-sdk/releases/download/v1.12.0/operator-sdk_linux_amd64
+install -m 755 operator-sdk_linux_amd64 ${SOME_DIR_IN_YOUR_PATH}/operator-sdk
+```
 - podman, podman-docker or docker
 - Access to OpenShift cluster (4.8+)
 - Container registry to storage images
@@ -21,7 +25,7 @@ In summary:
 
 ## Set Environment Variables
 
-Set your github userid
+Set your quay.io userid
 ```
 export QUAY_USERID=<user>
 ```
@@ -44,6 +48,7 @@ make docker-push
 
 ## Building Operator bundle image
 ```
+make bundle
 make bundle-build
 make bundle-push
 ```
@@ -58,7 +63,9 @@ make catalog-push
 
 ### Create Custom Operator Catalog
 
-Create a new `CatalogSource` yaml. Replace `user` with your quay.io user
+Create a new `CatalogSource` yaml. Replace `user` with your quay.io user and
+`version` with the operator version.
+
 ```
 cat > my_catalog.yaml <<EOF
 apiVersion: operators.coreos.com/v1alpha1
@@ -69,7 +76,7 @@ metadata:
 spec:
  DisplayName: My Operator Catalog
  sourceType: grpc
- image:  quay.io/user/openshift-sandboxed-containers-operator-catalog:v1.0.1
+ image:  quay.io/user/openshift-sandboxed-containers-operator-catalog:version
  updateStrategy:
    registryPoll:
       interval: 5m
