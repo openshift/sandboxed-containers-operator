@@ -24,7 +24,6 @@ import (
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -93,15 +92,6 @@ func main() {
 	}
 
 	if isOpenshift {
-		// Create the custom SCC
-
-		err = createScc(context.TODO(), mgr)
-		if err != nil {
-			setupLog.Error(err, "unable to create SCC")
-			os.Exit(1)
-		}
-
-		setupLog.Info("created SCC")
 
 		err = labelNamespace(context.TODO(), mgr)
 		if err != nil {
@@ -132,18 +122,6 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-}
-
-func createScc(ctx context.Context, mgr manager.Manager) error {
-
-	scc := controllers.GetScc()
-	err := mgr.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(scc), scc)
-	if err != nil && k8serrors.IsNotFound(err) {
-		setupLog.Info("Creating SCC")
-		return mgr.GetClient().Create(ctx, scc, &client.CreateOptions{})
-	}
-
-	return err
 }
 
 func labelNamespace(ctx context.Context, mgr manager.Manager) error {
