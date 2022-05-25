@@ -148,8 +148,6 @@ func createScc(ctx context.Context, mgr manager.Manager) error {
 
 func labelNamespace(ctx context.Context, mgr manager.Manager) error {
 
-	//label := map[string]string{"openshift.io/cluster-monitoring": "true"}
-
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: OperatorNamespace,
@@ -163,7 +161,11 @@ func labelNamespace(ctx context.Context, mgr manager.Manager) error {
 
 	setupLog.Info("Labelling Namespace")
 	setupLog.Info("Labels: ", "Labels", ns.ObjectMeta.Labels)
-	//ns.ObjectMeta.Labels = label
+	// Add namespace label to align with newly introduced Pod Security Admission controller
 	ns.ObjectMeta.Labels["openshift.io/cluster-monitoring"] = "true"
+	ns.ObjectMeta.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
+	ns.ObjectMeta.Labels["pod-security.kubernetes.io/audit"] = "privileged"
+	ns.ObjectMeta.Labels["pod-security.kubernetes.io/warn"] = "privileged"
+
 	return mgr.GetClient().Update(ctx, ns)
 }
