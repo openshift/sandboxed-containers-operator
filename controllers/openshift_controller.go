@@ -839,6 +839,17 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		}
 	}
 
+	scc := GetScc()
+	err = r.Client.Delete(context.TODO(), scc)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("SCC was already deleted")
+		} else {
+			r.Log.Error(err, "error when deleting SCC, retrying")
+			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
+		}
+	}
+
 	r.Log.Info("Uninstallation completed. Proceeding with the KataConfig deletion")
 	controllerutil.RemoveFinalizer(r.kataConfig, kataConfigFinalizer)
 
