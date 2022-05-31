@@ -32,10 +32,7 @@ func GetScc() *secv1.SecurityContextConstraints {
 			Type: secv1.RunAsUserStrategyMustRunAsNonRoot,
 		},
 		SELinuxContext: secv1.SELinuxContextStrategyOptions{
-			Type: secv1.SELinuxStrategyMustRunAs,
-			SELinuxOptions: &corev1.SELinuxOptions{
-				Type: "osc_monitor.process",
-			},
+			Type: secv1.SELinuxStrategyRunAsAny,
 		},
 		Volumes: []secv1.FSType{secv1.FSTypeAll},
 		Users:   []string{"system:serviceaccount:openshift-sandboxed-containers-operator:monitor"},
