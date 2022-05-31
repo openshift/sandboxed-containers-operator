@@ -213,6 +213,9 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 								Privileged: &runPrivileged,
 								RunAsUser:  &runUserID,
 								RunAsGroup: &runGroupID,
+								SELinuxOptions: &corev1.SELinuxOptions{
+									Type: "osc_monitor.process",
+								},
 							},
 							Command: []string{"/usr/bin/kata-monitor", "--log-level=debug", "--runtime-endpoint=/run/crio/crio.sock"},
 							VolumeMounts: []corev1.VolumeMount{
