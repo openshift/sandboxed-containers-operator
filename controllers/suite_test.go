@@ -35,6 +35,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	secv1 "github.com/openshift/api/security/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	// +kubebuilder:scaffold:imports
@@ -68,6 +69,7 @@ var _ = BeforeSuite(func(done Done) {
 		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases"),
 			filepath.Join("..", "config", "extension-crds", "machineconfig.crd.yaml"),
 			filepath.Join("..", "config", "extension-crds", "machineconfigpool.crd.yaml"),
+			filepath.Join("..", "config", "extension-crds", "scc.crd.yaml"),
 		},
 		WebhookInstallOptions: webhookOptions,
 	}
@@ -88,6 +90,8 @@ var _ = BeforeSuite(func(done Done) {
 	err = mcfgv1.AddToScheme(s)
 	Expect(err).ToNot(HaveOccurred())
 
+	err = secv1.AddToScheme(s)
+	Expect(err).ToNot(HaveOccurred())
 	// +kubebuilder:scaffold:scheme
 
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
