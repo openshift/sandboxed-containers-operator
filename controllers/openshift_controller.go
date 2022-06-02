@@ -120,17 +120,12 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 
 		ds := r.processDaemonsetForMonitor()
 		// Set KataConfig instance as the owner and controller
-		if ds != nil {
-			r.Log.Info("successfully generated the monitor daemonset")
-			if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
-				r.Log.Error(err, "failed to set controller reference on the monitor daemonset")
-				return ctrl.Result{}, err
-			}
-			r.Log.Info("controller reference set for the monitor daemonset")
-		} else {
-			r.Log.Info("failed to generate the daemonset")
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+		if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
+			r.Log.Error(err, "failed to set controller reference on the monitor daemonset")
+			return ctrl.Result{}, err
 		}
+		r.Log.Info("controller reference set for the monitor daemonset")
+
 		foundDs := &appsv1.DaemonSet{}
 		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDs)
 		if err != nil {
@@ -834,10 +829,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	}
 
 	ds := r.processDaemonsetForMonitor()
-	if ds == nil {
-		r.Log.Error(err, "error deleting monitor Daemonset")
-		return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, nil
-	}
 	err = r.Client.Delete(context.TODO(), ds)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
