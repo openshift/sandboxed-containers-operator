@@ -99,14 +99,20 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		// indicated by the deletion timestamp being set.
 		if r.kataConfig.GetDeletionTimestamp() != nil {
 			res, err := r.processKataConfigDeleteRequest()
+			if err != nil {
+				return res, err
+			}
 			updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
 			if updateErr != nil {
 				return ctrl.Result{}, updateErr
 			}
-			return res, err
+			return res, nil
 		}
 
 		res, err := r.processKataConfigInstallRequest()
+		if err != nil {
+			return res, err
+		}
 		updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
 		if updateErr != nil {
 			return ctrl.Result{}, updateErr
