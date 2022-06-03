@@ -632,7 +632,11 @@ func (r *KataConfigOpenShiftReconciler) createScc() error {
 
 	foundScc := &secv1.SecurityContextConstraints{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: scc.Name}, foundScc)
-	if err != nil && k8serrors.IsNotFound(err) {
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
+
 		r.Log.Info("Creating a new Scc", "scc.Name", scc.Name)
 		err = r.Client.Create(context.TODO(), scc)
 		if err != nil {
@@ -641,7 +645,6 @@ func (r *KataConfigOpenShiftReconciler) createScc() error {
 	}
 
 	return nil
-
 }
 
 func (r *KataConfigOpenShiftReconciler) createRuntimeClass() error {
