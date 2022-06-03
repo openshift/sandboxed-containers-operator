@@ -688,7 +688,11 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass() error {
 
 	foundRc := &nodeapi.RuntimeClass{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: rc.Name}, foundRc)
-	if err != nil && k8serrors.IsNotFound(err) {
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
+
 		r.Log.Info("Creating a new RuntimeClass", "rc.Name", rc.Name)
 		err = r.Client.Create(context.TODO(), rc)
 		if err != nil {
