@@ -138,9 +138,17 @@ func createScc(ctx context.Context, mgr manager.Manager) error {
 
 	scc := controllers.GetScc()
 	err := mgr.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(scc), scc)
-	if err != nil && k8serrors.IsNotFound(err) {
-		setupLog.Info("Creating SCC")
-		return mgr.GetClient().Create(ctx, scc, &client.CreateOptions{})
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			setupLog.Info("Creating SCC")
+			err = mgr.GetClient().Create(ctx, scc, &client.CreateOptions{})
+		}
+	} else if scc.SELinuxContext.Type == secv1.SELinuxStrategyMustRunAs {
+		setupLog.Info("Fixing SCC")
+		scc.SELinuxContext = secv1.SELinuxContextStrategyOptions{
+			Type: secv1.SELinuxStrategyRunAsAny,
+		}
+		err = mgr.GetClient().Update(ctx, scc)
 	}
 
 	return err
