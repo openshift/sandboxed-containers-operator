@@ -24,6 +24,7 @@ import (
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -93,6 +94,12 @@ func main() {
 
 	if isOpenshift {
 
+		err = fixScc(context.TODO(), mgr)
+		if err != nil {
+			setupLog.Error(err, "unable to create SCC")
+			os.Exit(1)
+		}
+
 		err = labelNamespace(context.TODO(), mgr)
 		if err != nil {
 			setupLog.Error(err, "unable to add labels to namespace")
@@ -122,6 +129,30 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func fixScc(ctx context.Context, mgr manager.Manager) error {
+
+	scc := controllers.GetScc()
+	err := mgr.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(scc), scc)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			// Nothing to do.
+			err = nil
+		}
+	} else if scc.SELinuxContext.Type == secv1.SELinuxStrategyMustRunAs {
+		// A 1.2-style SCC breaks the MCO. This was fixed by
+		// commit d4745883e38f, i.e. OSC >= 1.3 doesn't create
+		// broken SCC anymore, but an existing instance still
+		// needs to be fixed.
+		setupLog.Info("Fixing SCC")
+		scc.SELinuxContext = secv1.SELinuxContextStrategyOptions{
+			Type: secv1.SELinuxStrategyRunAsAny,
+		}
+		err = mgr.GetClient().Update(ctx, scc)
+	}
+
+	return err
 }
 
 func labelNamespace(ctx context.Context, mgr manager.Manager) error {
