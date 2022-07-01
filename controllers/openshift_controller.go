@@ -934,6 +934,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		}
 		foundMcp.Spec.NodeSelector.MatchLabels["node-role.kubernetes.io/worker"] = ""
 		foundMcp.Spec.NodeSelector.MatchLabels["node-role.kubernetes.io/kata-oc"] = ""
+		foundMcp.ObjectMeta.Labels = map[string]string{"pools.operator.machineconfiguration.openshift.io/kata-oc": ""}
 
 		err = r.Client.Update(context.TODO(), foundMcp)
 		if err != nil {
