@@ -42,6 +42,11 @@ type KataConfigSpec struct {
 	// Sets log level on kata-equipped nodes.  Valid values are the same as for `crio --log-level`.
 	// +kubebuilder:default:="info"
 	LogLevel string `json:"logLevel,omitempty"`
+
+	// EnablePeerPods is used to transparently create pods on a remote system.
+	// For more information on how this works, please refer to the sandboxed containers documentation - https://docs.openshift.com/container-platform/latest/sandboxed_containers/deploying-sandboxed-container-workloads.html
+	// +kubebuilder:default:=false
+	EnablePeerPods bool `json:"enablePeerPods"`
 }
 
 // KataConfigStatus defines the observed state of KataConfig

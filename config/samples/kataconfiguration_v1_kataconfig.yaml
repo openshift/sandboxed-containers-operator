@@ -2,7 +2,9 @@ apiVersion: kataconfiguration.openshift.io/v1
 kind: KataConfig
 metadata:
   name: example-kataconfig
-#spec:
+spec:
+  kataMonitorImage: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator-monitor:1.3.0
+  enablePeerPods: true
 #  kataConfigPoolSelector:
 #    matchLabels:
 #       custom-kata1: test 
