@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/coreos/ignition/v2 v2.9.0
 	github.com/go-logr/logr v1.2.0
+	github.com/jensfr/peer-pod-controller v0.0.0-20220728144400-a37a625ca456
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.17.0
 	github.com/openshift/api v0.0.0-20210924154557-a4f696157341

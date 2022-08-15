@@ -177,9 +177,12 @@ spec:
           - get
         - apiGroups:
           - kataconfiguration.openshift.io
+          - peerpodconfiguration.confidentialcontainers.org
           resources:
           - kataconfigs
           - kataconfigs/finalizers
+          - peerpodconfigs
+          - peerpodconfigs/finalizers
           verbs:
           - create
           - delete
@@ -189,9 +192,11 @@ spec:
           - update
           - watch
         - apiGroups:
+          - peerpodconfiguration.confidentialcontainers.org
           - kataconfiguration.openshift.io
           resources:
           - kataconfigs/status
+          - peerpodconfigs/status
           verbs:
           - get
           - patch
