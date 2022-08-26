@@ -66,6 +66,7 @@ const (
 	container_runtime_config_name = "kata-crio-config"
 )
 
+//+kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=fail,groups="",resources=pods,verbs=create;update,versions=v1,name=mpod.kb.io,admissionReviewVersions=v1,sideEffects=none
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs;kataconfigs/finalizers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments;daemonsets;replicasets;statefulsets,verbs=get;list;watch;create;update;patch;delete
@@ -1378,7 +1379,7 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPods() error {
 			Name:      "peerpodconfig-example",
 			Namespace: "openshift-sandboxed-containers-operator",
 		},
-		Spec: v1alpha1.PeerPodConfigSpec{CloudSecretName: "peer-pods-secret"},
+		Spec: v1alpha1.PeerPodConfigSpec{CloudSecretName: "peer-pods-secret", Limit: "20"},
 	}
 
 	err := r.Client.Create(context.TODO(), &peerpodconf)

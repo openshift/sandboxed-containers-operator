@@ -15,6 +15,12 @@ rules:
   - update
 - apiGroups:
   - ""
+  resources:
+  - nodes/status
+  verbs:
+  - patch
+- apiGroups:
+  - ""
   - machineconfiguration.openshift.io
   resources:
   - configmaps

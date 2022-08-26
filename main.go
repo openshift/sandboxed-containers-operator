@@ -20,8 +20,6 @@ import (
 	"context"
 	"flag"
 	peerpodcontrollers "github.com/jensfr/peer-pod-controller/controllers"
-	"os"
-
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
 	corev1 "k8s.io/api/core/v1"
@@ -32,10 +30,12 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	nodeapi "k8s.io/kubernetes/pkg/apis/node/v1"
+	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	peerpodconfig "github.com/jensfr/peer-pod-controller/api/v1alpha1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
@@ -135,13 +135,17 @@ func main() {
 		setupLog.Error(err, "unable to create webhook", "webhook", "KataConfig")
 		os.Exit(1)
 	}
+
 	// +kubebuilder:scaffold:builder
+
+	mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{Handler: &peerpodcontrollers.PodAnnotator{Client: mgr.GetClient()}})
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+
 }
 
 func fixScc(ctx context.Context, mgr manager.Manager) error {
