@@ -40,6 +40,9 @@ spec:
       containers:
       - command:
         - /manager
+        env:
+        - name: PEER_POD_TARGET_RUNTIMECLASS
+          value: "kata-remote-cc"
         args:
         - --enable-leader-election
         image: controller:latest
