@@ -48,7 +48,7 @@ make docker-push
 
 ## Building Operator bundle image
 ```
-make bundle
+make bundle CHANNELS=candidate
 make bundle-build
 make bundle-push
 ```
