@@ -8,9 +8,9 @@ metadata:
 spec:
   containers:
     - name: example-fedora
-      image: fedora:30
+      image: fedora:36
       ports:
         - containerPort: 8080
       command: ["python3"]
       args: [ "-m", "http.server", "8080"]
-  runtimeClassName: kata
+  runtimeClassName: kata-remote-cc
