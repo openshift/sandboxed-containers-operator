@@ -15,6 +15,12 @@ COPY main.go main.go
 COPY api/ api/
 COPY controllers/ controllers/
 
+# Generated files
+COPY Makefile Makefile
+COPY hack/ hack/
+RUN go mod vendor
+RUN make generate
+
 # Build
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=mod -o manager main.go
 
