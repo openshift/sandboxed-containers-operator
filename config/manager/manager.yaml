@@ -44,6 +44,9 @@ spec:
         - --enable-leader-election
         image: controller:latest
         name: manager
+        env:
+        - name: KATA_MONITOR_IMAGE
+          value: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest
         imagePullPolicy: Always
         resources:
           limits:

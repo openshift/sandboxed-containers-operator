@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -277,7 +278,18 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 		runGroupID    = int64(1001)
 	)
 
-	r.Log.Info("Creating monitor DaemonSet with image file: " + r.kataConfig.Spec.KataMonitorImage)
+	kataMonitorImage := os.Getenv("KATA_MONITOR_IMAGE")
+	if len(kataMonitorImage) == 0 {
+		// kata-monitor image URL is generally impossible to verify or sanitise,
+		// with the empty value being pretty much the only exception where it's
+		// fairly clear what good it is.  If we can only detect a single one
+		// out of an infinite number of bad values, we choose not to return an
+		// error here (giving an impression that we can actually detect errors)
+		// but just log this incident and plow ahead.
+		r.Log.Info("KATA_MONITOR_IMAGE env var is unset or empty, kata-monitor pods will not run")
+	}
+
+	r.Log.Info("Creating monitor DaemonSet with image file: \"" + kataMonitorImage + "\"")
 	dsName := "openshift-sandboxed-containers-monitor"
 	dsLabels := map[string]string{
 		"name": dsName,
@@ -308,7 +320,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 					Containers: []corev1.Container{
 						{
 							Name:            "kata-monitor",
-							Image:           r.kataConfig.Spec.KataMonitorImage,
+							Image:           kataMonitorImage,
 							ImagePullPolicy: "Always",
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
