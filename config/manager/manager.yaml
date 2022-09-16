@@ -22,6 +22,10 @@ spec:
       labels:
         control-plane: controller-manager
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       tolerations:
       - effect: NoSchedule
         key: node-role.kubernetes.io/master
@@ -52,4 +56,9 @@ spec:
           requests:
             cpu: 100m
             memory: 40Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
       terminationGracePeriodSeconds: 10
