@@ -259,6 +259,11 @@ spec:
                   requests:
                     cpu: 5m
                     memory: 64Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
               - args:
                 - --metrics-bind-address=127.0.0.1:8080
                 - --leader-elect
@@ -278,10 +283,19 @@ spec:
                   requests:
                     cpu: 100m
                     memory: 40Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
                 volumeMounts:
                 - mountPath: /tmp/k8s-webhook-server/serving-certs
                   name: cert
                   readOnly: true
+              securityContext:
+                runAsNonRoot: true
+                seccompProfile:
+                  type: RuntimeDefault
               terminationGracePeriodSeconds: 10
               tolerations:
               - effect: NoSchedule
