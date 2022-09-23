@@ -35,10 +35,6 @@ type KataConfigSpec struct {
 	// +kubebuilder:default:=false
 	CheckNodeEligibility bool `json:"checkNodeEligibility"`
 
-	// KataMonitorImage is used to specify the container image used for kata-monitor
-	// +kubebuilder:default:="quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest"
-	KataMonitorImage string `json:"kataMonitorImage"`
-
 	// Sets log level on kata-equipped nodes.  Valid values are the same as for `crio --log-level`.
 	// +kubebuilder:default:="info"
 	LogLevel string `json:"logLevel,omitempty"`
