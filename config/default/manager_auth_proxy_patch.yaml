@@ -27,6 +27,11 @@ spec:
           requests:
             cpu: 5m
             memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
       - name: manager
         args:
         - "--metrics-bind-address=127.0.0.1:8080"
