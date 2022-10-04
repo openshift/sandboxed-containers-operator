@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -73,6 +74,8 @@ var _ = BeforeSuite(func(done Done) {
 		},
 		WebhookInstallOptions: webhookOptions,
 	}
+
+	Expect(os.Setenv("KATA_MONITOR_IMAGE", "quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest")).To(Succeed())
 
 	var err error
 	cfg, err = testEnv.Start()

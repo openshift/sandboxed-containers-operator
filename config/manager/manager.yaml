@@ -17,11 +17,20 @@ spec:
     matchLabels:
       control-plane: controller-manager
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   template:
     metadata:
       labels:
         control-plane: controller-manager
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       tolerations:
       - effect: NoSchedule
         key: node-role.kubernetes.io/master
@@ -44,6 +53,9 @@ spec:
         - --enable-leader-election
         image: controller:latest
         name: manager
+        env:
+        - name: KATA_MONITOR_IMAGE
+          value: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest
         imagePullPolicy: Always
         resources:
           limits:
@@ -52,4 +64,9 @@ spec:
           requests:
             cpu: 100m
             memory: 40Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
       terminationGracePeriodSeconds: 10
