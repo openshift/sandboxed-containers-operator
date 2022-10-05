@@ -22,10 +22,6 @@ ENV PATH=$PATH:.
 # Setting VERSION here is workaround because he builder image sets VERSION to the golang version
 RUN VERSION=1.3.1 make bundle
 
-#RUN ./operator-sdk generate kustomize manifests -q
-#RUN cd config/manager && ../../bin/kustomize edit set image controller=controller:latest
-#RUN bin/kustomize build config/manifests | ./operator-sdk generate bundle -q --version 1.3.0  
-
 FROM scratch
 
 # Core bundle labels.
