@@ -3,7 +3,14 @@ FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.17-openshift-4.10 AS 
 
 WORKDIR /workspace
 
-COPY ./ ./
+COPY Makefile Makefile
+COPY PROJECT PROJECT
+COPY api api/
+COPY config config/
+COPY controllers controllers/
+COPY go.mod go.mod
+COPY go.sum go.sum
+
 RUN go mod download
 # needed for docker build but not for local builds
 RUN go mod vendor
