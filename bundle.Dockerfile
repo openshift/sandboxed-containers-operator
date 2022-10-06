@@ -11,7 +11,7 @@ RUN go mod vendor
 # Install operator-sdk
 RUN export ARCH=$(case $(uname -m) in x86_64) echo -n amd64 ;; aarch64) echo -n arm64 ;; *) echo -n $(uname -m) ;; esac) \
 OS=$(uname | awk '{print tolower($0)}') \
-OPERATOR_SDK_DL_URL=https://github.com/operator-framework/operator-sdk/releases/download/v1.23.0; \
+OPERATOR_SDK_DL_URL=https://github.com/operator-framework/operator-sdk/releases/download/v1.20.1; \
 curl -LO ${OPERATOR_SDK_DL_URL}/operator-sdk_${OS}_${ARCH}; \
 mv operator-sdk_${OS}_${ARCH} operator-sdk; \
 chmod +x operator-sdk
@@ -20,7 +20,7 @@ chmod +x operator-sdk
 ENV PATH=$PATH:.
 
 # Setting VERSION here is workaround because he builder image sets VERSION to the golang version
-RUN VERSION=1.3.1 make bundle
+RUN VERSION=1.3.1 IMAGE_TAG_BASE=registry-proxy.engineering.redhat.com/rh-osbs/ IMG=openshift-sandboxed-containers-operator make bundle
 
 FROM scratch
 
@@ -40,6 +40,6 @@ LABEL operators.operatorframework.io.test.mediatype.v1=scorecard+v1
 LABEL operators.operatorframework.io.test.config.v1=tests/scorecard/
 
 # Copy files to locations specified by labels.
-COPY bundle/manifests /manifests/
-COPY bundle/metadata /metadata/
-COPY bundle/tests/scorecard /tests/scorecard/
+COPY --from=builder /workspace/bundle/manifests /manifests/
+COPY --from=builder /workspace/bundle/metadata /metadata/
+COPY --from=builder /workspace/bundle/tests/scorecard /tests/scorecard/
