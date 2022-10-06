@@ -8,15 +8,12 @@ RUN go mod download
 # needed for docker build but not for local builds
 RUN go mod vendor
 
-RUN make generate
-
-# Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=mod -o manager main.go
+RUN make build
 
 # Use OpenShift base image
 FROM registry.ci.openshift.org/ocp/4.10:base
 WORKDIR /
-COPY --from=builder /workspace/manager .
+COPY --from=builder /workspace/bin/manager .
 
 RUN useradd  -r -u 499 nonroot
 RUN getent group nonroot || groupadd -o -g 499 nonroot
