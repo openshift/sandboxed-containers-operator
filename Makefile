@@ -231,3 +231,31 @@ catalog-build: opm ## Build a catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
+
+##@ Cleanup
+
+.PHONY: manifests-clean
+manifests-clean: ## Clean generated manifests
+	$(RM) -r config/crd/bases
+	$(RM) config/rbac/role.yaml
+	$(RM) config/webhook/manifests.yaml
+
+.PHONY: generate-clean
+generate-clean: ## Clean generated DeepCopy code
+	$(RM) api/v1/zz_generated.deepcopy.go
+
+.PHONY: test-clean
+test-clean: ## Clean generated test files
+	$(RM) cover.out
+
+.PHONY: bundle-clean
+bundle-clean: ## Clean generated bundle files
+	$(RM) -r bundle
+	$(RM) bundle.Dockerfile
+
+.PHONY: bin-clean
+bin-clean: ## Clean downloaded binaries
+	$(RM) -r bin
+
+.PHONY: clean
+clean: manifests-clean generate-clean test-clean bundle-clean bin-clean ## Clean all generated files
