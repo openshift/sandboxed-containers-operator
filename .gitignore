@@ -85,5 +85,4 @@ config/crd/bases/kataconfiguration.openshift.io_kataconfigs.yaml
 config/rbac/role.yaml
 config/webhook/manifests.yaml
 # make bundle files
-bundle.Dockerfile
 bundle/
