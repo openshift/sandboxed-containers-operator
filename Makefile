@@ -31,6 +31,7 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
 # example.com/memcached-operator-bundle:$VERSION and example.com/memcached-operator-catalog:$VERSION.
+# FIXME: This should be an upstream accessible repo.  Investigating downstream build options to allow us to do that.
 IMAGE_TAG_BASE ?= registry-proxy.engineering.redhat.com/rh-osbs/openshift-sandboxed-containers-operator
 
 # BUNDLE_IMG defines the image:tag used for the bundle.

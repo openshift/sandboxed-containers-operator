@@ -6,12 +6,12 @@ WORKDIR /workspace
 COPY Makefile Makefile
 COPY hack hack/
 COPY PROJECT PROJECT
+COPY go.mod go.mod
+COPY go.sum go.sum
 COPY main.go main.go
 COPY api api/
 COPY config config/
 COPY controllers controllers/
-COPY go.mod go.mod
-COPY go.sum go.sum
 
 RUN go mod download
 # needed for docker build but not for local builds
