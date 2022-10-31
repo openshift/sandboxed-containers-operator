@@ -27,5 +27,5 @@ COPY --from=builder /workspace/bin/manager .
 RUN useradd  -r -u 499 nonroot
 RUN getent group nonroot || groupadd -o -g 499 nonroot
 
-USER nonroot:nonroot
+USER 499:499
 ENTRYPOINT ["/manager"]
