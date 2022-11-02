@@ -27,7 +27,7 @@ chmod +x operator-sdk
 ENV PATH=$PATH:.
 
 # Unsetting VERSION here is workaround because the buildroot image sets VERSION to the golang version
-RUN unset VERSION; make bundle
+RUN unset VERSION; make bundle IMAGE_TAG_BASE=proxy.engineering.redhat.com/rh-osbs/openshift-sandboxed-containers-operator
 
 FROM scratch
 
