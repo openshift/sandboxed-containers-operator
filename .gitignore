@@ -86,3 +86,4 @@ config/rbac/role.yaml
 config/webhook/manifests.yaml
 # make bundle files
 bundle/
+bundle.Dockerfile
