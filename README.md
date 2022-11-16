@@ -54,7 +54,7 @@ Here is a brief summary of the components:
 ### KataConfig Custom Resource Definition
 
 The operator owns and control the `KataConfig` Custom Resource Definition (CRD).
-Please refer to the [code](https://github.com/openshift/sandboxed-containers-operator/blob/master/api/v1/kataconfig_types.go) to find details of the `KataConfig` CRD. 
+Please refer to the [code](https://github.com/openshift/sandboxed-containers-operator/blob/main/api/v1/kataconfig_types.go) to find details of the `KataConfig` CRD.
 
 ### Getting Started
 
