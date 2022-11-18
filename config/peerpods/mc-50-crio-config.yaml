@@ -1,0 +1,18 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: 50-kata
+spec:
+  config:
+    ignition:
+      version: 2.2.0
+    storage:
+      files:
+      - contents:
+              source: data:text/plain;charset=utf-8;base64,W2NyaW8ucnVudGltZS5ydW50aW1lcy5rYXRhLXJlbW90ZS1jY10KcnVudGltZV9wYXRoID0gIi91c3IvYmluL2NvbnRhaW5lcmQtc2hpbS1rYXRhLXYyLXRwIgpydW50aW1lX3R5cGUgPSAidm0iCnJ1bnRpbWVfcm9vdCA9ICIvcnVuL3ZjIgpydW50aW1lX2NvbmZpZ19wYXRoID0gIi9vcHQva2F0YS9jb25maWd1cmF0aW9uLXJlbW90ZS50b21sIg==
+        filesystem: root
+        mode: 0644
+        path: /etc/crio/crio.conf.d/50-kata
+

@@ -1,0 +1,14 @@
+resources:
+- ../default
+- mc-50-crio-config.yaml
+- mc-40-kata-remote-config.yaml
+- peerpodssecret.yaml
+- peerpodscm.yaml
+- cert-manager.yaml
+- webhook-deploy.yaml
+
+
+images:
+- name: quay.io/openshift_sandboxed_containers/osc-peer-pods
+  newTag: latest
+
