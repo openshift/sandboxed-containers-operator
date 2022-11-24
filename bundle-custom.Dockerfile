@@ -1,5 +1,5 @@
 # Use OpenShift golang builder image
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.17-openshift-4.10 AS builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.18-openshift-4.11 AS builder
 
 WORKDIR /workspace
 
@@ -18,7 +18,7 @@ RUN go mod vendor
 # Install operator-sdk
 RUN export ARCH=$(case $(uname -m) in x86_64) echo -n amd64 ;; aarch64) echo -n arm64 ;; *) echo -n $(uname -m) ;; esac) \
 OS=$(uname | awk '{print tolower($0)}') \
-OPERATOR_SDK_DL_URL=https://github.com/operator-framework/operator-sdk/releases/download/v1.20.1; \
+OPERATOR_SDK_DL_URL=https://github.com/operator-framework/operator-sdk/releases/download/v1.21.0; \
 curl -LO ${OPERATOR_SDK_DL_URL}/operator-sdk_${OS}_${ARCH}; \
 mv operator-sdk_${OS}_${ARCH} operator-sdk; \
 chmod +x operator-sdk
@@ -27,7 +27,7 @@ chmod +x operator-sdk
 ENV PATH=$PATH:.
 
 # Unsetting VERSION here is workaround because the buildroot image sets VERSION to the golang version
-RUN unset VERSION; make bundle IMAGE_TAG_BASE=proxy.engineering.redhat.com/rh-osbs/openshift-sandboxed-containers-operator
+RUN unset VERSION; GOFLAGS="" make bundle IMAGE_TAG_BASE=proxy.engineering.redhat.com/rh-osbs/openshift-sandboxed-containers-operator
 
 FROM scratch
 
