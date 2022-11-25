@@ -280,7 +280,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: peer-pods-webhook-serving-cert
-  namespace: peer-pods-webhook-system
+  namespace: openshift-sandboxed-containers-operator
 spec:
   dnsNames:
   - peer-pods-webhook-webhook-service.peer-pods-webhook-system.svc
