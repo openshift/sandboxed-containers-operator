@@ -291,6 +291,20 @@ spec:
   secretName: webhook-server-cert
 ---
 apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: peer-pods-webhook-serving-cert
+  namespace: peer-pods-webhook-system
+spec:
+  dnsNames:
+  - peer-pods-webhook-webhook-service.peer-pods-webhook-system.svc
+  - peer-pods-webhook-webhook-service.peer-pods-webhook-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: peer-pods-webhook-selfsigned-issuer
+  secretName: webhook-server-cert
+---
+apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: peer-pods-webhook-selfsigned-issuer

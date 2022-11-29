@@ -308,7 +308,6 @@ spec:
                 operator: Exists
               volumes:
               - name: cert
-                namespace: peer-pods-webhook-system
                 secret:
                   defaultMode: 420
                   secretName: webhook-server-cert
