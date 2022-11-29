@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    olm.skipRange: '>=1.1.0 <1.3.0'
+    olm.skipRange: '>=1.1.0 <1.3.2'
     operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
     operators.openshift.io/infrastructure-features: '["disconnected", "fips"]'
     operators.operatorframework.io/builder: operator-sdk-v1.20.1+git
@@ -22,7 +22,7 @@ metadata:
   labels:
     operatorframework.io/arch.amd64: supported
     operatorframework.io/os.linux: supported
-  name: sandboxed-containers-operator.v1.3.0
+  name: sandboxed-containers-operator.v1.3.2
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
@@ -362,7 +362,7 @@ spec:
   maturity: beta
   provider:
     name: Red Hat
-  version: 1.3.0
+  version: 1.3.2
   webhookdefinitions:
   - admissionReviewVersions:
     - v1
