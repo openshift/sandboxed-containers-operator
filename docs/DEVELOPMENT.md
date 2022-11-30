@@ -1,10 +1,10 @@
 # Hacking on the sandboxed-containers-operator
 
 ## Prerequisites
-- Golang - 1.16.x
-- Operator SDK version - 1.12.0
+- Golang - 1.18.x
+- Operator SDK version - 1.21.0
 ```
-curl -O https://github.com/operator-framework/operator-sdk/releases/download/v1.12.0/operator-sdk_linux_amd64
+curl -O https://github.com/operator-framework/operator-sdk/releases/download/v1.21.0/operator-sdk_linux_amd64
 install -m 755 operator-sdk_linux_amd64 ${SOME_DIR_IN_YOUR_PATH}/operator-sdk
 ```
 - podman, podman-docker or docker
