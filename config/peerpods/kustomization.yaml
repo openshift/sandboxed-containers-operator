@@ -1,5 +1,4 @@
 resources:
-- cert-manager.yaml
 - webhook-deploy.yaml
 - ../default
 - mc-50-crio-config.yaml
