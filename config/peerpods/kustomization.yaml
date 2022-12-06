@@ -5,6 +5,7 @@ resources:
 - mc-40-kata-remote-config.yaml
 - peerpodssecret.yaml
 - peerpodscm.yaml
+- runtimeclass.yaml
 
 
 images:
