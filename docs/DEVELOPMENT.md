@@ -2,9 +2,9 @@
 
 ## Prerequisites
 - Golang - 1.18.x
-- Operator SDK version - 1.23.0
+- Operator SDK version - 1.24.0
 ```
-curl -O https://github.com/operator-framework/operator-sdk/releases/download/v1.23.0/operator-sdk_linux_amd64
+curl -O https://github.com/operator-framework/operator-sdk/releases/download/v1.24.0/operator-sdk_linux_amd64
 install -m 755 operator-sdk_linux_amd64 ${SOME_DIR_IN_YOUR_PATH}/operator-sdk
 ```
 - podman, podman-docker or docker
