@@ -107,6 +107,8 @@ vet: ## Run go vet against code.
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
+	# set write flag on created folder, so that we can clean it up
+	chmod +w $(LOCALBIN)/k8s/$(ENVTEST_K8S_VERSION)*
 
 
 
