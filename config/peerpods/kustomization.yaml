@@ -9,6 +9,6 @@ resources:
 
 
 images:
-- name: quay.io/openshift_sandboxed_containers/osc-peer-pods
+- name: controller:latest
+  newName: quay.io/openshift_sandboxed_containers/osc-peer-pods
   newTag: latest
-
