@@ -100,7 +100,7 @@ func init() {
 // KataInstallationStatus reflects the status of the ongoing kata installation
 type KataInstallationStatus struct {
 	// InProgress reflects the status of nodes that are in the process of kata installation
-	InProgress KataInstallationInProgressStatus `json:"inprogress,omitempty"`
+	InProgress KataInstallationInProgressStatus `json:"inProgress,omitempty"`
 
 	// IsInProgress reflects the current state of installing or not installing
 	IsInProgress corev1.ConditionStatus `json:"IsInProgress,omit"`
@@ -148,6 +148,9 @@ type KataUnInstallationStatus struct {
 	// InProgress reflects the status of nodes that are in the process of kata uninstallation
 	InProgress KataUnInstallationInProgressStatus `json:"inProgress,omitempty"`
 
+	// IsInProgress reflects the current state of installing or not installing
+	IsInProgress corev1.ConditionStatus `json:"IsInProgress,omit"`
+
 	// Completed reflects the status of nodes that have completed kata uninstallation
 	Completed KataConfigCompletedStatus `json:"completed,omitempty"`
 
@@ -164,8 +167,10 @@ type KataUnInstallationStatus struct {
 
 // KataUnInstallationInProgressStatus reflects the status of nodes that are in the process of kata installation
 type KataUnInstallationInProgressStatus struct {
-	InProgressNodesCount int                    `json:"inProgressNodesCount,omitempty"`
-	IsInProgress         corev1.ConditionStatus `json:"status"`
+	// InProgressNodesCount reflects the number of nodes that are in the process of kata uninstallation
+	InProgressNodesCount int `json:"inProgressNodesCount,omitempty"`
+	// IsInProgress reflects if uninstallation is still in progress
+	IsInProgress bool `json:"isInProgress,omitempty"`
 	// +optional
 	BinariesUnInstalledNodesList []string `json:"binariesUninstallNodesList,omitempty"`
 }

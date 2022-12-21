@@ -760,7 +760,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	}
 
 	r.Log.Info("Making sure parent MCP is synced properly, SCNodeRole=" + machinePool)
-	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
+	r.kataConfig.Status.UnInstallationStatus.IsInProgress = corev1.ConditionTrue
 	mc, err := r.newMCForCR(machinePool)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -794,7 +794,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	}
 	r.Log.Info("Monitoring mcp", "mcp name", mcp.Name, "ready machines", mcp.Status.ReadyMachineCount,
 		"total machines", mcp.Status.MachineCount)
-	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
+	r.kataConfig.Status.UnInstallationStatus.IsInProgress = corev1.ConditionTrue
 	r.clearUninstallStatus()
 	_, result, err2, done := r.updateStatus(machinePool)
 	if !done {
@@ -835,7 +835,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		}
 	}
 
-	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionFalse
+	r.kataConfig.Status.UnInstallationStatus.IsInProgress = corev1.ConditionFalse
 	_, result, err2, done = r.updateStatus(machinePool)
 	r.clearInstallStatus()
 	if !done {
@@ -1190,7 +1190,7 @@ func (r *KataConfigOpenShiftReconciler) updateStatus(machinePool string) (*mcfgv
 	}
 
 	/* uninstallation status */
-	if corev1.ConditionTrue == r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress {
+	if corev1.ConditionTrue == r.kataConfig.Status.UnInstallationStatus.IsInProgress {
 		err, _ := r.updateUninstallStatus()
 		if err != nil {
 			return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
@@ -1263,7 +1263,7 @@ func (r *KataConfigOpenShiftReconciler) updateCompletedNodes(node *corev1.Node, 
 	if ok && foundMcp.Spec.Configuration.Name == currentNodeConfig &&
 		r.kataConfig.Status.BaseMcpGeneration < foundMcp.Status.ObservedGeneration &&
 		(r.kataConfig.Status.InstallationStatus.IsInProgress == corev1.ConditionTrue ||
-			r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress == corev1.ConditionTrue) {
+			r.kataConfig.Status.UnInstallationStatus.IsInProgress == corev1.ConditionTrue) {
 
 		completedStatus.CompletedNodesList = append(completedStatus.CompletedNodesList, node.GetName())
 		completedStatus.CompletedNodesCount = int(foundMcp.Status.UpdatedMachineCount)
