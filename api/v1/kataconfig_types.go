@@ -70,10 +70,12 @@ type KataConfigStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:path=kataconfigs,scope=Cluster
-// +kubebuilder:printcolumn:name="InProgress",type=string,JSONPath=".status.installationStatus.IsInProgress",description="Status of Kata runtime installation"
-// +kubebuilder:printcolumn:name="Completed",type=integer,JSONPath=".status.installationStatus.completed.completedNodesCount",description="Number of nodes with Kata runtime installed"
+// +kubebuilder:printcolumn:name="InstallInProgress",type=string,JSONPath=".status.installationStatus.IsInProgress",description="Status of Kata runtime installation"
+// +kubebuilder:printcolumn:name="InstallComplete",type=integer,JSONPath=".status.installationStatus.completed.completedNodesCount",description="Number of nodes with Kata runtime installed"
 // +kubebuilder:printcolumn:name="Total",type=integer,JSONPath=".status.totalNodesCount",description="Total number of nodes"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp",description="Age of the KataConfig Custom Resource"
+// +kubebuilder:printcolumn:name="UninstallInProgress",type=string,JSONPath=".status.unInstallationStatus.IsInProgress",description="Status of Kata runtime uninstallation"
+// +kubebuilder:printcolumn:name="UninstallComplete",type=integer,JSONPath=".status.unInstallationStatus.completed.completedNodesCount",description="Number of nodes with Kata runtime uninstalled"
 type KataConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
