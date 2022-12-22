@@ -46,6 +46,8 @@ spec:
         env:
         - name: PEER_POD_TARGET_RUNTIMECLASS
           value: "kata-remote-cc"
+        - name: PEERPODS_NAMESPACE
+          value: "openshift-sandboxed-containers-operator"
         args:
         - --enable-leader-election
         image: controller:latest
