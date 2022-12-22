@@ -39,6 +39,10 @@ spec:
                 description: CloudSecretName is the name of the secret that holds
                   the credentials for the cloud provider
                 type: string
+              configMapName:
+                description: ConfigMapName is the name of the configmap that holds
+                  cloud provider specific environment Variables
+                type: string
               instanceType:
                 description: InstanceType describes the name of the instance type
                   of the chosen cloud provider
