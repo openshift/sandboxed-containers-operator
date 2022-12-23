@@ -137,8 +137,6 @@ func main() {
 
 	// +kubebuilder:scaffold:builder
 
-	//mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{Handler: &peerpodcontrollers.PodAnnotator{Client: mgr.GetClient()}})
-
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
