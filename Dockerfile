@@ -1,5 +1,5 @@
 # Use OpenShift golang builder image
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.17-openshift-4.10 AS builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.19-openshift-4.12 AS builder
 
 WORKDIR /workspace
 
