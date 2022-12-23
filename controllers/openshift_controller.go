@@ -19,7 +19,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jensfr/peer-pod-controller/api/v1alpha1"
+	"github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller/api/v1alpha1"
+
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
