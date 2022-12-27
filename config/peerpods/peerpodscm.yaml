@@ -4,4 +4,4 @@ metadata:
   name: peer-pods-cm
   namespace: openshift-sandboxed-containers-operator
 data:
-  CLOUD_PROVIDER: "libvirt"
+  #CLOUD_PROVIDER: "libvirt"
