@@ -127,7 +127,7 @@ docker-push: ## Push docker image with the manager.
 ##@ Deployment
 
 ifndef ignore-not-found
-  ignore-not-found = false
+  ignore-not-found = true
 endif
 
 .PHONY: install
@@ -146,6 +146,7 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 .PHONY: deploy_pp
 deploy_pp: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	$(KUSTOMIZE) build config/default | kubectl apply -f -
 	$(KUSTOMIZE) build config/peerpods | kubectl apply -f -
 
 .PHONY: undeploy_pp

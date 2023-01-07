@@ -19,7 +19,7 @@ package main
 import (
 	"context"
 	"flag"
-	peerpodcontrollers "github.com/jensfr/peer-pod-controller/controllers"
+	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller/controllers"
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
 	corev1 "k8s.io/api/core/v1"
@@ -35,9 +35,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	peerpodconfig "github.com/jensfr/peer-pod-controller/api/v1alpha1"
+	peerpodconfig "github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller/api/v1alpha1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	"github.com/openshift/sandboxed-containers-operator/controllers"
 	// +kubebuilder:scaffold:imports
@@ -137,8 +136,6 @@ func main() {
 	}
 
 	// +kubebuilder:scaffold:builder
-
-	mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{Handler: &peerpodcontrollers.PodAnnotator{Client: mgr.GetClient()}})
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
