@@ -83,7 +83,7 @@ require (
 )
 
 replace (
-	github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller => ./cloud-api-adaptor/peer-pod-controller
+	github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller => ../cloud-api-adaptor/peer-pod-controller
 	k8s.io/api => k8s.io/api v0.25.1
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.25.1
 	k8s.io/apimachinery => k8s.io/apimachinery v0.25.1

@@ -1,14 +1,14 @@
 # Hacking on the sandboxed-containers-operator
 
 ## Prerequisites
-- Golang - 1.16.x
-- Operator SDK version - 1.12.0
+- Golang - 1.19.x
+- Operator SDK version - 1.25.0
 ```
-curl -O https://github.com/operator-framework/operator-sdk/releases/download/v1.12.0/operator-sdk_linux_amd64
+curl -O https://github.com/operator-framework/operator-sdk/releases/download/v1.25.0/operator-sdk_linux_amd64
 install -m 755 operator-sdk_linux_amd64 ${SOME_DIR_IN_YOUR_PATH}/operator-sdk
 ```
 - podman, podman-docker or docker
-- Access to OpenShift cluster (4.8+)
+- Access to OpenShift cluster (4.12+)
 - Container registry to storage images
 
 ### Get a token on registry.ci.openshift.org
@@ -22,6 +22,19 @@ In summary:
 - log in from the command line with the provided command
 - use "oc registry login" to save the token locally
 
+
+## Download required sources
+
+```
+git clone https://github.com/confidential-containers/cloud-api-adaptor.git
+git clone https://github.com/openshift/sandboxed-containers-operator.git
+```
+
+## Switch to operator source directory
+
+```
+cd sandboxed-containers-operator
+```
 
 ## Set Environment Variables
 
@@ -99,7 +112,7 @@ takes care of webhook certificate management. You can read more on this [here]( 
 
 ### Install cert-manager 
 ```
- oc apply -f https://github.com/jetstack/cert-manager/releases/download/v1.5.3/cert-manager.yaml
+ oc apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.10.1/cert-manager.yaml
 ```
 
 ### Modify YAMLs
