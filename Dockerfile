@@ -3,6 +3,8 @@ FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.19-openshift-4.12 AS 
 
 WORKDIR /workspace
 
+RUN git clone https://github.com/confidential-containers/cloud-api-adaptor.git  /cloud-api-adaptor
+
 # Copy the Go Modules manifests
 COPY go.mod go.mod
 COPY go.sum go.sum
