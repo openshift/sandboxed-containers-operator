@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller/api/v1alpha1"
 
 	"time"
@@ -65,6 +66,7 @@ const (
 	dashboard_configmap_name      = "grafana-dashboard-sandboxed-containers"
 	dashboard_configmap_namespace = "openshift-config-managed"
 	container_runtime_config_name = "kata-crio-config"
+	DEFAULT_PEER_PODS             = "10"
 )
 
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs;kataconfigs/finalizers,verbs=get;list;watch;create;update;patch;delete
@@ -1379,7 +1381,11 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPods() error {
 			Name:      "peerpodconfig-example",
 			Namespace: "openshift-sandboxed-containers-operator",
 		},
-		Spec: v1alpha1.PeerPodConfigSpec{CloudSecretName: "peer-pods-secret", Limit: "20"},
+		Spec: v1alpha1.PeerPodConfigSpec{
+			CloudSecretName: "peer-pods-secret",
+			ConfigMapName:   "peer-pods-cm",
+			Limit:           DEFAULT_PEER_PODS,
+		},
 	}
 
 	err := r.Client.Create(context.TODO(), &peerpodconf)
