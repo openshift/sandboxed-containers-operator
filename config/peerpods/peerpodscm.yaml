@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: peer-pods-cm
+  namespace: openshift-sandboxed-containers-operator
+data:
+  #CLOUD_PROVIDER: "libvirt"
