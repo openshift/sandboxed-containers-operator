@@ -23,6 +23,8 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller/api/v1alpha1"
+
 	appsv1 "k8s.io/api/apps/v1"
 
 	"k8s.io/apimachinery/pkg/labels"
@@ -67,6 +69,7 @@ const (
 	dashboard_configmap_name      = "grafana-dashboard-sandboxed-containers"
 	dashboard_configmap_namespace = "openshift-config-managed"
 	container_runtime_config_name = "kata-crio-config"
+	DEFAULT_PEER_PODS             = "10"
 )
 
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs;kataconfigs/finalizers,verbs=get;list;watch;create;update;patch;delete
@@ -78,6 +81,10 @@ const (
 // +kubebuilder:rbac:groups="";machineconfiguration.openshift.io,resources=nodes;machineconfigs;machineconfigpools;containerruntimeconfigs;pods;services;services/finalizers;endpoints;persistentvolumeclaims;events;configmaps;secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=use;get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;update
+// +kubebuilder:rbac:groups="",resources=nodes/status,verbs=patch
+// +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpodconfigs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpodconfigs/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpodconfigs/finalizers,verbs=update
 
 func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = r.Log.WithValues("kataconfig", req.NamespacedName)
@@ -924,6 +931,15 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		}
 	}
 
+	// peer pod enablement
+	if r.kataConfig.Spec.EnablePeerPods {
+		err := r.enablePeerPods()
+		if err != nil {
+			r.Log.Error(err, "Peer pod enabling failed")
+			return ctrl.Result{}, err
+		}
+	}
+
 	// If converged cluster, then MCP == master, otherwise "kata-oc" if it exists
 	machinePool, err := r.getMcpName()
 	if err != nil {
@@ -1691,4 +1707,26 @@ func (r *KataConfigOpenShiftReconciler) clearFailedStatus(status kataconfigurati
 	status.FailedNodesCount = 0
 
 	return status
+}
+
+func (r *KataConfigOpenShiftReconciler) enablePeerPods() error {
+
+	peerpodconf := v1alpha1.PeerPodConfig{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "peerpodconfig-example",
+			Namespace: "openshift-sandboxed-containers-operator",
+		},
+		Spec: v1alpha1.PeerPodConfigSpec{
+			CloudSecretName: "peer-pods-secret",
+			ConfigMapName:   "peer-pods-cm",
+			Limit:           DEFAULT_PEER_PODS,
+		},
+	}
+
+	err := r.Client.Create(context.TODO(), &peerpodconf)
+	if k8serrors.IsAlreadyExists(err) {
+		return nil
+	}
+	return err
 }
