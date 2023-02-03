@@ -3,6 +3,9 @@ kind: Namespace
 metadata:
   labels:
     control-plane: controller-manager
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: privileged
   name: "openshift-sandboxed-containers-operator"
 ---
 apiVersion: apps/v1
