@@ -1,0 +1,6 @@
+apiVersion: confidentialcontainers.org/v1alpha1
+kind: PeerPodConfig
+metadata:
+  name: peerpodconfig-sample
+spec:
+  # TODO(user): Add fields here
