@@ -19,8 +19,7 @@ package main
 import (
 	"context"
 	"flag"
-	"os"
-
+	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller/controllers"
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
 	corev1 "k8s.io/api/core/v1"
@@ -31,11 +30,13 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	nodeapi "k8s.io/kubernetes/pkg/apis/node/v1"
+	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	peerpodconfig "github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller/api/v1alpha1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	"github.com/openshift/sandboxed-containers-operator/controllers"
 	// +kubebuilder:scaffold:imports
@@ -60,6 +61,8 @@ func init() {
 	utilruntime.Must(mcfgapi.Install(scheme))
 
 	utilruntime.Must(kataconfigurationv1.AddToScheme(scheme))
+
+	utilruntime.Must(peerpodconfig.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -116,12 +119,22 @@ func main() {
 			setupLog.Error(err, "unable to create KataConfig controller for OpenShift cluster", "controller", "KataConfig")
 			os.Exit(1)
 		}
+
+		if err = (&peerpodcontrollers.PeerPodConfigReconciler{
+			Client: mgr.GetClient(),
+			Log:    ctrl.Log.WithName("controllers").WithName("RemotePodConfig"),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create RemotePodConfig controller for OpenShift cluster", "controller", "RemotePodConfig")
+			os.Exit(1)
+		}
 	}
 
 	if err = (&kataconfigurationv1.KataConfig{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "KataConfig")
 		os.Exit(1)
 	}
+
 	// +kubebuilder:scaffold:builder
 
 	setupLog.Info("starting manager")
