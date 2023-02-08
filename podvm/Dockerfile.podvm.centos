@@ -8,11 +8,13 @@ ARG BUILDER_IMG="quay.io/confidential-containers/podvm-builder-centos"
 
 FROM ${BUILDER_IMG} AS podvm_builder
 
-ARG CLOUD_PROVIDER=libvirt
+ARG CLOUD_PROVIDER
 ARG PODVM_DISTRO=centos
+ARG AA_KBC=offline_fs_kbc
 
 ENV CLOUD_PROVIDER ${CLOUD_PROVIDER}
 ENV PODVM_DISTRO ${PODVM_DISTRO}
+ENV AA_KBC ${AA_KBC}
 
 # Default to CentOS 8-stream x86_64 image. These variables can be overriden as needed
 ARG CENTOS_IMAGE_URL=https://cloud.centos.org/centos/8-stream/x86_64/images/CentOS-Stream-GenericCloud-8-20220913.0.x86_64.qcow2
@@ -22,16 +24,17 @@ ENV CENTOS_IMAGE_URL ${CENTOS_IMAGE_URL}
 ENV CENTOS_IMAGE_CHECKSUM ${CENTOS_IMAGE_CHECKSUM}
 
 # Building binaries separately allows for reuse in case of error
-# with image building step
-RUN cd cloud-api-adaptor/podvm && \
-     CLOUD_PROVIDER=$CLOUD_PROVIDER LIBC=gnu make binaries
+# with image building step OTOH it may increase layers size
+#RUN cd cloud-api-adaptor/podvm && \
+#     LIBC=gnu make binaries
 
 # workaround to ensure hashicorp packer is called instead 
 # of cracklib packer which is installed by default
 ENV PATH="/usr/bin:${PATH}"
 
 RUN cd cloud-api-adaptor/podvm && \
-     CLOUD_PROVIDER=$CLOUD_PROVIDER PODVM_DISTRO=$PODVM_DISTRO LIBC=gnu make image
+     LIBC=gnu make image && \
+     (make clean_sources; go clean --cache --modcache; rustup self uninstall -y; rm -rf /root/.cache/packer/; true)
 
 FROM scratch
 COPY --from=podvm_builder /src/cloud-api-adaptor/podvm/output/*.qcow2 /
