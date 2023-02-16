@@ -631,8 +631,7 @@ func (r *KataConfigOpenShiftReconciler) createScc() error {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) createRuntimeClass() error {
-	runtimeClassName := "kata"
+func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName string, cpuOverhead string, memoryOverhead string) error {
 
 	rc := func() *nodeapi.RuntimeClass {
 		rc := &nodeapi.RuntimeClass{
@@ -648,8 +647,8 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass() error {
 			// https://github.com/kata-containers/packaging/blob/f17450317563b6e4d6b1a71f0559360b37783e19/kata-deploy/k8s-1.18/kata-runtimeClasses.yaml#L7
 			Overhead: &nodeapi.Overhead{
 				PodFixed: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("250m"),
-					corev1.ResourceMemory: resource.MustParse("350Mi"),
+					corev1.ResourceCPU:    resource.MustParse(cpuOverhead),
+					corev1.ResourceMemory: resource.MustParse(memoryOverhead),
 				},
 			},
 		}
@@ -1018,7 +1017,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		foundMcp.Status.UpdatedMachineCount == foundMcp.Status.MachineCount {
 		r.Log.Info("create runtime class")
 		r.kataConfig.Status.InstallationStatus.IsInProgress = "false"
-		err := r.createRuntimeClass()
+		err := r.createRuntimeClass("kata", "250M", "350Mi")
 		if err != nil {
 			// Give sometime for the error to go away before reconciling again
 			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
