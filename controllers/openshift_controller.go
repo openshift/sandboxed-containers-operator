@@ -1385,6 +1385,7 @@ func (r *KataConfigOpenShiftReconciler) clearFailedStatus(status kataconfigurati
 }
 
 func (r *KataConfigOpenShiftReconciler) enablePeerPods() error {
+	var err error = nil
 
 	peerpodconf := v1alpha1.PeerPodConfig{
 		TypeMeta: metav1.TypeMeta{},
@@ -1399,9 +1400,14 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPods() error {
 		},
 	}
 
-	err := r.Client.Create(context.TODO(), &peerpodconf)
+	err = r.Client.Create(context.TODO(), &peerpodconf)
 	if k8serrors.IsAlreadyExists(err) {
 		return nil
+	} else if err != nil {
+		return err
 	}
+
+	err = r.createRuntimeClass("kata-remote-cc", "250M", "350Mi")
+
 	return err
 }
