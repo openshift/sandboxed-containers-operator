@@ -57,6 +57,8 @@ spec:
         image: controller:latest
         name: manager
         env:
+        - name: PEERPODS_NAMESPACE
+          value: "openshift-sandboxed-containers-operator"
         - name: KATA_MONITOR_IMAGE
           value: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest
         imagePullPolicy: Always
