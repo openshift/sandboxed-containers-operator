@@ -70,6 +70,7 @@ var _ = BeforeSuite(func() {
 			filepath.Join("..", "config", "extension-crds", "machineconfig.crd.yaml"),
 			filepath.Join("..", "config", "extension-crds", "machineconfigpool.crd.yaml"),
 			filepath.Join("..", "config", "extension-crds", "scc.crd.yaml"),
+			filepath.Join("..", "config", "extension-crds", "containerruntimeconfig.crd.yaml"),
 		},
 		WebhookInstallOptions: webhookOptions,
 	}
