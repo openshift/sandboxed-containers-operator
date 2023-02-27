@@ -108,10 +108,18 @@ func main() {
 
 		setupLog.Info("added labels")
 
+		// Create the OS detection struct
+		var operatingSystem, err = controllers.NewOperatingSystem(controllers.EtcOSReleasePath, controllers.LibOSReleasePath)
+		if err != nil {
+			setupLog.Error(err, "unable to detect operating system")
+			os.Exit(1)
+		}
+
 		if err = (&controllers.KataConfigOpenShiftReconciler{
 			Client: mgr.GetClient(),
 			Log:    ctrl.Log.WithName("controllers").WithName("KataConfig"),
 			Scheme: mgr.GetScheme(),
+			Os:     operatingSystem,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create KataConfig controller for OpenShift cluster", "controller", "KataConfig")
 			os.Exit(1)
