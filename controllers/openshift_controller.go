@@ -620,6 +620,17 @@ func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsMap() map[string]string
 	return nodeSelector
 }
 
+func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsMapNoKataOc() map[string]string {
+	nodeSelector := r.getNodeSelectorAsMap()
+	delete(nodeSelector, "node-role.kubernetes.io/kata-oc")
+	return nodeSelector
+}
+
+func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsSelector() (labels.Selector, error) {
+	nodeSelector := r.getNodeSelectorAsMapNoKataOc()
+	return metav1.LabelSelectorAsSelector( &metav1.LabelSelector { MatchLabels: nodeSelector, })
+}
+
 func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
 	r.Log.Info("Getting MachineConfigPool Name")
 
@@ -1210,12 +1221,151 @@ func (eh *McpEventHandler) Generic(event event.GenericEvent, queue workqueue.Rat
 }
 
 
+func (r *KataConfigOpenShiftReconciler) nodeMatchesKataSelector(nodeLabels map[string]string) bool {
+	nodeSelector, err := r.getNodeSelectorAsSelector()
+
+	if err != nil {
+		r.Log.Info("couldn't get kata node selector", "err", err)
+		// If we cannot find out whether a Node matches assuming that it
+		// doesn't seems to be the safer assumption.  This also seems
+		// consistent with error-handling semantics of earlier similar code.
+		return false
+	}
+
+	return nodeSelector.Matches(labels.Set(nodeLabels))
+}
+
+func isWorkerNode(node client.Object) bool {
+	if _, ok := node.GetLabels()["node-role.kubernetes.io/worker"]; ok {
+		return true
+	}
+	return false
+}
+
+func getStringMapDiff(oldMap, newMap map[string]string) (added, modified, removed map[string]string) {
+	added = map[string]string{}
+	modified = map[string]string{}
+	removed = map[string]string{}
+
+	if oldMap == nil {
+		added = newMap
+		return
+	}
+
+	if newMap == nil {
+		removed = oldMap
+		return
+	}
+
+	for newKey, newVal := range newMap {
+		if _, ok := oldMap[newKey]; !ok {
+			added[newKey] = newVal
+		}
+	}
+	for oldKey, oldVal := range oldMap {
+		if _, ok := newMap[oldKey]; !ok {
+			removed[oldKey] = oldVal
+		} else {
+			if oldMap[oldKey] != newMap[oldKey] {
+				modified[oldKey] = newMap[oldKey]
+			}
+		}
+	}
+	return added, modified, removed
+}
+
+
+type NodeEventHandler struct {
+	reconciler *KataConfigOpenShiftReconciler
+}
+
+func (eh *NodeEventHandler) Create(event event.CreateEvent, queue workqueue.RateLimitingInterface) {
+	node := event.Object
+
+	log := eh.reconciler.Log.WithName("NodeCreate").WithValues("node name", node.GetName())
+	log.Info("node created")
+
+	if !isWorkerNode(node) {
+		return
+	}
+
+	if eh.reconciler.kataConfig == nil {
+		return
+	}
+
+	if !eh.reconciler.nodeMatchesKataSelector(node.GetLabels()) {
+		return
+	}
+	log.Info("node matches kata node selector", "node labels", node.GetLabels())
+
+	queue.Add(eh.reconciler.makeReconcileRequest())
+}
+
+func (eh *NodeEventHandler) Update(event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
+	// This function assumes that a node cannot change its role from master to
+	// worker or vice-versa.
+	nodeOld := event.ObjectOld
+	nodeNew := event.ObjectNew
+
+	log := eh.reconciler.Log.WithName("NodeUpdate").WithValues("node name", nodeNew.GetName())
+
+	if !isWorkerNode(nodeNew) {
+		return
+	}
+
+	if eh.reconciler.kataConfig == nil {
+		return
+	}
+
+	foundRelevantChange := false
+
+	// no need to check the second return value of the indexing operation
+	// as "" is not a valid machineconfiguration.openshift.io/state value
+	stateOld := nodeOld.GetAnnotations()["machineconfiguration.openshift.io/state"]
+	stateNew := nodeNew.GetAnnotations()["machineconfiguration.openshift.io/state"]
+	if stateOld != stateNew {
+		foundRelevantChange = true
+		log.Info("machineconfiguration.openshift.io/state changed", "old", stateOld, "new", stateNew)
+	}
+
+	labelsOld := nodeOld.GetLabels()
+	labelsNew := nodeNew.GetLabels()
+
+	if !reflect.DeepEqual(labelsOld, labelsNew) {
+
+		log.Info("labels changed", "old", labelsOld, "new", labelsNew)
+		added, modified, removed := getStringMapDiff(labelsOld, labelsNew)
+		log.Info("labels diff", "added", added, "modified", modified, "removed", removed)
+
+		matchOld := eh.reconciler.nodeMatchesKataSelector(labelsOld)
+		matchNew := eh.reconciler.nodeMatchesKataSelector(labelsNew)
+
+		log.Info("labels matching kata node selector", "old", matchOld, "new", matchNew)
+		if matchOld != matchNew {
+			foundRelevantChange = true
+		}
+	}
+
+	if foundRelevantChange {
+		queue.Add(eh.reconciler.makeReconcileRequest())
+	}
+}
+
+func (eh *NodeEventHandler) Delete(event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
+}
+
+func (eh *NodeEventHandler) Generic(event event.GenericEvent, queue workqueue.RateLimitingInterface) {
+}
+
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
 		Watches(
 			&source.Kind{Type: &mcfgv1.MachineConfigPool{}},
 			&McpEventHandler{r}).
+		Watches(
+			&source.Kind{Type: &corev1.Node{}},
+			&NodeEventHandler{r}).
 		Complete(r)
 }
 
