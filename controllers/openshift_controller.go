@@ -397,7 +397,7 @@ func (r *KataConfigOpenShiftReconciler) processDashboardConfigMap() *corev1.Conf
 	}
 }
 
-func (r *KataConfigOpenShiftReconciler) newMCPforCR() (*mcfgv1.MachineConfigPool, error) {
+func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool {
 	lsr := metav1.LabelSelectorRequirement{
 		Key:      "machineconfiguration.openshift.io/role",
 		Operator: metav1.LabelSelectorOpIn,
@@ -431,7 +431,7 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() (*mcfgv1.MachineConfigPool
 		},
 	}
 
-	return mcp, nil
+	return mcp
 }
 
 func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
@@ -914,16 +914,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	// Create kata-oc MCP only if it's not a converged cluster
 	if machinePool != "master" {
 		r.Log.Info("Creating new MachineConfigPool")
-		mcp, err := r.newMCPforCR()
-		if err != nil {
-			if k8serrors.IsConflict(err) {
-				r.Log.Info("Conflict in creating new MachineConfigPool", "machinePool", machinePool)
-				return ctrl.Result{Requeue: true, RequeueAfter: 20 * time.Second}, nil
-			} else {
-				r.Log.Error(err, "Error in creating new MachineConfigPool", "machinePool", machinePool)
-				return ctrl.Result{}, err
-			}
-		}
+		mcp := r.newMCPforCR()
 
 		// Create kata-oc only if it doesn't exist
 		foundMcp := &mcfgv1.MachineConfigPool{}
@@ -1426,33 +1417,6 @@ func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (err error) {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) labelNodes(nodeSelector *metav1.LabelSelector) (err error) {
-	labelSelector, _ := metav1.LabelSelectorAsSelector(nodeSelector)
-	nodeList := &corev1.NodeList{}
-	listOpts := []client.ListOption{
-		client.MatchingLabelsSelector{Selector: labelSelector},
-	}
-
-	if err := r.Client.List(context.TODO(), nodeList, listOpts...); err != nil {
-		r.Log.Error(err, "Getting list of nodes failed")
-		return err
-	}
-
-	for _, node := range nodeList.Items {
-		if _, ok := node.Labels["node-role.kubernetes.io/kata-oc"]; !ok {
-			node.Labels["node-role.kubernetes.io/kata-oc"] = ""
-		}
-		err = r.Client.Update(context.TODO(), &node)
-		if err != nil {
-			r.Log.Error(err, "Error when adding labels to node", "node", node)
-			return err
-		}
-
-	}
-	return nil
-
-}
-
 func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector *metav1.LabelSelector) (err error) {
 	labelSelector, _ := metav1.LabelSelectorAsSelector(nodeSelector)
 	nodeList := &corev1.NodeList{}
@@ -1476,18 +1440,6 @@ func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector *metav1.LabelS
 		}
 	}
 	return nil
-}
-
-func (r *KataConfigOpenShiftReconciler) unlabelNode(node *corev1.Node) (err error) {
-	delete(node.Labels, "node-role.kubernetes.io/kata-oc")
-	err = r.Client.Update(context.TODO(), node)
-	if err != nil {
-		r.Log.Error(err, "Error when removing labels from node: ", "node", node)
-		return err
-	}
-
-	return nil
-
 }
 
 func (r *KataConfigOpenShiftReconciler) getConditionReason(conditions []mcfgv1.MachineConfigPoolCondition, conditionType mcfgv1.MachineConfigPoolConditionType) string {
