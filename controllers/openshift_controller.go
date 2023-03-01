@@ -404,32 +404,7 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() (*mcfgv1.MachineConfigPool
 		Values:   []string{"kata-oc", "worker"},
 	}
 
-	// Default NodeSelector is all machines with worker label.
-	// Otherwise all nodes including the control plane nodes will be put under new MCP
-	nodeSelector := &metav1.LabelSelector{MatchLabels: map[string]string{"node-role.kubernetes.io/worker": ""}}
-
-	if r.kataConfig.Spec.CheckNodeEligibility {
-		nodeSelector = metav1.AddLabelToSelector(nodeSelector, "feature.node.kubernetes.io/runtime.kata", "true")
-	}
-
-	if r.kataConfig.Spec.KataConfigPoolSelector != nil {
-		// KataConfigPoolSelector can be a MatchExpression or MatchLabel. Need to Convert MatchExpression to MatchLabel
-		// and add it to nodeSelector
-		lsMap, err := metav1.LabelSelectorAsMap(r.kataConfig.Spec.KataConfigPoolSelector)
-		if err != nil {
-			r.Log.Error(err, "Unable to parse KataConfigPoolSelector")
-		}
-		//Add labels to nodeSelector
-		for k, v := range lsMap {
-			nodeSelector = metav1.AddLabelToSelector(nodeSelector, k, v)
-		}
-	}
-
-	// Add the MCP anchor label to NodeSelector. This label is handled by the Operator
-	mcpNodeSelector := metav1.CloneSelectorAndAddLabel(nodeSelector, "node-role.kubernetes.io/kata-oc", "")
-
-	r.Log.Info("NodeSelector: ", "nodeSelector", nodeSelector)
-	r.Log.Info("mcpNodeSelector: ", "mcpNodeSelector", mcpNodeSelector)
+	mcpNodeSelector := &metav1.LabelSelector{MatchLabels: map[string]string{"node-role.kubernetes.io/kata-oc": ""}}
 
 	mcp := &mcfgv1.MachineConfigPool{
 		TypeMeta: metav1.TypeMeta{
@@ -456,9 +431,7 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() (*mcfgv1.MachineConfigPool
 		},
 	}
 
-	// Add the anchor label: "node-role.kubernetes.io/kata-oc" to Nodes for MCP handling
-	err := r.labelNodes(nodeSelector)
-	return mcp, err
+	return mcp, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
@@ -771,6 +744,14 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 			}
 		}
 	}
+	err = r.unlabelNodes(&metav1.LabelSelector{MatchLabels: r.getNodeSelectorAsMapNoKataOc()})
+	if err != nil {
+		if k8serrors.IsConflict(err) {
+			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+		} else {
+			return ctrl.Result{Requeue: true}, nil
+		}
+	}
 
 	r.Log.Info("Making sure parent MCP is synced properly, SCNodeRole=" + machinePool)
 	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
@@ -921,6 +902,15 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.Log.Info("SCNodeRole is: " + machinePool)
 	}
 
+	err = r.updateNodeLabels()
+	if err != nil {
+		if k8serrors.IsConflict(err) {
+			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+		} else {
+			return ctrl.Result{Requeue: true}, nil
+		}
+	}
+
 	// Create kata-oc MCP only if it's not a converged cluster
 	if machinePool != "master" {
 		r.Log.Info("Creating new MachineConfigPool")
@@ -950,25 +940,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		} else if err != nil {
 			r.Log.Error(err, "Error in retreiving MachineConfigPool ", "machinePool", machinePool)
 			return ctrl.Result{}, err
-		}
-
-		// Update node selector in machine config pool with value from kataconfig instance
-		r.Log.Info("Updating machine config pool name ", "found Mcp name", foundMcp.Name)
-		foundMcp.Spec.NodeSelector.MatchLabels = make(map[string]string)
-		if r.kataConfig.Spec.KataConfigPoolSelector != nil {
-			for key, value := range r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels {
-				foundMcp.Spec.NodeSelector.MatchLabels[key] = value
-			}
-			foundMcp.Spec.NodeSelector.MatchExpressions = r.kataConfig.Spec.KataConfigPoolSelector.MatchExpressions
-		}
-		foundMcp.Spec.NodeSelector.MatchLabels["node-role.kubernetes.io/worker"] = ""
-		foundMcp.Spec.NodeSelector.MatchLabels["node-role.kubernetes.io/kata-oc"] = ""
-		foundMcp.ObjectMeta.Labels = map[string]string{"pools.operator.machineconfiguration.openshift.io/kata-oc": ""}
-
-		err = r.Client.Update(context.TODO(), foundMcp)
-		if err != nil {
-			r.Log.Error(err, "Error when updating MachineConfigPool")
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 		}
 
 		// Wait till MCP is ready
@@ -1588,10 +1559,6 @@ func (r *KataConfigOpenShiftReconciler) updateUninstallStatus() (error, bool) {
 			case "Done":
 				err, r.kataConfig.Status.UnInstallationStatus.Completed =
 					r.updateCompletedNodes(&node, r.kataConfig.Status.UnInstallationStatus.Completed)
-				if err == nil {
-					// Unlabel the Node
-					err = r.unlabelNode(&node)
-				}
 			case "Degraded":
 				err, r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList =
 					r.updateFailedNodes(&node, r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList)
