@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -39,10 +40,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
@@ -1041,32 +1043,179 @@ func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (c
 	return ctrl.Result{}, nil, false
 }
 
-func (r *KataConfigOpenShiftReconciler) mapKataConfigToRequests(kataConfigObj client.Object) []reconcile.Request {
-
-	kataConfigList := &kataconfigurationv1.KataConfigList{}
-
-	err := r.Client.List(context.TODO(), kataConfigList)
-	if err != nil {
-		return []reconcile.Request{}
+func (r *KataConfigOpenShiftReconciler) makeReconcileRequest() reconcile.Request {
+	return reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name: r.kataConfig.Name,
+		},
 	}
-
-	reconcileRequests := make([]reconcile.Request, len(kataConfigList.Items))
-	for _, kataconfig := range kataConfigList.Items {
-		reconcileRequests = append(reconcileRequests, reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Name: kataconfig.Name,
-			},
-		})
-	}
-	return reconcileRequests
 }
+
+func isMcpRelevant(mcp client.Object) bool {
+	mcpName := mcp.GetName()
+	if mcpName == "kata-oc" || mcpName == "worker" {
+		return true
+	}
+	return false
+}
+
+const missingMcpStatusConditionStr = "<missing>"
+
+func logMcpChange(log logr.Logger, statusOld, statusNew mcfgv1.MachineConfigPoolStatus) {
+
+	log.Info("MCP updated")
+
+	if statusOld.MachineCount != statusNew.MachineCount {
+		log.Info("MachineCount changed", "old", statusOld.MachineCount, "new", statusNew.MachineCount)
+	} else {
+		log.Info("MachineCount", "#", statusNew.MachineCount)
+	}
+	if statusOld.ReadyMachineCount != statusNew.ReadyMachineCount {
+		log.Info("ReadyMachineCount changed", "old", statusOld.ReadyMachineCount, "new", statusNew.ReadyMachineCount)
+	} else {
+		log.Info("ReadyMachineCount", "#", statusNew.ReadyMachineCount)
+	}
+	if statusOld.UpdatedMachineCount != statusNew.UpdatedMachineCount {
+		log.Info("UpdatedMachineCount changed", "old", statusOld.UpdatedMachineCount, "new", statusNew.UpdatedMachineCount)
+	} else {
+		log.Info("UpdatedMachineCount", "#", statusNew.UpdatedMachineCount)
+	}
+	if statusOld.DegradedMachineCount != statusNew.DegradedMachineCount {
+		log.Info("DegradedMachineCount changed", "old", statusOld.DegradedMachineCount, "new", statusNew.DegradedMachineCount)
+	} else {
+		log.Info("DegradedMachineCount", "#", statusNew.DegradedMachineCount)
+	}
+	if statusOld.ObservedGeneration != statusNew.ObservedGeneration {
+		log.Info("ObservedGeneration changed", "old", statusOld.ObservedGeneration, "new", statusNew.ObservedGeneration)
+	}
+
+	if !reflect.DeepEqual(statusOld.Conditions, statusNew.Conditions) {
+
+		for _, condType := range []mcfgv1.MachineConfigPoolConditionType{"Updating", "Updated"} {
+			condOld := mcfgv1.GetMachineConfigPoolCondition(statusOld, condType)
+			condNew := mcfgv1.GetMachineConfigPoolCondition(statusNew, condType)
+			condStatusOld := missingMcpStatusConditionStr
+			if condOld != nil {
+				condStatusOld = string(condOld.Status)
+			}
+			condStatusNew := missingMcpStatusConditionStr
+			if condNew != nil {
+				condStatusNew = string(condNew.Status)
+			}
+
+			if condStatusOld != condStatusNew {
+				log.Info("mcp.status.conditions[] changed", "type", condType, "old", condStatusOld, "new", condStatusNew)
+			}
+		}
+	}
+}
+
+type McpEventHandler struct {
+	reconciler *KataConfigOpenShiftReconciler
+}
+
+func (eh *McpEventHandler) Create(event event.CreateEvent, queue workqueue.RateLimitingInterface) {
+	mcp := event.Object
+
+	if !isMcpRelevant(mcp) {
+		return
+	}
+
+	// Don't reconcile on MCP creation since we're unlikely to witness "worker"
+	// creation and "kata-oc" should be only created by this controller.
+	// Log the event anyway.
+	log := eh.reconciler.Log.WithName("McpCreate").WithValues("MCP name", mcp.GetName())
+	log.Info("MCP created")
+}
+
+func (eh *McpEventHandler) Update(event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
+	mcpOld := event.ObjectOld
+	mcpNew := event.ObjectNew
+
+	if !isMcpRelevant(mcpNew) {
+		return
+	}
+
+	statusOld := mcpOld.(*mcfgv1.MachineConfigPool).Status
+	statusNew := mcpNew.(*mcfgv1.MachineConfigPool).Status
+	if reflect.DeepEqual(statusOld, statusNew) {
+		return
+	}
+
+	foundRelevantChange := false
+
+	if statusOld.MachineCount != statusNew.MachineCount {
+		foundRelevantChange = true
+	} else if statusOld.ReadyMachineCount != statusNew.ReadyMachineCount {
+		foundRelevantChange = true
+	} else if statusOld.UpdatedMachineCount != statusNew.UpdatedMachineCount {
+		foundRelevantChange = true
+	} else if statusOld.DegradedMachineCount != statusNew.DegradedMachineCount {
+		foundRelevantChange = true
+	}
+
+	if !reflect.DeepEqual(statusOld.Conditions, statusNew.Conditions) {
+
+		for _, condType := range []mcfgv1.MachineConfigPoolConditionType{"Updating", "Updated"} {
+			condOld := mcfgv1.GetMachineConfigPoolCondition(statusOld, condType)
+			condNew := mcfgv1.GetMachineConfigPoolCondition(statusNew, condType)
+			condStatusOld := missingMcpStatusConditionStr
+			if condOld != nil {
+				condStatusOld = string(condOld.Status)
+			}
+			condStatusNew := missingMcpStatusConditionStr
+			if condNew != nil {
+				condStatusNew = string(condNew.Status)
+			}
+
+			if condStatusOld != condStatusNew {
+				foundRelevantChange = true
+			}
+		}
+	}
+
+	if eh.reconciler.kataConfig != nil && foundRelevantChange {
+
+		log := eh.reconciler.Log.WithName("McpUpdate").WithValues("MCP name", mcpOld.GetName())
+		logMcpChange(log, statusOld, statusNew)
+
+		queue.Add(eh.reconciler.makeReconcileRequest())
+	}
+}
+
+func (eh *McpEventHandler) Delete(event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
+	mcp := event.Object
+
+	if !isMcpRelevant(mcp) {
+		return
+	}
+
+	// Don't reconcile on MCP deletion since "worker" should never be deleted and
+	// "kata-oc" should be only deleted by this controller.  Log the event anyway.
+	log := eh.reconciler.Log.WithName("McpDelete").WithValues("MCP name", mcp.GetName())
+	log.Info("MCP deleted")
+}
+
+func (eh *McpEventHandler) Generic(event event.GenericEvent, queue workqueue.RateLimitingInterface) {
+	mcp := event.Object
+
+	if !isMcpRelevant(mcp) {
+		return
+	}
+
+	// Don't reconcile on MCP generic event since it's not quite clear ATM
+	// what it even means (we might revisit this later).  Log the event anyway.
+	log := eh.reconciler.Log.WithName("McpGenericEvt").WithValues("MCP name", mcp.GetName())
+	log.Info("MCP generic event")
+}
+
 
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
 		Watches(
 			&source.Kind{Type: &mcfgv1.MachineConfigPool{}},
-			handler.EnqueueRequestsFromMapFunc(r.mapKataConfigToRequests)).
+			&McpEventHandler{r}).
 		Complete(r)
 }
 
