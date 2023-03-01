@@ -1413,6 +1413,48 @@ func (r *KataConfigOpenShiftReconciler) getNodesWithLabels(nodeLabels map[string
 	return nil, nodes
 }
 
+func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (err error) {
+	workerNodeList := &corev1.NodeList{}
+	workerSelector := labels.SelectorFromSet(map[string]string{"node-role.kubernetes.io/worker": ""})
+	listOpts := []client.ListOption{
+		client.MatchingLabelsSelector{Selector: workerSelector},
+	}
+
+	if err := r.Client.List(context.TODO(), workerNodeList, listOpts...); err != nil {
+		r.Log.Error(err, "Getting list of nodes failed")
+		return err
+	}
+
+	kataNodeSelector, _ := r.getNodeSelectorAsSelector()
+
+	for _, worker := range workerNodeList.Items {
+		workerMatchesKata := kataNodeSelector.Matches(labels.Set(worker.Labels))
+		_, workerLabeledForKata := worker.Labels["node-role.kubernetes.io/kata-oc"]
+
+		isLabelUpToDate := (workerMatchesKata && workerLabeledForKata) || (!workerMatchesKata && !workerLabeledForKata)
+
+		if isLabelUpToDate {
+			continue
+		}
+
+		if workerMatchesKata && !workerLabeledForKata {
+			r.Log.Info("worker labeled", "node", worker.GetName())
+			worker.Labels["node-role.kubernetes.io/kata-oc"] = ""
+		} else if !workerMatchesKata && workerLabeledForKata {
+			r.Log.Info("worker unlabeled", "node", worker.GetName())
+			delete(worker.Labels, "node-role.kubernetes.io/kata-oc")
+		}
+
+		err = r.Client.Update(context.TODO(), &worker)
+		if err != nil {
+			r.Log.Error(err, "Error when adding labels to node", "node", worker)
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (r *KataConfigOpenShiftReconciler) labelNodes(nodeSelector *metav1.LabelSelector) (err error) {
 	labelSelector, _ := metav1.LabelSelectorAsSelector(nodeSelector)
 	nodeList := &corev1.NodeList{}
@@ -1438,6 +1480,31 @@ func (r *KataConfigOpenShiftReconciler) labelNodes(nodeSelector *metav1.LabelSel
 	}
 	return nil
 
+}
+
+func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector *metav1.LabelSelector) (err error) {
+	labelSelector, _ := metav1.LabelSelectorAsSelector(nodeSelector)
+	nodeList := &corev1.NodeList{}
+	listOpts := []client.ListOption{
+		client.MatchingLabelsSelector{Selector: labelSelector},
+	}
+
+	if err := r.Client.List(context.TODO(), nodeList, listOpts...); err != nil {
+		r.Log.Error(err, "Getting list of nodes failed")
+		return err
+	}
+
+	for _, node := range nodeList.Items {
+		if _, ok := node.Labels["node-role.kubernetes.io/kata-oc"]; ok {
+			delete(node.Labels, "node-role.kubernetes.io/kata-oc")
+			err = r.Client.Update(context.TODO(), &node)
+			if err != nil {
+				r.Log.Error(err, "Error when removing labels from node", "node", node)
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (r *KataConfigOpenShiftReconciler) unlabelNode(node *corev1.Node) (err error) {
