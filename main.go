@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
+	kataconfigurationv2 "github.com/openshift/sandboxed-containers-operator/api/v2"
 	"github.com/openshift/sandboxed-containers-operator/controllers"
 	// +kubebuilder:scaffold:imports
 )
@@ -60,6 +61,7 @@ func init() {
 	utilruntime.Must(mcfgapi.Install(scheme))
 
 	utilruntime.Must(kataconfigurationv1.AddToScheme(scheme))
+	utilruntime.Must(kataconfigurationv2.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 

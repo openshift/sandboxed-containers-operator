@@ -1,0 +1,12 @@
+apiVersion: kataconfiguration.openshift.io/v2
+kind: KataConfig
+metadata:
+  labels:
+    app.kubernetes.io/name: kataconfig
+    app.kubernetes.io/instance: kataconfig-sample
+    app.kubernetes.io/part-of: sandboxed-containers-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: sandboxed-containers-operator
+  name: kataconfig-sample
+#spec:
+  # TODO(user): Add fields here
