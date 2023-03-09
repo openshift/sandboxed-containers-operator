@@ -39,6 +39,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	labelsutil "k8s.io/kubernetes/pkg/util/labels"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -559,40 +560,6 @@ func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsMap() map[string]string {
-	r.Log.Info("Getting NodeSelector")
-
-	// NodeSelector field in RuntimeClass and PodSpec is key:value map
-	nodeSelector := make(map[string]string)
-
-	isConvergedCluster, err := r.checkConvergedCluster()
-	if err == nil && isConvergedCluster {
-		// master MCP cannot be customized
-		nodeSelector["node-role.kubernetes.io/master"] = ""
-	} else {
-		nodeSelector["node-role.kubernetes.io/kata-oc"] = ""
-
-		if r.kataConfig.Spec.CheckNodeEligibility {
-			nodeSelector["feature.node.kubernetes.io/runtime.kata"] = "true"
-		}
-
-		if r.kataConfig.Spec.KataConfigPoolSelector != nil {
-			r.Log.Info("KataConfigPoolSelector:", "r.kataConfig.Spec.KataConfigPoolSelector", r.kataConfig.Spec.KataConfigPoolSelector)
-			lsMap, err := metav1.LabelSelectorAsMap(r.kataConfig.Spec.KataConfigPoolSelector)
-			if err != nil {
-				r.Log.Error(err, "Unable to get nodeSelector from KataConfigPoolSelector ")
-			} else {
-				// Add the labels to nodeSelector
-				for k, v := range lsMap {
-					nodeSelector[k] = v
-				}
-			}
-		}
-	}
-	r.Log.Info("Nodeselector", "nodeSelector", nodeSelector)
-	return nodeSelector
-}
-
 func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsMapNoKataOc() map[string]string {
 	nodeSelector := r.getNodeSelectorAsMap()
 	delete(nodeSelector, "node-role.kubernetes.io/kata-oc")
@@ -708,6 +675,53 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass() error {
 	}
 
 	return nil
+}
+
+// "KataConfigNodeSelector" in the names of the following couple of helper
+// functions refers to the value of KataConfig.spec.kataConfigPoolSelector,
+// i.e. the original selector supplied by the user of KataConfig.
+func (r *KataConfigOpenShiftReconciler) getKataConfigNodeSelectorAsLabelSelector() *metav1.LabelSelector {
+
+	isConvergedCluster, err := r.checkConvergedCluster()
+	if err == nil && isConvergedCluster {
+		// master MCP cannot be customized
+		return &metav1.LabelSelector { MatchLabels: map[string]string{ "node-role.kubernetes.io/master": "" }}
+	}
+
+	nodeSelector := r.kataConfig.Spec.KataConfigPoolSelector.DeepCopy()
+	if r.kataConfig.Spec.CheckNodeEligibility {
+		nodeSelector = labelsutil.AddLabelToSelector(nodeSelector, "feature.node.kubernetes.io/runtime.kata", "true")
+	}
+	return nodeSelector
+}
+
+func (r *KataConfigOpenShiftReconciler) getKataConfigNodeSelectorAsSelector() (labels.Selector, error) {
+	selector, err := metav1.LabelSelectorAsSelector(r.getKataConfigNodeSelectorAsLabelSelector())
+	r.Log.Info("getKataConfigNodeSelectorAsSelector()", "selector", selector)
+	return selector, err
+}
+
+// "NodeSelector" in the names of the following couple of helper
+// functions refers to the selector we pass to resources we create that
+// need to select kata-enabled nodes (currently the "kata-oc" MCP, the pod
+// template in the monitor daemonset and the runtimeclass).  It's guaranteed
+// to be a simple map[string]string (AKA MatchLabels) which is good because the
+// pod template's and runtimeclass' node selectors don't support
+// MatchExpressions and thus cannot hold the full value of
+// KataConfig.spec.kataConfigPoolSelector.
+func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsMap() map[string]string {
+
+	isConvergedCluster, err := r.checkConvergedCluster()
+	if err == nil && isConvergedCluster {
+		// master MCP cannot be customized
+		return map[string]string{ "node-role.kubernetes.io/master": "" }
+	} else {
+		return map[string]string{"node-role.kubernetes.io/kata-oc": ""}
+	}
+}
+
+func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsLabelSelector() *metav1.LabelSelector {
+	return &metav1.LabelSelector{MatchLabels: r.getNodeSelectorAsMap()}
 }
 
 func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.Result, error) {
