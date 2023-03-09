@@ -758,7 +758,14 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 			}
 		}
 	}
-	err = r.unlabelNodes(&metav1.LabelSelector{MatchLabels: r.getNodeSelectorAsMapNoKataOc()})
+
+	kataNodeSelector, err := r.getKataConfigNodeSelectorAsSelector()
+	if err != nil {
+		r.Log.Info("Couldn't get node selector for unlabelling nodes", "err", err)
+		return ctrl.Result{Requeue: true}, nil
+	}
+	err = r.unlabelNodes(kataNodeSelector)
+
 	if err != nil {
 		if k8serrors.IsConflict(err) {
 			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
@@ -1198,7 +1205,7 @@ func (eh *McpEventHandler) Generic(event event.GenericEvent, queue workqueue.Rat
 
 
 func (r *KataConfigOpenShiftReconciler) nodeMatchesKataSelector(nodeLabels map[string]string) bool {
-	nodeSelector, err := r.getNodeSelectorAsSelector()
+	nodeSelector, err := r.getKataConfigNodeSelectorAsSelector()
 
 	if err != nil {
 		r.Log.Info("couldn't get kata node selector", "err", err)
@@ -1401,7 +1408,7 @@ func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (err error) {
 		return err
 	}
 
-	kataNodeSelector, _ := r.getNodeSelectorAsSelector()
+	kataNodeSelector, _ := r.getKataConfigNodeSelectorAsSelector()
 
 	for _, worker := range workerNodeList.Items {
 		workerMatchesKata := kataNodeSelector.Matches(labels.Set(worker.Labels))
@@ -1431,11 +1438,10 @@ func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (err error) {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector *metav1.LabelSelector) (err error) {
-	labelSelector, _ := metav1.LabelSelectorAsSelector(nodeSelector)
+func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selector) (err error) {
 	nodeList := &corev1.NodeList{}
 	listOpts := []client.ListOption{
-		client.MatchingLabelsSelector{Selector: labelSelector},
+		client.MatchingLabelsSelector{Selector: nodeSelector},
 	}
 
 	if err := r.Client.List(context.TODO(), nodeList, listOpts...); err != nil {
