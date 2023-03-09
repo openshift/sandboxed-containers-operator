@@ -558,17 +558,6 @@ func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsMapNoKataOc() map[string]string {
-	nodeSelector := r.getNodeSelectorAsMap()
-	delete(nodeSelector, "node-role.kubernetes.io/kata-oc")
-	return nodeSelector
-}
-
-func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsSelector() (labels.Selector, error) {
-	nodeSelector := r.getNodeSelectorAsMapNoKataOc()
-	return metav1.LabelSelectorAsSelector( &metav1.LabelSelector { MatchLabels: nodeSelector, })
-}
-
 func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
 	r.Log.Info("Getting MachineConfigPool Name")
 
