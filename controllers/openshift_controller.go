@@ -479,14 +479,11 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 	// send in "kata-containers".
 	// Both are later send to rpm-ostree for installation.
 	//
-	// As RHCOS is rather special variant, use "kata-containers" by default.
+	// As RHCOS is rather special variant, use "kata-containers" by default, which also applies to FCOS
 	var extensions = []string{"kata-containers"}
 
 	if r.Os.IsEL() {
 		extensions = []string{"sandboxed-containers"}
-	}
-	if r.Os.IsFCOS() {
-		extensions = []string{"kata-containers"}
 	}
 
 	mc := mcfgv1.MachineConfig{
