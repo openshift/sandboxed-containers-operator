@@ -60,6 +60,9 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+BUILDER_IMAGE ?= registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.18-openshift-4.11
+TARGET_IMAGE  ?= registry.ci.openshift.org/ocp/4.11:base
+
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # This is a requirement for 'setup-envtest.sh' in the test target.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -124,7 +127,11 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
-	docker build -t ${IMG} .
+	docker build \
+		-t ${IMG} \
+		--build-arg BUILDER_IMAGE=$(BUILDER_IMAGE) \
+		--build-arg TARGET_IMAGE=$(TARGET_IMAGE) \
+		.
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -143,7 +150,14 @@ docker-buildx: test ## Build and push docker image for the manager for cross-pla
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- docker buildx create --name project-v3-builder
 	docker buildx use project-v3-builder
-	- docker buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross
+	- docker buildx build \
+		--push \
+		--platform=$(PLATFORMS) \
+		--tag ${IMG} \
+		-f Dockerfile.cross \
+		--build-arg BUILDER_IMAGE=$(BUILDER_IMAGE) \
+		--build-arg TARGET_IMAGE=$(TARGET_IMAGE) \
+		.
 	- docker buildx rm project-v3-builder
 	rm Dockerfile.cross
 
