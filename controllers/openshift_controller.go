@@ -405,8 +405,6 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool 
 		Values:   []string{"kata-oc", "worker"},
 	}
 
-	mcpNodeSelector := &metav1.LabelSelector{MatchLabels: map[string]string{"node-role.kubernetes.io/kata-oc": ""}}
-
 	mcp := &mcfgv1.MachineConfigPool{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "machineconfiguration.openshift.io/v1",
@@ -428,7 +426,7 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool 
 			MachineConfigSelector: &metav1.LabelSelector{
 				MatchExpressions: []metav1.LabelSelectorRequirement{lsr},
 			},
-			NodeSelector: mcpNodeSelector,
+			NodeSelector: r.getNodeSelectorAsLabelSelector(),
 		},
 	}
 
