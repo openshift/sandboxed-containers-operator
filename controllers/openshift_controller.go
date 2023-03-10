@@ -60,6 +60,7 @@ type KataConfigOpenShiftReconciler struct {
 
 	clientset  kubernetes.Interface
 	kataConfig *kataconfigurationv1.KataConfig
+	Os         OperatingSystem
 }
 
 const (
@@ -448,6 +449,18 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 		return nil, err
 	}
 
+	// RHCOS uses "sandboxed-containers" as thats resolved/translated in the machine-config-operator to "kata-containers"
+	// FCOS however does not get any translation in the machine-config-operator so we need to
+	// send in "kata-containers".
+	// Both are later send to rpm-ostree for installation.
+	//
+	// As RHCOS is rather special variant, use "kata-containers" by default, which also applies to FCOS
+	var extensions = []string{"kata-containers"}
+
+	if r.Os.IsEL() {
+		extensions = []string{"sandboxed-containers"}
+	}
+
 	mc := mcfgv1.MachineConfig{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "machineconfiguration.openshift.io/v1",
@@ -462,7 +475,7 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 			Namespace: "openshift-sandboxed-containers-operator",
 		},
 		Spec: mcfgv1.MachineConfigSpec{
-			Extensions: []string{"sandboxed-containers"},
+			Extensions: extensions,
 			Config: runtime.RawExtension{
 				Raw: icb,
 			},
