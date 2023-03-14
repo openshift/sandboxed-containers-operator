@@ -952,14 +952,13 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	// Create kata-oc MCP only if it's not a converged cluster
 	if machinePool != "master" {
-		r.Log.Info("Creating new MachineConfigPool")
-		mcp := r.newMCPforCR()
 
 		// Create kata-oc only if it doesn't exist
-		foundMcp := &mcfgv1.MachineConfigPool{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
+		mcp := &mcfgv1.MachineConfigPool{}
+		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, mcp)
 		if err != nil && k8serrors.IsNotFound(err) {
 			r.Log.Info("Creating a new MachineConfigPool ", "machinePool", machinePool)
+			mcp = r.newMCPforCR()
 			err = r.Client.Create(context.TODO(), mcp)
 			if err != nil {
 				r.Log.Error(err, "Error in creating new MachineConfigPool ", "machinePool", machinePool)
@@ -973,7 +972,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		}
 
 		// Wait till MCP is ready
-		if foundMcp.Status.MachineCount == 0 {
+		if mcp.Status.MachineCount == 0 {
 			r.Log.Info("Waiting till MachineConfigPool is initialized ", "machinePool", machinePool)
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 		}
