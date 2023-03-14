@@ -59,8 +59,6 @@ type KataConfigStatus struct {
 	// Upgradestatus reflects the status of the ongoing kata upgrade
 	// +optional
 	Upgradestatus KataUpgradeStatus `json:"upgradeStatus,omitempty"`
-
-	BaseMcpGeneration int64 `json:"prevMcpGeneration"`
 }
 
 // +genclient

@@ -999,7 +999,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	}
 
 	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) &&
-		foundMcp.Status.ObservedGeneration > r.kataConfig.Status.BaseMcpGeneration &&
 		foundMcp.Status.UpdatedMachineCount == foundMcp.Status.MachineCount {
 		r.Log.Info("create runtime class")
 		r.kataConfig.Status.InstallationStatus.IsInProgress = "false"
@@ -1029,13 +1028,6 @@ func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (c
 		return ctrl.Result{}, err, true
 	}
 
-	foundMcp := &mcfgv1.MachineConfigPool{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
-	if err != nil && k8serrors.IsNotFound(err) {
-		r.Log.Info("MachineConfigPool not found", "machinePool", machinePool)
-		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil, false
-	}
-
 	/* Create Machine Config object to enable sandboxed containers RHCOS extension */
 	foundMc := &mcfgv1.MachineConfig{}
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, foundMc)
@@ -1048,7 +1040,6 @@ func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (c
 		/* mc created successfully - it will take a moment to finalize, requeue to create runtimeclass */
 		r.Log.Info("MachineConfig successfully created", "mc.Name", mc.Name)
 		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
-		r.kataConfig.Status.BaseMcpGeneration = foundMcp.Status.ObservedGeneration
 		return ctrl.Result{Requeue: true}, nil, true
 	}
 	return ctrl.Result{}, nil, false
@@ -1572,8 +1563,7 @@ func (r *KataConfigOpenShiftReconciler) updateInProgressNodes(node *corev1.Node,
 	if err != nil {
 		return err, inProgressList
 	}
-	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) &&
-		r.kataConfig.Status.BaseMcpGeneration < foundMcp.Status.ObservedGeneration {
+	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) {
 		inProgressList = append(inProgressList, node.GetName())
 	}
 
@@ -1587,7 +1577,6 @@ func (r *KataConfigOpenShiftReconciler) updateCompletedNodes(node *corev1.Node, 
 	}
 	currentNodeConfig, ok := node.Annotations["machineconfiguration.openshift.io/currentConfig"]
 	if ok && foundMcp.Spec.Configuration.Name == currentNodeConfig &&
-		r.kataConfig.Status.BaseMcpGeneration < foundMcp.Status.ObservedGeneration &&
 		(r.kataConfig.Status.InstallationStatus.IsInProgress == corev1.ConditionTrue ||
 			r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress == corev1.ConditionTrue) {
 
@@ -1606,8 +1595,7 @@ func (r *KataConfigOpenShiftReconciler) updateFailedNodes(node *corev1.Node,
 		return err, failedList
 	}
 	if (mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded) ||
-		mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)) &&
-		r.kataConfig.Status.BaseMcpGeneration < foundMcp.Status.ObservedGeneration {
+		mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)) {
 		failedList =
 			append(r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList,
 				kataconfigurationv1.FailedNodeStatus{Name: node.GetName(),
