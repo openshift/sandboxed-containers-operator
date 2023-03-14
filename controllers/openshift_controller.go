@@ -941,17 +941,17 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.Log.Info("SCNodeRole is: " + machinePool)
 	}
 
-	err = r.updateNodeLabels()
-	if err != nil {
-		if k8serrors.IsConflict(err) {
-			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
-		} else {
-			return ctrl.Result{Requeue: true}, nil
-		}
-	}
 
 	// Create kata-oc MCP only if it's not a converged cluster
 	if machinePool != "master" {
+		err = r.updateNodeLabels()
+		if err != nil {
+			if k8serrors.IsConflict(err) {
+				return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+			} else {
+				return ctrl.Result{Requeue: true}, nil
+			}
+		}
 
 		// Create kata-oc only if it doesn't exist
 		mcp := &mcfgv1.MachineConfigPool{}
