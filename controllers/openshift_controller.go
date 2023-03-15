@@ -688,10 +688,15 @@ func (r *KataConfigOpenShiftReconciler) getKataConfigNodeSelectorAsLabelSelector
 		return &metav1.LabelSelector { MatchLabels: map[string]string{ "node-role.kubernetes.io/master": "" }}
 	}
 
-	nodeSelector := r.kataConfig.Spec.KataConfigPoolSelector.DeepCopy()
+	nodeSelector := &metav1.LabelSelector{}
+	if r.kataConfig.Spec.KataConfigPoolSelector != nil {
+		nodeSelector = r.kataConfig.Spec.KataConfigPoolSelector.DeepCopy()
+	}
+
 	if r.kataConfig.Spec.CheckNodeEligibility {
 		nodeSelector = labelsutil.AddLabelToSelector(nodeSelector, "feature.node.kubernetes.io/runtime.kata", "true")
 	}
+	r.Log.Info("getKataConfigNodeSelectorAsLabelSelector()", "selector", nodeSelector)
 	return nodeSelector
 }
 
