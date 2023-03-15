@@ -100,6 +100,19 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	return func() (ctrl.Result, error) {
+
+		// k8s resource correctness checking on creation/modification
+		// isn't fully reliable for matchExpressions.  Specifically,
+		// it doesn't catch an invalid value of matchExpressions.operator.
+		// With this work-around we check early if our kata node selector
+		// is workable and bail out before making any changes to the
+		// cluster if it turns out it isn't.
+		_, err := r.getKataConfigNodeSelectorAsSelector()
+		if err != nil {
+			r.Log.Info("Invalid KataConfig.spec.kataConfigPoolSelector - please fix your KataConfig", "err", err)
+			return ctrl.Result{}, nil
+		}
+
 		// Check if the KataConfig instance is marked to be deleted, which is
 		// indicated by the deletion timestamp being set.
 		if r.kataConfig.GetDeletionTimestamp() != nil {
@@ -702,7 +715,7 @@ func (r *KataConfigOpenShiftReconciler) getKataConfigNodeSelectorAsLabelSelector
 
 func (r *KataConfigOpenShiftReconciler) getKataConfigNodeSelectorAsSelector() (labels.Selector, error) {
 	selector, err := metav1.LabelSelectorAsSelector(r.getKataConfigNodeSelectorAsLabelSelector())
-	r.Log.Info("getKataConfigNodeSelectorAsSelector()", "selector", selector)
+	r.Log.Info("getKataConfigNodeSelectorAsSelector()", "selector", selector, "err", err)
 	return selector, err
 }
 
@@ -1413,7 +1426,11 @@ func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (err error) {
 		return err
 	}
 
-	kataNodeSelector, _ := r.getKataConfigNodeSelectorAsSelector()
+	kataNodeSelector, err := r.getKataConfigNodeSelectorAsSelector()
+	if err != nil {
+		r.Log.Info("Couldn't getKataConfigNodeSelectorAsSelector()", "err", err)
+		return err
+	}
 
 	for _, worker := range workerNodeList.Items {
 		workerMatchesKata := kataNodeSelector.Matches(labels.Set(worker.Labels))
