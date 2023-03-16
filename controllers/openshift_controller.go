@@ -68,6 +68,7 @@ const (
 	dashboard_configmap_name      = "grafana-dashboard-sandboxed-containers"
 	dashboard_configmap_namespace = "openshift-config-managed"
 	container_runtime_config_name = "kata-crio-config"
+	extension_mc_name             = "50-enable-sandboxed-containers-extension"
 )
 
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs;kataconfigs/finalizers,verbs=get;list;watch;create;update;patch;delete
@@ -479,7 +480,7 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 			Kind:       "MachineConfig",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "50-enable-sandboxed-containers-extension",
+			Name: extension_mc_name,
 			Labels: map[string]string{
 				"machineconfiguration.openshift.io/role": machinePool,
 				"app":                                    r.kataConfig.Name,
@@ -1022,16 +1023,18 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 }
 
 func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (ctrl.Result, error, bool) {
-	r.Log.Info("creating RHCOS extension MachineConfig")
-	mc, err := r.newMCForCR(machinePool)
-	if err != nil {
-		return ctrl.Result{}, err, true
-	}
 
 	/* Create Machine Config object to enable sandboxed containers RHCOS extension */
-	foundMc := &mcfgv1.MachineConfig{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, foundMc)
+	mc := &mcfgv1.MachineConfig{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: extension_mc_name}, mc)
 	if err != nil && (k8serrors.IsNotFound(err) || k8serrors.IsGone(err)) {
+
+		r.Log.Info("creating RHCOS extension MachineConfig")
+		mc, err = r.newMCForCR(machinePool)
+		if err != nil {
+			return ctrl.Result{}, err, true
+		}
+
 		err = r.Client.Create(context.TODO(), mc)
 		if err != nil {
 			r.Log.Error(err, "Failed to create a new MachineConfig ", "mc.Name", mc.Name)
