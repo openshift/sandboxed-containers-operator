@@ -585,7 +585,7 @@ func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
+func (r *KataConfigOpenShiftReconciler) getMcpNameIfMcpExists() (string, error) {
 	r.Log.Info("Getting MachineConfigPool Name")
 
 	kataOC, err := r.kataOcExists()
@@ -600,6 +600,19 @@ func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
 	}
 	r.Log.Info("No valid MCP found")
 	return "", err
+}
+
+func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
+	isConvergedCluster, err := r.checkConvergedCluster()
+	if err != nil {
+		r.Log.Info("Error trying to find out if cluster is converged", "err", err)
+		return "", err
+	}
+	if isConvergedCluster {
+		return "master", nil
+	} else {
+		return "kata-oc", nil
+	}
 }
 
 func (r *KataConfigOpenShiftReconciler) createScc() error {
@@ -745,7 +758,7 @@ func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsLabelSelector() *metav1
 
 func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.Result, error) {
 	r.Log.Info("KataConfig deletion in progress: ")
-	machinePool, err := r.getMcpName()
+	machinePool, err := r.getMcpNameIfMcpExists()
 	if err != nil {
 		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
@@ -942,9 +955,15 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.Log.Info("SCNodeRole is: " + machinePool)
 	}
 
+	wasMcJustCreated, err := r.createExtensionMc(machinePool)
+	if err != nil {
+		return ctrl.Result{Requeue: true}, nil
+	} else if wasMcJustCreated {
+		return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, nil
+	}
 
 	// Create kata-oc MCP only if it's not a converged cluster
-	if machinePool != "master" {
+	if machinePool == "kata-oc" {
 		err = r.updateNodeLabels()
 		if err != nil {
 			if k8serrors.IsConflict(err) {
@@ -977,13 +996,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 			r.Log.Info("Waiting till MachineConfigPool is initialized ", "machinePool", machinePool)
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 		}
-	}
-
-	wasMcJustCreated, err := r.createExtensionMc(machinePool)
-	if err != nil {
-		return ctrl.Result{Requeue: true}, nil
-	} else if wasMcJustCreated {
-		return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, nil
 	}
 
 	foundMcp, doReconcile, err, done := r.updateStatus(machinePool)
@@ -1379,7 +1391,7 @@ func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error
 }
 
 func (r *KataConfigOpenShiftReconciler) getMcp() (*mcfgv1.MachineConfigPool, error) {
-	machinePool, err := r.getMcpName()
+	machinePool, err := r.getMcpNameIfMcpExists()
 	if err != nil {
 		return nil, err
 	}
