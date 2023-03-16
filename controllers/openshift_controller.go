@@ -977,9 +977,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		}
 	}
 
-	doReconcile, err, isMcCreated := r.createExtensionMc(machinePool)
-	if isMcCreated {
-		return doReconcile, err
+	wasMcJustCreated, err := r.createExtensionMc(machinePool)
+	if err != nil {
+		return ctrl.Result{Requeue: true}, nil
+	} else if wasMcJustCreated {
+		return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, nil
 	}
 
 	foundMcp, doReconcile, err, done := r.updateStatus(machinePool)
@@ -1020,7 +1022,16 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	return ctrl.Result{}, nil
 }
 
-func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (ctrl.Result, error, bool) {
+// If the first return value is 'true' it means that the MC was just created
+// by this call, 'false' means that it's already existed.  As usual, the first
+// return value is only valid if the second one is nil.
+func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (bool, error) {
+
+	// In case we're returning an error we want to make it explicit that
+	// the first return value is "not care".  Unfortunately golang seems
+	// to lack syntax for creating an expression with default bool value
+	// hence this work-around.
+	var dummy bool
 
 	/* Create Machine Config object to enable sandboxed containers RHCOS extension */
 	mc := &mcfgv1.MachineConfig{}
@@ -1030,20 +1041,24 @@ func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (c
 		r.Log.Info("creating RHCOS extension MachineConfig")
 		mc, err = r.newMCForCR(machinePool)
 		if err != nil {
-			return ctrl.Result{}, err, true
+			return dummy, err
 		}
 
 		err = r.Client.Create(context.TODO(), mc)
 		if err != nil {
 			r.Log.Error(err, "Failed to create a new MachineConfig ", "mc.Name", mc.Name)
-			return ctrl.Result{}, err, true
+			return dummy, err
 		}
-		/* mc created successfully - it will take a moment to finalize, requeue to create runtimeclass */
 		r.Log.Info("MachineConfig successfully created", "mc.Name", mc.Name)
 		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
-		return ctrl.Result{Requeue: true}, nil, true
+		return true, nil
+	} else if err != nil {
+		r.Log.Info("failed to retrieve extension MachineConfig", "err", err)
+		return dummy, err
+	} else {
+		r.Log.Info("extension MachineConfig already exists")
+		return false, nil
 	}
-	return ctrl.Result{}, nil, false
 }
 
 func (r *KataConfigOpenShiftReconciler) makeReconcileRequest() reconcile.Request {
