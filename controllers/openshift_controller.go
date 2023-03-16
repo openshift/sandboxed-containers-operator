@@ -61,7 +61,6 @@ type KataConfigOpenShiftReconciler struct {
 
 	clientset  kubernetes.Interface
 	kataConfig *kataconfigurationv1.KataConfig
-	Os         OperatingSystem
 }
 
 const (
