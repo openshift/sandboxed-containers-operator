@@ -20,10 +20,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
+	"time"
 
 	"github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller/api/v1alpha1"
-
-	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 
@@ -41,11 +41,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	labelsutil "k8s.io/kubernetes/pkg/util/labels"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
@@ -104,6 +106,19 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	return func() (ctrl.Result, error) {
+
+		// k8s resource correctness checking on creation/modification
+		// isn't fully reliable for matchExpressions.  Specifically,
+		// it doesn't catch an invalid value of matchExpressions.operator.
+		// With this work-around we check early if our kata node selector
+		// is workable and bail out before making any changes to the
+		// cluster if it turns out it isn't.
+		_, err := r.getKataConfigNodeSelectorAsSelector()
+		if err != nil {
+			r.Log.Info("Invalid KataConfig.spec.kataConfigPoolSelector - please fix your KataConfig", "err", err)
+			return ctrl.Result{}, nil
+		}
+
 		// Check if the KataConfig instance is marked to be deleted, which is
 		// indicated by the deletion timestamp being set.
 		if r.kataConfig.GetDeletionTimestamp() != nil {
@@ -403,39 +418,12 @@ func (r *KataConfigOpenShiftReconciler) processDashboardConfigMap() *corev1.Conf
 	}
 }
 
-func (r *KataConfigOpenShiftReconciler) newMCPforCR() (*mcfgv1.MachineConfigPool, error) {
+func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool {
 	lsr := metav1.LabelSelectorRequirement{
 		Key:      "machineconfiguration.openshift.io/role",
 		Operator: metav1.LabelSelectorOpIn,
 		Values:   []string{"kata-oc", "worker"},
 	}
-
-	// Default NodeSelector is all machines with worker label.
-	// Otherwise all nodes including the control plane nodes will be put under new MCP
-	nodeSelector := &metav1.LabelSelector{MatchLabels: map[string]string{"node-role.kubernetes.io/worker": ""}}
-
-	if r.kataConfig.Spec.CheckNodeEligibility {
-		nodeSelector = metav1.AddLabelToSelector(nodeSelector, "feature.node.kubernetes.io/runtime.kata", "true")
-	}
-
-	if r.kataConfig.Spec.KataConfigPoolSelector != nil {
-		// KataConfigPoolSelector can be a MatchExpression or MatchLabel. Need to Convert MatchExpression to MatchLabel
-		// and add it to nodeSelector
-		lsMap, err := metav1.LabelSelectorAsMap(r.kataConfig.Spec.KataConfigPoolSelector)
-		if err != nil {
-			r.Log.Error(err, "Unable to parse KataConfigPoolSelector")
-		}
-		//Add labels to nodeSelector
-		for k, v := range lsMap {
-			nodeSelector = metav1.AddLabelToSelector(nodeSelector, k, v)
-		}
-	}
-
-	// Add the MCP anchor label to NodeSelector. This label is handled by the Operator
-	mcpNodeSelector := metav1.CloneSelectorAndAddLabel(nodeSelector, "node-role.kubernetes.io/kata-oc", "")
-
-	r.Log.Info("NodeSelector: ", "nodeSelector", nodeSelector)
-	r.Log.Info("mcpNodeSelector: ", "mcpNodeSelector", mcpNodeSelector)
 
 	mcp := &mcfgv1.MachineConfigPool{
 		TypeMeta: metav1.TypeMeta{
@@ -458,13 +446,11 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() (*mcfgv1.MachineConfigPool
 			MachineConfigSelector: &metav1.LabelSelector{
 				MatchExpressions: []metav1.LabelSelectorRequirement{lsr},
 			},
-			NodeSelector: mcpNodeSelector,
+			NodeSelector: r.getNodeSelectorAsLabelSelector(),
 		},
 	}
 
-	// Add the anchor label: "node-role.kubernetes.io/kata-oc" to Nodes for MCP handling
-	err := r.labelNodes(nodeSelector)
-	return mcp, err
+	return mcp
 }
 
 func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
@@ -481,6 +467,17 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 		return nil, err
 	}
 
+	// RHCOS uses "sandboxed-containers" as thats resolved/translated in the machine-config-operator to "kata-containers"
+	// FCOS however does not get any translation in the machine-config-operator so we need to
+	// send in "kata-containers".
+	// Both are later send to rpm-ostree for installation.
+	//
+	// As RHCOS is rather special variant, use "kata-containers" by default, which also applies to FCOS
+	extension := os.Getenv("SANDBOXED_CONTAINERS_EXTENSION")
+	if len(extension) == 0 {
+		extension = "kata-containers"
+	}
+
 	mc := mcfgv1.MachineConfig{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "machineconfiguration.openshift.io/v1",
@@ -495,7 +492,7 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 			Namespace: "openshift-sandboxed-containers-operator",
 		},
 		Spec: mcfgv1.MachineConfigSpec{
-			Extensions: []string{"sandboxed-containers"},
+			Extensions: []string{extension},
 			Config: runtime.RawExtension{
 				Raw: icb,
 			},
@@ -590,40 +587,6 @@ func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
 	}
 
 	return nil
-}
-
-func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsMap() map[string]string {
-	r.Log.Info("Getting NodeSelector")
-
-	// NodeSelector field in RuntimeClass and PodSpec is key:value map
-	nodeSelector := make(map[string]string)
-
-	isConvergedCluster, err := r.checkConvergedCluster()
-	if err == nil && isConvergedCluster {
-		// master MCP cannot be customized
-		nodeSelector["node-role.kubernetes.io/master"] = ""
-	} else {
-		nodeSelector["node-role.kubernetes.io/kata-oc"] = ""
-
-		if r.kataConfig.Spec.CheckNodeEligibility {
-			nodeSelector["feature.node.kubernetes.io/runtime.kata"] = "true"
-		}
-
-		if r.kataConfig.Spec.KataConfigPoolSelector != nil {
-			r.Log.Info("KataConfigPoolSelector:", "r.kataConfig.Spec.KataConfigPoolSelector", r.kataConfig.Spec.KataConfigPoolSelector)
-			lsMap, err := metav1.LabelSelectorAsMap(r.kataConfig.Spec.KataConfigPoolSelector)
-			if err != nil {
-				r.Log.Error(err, "Unable to get nodeSelector from KataConfigPoolSelector ")
-			} else {
-				// Add the labels to nodeSelector
-				for k, v := range lsMap {
-					nodeSelector[k] = v
-				}
-			}
-		}
-	}
-	r.Log.Info("Nodeselector", "nodeSelector", nodeSelector)
-	return nodeSelector
 }
 
 func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
@@ -731,6 +694,58 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName stri
 	return nil
 }
 
+// "KataConfigNodeSelector" in the names of the following couple of helper
+// functions refers to the value of KataConfig.spec.kataConfigPoolSelector,
+// i.e. the original selector supplied by the user of KataConfig.
+func (r *KataConfigOpenShiftReconciler) getKataConfigNodeSelectorAsLabelSelector() *metav1.LabelSelector {
+
+	isConvergedCluster, err := r.checkConvergedCluster()
+	if err == nil && isConvergedCluster {
+		// master MCP cannot be customized
+		return &metav1.LabelSelector { MatchLabels: map[string]string{ "node-role.kubernetes.io/master": "" }}
+	}
+
+	nodeSelector := &metav1.LabelSelector{}
+	if r.kataConfig.Spec.KataConfigPoolSelector != nil {
+		nodeSelector = r.kataConfig.Spec.KataConfigPoolSelector.DeepCopy()
+	}
+
+	if r.kataConfig.Spec.CheckNodeEligibility {
+		nodeSelector = labelsutil.AddLabelToSelector(nodeSelector, "feature.node.kubernetes.io/runtime.kata", "true")
+	}
+	r.Log.Info("getKataConfigNodeSelectorAsLabelSelector()", "selector", nodeSelector)
+	return nodeSelector
+}
+
+func (r *KataConfigOpenShiftReconciler) getKataConfigNodeSelectorAsSelector() (labels.Selector, error) {
+	selector, err := metav1.LabelSelectorAsSelector(r.getKataConfigNodeSelectorAsLabelSelector())
+	r.Log.Info("getKataConfigNodeSelectorAsSelector()", "selector", selector, "err", err)
+	return selector, err
+}
+
+// "NodeSelector" in the names of the following couple of helper
+// functions refers to the selector we pass to resources we create that
+// need to select kata-enabled nodes (currently the "kata-oc" MCP, the pod
+// template in the monitor daemonset and the runtimeclass).  It's guaranteed
+// to be a simple map[string]string (AKA MatchLabels) which is good because the
+// pod template's and runtimeclass' node selectors don't support
+// MatchExpressions and thus cannot hold the full value of
+// KataConfig.spec.kataConfigPoolSelector.
+func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsMap() map[string]string {
+
+	isConvergedCluster, err := r.checkConvergedCluster()
+	if err == nil && isConvergedCluster {
+		// master MCP cannot be customized
+		return map[string]string{ "node-role.kubernetes.io/master": "" }
+	} else {
+		return map[string]string{"node-role.kubernetes.io/kata-oc": ""}
+	}
+}
+
+func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsLabelSelector() *metav1.LabelSelector {
+	return &metav1.LabelSelector{MatchLabels: r.getNodeSelectorAsMap()}
+}
+
 func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.Result, error) {
 	r.Log.Info("KataConfig deletion in progress: ")
 	machinePool, err := r.getMcpName()
@@ -763,6 +778,21 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 					return ctrl.Result{}, updErr
 				}
 			}
+		}
+	}
+
+	kataNodeSelector, err := r.getKataConfigNodeSelectorAsSelector()
+	if err != nil {
+		r.Log.Info("Couldn't get node selector for unlabelling nodes", "err", err)
+		return ctrl.Result{Requeue: true}, nil
+	}
+	err = r.unlabelNodes(kataNodeSelector)
+
+	if err != nil {
+		if k8serrors.IsConflict(err) {
+			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+		} else {
+			return ctrl.Result{Requeue: true}, nil
 		}
 	}
 
@@ -924,19 +954,19 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.Log.Info("SCNodeRole is: " + machinePool)
 	}
 
+	err = r.updateNodeLabels()
+	if err != nil {
+		if k8serrors.IsConflict(err) {
+			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+		} else {
+			return ctrl.Result{Requeue: true}, nil
+		}
+	}
+
 	// Create kata-oc MCP only if it's not a converged cluster
 	if machinePool != "master" {
 		r.Log.Info("Creating new MachineConfigPool")
-		mcp, err := r.newMCPforCR()
-		if err != nil {
-			if k8serrors.IsConflict(err) {
-				r.Log.Info("Conflict in creating new MachineConfigPool", "machinePool", machinePool)
-				return ctrl.Result{Requeue: true, RequeueAfter: 20 * time.Second}, nil
-			} else {
-				r.Log.Error(err, "Error in creating new MachineConfigPool", "machinePool", machinePool)
-				return ctrl.Result{}, err
-			}
-		}
+		mcp := r.newMCPforCR()
 
 		// Create kata-oc only if it doesn't exist
 		foundMcp := &mcfgv1.MachineConfigPool{}
@@ -953,25 +983,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		} else if err != nil {
 			r.Log.Error(err, "Error in retreiving MachineConfigPool ", "machinePool", machinePool)
 			return ctrl.Result{}, err
-		}
-
-		// Update node selector in machine config pool with value from kataconfig instance
-		r.Log.Info("Updating machine config pool name ", "found Mcp name", foundMcp.Name)
-		foundMcp.Spec.NodeSelector.MatchLabels = make(map[string]string)
-		if r.kataConfig.Spec.KataConfigPoolSelector != nil {
-			for key, value := range r.kataConfig.Spec.KataConfigPoolSelector.MatchLabels {
-				foundMcp.Spec.NodeSelector.MatchLabels[key] = value
-			}
-			foundMcp.Spec.NodeSelector.MatchExpressions = r.kataConfig.Spec.KataConfigPoolSelector.MatchExpressions
-		}
-		foundMcp.Spec.NodeSelector.MatchLabels["node-role.kubernetes.io/worker"] = ""
-		foundMcp.Spec.NodeSelector.MatchLabels["node-role.kubernetes.io/kata-oc"] = ""
-		foundMcp.ObjectMeta.Labels = map[string]string{"pools.operator.machineconfiguration.openshift.io/kata-oc": ""}
-
-		err = r.Client.Update(context.TODO(), foundMcp)
-		if err != nil {
-			r.Log.Error(err, "Error when updating MachineConfigPool")
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 		}
 
 		// Wait till MCP is ready
@@ -1057,24 +1068,307 @@ func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (c
 	return ctrl.Result{}, nil, false
 }
 
-func (r *KataConfigOpenShiftReconciler) mapKataConfigToRequests(kataConfigObj client.Object) []reconcile.Request {
+func (r *KataConfigOpenShiftReconciler) makeReconcileRequest() reconcile.Request {
+	return reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name: r.kataConfig.Name,
+		},
+	}
+}
 
-	kataConfigList := &kataconfigurationv1.KataConfigList{}
+func isMcpRelevant(mcp client.Object) bool {
+	mcpName := mcp.GetName()
+	if mcpName == "kata-oc" || mcpName == "worker" {
+		return true
+	}
+	return false
+}
 
-	err := r.Client.List(context.TODO(), kataConfigList)
+const missingMcpStatusConditionStr = "<missing>"
+
+func logMcpChange(log logr.Logger, statusOld, statusNew mcfgv1.MachineConfigPoolStatus) {
+
+	log.Info("MCP updated")
+
+	if statusOld.MachineCount != statusNew.MachineCount {
+		log.Info("MachineCount changed", "old", statusOld.MachineCount, "new", statusNew.MachineCount)
+	} else {
+		log.Info("MachineCount", "#", statusNew.MachineCount)
+	}
+	if statusOld.ReadyMachineCount != statusNew.ReadyMachineCount {
+		log.Info("ReadyMachineCount changed", "old", statusOld.ReadyMachineCount, "new", statusNew.ReadyMachineCount)
+	} else {
+		log.Info("ReadyMachineCount", "#", statusNew.ReadyMachineCount)
+	}
+	if statusOld.UpdatedMachineCount != statusNew.UpdatedMachineCount {
+		log.Info("UpdatedMachineCount changed", "old", statusOld.UpdatedMachineCount, "new", statusNew.UpdatedMachineCount)
+	} else {
+		log.Info("UpdatedMachineCount", "#", statusNew.UpdatedMachineCount)
+	}
+	if statusOld.DegradedMachineCount != statusNew.DegradedMachineCount {
+		log.Info("DegradedMachineCount changed", "old", statusOld.DegradedMachineCount, "new", statusNew.DegradedMachineCount)
+	} else {
+		log.Info("DegradedMachineCount", "#", statusNew.DegradedMachineCount)
+	}
+	if statusOld.ObservedGeneration != statusNew.ObservedGeneration {
+		log.Info("ObservedGeneration changed", "old", statusOld.ObservedGeneration, "new", statusNew.ObservedGeneration)
+	}
+
+	if !reflect.DeepEqual(statusOld.Conditions, statusNew.Conditions) {
+
+		for _, condType := range []mcfgv1.MachineConfigPoolConditionType{"Updating", "Updated"} {
+			condOld := mcfgv1.GetMachineConfigPoolCondition(statusOld, condType)
+			condNew := mcfgv1.GetMachineConfigPoolCondition(statusNew, condType)
+			condStatusOld := missingMcpStatusConditionStr
+			if condOld != nil {
+				condStatusOld = string(condOld.Status)
+			}
+			condStatusNew := missingMcpStatusConditionStr
+			if condNew != nil {
+				condStatusNew = string(condNew.Status)
+			}
+
+			if condStatusOld != condStatusNew {
+				log.Info("mcp.status.conditions[] changed", "type", condType, "old", condStatusOld, "new", condStatusNew)
+			}
+		}
+	}
+}
+
+type McpEventHandler struct {
+	reconciler *KataConfigOpenShiftReconciler
+}
+
+func (eh *McpEventHandler) Create(event event.CreateEvent, queue workqueue.RateLimitingInterface) {
+	mcp := event.Object
+
+	if !isMcpRelevant(mcp) {
+		return
+	}
+
+	// Don't reconcile on MCP creation since we're unlikely to witness "worker"
+	// creation and "kata-oc" should be only created by this controller.
+	// Log the event anyway.
+	log := eh.reconciler.Log.WithName("McpCreate").WithValues("MCP name", mcp.GetName())
+	log.Info("MCP created")
+}
+
+func (eh *McpEventHandler) Update(event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
+	mcpOld := event.ObjectOld
+	mcpNew := event.ObjectNew
+
+	if !isMcpRelevant(mcpNew) {
+		return
+	}
+
+	statusOld := mcpOld.(*mcfgv1.MachineConfigPool).Status
+	statusNew := mcpNew.(*mcfgv1.MachineConfigPool).Status
+	if reflect.DeepEqual(statusOld, statusNew) {
+		return
+	}
+
+	foundRelevantChange := false
+
+	if statusOld.MachineCount != statusNew.MachineCount {
+		foundRelevantChange = true
+	} else if statusOld.ReadyMachineCount != statusNew.ReadyMachineCount {
+		foundRelevantChange = true
+	} else if statusOld.UpdatedMachineCount != statusNew.UpdatedMachineCount {
+		foundRelevantChange = true
+	} else if statusOld.DegradedMachineCount != statusNew.DegradedMachineCount {
+		foundRelevantChange = true
+	}
+
+	if !reflect.DeepEqual(statusOld.Conditions, statusNew.Conditions) {
+
+		for _, condType := range []mcfgv1.MachineConfigPoolConditionType{"Updating", "Updated"} {
+			condOld := mcfgv1.GetMachineConfigPoolCondition(statusOld, condType)
+			condNew := mcfgv1.GetMachineConfigPoolCondition(statusNew, condType)
+			condStatusOld := missingMcpStatusConditionStr
+			if condOld != nil {
+				condStatusOld = string(condOld.Status)
+			}
+			condStatusNew := missingMcpStatusConditionStr
+			if condNew != nil {
+				condStatusNew = string(condNew.Status)
+			}
+
+			if condStatusOld != condStatusNew {
+				foundRelevantChange = true
+			}
+		}
+	}
+
+	if eh.reconciler.kataConfig != nil && foundRelevantChange {
+
+		log := eh.reconciler.Log.WithName("McpUpdate").WithValues("MCP name", mcpOld.GetName())
+		logMcpChange(log, statusOld, statusNew)
+
+		queue.Add(eh.reconciler.makeReconcileRequest())
+	}
+}
+
+func (eh *McpEventHandler) Delete(event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
+	mcp := event.Object
+
+	if !isMcpRelevant(mcp) {
+		return
+	}
+
+	// Don't reconcile on MCP deletion since "worker" should never be deleted and
+	// "kata-oc" should be only deleted by this controller.  Log the event anyway.
+	log := eh.reconciler.Log.WithName("McpDelete").WithValues("MCP name", mcp.GetName())
+	log.Info("MCP deleted")
+}
+
+func (eh *McpEventHandler) Generic(event event.GenericEvent, queue workqueue.RateLimitingInterface) {
+	mcp := event.Object
+
+	if !isMcpRelevant(mcp) {
+		return
+	}
+
+	// Don't reconcile on MCP generic event since it's not quite clear ATM
+	// what it even means (we might revisit this later).  Log the event anyway.
+	log := eh.reconciler.Log.WithName("McpGenericEvt").WithValues("MCP name", mcp.GetName())
+	log.Info("MCP generic event")
+}
+
+
+func (r *KataConfigOpenShiftReconciler) nodeMatchesKataSelector(nodeLabels map[string]string) bool {
+	nodeSelector, err := r.getKataConfigNodeSelectorAsSelector()
+
 	if err != nil {
-		return []reconcile.Request{}
+		r.Log.Info("couldn't get kata node selector", "err", err)
+		// If we cannot find out whether a Node matches assuming that it
+		// doesn't seems to be the safer assumption.  This also seems
+		// consistent with error-handling semantics of earlier similar code.
+		return false
 	}
 
-	reconcileRequests := make([]reconcile.Request, len(kataConfigList.Items))
-	for _, kataconfig := range kataConfigList.Items {
-		reconcileRequests = append(reconcileRequests, reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Name: kataconfig.Name,
-			},
-		})
+	return nodeSelector.Matches(labels.Set(nodeLabels))
+}
+
+func isWorkerNode(node client.Object) bool {
+	if _, ok := node.GetLabels()["node-role.kubernetes.io/worker"]; ok {
+		return true
 	}
-	return reconcileRequests
+	return false
+}
+
+func getStringMapDiff(oldMap, newMap map[string]string) (added, modified, removed map[string]string) {
+	added = map[string]string{}
+	modified = map[string]string{}
+	removed = map[string]string{}
+
+	if oldMap == nil {
+		added = newMap
+		return
+	}
+
+	if newMap == nil {
+		removed = oldMap
+		return
+	}
+
+	for newKey, newVal := range newMap {
+		if _, ok := oldMap[newKey]; !ok {
+			added[newKey] = newVal
+		}
+	}
+	for oldKey, oldVal := range oldMap {
+		if _, ok := newMap[oldKey]; !ok {
+			removed[oldKey] = oldVal
+		} else {
+			if oldMap[oldKey] != newMap[oldKey] {
+				modified[oldKey] = newMap[oldKey]
+			}
+		}
+	}
+	return added, modified, removed
+}
+
+
+type NodeEventHandler struct {
+	reconciler *KataConfigOpenShiftReconciler
+}
+
+func (eh *NodeEventHandler) Create(event event.CreateEvent, queue workqueue.RateLimitingInterface) {
+	node := event.Object
+
+	log := eh.reconciler.Log.WithName("NodeCreate").WithValues("node name", node.GetName())
+	log.Info("node created")
+
+	if !isWorkerNode(node) {
+		return
+	}
+
+	if eh.reconciler.kataConfig == nil {
+		return
+	}
+
+	if !eh.reconciler.nodeMatchesKataSelector(node.GetLabels()) {
+		return
+	}
+	log.Info("node matches kata node selector", "node labels", node.GetLabels())
+
+	queue.Add(eh.reconciler.makeReconcileRequest())
+}
+
+func (eh *NodeEventHandler) Update(event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
+	// This function assumes that a node cannot change its role from master to
+	// worker or vice-versa.
+	nodeOld := event.ObjectOld
+	nodeNew := event.ObjectNew
+
+	log := eh.reconciler.Log.WithName("NodeUpdate").WithValues("node name", nodeNew.GetName())
+
+	if !isWorkerNode(nodeNew) {
+		return
+	}
+
+	if eh.reconciler.kataConfig == nil {
+		return
+	}
+
+	foundRelevantChange := false
+
+	// no need to check the second return value of the indexing operation
+	// as "" is not a valid machineconfiguration.openshift.io/state value
+	stateOld := nodeOld.GetAnnotations()["machineconfiguration.openshift.io/state"]
+	stateNew := nodeNew.GetAnnotations()["machineconfiguration.openshift.io/state"]
+	if stateOld != stateNew {
+		foundRelevantChange = true
+		log.Info("machineconfiguration.openshift.io/state changed", "old", stateOld, "new", stateNew)
+	}
+
+	labelsOld := nodeOld.GetLabels()
+	labelsNew := nodeNew.GetLabels()
+
+	if !reflect.DeepEqual(labelsOld, labelsNew) {
+
+		log.Info("labels changed", "old", labelsOld, "new", labelsNew)
+		added, modified, removed := getStringMapDiff(labelsOld, labelsNew)
+		log.Info("labels diff", "added", added, "modified", modified, "removed", removed)
+
+		matchOld := eh.reconciler.nodeMatchesKataSelector(labelsOld)
+		matchNew := eh.reconciler.nodeMatchesKataSelector(labelsNew)
+
+		log.Info("labels matching kata node selector", "old", matchOld, "new", matchNew)
+		if matchOld != matchNew {
+			foundRelevantChange = true
+		}
+	}
+
+	if foundRelevantChange {
+		queue.Add(eh.reconciler.makeReconcileRequest())
+	}
+}
+
+func (eh *NodeEventHandler) Delete(event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
+}
+
+func (eh *NodeEventHandler) Generic(event event.GenericEvent, queue workqueue.RateLimitingInterface) {
 }
 
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -1082,7 +1376,10 @@ func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error
 		For(&kataconfigurationv1.KataConfig{}).
 		Watches(
 			&source.Kind{Type: &mcfgv1.MachineConfigPool{}},
-			handler.EnqueueRequestsFromMapFunc(r.mapKataConfigToRequests)).
+			&McpEventHandler{r}).
+		Watches(
+			&source.Kind{Type: &corev1.Node{}},
+			&NodeEventHandler{r}).
 		Complete(r)
 }
 
@@ -1130,11 +1427,56 @@ func (r *KataConfigOpenShiftReconciler) getNodesWithLabels(nodeLabels map[string
 	return nil, nodes
 }
 
-func (r *KataConfigOpenShiftReconciler) labelNodes(nodeSelector *metav1.LabelSelector) (err error) {
-	labelSelector, _ := metav1.LabelSelectorAsSelector(nodeSelector)
+func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (err error) {
+	workerNodeList := &corev1.NodeList{}
+	workerSelector := labels.SelectorFromSet(map[string]string{"node-role.kubernetes.io/worker": ""})
+	listOpts := []client.ListOption{
+		client.MatchingLabelsSelector{Selector: workerSelector},
+	}
+
+	if err := r.Client.List(context.TODO(), workerNodeList, listOpts...); err != nil {
+		r.Log.Error(err, "Getting list of nodes failed")
+		return err
+	}
+
+	kataNodeSelector, err := r.getKataConfigNodeSelectorAsSelector()
+	if err != nil {
+		r.Log.Info("Couldn't getKataConfigNodeSelectorAsSelector()", "err", err)
+		return err
+	}
+
+	for _, worker := range workerNodeList.Items {
+		workerMatchesKata := kataNodeSelector.Matches(labels.Set(worker.Labels))
+		_, workerLabeledForKata := worker.Labels["node-role.kubernetes.io/kata-oc"]
+
+		isLabelUpToDate := (workerMatchesKata && workerLabeledForKata) || (!workerMatchesKata && !workerLabeledForKata)
+
+		if isLabelUpToDate {
+			continue
+		}
+
+		if workerMatchesKata && !workerLabeledForKata {
+			r.Log.Info("worker labeled", "node", worker.GetName())
+			worker.Labels["node-role.kubernetes.io/kata-oc"] = ""
+		} else if !workerMatchesKata && workerLabeledForKata {
+			r.Log.Info("worker unlabeled", "node", worker.GetName())
+			delete(worker.Labels, "node-role.kubernetes.io/kata-oc")
+		}
+
+		err = r.Client.Update(context.TODO(), &worker)
+		if err != nil {
+			r.Log.Error(err, "Error when adding labels to node", "node", worker)
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selector) (err error) {
 	nodeList := &corev1.NodeList{}
 	listOpts := []client.ListOption{
-		client.MatchingLabelsSelector{Selector: labelSelector},
+		client.MatchingLabelsSelector{Selector: nodeSelector},
 	}
 
 	if err := r.Client.List(context.TODO(), nodeList, listOpts...); err != nil {
@@ -1143,30 +1485,16 @@ func (r *KataConfigOpenShiftReconciler) labelNodes(nodeSelector *metav1.LabelSel
 	}
 
 	for _, node := range nodeList.Items {
-		if _, ok := node.Labels["node-role.kubernetes.io/kata-oc"]; !ok {
-			node.Labels["node-role.kubernetes.io/kata-oc"] = ""
+		if _, ok := node.Labels["node-role.kubernetes.io/kata-oc"]; ok {
+			delete(node.Labels, "node-role.kubernetes.io/kata-oc")
+			err = r.Client.Update(context.TODO(), &node)
+			if err != nil {
+				r.Log.Error(err, "Error when removing labels from node", "node", node)
+				return err
+			}
 		}
-		err = r.Client.Update(context.TODO(), &node)
-		if err != nil {
-			r.Log.Error(err, "Error when adding labels to node", "node", node)
-			return err
-		}
-
 	}
 	return nil
-
-}
-
-func (r *KataConfigOpenShiftReconciler) unlabelNode(node *corev1.Node) (err error) {
-	delete(node.Labels, "node-role.kubernetes.io/kata-oc")
-	err = r.Client.Update(context.TODO(), node)
-	if err != nil {
-		r.Log.Error(err, "Error when removing labels from node: ", "node", node)
-		return err
-	}
-
-	return nil
-
 }
 
 func (r *KataConfigOpenShiftReconciler) getConditionReason(conditions []mcfgv1.MachineConfigPoolCondition, conditionType mcfgv1.MachineConfigPoolConditionType) string {
@@ -1238,10 +1566,6 @@ func (r *KataConfigOpenShiftReconciler) updateUninstallStatus() (error, bool) {
 			case "Done":
 				err, r.kataConfig.Status.UnInstallationStatus.Completed =
 					r.updateCompletedNodes(&node, r.kataConfig.Status.UnInstallationStatus.Completed)
-				if err == nil {
-					// Unlabel the Node
-					err = r.unlabelNode(&node)
-				}
 			case "Degraded":
 				err, r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList =
 					r.updateFailedNodes(&node, r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList)

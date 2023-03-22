@@ -22,6 +22,7 @@ import (
 	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller/controllers"
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
+	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -66,6 +67,12 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
+func SetTimeEncoderToRfc3339() zap.Opts {
+	return func(o *zap.Options) {
+		o.TimeEncoder = zapcore.RFC3339TimeEncoder
+	}
+}
+
 func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
@@ -75,7 +82,7 @@ func main() {
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), SetTimeEncoderToRfc3339()))
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:             scheme,

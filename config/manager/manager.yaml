@@ -61,6 +61,8 @@ spec:
           value: "openshift-sandboxed-containers-operator"
         - name: KATA_MONITOR_IMAGE
           value: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest
+        - name: SANDBOXED_CONTAINERS_EXTENSION
+          value: kata-containers
         imagePullPolicy: Always
         resources:
           limits:
