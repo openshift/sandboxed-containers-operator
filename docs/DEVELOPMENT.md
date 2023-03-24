@@ -25,6 +25,17 @@ In summary:
 - log in from the command line with the provided command
 - use "oc registry login" to save the token locally
 
+### Using public images
+
+If you cannot login to registry.ci.openshift.org, a temporary solution is to use 
+public images during build and test. At the time of writing, the following public images
+does the trick.
+
+```shell
+export BUILDER_IMAGE=registry.ci.openshift.org/openshift/release:golang-1.18
+export TARGET_IMAGE=registry.ci.openshift.org/origin/4.10:base
+make docker-build
+```
 
 ## Set Environment Variables
 
