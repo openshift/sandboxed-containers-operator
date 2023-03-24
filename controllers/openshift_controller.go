@@ -1017,7 +1017,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		foundMcp.Status.UpdatedMachineCount == foundMcp.Status.MachineCount {
 		r.Log.Info("create runtime class")
 		r.kataConfig.Status.InstallationStatus.IsInProgress = "false"
-		err := r.createRuntimeClass("kata", "250M", "350Mi")
+		err := r.createRuntimeClass("kata", "0.25", "350Mi")
 		if err != nil {
 			// Give sometime for the error to go away before reconciling again
 			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
@@ -1731,7 +1731,7 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPods() error {
 		return err
 	}
 
-	err = r.createRuntimeClass("kata-remote-cc", "250M", "350Mi")
+	err = r.createRuntimeClass("kata-remote-cc", "0.25", "350Mi")
 
 	return err
 }
