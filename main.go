@@ -19,7 +19,7 @@ package main
 import (
 	"context"
 	"flag"
-	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller/controllers"
+	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/controllers"
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
 	"go.uber.org/zap/zapcore"
@@ -37,7 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	peerpodconfig "github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller/api/v1alpha1"
+	peerpodconfig "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/api/v1alpha1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	"github.com/openshift/sandboxed-containers-operator/controllers"
 	// +kubebuilder:scaffold:imports
