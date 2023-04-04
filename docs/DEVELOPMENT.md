@@ -74,7 +74,7 @@ metadata:
  name:  my-operator-catalog
  namespace: openshift-marketplace
 spec:
- DisplayName: My Operator Catalog
+ displayName: My Operator Catalog
  sourceType: grpc
  image:  quay.io/user/openshift-sandboxed-containers-operator-catalog:version
  updateStrategy:
