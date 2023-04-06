@@ -576,6 +576,11 @@ func (r *KataConfigOpenShiftReconciler) checkConvergedCluster() (bool, error) {
 func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
 	r.Log.Info("Check Node Eligibility to run Kata containers")
 	// Check if node eligibility label exists
+
+	if r.kataConfig.Spec.EnablePeerPods {
+		r.Log.Info("enablePeerPods is true. Skipping since they are mutually exclusive.")
+		return nil
+	}
 	err, nodes := r.getNodesWithLabels(map[string]string{"feature.node.kubernetes.io/runtime.kata": "true"})
 	if err != nil {
 		r.Log.Error(err, "Error in getting list of nodes with label: feature.node.kubernetes.io/runtime.kata")
