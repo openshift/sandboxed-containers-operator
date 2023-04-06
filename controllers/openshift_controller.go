@@ -19,11 +19,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 	"reflect"
 	"time"
 
 	"github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/api/v1alpha1"
+	"gopkg.in/yaml.v2"
 
 	appsv1 "k8s.io/api/apps/v1"
 
@@ -451,6 +454,24 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool 
 	}
 
 	return mcp
+}
+
+func parseMachineConfigYAML(yamlData []byte) (*mcfgv1.MachineConfig, error) {
+	machineConfig := &mcfgv1.MachineConfig{}
+	err := yaml.Unmarshal(yamlData, machineConfig)
+	if err != nil {
+		return nil, err
+	}
+	return machineConfig, nil
+}
+
+func getMachineConfigYAML(mcFilename string) ([]byte, error) {
+	machineConfigFilePath := filepath.Join("config", "peerpods", mcFilename)
+	yamlData, err := ioutil.ReadFile(machineConfigFilePath)
+	if err != nil {
+		return nil, err
+	}
+	return yamlData, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
@@ -1731,7 +1752,44 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPods() error {
 		return err
 	}
 
+	// Create or update the MachineConfig using the Kubernetes client
+	// Update the existing MachineConfig
+	err = r.createMcFromFile("mc-40-kata-remote-config.yaml")
+	if err != nil {
+		return err
+	}
+
+	// Create or update the MachineConfig using the Kubernetes client
+	// Update the existing MachineConfig
+	err = r.createMcFromFile("mc-40-kata-remote-config.yaml")
+	if err != nil {
+		return err
+	}
+
 	err = r.createRuntimeClass("kata-remote-cc", "0.25", "350Mi")
 
 	return err
+}
+
+func (r *KataConfigOpenShiftReconciler) createMcFromFile(McFilename string) error {
+	yamlData, err := getMachineConfigYAML(McFilename)
+	if err != nil {
+		return err
+	}
+
+	machineConfig, err := parseMachineConfigYAML(yamlData)
+	if err != nil {
+		return err
+	}
+
+	if err := r.Client.Create(context.TODO(), machineConfig); err != nil {
+		if k8serrors.IsAlreadyExists(err) {
+			if err := r.Client.Update(context.TODO(), machineConfig); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+	return nil
 }
