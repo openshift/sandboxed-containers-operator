@@ -631,6 +631,19 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 			By("Creating the KataConfig CR successfully")
 			Expect(k8sClient.Create(context.Background(), kataConfig)).Should(Succeed())
 
+			// Delete
+			By("Deleting KataConfig CR successfully")
+			kataConfigKey := types.NamespacedName{Name: kataConfig.Name}
+			Eventually(func() error {
+				k8sClient.Get(context.Background(), kataConfigKey, kataConfig)
+				return k8sClient.Delete(context.Background(), kataConfig)
+			}, timeout, interval).Should(Succeed())
+
+			By("Expecting to delete KataConfig CR successfully")
+			Eventually(func() error {
+				return k8sClient.Get(context.Background(), kataConfigKey, kataConfig)
+			}, timeout, interval).ShouldNot(Succeed())
+
 		})
 	})
 })
