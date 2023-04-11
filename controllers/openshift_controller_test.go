@@ -631,6 +631,54 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 			By("Creating the KataConfig CR successfully")
 			Expect(k8sClient.Create(context.Background(), kataConfig)).Should(Succeed())
 
+			// Delete
+			By("Deleting KataConfig CR successfully")
+			kataConfigKey := types.NamespacedName{Name: kataConfig.Name}
+			Eventually(func() error {
+				k8sClient.Get(context.Background(), kataConfigKey, kataConfig)
+				return k8sClient.Delete(context.Background(), kataConfig)
+			}, timeout, interval).Should(Succeed())
+
+			By("Expecting to delete KataConfig CR successfully")
+			Eventually(func() error {
+				return k8sClient.Get(context.Background(), kataConfigKey, kataConfig)
+			}, timeout, interval).ShouldNot(Succeed())
+
+		})
+	})
+	Context("Custom KataConfig with CheckNodeEligibility and PeerPods enabled", func() {
+		It("Should ignore CheckNodeEligibility when PeerPods is enabled", func() {
+
+			kataConfig := &kataconfigurationv1.KataConfig{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "kataconfiguration.openshift.io/v1",
+					Kind:       "KataConfig",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name + "-with-peerpods",
+				},
+				Spec: kataconfigurationv1.KataConfigSpec{
+					CheckNodeEligibility: true,
+					EnablePeerPods:       true,
+				},
+			}
+
+			By("Creating the KataConfig CR successfully")
+			Expect(k8sClient.Create(context.Background(), kataConfig)).Should(Succeed())
+
+			// Delete
+			By("Deleting KataConfig CR successfully")
+			kataConfigKey := types.NamespacedName{Name: kataConfig.Name}
+			Eventually(func() error {
+				k8sClient.Get(context.Background(), kataConfigKey, kataConfig)
+				return k8sClient.Delete(context.Background(), kataConfig)
+			}, timeout, interval).Should(Succeed())
+
+			By("Expecting to delete KataConfig CR successfully")
+			Eventually(func() error {
+				return k8sClient.Get(context.Background(), kataConfigKey, kataConfig)
+			}, timeout, interval).ShouldNot(Succeed())
+
 		})
 	})
 })
