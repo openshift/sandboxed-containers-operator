@@ -1728,6 +1728,43 @@ func (r *KataConfigOpenShiftReconciler) clearFailedStatus(status kataconfigurati
 	return status
 }
 
+func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
+	var err error = nil
+
+	pullSecret := &corev1.Secret{}
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: "pull-secret", Namespace: "openshift-config"}, pullSecret)
+	if err != nil {
+		r.Log.Info("Error fetching pull-secret", "err", err)
+		return err
+	}
+
+	authJsonSecret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "auth-json-secret",
+			Namespace: "openshift-sandboxed-containers-operator",
+		},
+		Data: map[string][]byte{
+			"auth.json": pullSecret.Data[".dockerconfigjson"],
+		},
+		Type: corev1.SecretTypeOpaque,
+	}
+
+	err = r.Client.Create(context.TODO(), &authJsonSecret)
+	if err != nil {
+		if k8serrors.IsAlreadyExists(err) {
+			err = r.Client.Update(context.TODO(), &authJsonSecret)
+			if err != nil {
+				r.Log.Info("Error UPDATING auth-json-secret", "err", err)
+				return err
+			}
+		}
+		r.Log.Info("Error creating auth-json-secret", "err", err)
+		return err
+	}
+
+	return err
+}
+
 func (r *KataConfigOpenShiftReconciler) enablePeerPods() error {
 	peerPodConfig := v1alpha1.PeerPodConfig{
 		TypeMeta: metav1.TypeMeta{},
@@ -1745,6 +1782,13 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPods() error {
 	err := r.Client.Create(context.TODO(), &peerPodConfig)
 	if err != nil && !k8serrors.IsAlreadyExists(err) {
 		r.Log.Info("Error in creating peerpodconfig", "err", err)
+		return err
+	}
+
+	//Get pull-secret from openshift-config ns and save it as auth-json-secret in our ns
+	err = r.createAuthJsonSecret()
+	if err != nil {
+		r.Log.Info("Error in creating auth-json-secret", "err", err)
 		return err
 	}
 
