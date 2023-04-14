@@ -41,9 +41,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	labelsutil "k8s.io/kubernetes/pkg/util/labels"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/workqueue"
+	labelsutil "k8s.io/kubernetes/pkg/util/labels"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -707,7 +707,7 @@ func (r *KataConfigOpenShiftReconciler) getKataConfigNodeSelectorAsLabelSelector
 	isConvergedCluster, err := r.checkConvergedCluster()
 	if err == nil && isConvergedCluster {
 		// master MCP cannot be customized
-		return &metav1.LabelSelector { MatchLabels: map[string]string{ "node-role.kubernetes.io/master": "" }}
+		return &metav1.LabelSelector{MatchLabels: map[string]string{"node-role.kubernetes.io/master": ""}}
 	}
 
 	nodeSelector := &metav1.LabelSelector{}
@@ -741,7 +741,7 @@ func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsMap() map[string]string
 	isConvergedCluster, err := r.checkConvergedCluster()
 	if err == nil && isConvergedCluster {
 		// master MCP cannot be customized
-		return map[string]string{ "node-role.kubernetes.io/master": "" }
+		return map[string]string{"node-role.kubernetes.io/master": ""}
 	} else {
 		return map[string]string{"node-role.kubernetes.io/kata-oc": ""}
 	}
@@ -1239,7 +1239,6 @@ func (eh *McpEventHandler) Generic(event event.GenericEvent, queue workqueue.Rat
 	log.Info("MCP generic event")
 }
 
-
 func (r *KataConfigOpenShiftReconciler) nodeMatchesKataSelector(nodeLabels map[string]string) bool {
 	nodeSelector, err := r.getKataConfigNodeSelectorAsSelector()
 
@@ -1292,7 +1291,6 @@ func getStringMapDiff(oldMap, newMap map[string]string) (added, modified, remove
 	}
 	return added, modified, removed
 }
-
 
 type NodeEventHandler struct {
 	reconciler *KataConfigOpenShiftReconciler
