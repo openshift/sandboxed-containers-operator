@@ -943,9 +943,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	// If converged cluster, then MCP == master, otherwise "kata-oc" if it exists
 	machinePool, err := r.getMcpName()
 	if err != nil {
-		r.Log.Error(err, "Failed to get the MachineConfigPool")
+		r.Log.Error(err, "Failed to get the MachineConfigPool name")
 		return ctrl.Result{}, err
 	}
+
+	isConvergedCluster := machinePool == "master"
 
 	// Add finalizer for this CR
 	if !contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
@@ -963,7 +965,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	}
 
 	// Create kata-oc MCP only if it's not a converged cluster
-	if machinePool == "kata-oc" {
+	if !isConvergedCluster {
 		err = r.updateNodeLabels()
 		if err != nil {
 			if k8serrors.IsConflict(err) {
@@ -1016,7 +1018,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) &&
 		foundMcp.Status.UpdatedMachineCount == foundMcp.Status.MachineCount {
 		r.Log.Info("create runtime class")
-		r.kataConfig.Status.InstallationStatus.IsInProgress = "false"
+		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionFalse
 		err := r.createRuntimeClass()
 		if err != nil {
 			// Give sometime for the error to go away before reconciling again
