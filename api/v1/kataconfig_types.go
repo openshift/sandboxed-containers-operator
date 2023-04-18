@@ -59,6 +59,11 @@ type KataConfigStatus struct {
 	// Upgradestatus reflects the status of the ongoing kata upgrade
 	// +optional
 	Upgradestatus KataUpgradeStatus `json:"upgradeStatus,omitempty"`
+
+	// Used internally to persist state between reconciliations
+	// +optional
+	// +kubebuilder:default:=false
+	WaitingForMcoToStart bool `json:"waitingForMcoToStart,omitempty"`
 }
 
 // +genclient
