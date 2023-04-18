@@ -960,18 +960,28 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	wasMcJustCreated, err := r.createExtensionMc(machinePool)
 	if err != nil {
 		return ctrl.Result{Requeue: true}, nil
-	} else if wasMcJustCreated {
-		return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, nil
 	}
 
 	// Create kata-oc MCP only if it's not a converged cluster
 	if !isConvergedCluster {
-		_, err = r.updateNodeLabels()
+		labelingChanged, err := r.updateNodeLabels()
 		if err != nil {
 			if k8serrors.IsConflict(err) {
 				return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
 			} else {
 				return ctrl.Result{Requeue: true}, nil
+			}
+		}
+		if labelingChanged {
+			r.Log.Info("node labels updated")
+			// IsInProgress == ConditionFalse would be more direct and clear but it doesn't handle
+			// the possibility that IsInProgress == "" which actually comes up right after
+			// KataConfig is created.
+			if r.kataConfig.Status.InstallationStatus.IsInProgress != corev1.ConditionTrue {
+				r.Log.Info("Starting to wait for MCO to start")
+				r.kataConfig.Status.WaitingForMcoToStart = true
+			} else {
+				r.Log.Info("installation already in progress", "IsInProgress", r.kataConfig.Status.InstallationStatus.IsInProgress)
 			}
 		}
 
@@ -986,18 +996,68 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 				r.Log.Error(err, "Error in creating new MachineConfigPool ", "machinePool", machinePool)
 				return ctrl.Result{}, err
 			}
-			// mcp created successfully - requeue to check the status later
-			return ctrl.Result{Requeue: true, RequeueAfter: 20 * time.Second}, nil
+			// Don't requeue - the MCP creation will send us
+			// a reconcile request via our MCP watching so we should be
+			// guaranteed to run again at due time even without requeueing.
 		} else if err != nil {
 			r.Log.Error(err, "Error in retreiving MachineConfigPool ", "machinePool", machinePool)
 			return ctrl.Result{}, err
 		}
-
-		// Wait till MCP is ready
-		if mcp.Status.MachineCount == 0 {
-			r.Log.Info("Waiting till MachineConfigPool is initialized ", "machinePool", machinePool)
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+	} else {
+		if wasMcJustCreated {
+			r.kataConfig.Status.WaitingForMcoToStart = true
 		}
+	}
+
+	isMcpUpdating := func(mcpName string) bool {
+		mcp := &mcfgv1.MachineConfigPool{}
+		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mcpName}, mcp)
+		if err != nil {
+			r.Log.Info("Getting MachineConfigPool failed ", "machinePool", mcpName, "err", err)
+			return false
+		}
+		return mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating)
+	}
+
+	isKataMcpUpdating := isMcpUpdating(machinePool)
+	r.Log.Info("MCP updating state", "MCP name", machinePool, "is updating", isKataMcpUpdating)
+	if isKataMcpUpdating {
+		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
+	}
+	isMcoUpdating := isKataMcpUpdating
+	if !isConvergedCluster {
+		isWorkerUpdating := isMcpUpdating("worker")
+		r.Log.Info("MCP updating state", "MCP name", "worker", "is updating", isWorkerUpdating)
+		if isWorkerUpdating {
+			r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
+		}
+		isMcoUpdating = isKataMcpUpdating || isWorkerUpdating
+	}
+
+	// This condition might look tricky so here's a quick rundown of
+	// what each possible state means:
+	// - isMcoUpdating && WaitingForMcoToStart:
+	//     We've just finished waiting for the MCO to start updating.
+	//     The MCO is updating already but "Waiting" is still 'true'
+	//     (it will be set to 'false' shortly).
+	// - !isMcoUpdating && WaitingForMcoToStart:
+	//     We're waiting for the MCO to pick up our recent changes and
+	//     start updating.
+	// - isMcoUpdating && !WaitingForMcoToStart:
+	//     The MCO is updating (it hasn't yet finished processing our
+	//     recent changes).
+	// - !isMcoUpdating && !WaitingForMcoToStart:
+	//     The MCO isn't updating nor do we think it should be.  This is
+	//     the case e.g. when we're reconciliating a KataConfig change
+	//     that doesn't affect kata installation on cluster.
+	if !isMcoUpdating && r.kataConfig.Status.WaitingForMcoToStart == true {
+		r.Log.Info("Waiting for MCO to start updating.")
+		// We don't requeue, an MCP going Updated->Updating will
+		// trigger reconciliation by itself thanks to our watching MCPs.
+		return reconcile.Result{}, nil
+	} else {
+		r.Log.Info("No need to wait for MCO to start updating.", "isMcoUpdating", isMcoUpdating, "Status.WaitingForMcoToStart", r.kataConfig.Status.WaitingForMcoToStart)
+		r.kataConfig.Status.WaitingForMcoToStart = false
 	}
 
 	foundMcp, doReconcile, err, done := r.updateStatus(machinePool)
@@ -1007,16 +1067,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	r.kataConfig.Status.TotalNodesCount = int(foundMcp.Status.MachineCount)
 
-	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) &&
-		r.kataConfig.Status.InstallationStatus.IsInProgress == "false" &&
-		r.kataConfig.Status.RuntimeClass == "kata" {
-		r.Log.Info("New node being added to existing cluster")
-		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
-		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
-	}
-
-	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) &&
-		foundMcp.Status.UpdatedMachineCount == foundMcp.Status.MachineCount {
+	if !isMcoUpdating {
 		r.Log.Info("create runtime class")
 		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionFalse
 		err := r.createRuntimeClass()
@@ -1032,8 +1083,10 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		}
 
 	} else {
+		// We don't requeue - we're waiting for an MCP to go
+		// Updating->Updated which will trigger reconciliation
+		// by itself thanks to our watching MCPs.
 		r.Log.Info("Waiting for MachineConfigPool to be fully updated", "machinePool", machinePool)
-		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 	}
 	return ctrl.Result{}, nil
 }
@@ -1066,7 +1119,6 @@ func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (b
 			return dummy, err
 		}
 		r.Log.Info("MachineConfig successfully created", "mc.Name", mc.Name)
-		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
 		return true, nil
 	} else if err != nil {
 		r.Log.Info("failed to retrieve extension MachineConfig", "err", err)
@@ -1087,7 +1139,11 @@ func (r *KataConfigOpenShiftReconciler) makeReconcileRequest() reconcile.Request
 
 func isMcpRelevant(mcp client.Object) bool {
 	mcpName := mcp.GetName()
-	if mcpName == "kata-oc" || mcpName == "worker" {
+	// TODO Try to find a way to include "master" only if cluster is
+	// converged.  It doesn't seem to hurt to watch it even on regular
+	// clusters as it doesn't really seem to change much there but it
+	// would be cleaner to watch it only when it's actually needed.
+	if mcpName == "kata-oc" || mcpName == "worker" || mcpName == "master" {
 		return true
 	}
 	return false
