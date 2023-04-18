@@ -964,7 +964,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	// Create kata-oc MCP only if it's not a converged cluster
 	if !isConvergedCluster {
-		err = r.updateNodeLabels()
+		_, err = r.updateNodeLabels()
 		if err != nil {
 			if k8serrors.IsConflict(err) {
 				return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
@@ -1434,7 +1434,7 @@ func (r *KataConfigOpenShiftReconciler) getNodesWithLabels(nodeLabels map[string
 	return nil, nodes
 }
 
-func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (err error) {
+func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (labelingChanged bool, err error) {
 	workerNodeList := &corev1.NodeList{}
 	workerSelector := labels.SelectorFromSet(map[string]string{"node-role.kubernetes.io/worker": ""})
 	listOpts := []client.ListOption{
@@ -1443,13 +1443,13 @@ func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (err error) {
 
 	if err := r.Client.List(context.TODO(), workerNodeList, listOpts...); err != nil {
 		r.Log.Error(err, "Getting list of nodes failed")
-		return err
+		return false, err
 	}
 
 	kataNodeSelector, err := r.getKataConfigNodeSelectorAsSelector()
 	if err != nil {
 		r.Log.Info("Couldn't getKataConfigNodeSelectorAsSelector()", "err", err)
-		return err
+		return false, err
 	}
 
 	for _, worker := range workerNodeList.Items {
@@ -1473,11 +1473,13 @@ func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (err error) {
 		err = r.Client.Update(context.TODO(), &worker)
 		if err != nil {
 			r.Log.Error(err, "Error when adding labels to node", "node", worker)
-			return err
+			return labelingChanged, err
 		}
+
+		labelingChanged = true
 	}
 
-	return nil
+	return labelingChanged, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selector) (err error) {
