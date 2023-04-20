@@ -60,6 +60,7 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+# These images needs to be synced with the default values in the Dockerfile.
 BUILDER_IMAGE ?= registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.18-openshift-4.11
 TARGET_IMAGE  ?= registry.ci.openshift.org/ocp/4.11:base
 
