@@ -23,6 +23,7 @@ RUN GOFLAGS="" make build
 FROM registry.ci.openshift.org/ocp/4.11:base
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
+COPY --from=builder /workspace/config/peerpods /config/peerpods
 
 RUN useradd  -r -u 499 nonroot
 RUN getent group nonroot || groupadd -o -g 499 nonroot

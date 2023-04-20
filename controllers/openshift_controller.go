@@ -66,10 +66,19 @@ type KataConfigOpenShiftReconciler struct {
 }
 
 const (
-	dashboard_configmap_name      = "grafana-dashboard-sandboxed-containers"
-	dashboard_configmap_namespace = "openshift-config-managed"
-	container_runtime_config_name = "kata-crio-config"
-	DEFAULT_PEER_PODS             = "10"
+	dashboard_configmap_name            = "grafana-dashboard-sandboxed-containers"
+	dashboard_configmap_namespace       = "openshift-config-managed"
+	container_runtime_config_name       = "kata-crio-config"
+	DEFAULT_PEER_PODS                   = "10"
+	peerpodConfigCrdName                = "peerpodconfig-openshift"
+	peerpodsMachineConfigPathLocation   = "/config/peerpods"
+	peerpodsCrioMachineConfig           = "50-kata-remote-cc"
+	peerpodsCrioMachineConfigYaml       = "mc-50-crio-config.yaml"
+	peerpodsKataRemoteMachineConfig     = "40-worker-kata-remote-config"
+	peerpodsKataRemoteMachineConfigYaml = "mc-40-kata-remote-config.yaml"
+	peerpodsRuntimeClassName            = "kata-remote-cc"
+	peerpodsRuntimeClassCpuOverhead     = "0.25"
+	peerpodsRuntimeClassMemOverhead     = "350Mi"
 )
 
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs;kataconfigs/finalizers,verbs=get;list;watch;create;update;patch;delete
@@ -900,6 +909,13 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		}
 	}
 
+	if r.kataConfig.Spec.EnablePeerPods {
+		// We are explicitly ignoring any errors in peerpodconfig and related machineconfigs removal as
+		// these can be removed manually if needed and this is not in the critical path
+		// of operator functionality
+		_ = r.disablePeerPods()
+	}
+
 	scc := GetScc()
 	err = r.Client.Delete(context.TODO(), scc)
 	if err != nil {
@@ -919,6 +935,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		r.Log.Error(err, "Unable to update KataConfig")
 		return ctrl.Result{}, err
 	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -939,7 +956,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	if r.kataConfig.Spec.EnablePeerPods {
 		err := r.enablePeerPods()
 		if err != nil {
-			r.Log.Error(err, "Peer pod enabling failed")
+			r.Log.Info("Enabling peerpods configuration failed", "err", err)
 			return ctrl.Result{}, err
 		}
 	}
@@ -1712,12 +1729,10 @@ func (r *KataConfigOpenShiftReconciler) clearFailedStatus(status kataconfigurati
 }
 
 func (r *KataConfigOpenShiftReconciler) enablePeerPods() error {
-	var err error = nil
-
-	peerpodconf := v1alpha1.PeerPodConfig{
+	peerPodConfig := v1alpha1.PeerPodConfig{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "peerpodconfig-example",
+			Name:      peerpodConfigCrdName,
 			Namespace: "openshift-sandboxed-containers-operator",
 		},
 		Spec: v1alpha1.PeerPodConfigSpec{
@@ -1727,14 +1742,116 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPods() error {
 		},
 	}
 
-	err = r.Client.Create(context.TODO(), &peerpodconf)
-	if k8serrors.IsAlreadyExists(err) {
-		return nil
-	} else if err != nil {
+	err := r.Client.Create(context.TODO(), &peerPodConfig)
+	if err != nil && !k8serrors.IsAlreadyExists(err) {
+		r.Log.Info("Error in creating peerpodconfig", "err", err)
 		return err
 	}
 
-	err = r.createRuntimeClass("kata-remote-cc", "0.25", "350Mi")
+	//Create MachineConfig for kata-remote hyp CRIO config
+	err = r.createMcFromFile(peerpodsCrioMachineConfigYaml)
+	if err != nil {
+		r.Log.Info("Error in creating CRIO MachineConfig", "err", err)
+		return err
+	}
 
-	return err
+	//Create MachineConfig for kata-remote hyp config toml
+	err = r.createMcFromFile(peerpodsKataRemoteMachineConfigYaml)
+	if err != nil {
+		r.Log.Info("Error in creating kata remote configuration.toml MachineConfig", "err", err)
+		return err
+	}
+
+	// Create runtimeClass config for peer-pods
+	err = r.createRuntimeClass(peerpodsRuntimeClassName, peerpodsRuntimeClassCpuOverhead, peerpodsRuntimeClassMemOverhead)
+	if err != nil {
+		r.Log.Info("Error in creating kata remote runtimeclass", "err", err)
+		return err
+	}
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) disablePeerPods() error {
+	peerPodConfig := v1alpha1.PeerPodConfig{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      peerpodConfigCrdName,
+			Namespace: "openshift-sandboxed-containers-operator",
+		},
+	}
+	err := r.Client.Delete(context.TODO(), &peerPodConfig)
+	if err != nil {
+		// error during removing peerpodconfig. Just log the error and move on.
+		r.Log.Info("Error found deleting PeerPodConfig. If the PeerPodConfig object exists after uninstallation it can be safely deleted manually", "err", err)
+	}
+
+	mc := mcfgv1.MachineConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "machineconfiguration.openshift.io/v1",
+			Kind:       "MachineConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: peerpodsKataRemoteMachineConfig,
+		},
+	}
+
+	err = r.Client.Delete(context.TODO(), &mc)
+	if err != nil {
+		// error during removing mc. Just log the error and move on.
+		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
+			"mc", mc.Name, "err", err)
+	}
+
+	mc = mcfgv1.MachineConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "machineconfiguration.openshift.io/v1",
+			Kind:       "MachineConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: peerpodsCrioMachineConfig,
+		},
+	}
+
+	err = r.Client.Delete(context.TODO(), &mc)
+	if err != nil {
+		// error during removing mc. Just log the error and move on.
+		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
+			"mc", mc.Name, "err", err)
+	}
+
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) createMcFromFile(mcFileName string) error {
+	yamlData, err := readMachineConfigYAML(mcFileName)
+	if err != nil {
+		r.Log.Info("Error in reading MachineConfigYaml", "mcFileName", mcFileName, "err", err)
+		return err
+	}
+
+	r.Log.Info("machineConfig yaml dump ", "yamlData", yamlData)
+
+	machineConfig, err := parseMachineConfigYAML(yamlData)
+	if err != nil {
+		r.Log.Info("Error in parsing MachineConfigYaml", "mcFileName", mcFileName, "err", err)
+		return err
+	}
+
+	// Default MCP is kata-oc, however for converged cluster it should be "master"
+	isConvergedCluster, err := r.checkConvergedCluster()
+	if isConvergedCluster && err == nil {
+		machineConfig.Labels["machineconfiguration.openshift.io/role"] = "master"
+	}
+
+	r.Log.Info("machineConfig dump ", "machineConfig", machineConfig)
+
+	if err := r.Client.Create(context.TODO(), machineConfig); err != nil {
+		if k8serrors.IsAlreadyExists(err) {
+			r.Log.Info("machineConfig already exists")
+			return nil
+		} else {
+			return err
+		}
+	}
+	return nil
 }
