@@ -36,7 +36,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-tools/pkg/version"
+
+	// These imports are unused but required in go.mod
+	// for caching during manifest generation by controller-gen
+	_ "github.com/spf13/cobra"
+	_ "sigs.k8s.io/controller-tools/pkg/crd"
+	_ "sigs.k8s.io/controller-tools/pkg/genall"
+	_ "sigs.k8s.io/controller-tools/pkg/genall/help/pretty"
+	_ "sigs.k8s.io/controller-tools/pkg/loader"
 
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	"github.com/openshift/sandboxed-containers-operator/controllers"
@@ -93,9 +100,6 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
-
-	// This statement is added to include a direct dependency to controller-tools
-	setupLog.Info("Manifests built using controller-tools", "version", version.Version())
 
 	isOpenshift, err := controllers.IsOpenShift()
 	if err != nil {
