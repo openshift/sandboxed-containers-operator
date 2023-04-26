@@ -553,6 +553,18 @@ func (r *KataConfigOpenShiftReconciler) addFinalizer() error {
 	return nil
 }
 
+func (r *KataConfigOpenShiftReconciler) removeFinalizer() error {
+	r.Log.Info("Removing finalizer from the KataConfig")
+	controllerutil.RemoveFinalizer(r.kataConfig, kataConfigFinalizer)
+
+	err := r.Client.Update(context.TODO(), r.kataConfig)
+	if err != nil {
+		r.Log.Error(err, "Unable to update KataConfig")
+		return err
+	}
+	return nil
+}
+
 func (r *KataConfigOpenShiftReconciler) listKataPods() error {
 	podList := &corev1.PodList{}
 	listOpts := []client.ListOption{
@@ -981,12 +993,8 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	}
 
 	r.Log.Info("Uninstallation completed. Proceeding with the KataConfig deletion")
-	controllerutil.RemoveFinalizer(r.kataConfig, kataConfigFinalizer)
-
-	err = r.Client.Update(context.TODO(), r.kataConfig)
-	if err != nil {
-		r.Log.Error(err, "Unable to update KataConfig")
-		return ctrl.Result{}, err
+	if err = r.removeFinalizer(); err != nil {
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	return ctrl.Result{}, nil
