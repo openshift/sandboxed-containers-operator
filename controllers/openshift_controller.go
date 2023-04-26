@@ -777,6 +777,16 @@ func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsLabelSelector() *metav1
 	return &metav1.LabelSelector{MatchLabels: r.getNodeSelectorAsMap()}
 }
 
+func (r *KataConfigOpenShiftReconciler) isMcpUpdating(mcpName string) bool {
+	mcp := &mcfgv1.MachineConfigPool{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcpName}, mcp)
+	if err != nil {
+		r.Log.Info("Getting MachineConfigPool failed ", "machinePool", mcpName, "err", err)
+		return false
+	}
+	return mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating)
+}
+
 func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.Result, error) {
 	r.Log.Info("KataConfig deletion in progress: ")
 	machinePool, err := r.getMcpNameIfMcpExists()
@@ -1041,24 +1051,14 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		}
 	}
 
-	isMcpUpdating := func(mcpName string) bool {
-		mcp := &mcfgv1.MachineConfigPool{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mcpName}, mcp)
-		if err != nil {
-			r.Log.Info("Getting MachineConfigPool failed ", "machinePool", mcpName, "err", err)
-			return false
-		}
-		return mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating)
-	}
-
-	isKataMcpUpdating := isMcpUpdating(machinePool)
+	isKataMcpUpdating := r.isMcpUpdating(machinePool)
 	r.Log.Info("MCP updating state", "MCP name", machinePool, "is updating", isKataMcpUpdating)
 	if isKataMcpUpdating {
 		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
 	}
 	isMcoUpdating := isKataMcpUpdating
 	if !isConvergedCluster {
-		isWorkerUpdating := isMcpUpdating("worker")
+		isWorkerUpdating := r.isMcpUpdating("worker")
 		r.Log.Info("MCP updating state", "MCP name", "worker", "is updating", isWorkerUpdating)
 		if isWorkerUpdating {
 			r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
