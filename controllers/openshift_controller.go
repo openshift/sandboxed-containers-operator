@@ -136,14 +136,12 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		// indicated by the deletion timestamp being set.
 		if r.kataConfig.GetDeletionTimestamp() != nil {
 			res, err := r.processKataConfigDeleteRequest()
-			if err != nil {
-				return res, err
-			}
+
 			updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
 			if updateErr != nil {
 				return ctrl.Result{}, updateErr
 			}
-			return res, nil
+			return res, err
 		}
 
 		res, err := r.processKataConfigInstallRequest()
@@ -925,11 +923,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	_, result, err2, done := r.updateStatus(machinePool)
 	if !done {
 		return result, err2
-	}
-	err = r.Client.Status().Update(context.TODO(), r.kataConfig)
-	if err != nil {
-		r.Log.Error(err, "Unable to update KataConfig status")
-		return ctrl.Result{}, err
 	}
 
 	if isMcoUpdating {
