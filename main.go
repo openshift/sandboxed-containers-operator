@@ -19,6 +19,8 @@ package main
 import (
 	"context"
 	"flag"
+	"os"
+
 	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/controllers"
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
@@ -31,11 +33,18 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	nodeapi "k8s.io/kubernetes/pkg/apis/node/v1"
-	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+
+	// These imports are unused but required in go.mod
+	// for caching during manifest generation by controller-gen
+	_ "github.com/spf13/cobra"
+	_ "sigs.k8s.io/controller-tools/pkg/crd"
+	_ "sigs.k8s.io/controller-tools/pkg/genall"
+	_ "sigs.k8s.io/controller-tools/pkg/genall/help/pretty"
+	_ "sigs.k8s.io/controller-tools/pkg/loader"
 
 	peerpodconfig "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/api/v1alpha1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
