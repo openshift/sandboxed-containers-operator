@@ -784,12 +784,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
 
-	foundMcp := &mcfgv1.MachineConfigPool{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
 	if contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
 		// Get the list of pods that might be running using kata runtime
 		err := r.listKataPods()
