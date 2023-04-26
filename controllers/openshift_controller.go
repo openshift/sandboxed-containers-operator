@@ -304,6 +304,31 @@ func (r *KataConfigOpenShiftReconciler) processLogLevel(desiredLogLevel string) 
 	return nil
 }
 
+func (r *KataConfigOpenShiftReconciler) removeLogLevel() error {
+
+	r.Log.Info("removing logLevel ContainerRuntimeConfig")
+
+	ctrRuntimeCfg := &mcfgv1.ContainerRuntimeConfig{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: container_runtime_config_name}, ctrRuntimeCfg)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("no logLevel ContainerRuntimeConfig found, nothing to do")
+			return nil
+		} else {
+			r.Log.Info("could not get ContainerRuntimeConfig", "err", err)
+			return err
+		}
+	}
+
+	err = r.Client.Delete(context.TODO(), ctrRuntimeCfg)
+	if err != nil {
+		r.Log.Info("error deleting ContainerRuntimeConfig", "err", err)
+		return err
+	}
+	r.Log.Info("logLevel ContainerRuntimeConfig deleted successfully")
+	return nil
+}
+
 func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.DaemonSet {
 	var (
 		runPrivileged = false
@@ -945,6 +970,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 			r.Log.Error(err, "error when deleting SCC, retrying")
 			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
 		}
+	}
+
+	err = r.removeLogLevel()
+	if err != nil {
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	r.Log.Info("Uninstallation completed. Proceeding with the KataConfig deletion")
