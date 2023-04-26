@@ -786,7 +786,7 @@ func (r *KataConfigOpenShiftReconciler) isMcpUpdating(mcpName string) bool {
 
 func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.Result, error) {
 	r.Log.Info("KataConfig deletion in progress: ")
-	machinePool, err := r.getMcpNameIfMcpExists()
+	machinePool, err := r.getMcpName()
 	if err != nil {
 		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
@@ -850,63 +850,39 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 			r.Log.Error(err, "Error found deleting machine config. If the machine config exists after installation it can be safely deleted manually.",
 				"mc", mc.Name)
 		}
-		// Sleep for MCP to reflect the changes
-		r.Log.Info("Pausing for a minute to make sure mcp has started syncing up")
-		time.Sleep(60 * time.Second)
+		r.Log.Info("Starting to wait for MCO to start reconciliation")
+		r.kataConfig.Status.WaitingForMcoToStart = true
+		r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
 	}
 
-	mcp := &mcfgv1.MachineConfigPool{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, mcp)
-	if err != nil {
-		r.Log.Error(err, "Unable to get MachineConfigPool ", "machinePool", machinePool)
-		return ctrl.Result{}, err
+	isConvergedCluster, _ := r.checkConvergedCluster()
+
+	// When nodes migrate from a source pool to a target pool the source
+	// pool is drained immediately and the nodes then slowly join the target
+	// pool.  Thus the operation duration is dominated by the target pool
+	// part and the target pool is what we need to watch to find out when
+	// the operation is finished.  When uninstalling kata on a regular
+	// cluster nodes leave "kata-oc" to rejoin "worker" so "worker" is our
+	// target pool.  On a converged cluster, nodes leave "master" to rejoin
+	// it so "master" is both source and target in this case.
+	targetPool := "worker"
+	if isConvergedCluster {
+		targetPool = "master"
 	}
-	r.Log.Info("Monitoring mcp", "mcp name", mcp.Name, "ready machines", mcp.Status.ReadyMachineCount,
-		"total machines", mcp.Status.MachineCount)
-	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
+	isMcoUpdating := r.isMcpUpdating(targetPool)
+
+	if !isMcoUpdating && r.kataConfig.Status.WaitingForMcoToStart {
+		r.Log.Info("Waiting for MCO to start updating.")
+		// We don't requeue, an MCP going Updated->Updating will
+		// trigger reconciliation by itself thanks to our watching MCPs.
+		return reconcile.Result{}, nil
+	} else {
+		r.Log.Info("No need to wait for MCO to start updating.", "isMcoUpdating", isMcoUpdating, "Status.WaitingForMcoToStart", r.kataConfig.Status.WaitingForMcoToStart)
+		r.kataConfig.Status.WaitingForMcoToStart = false
+	}
+
 	r.clearUninstallStatus()
 	_, result, err2, done := r.updateStatus(machinePool)
-	if !done {
-		return result, err2
-	}
-
-	if mcp.Status.ReadyMachineCount != mcp.Status.MachineCount {
-		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
-	}
-
-	// Sleep for MCP to reflect the changes
-	r.Log.Info("Pausing for a minute to make sure mcp has started syncing up")
-	time.Sleep(60 * time.Second)
-
-	//This is not applicable for converged cluster
-	isConvergedCluster, _ := r.checkConvergedCluster()
-	if !isConvergedCluster {
-		//Get "worker" MCP
-		wMcp := &mcfgv1.MachineConfigPool{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: "worker"}, wMcp)
-		if err != nil {
-			r.Log.Error(err, "Unable to get MachineConfigPool - worker")
-			return ctrl.Result{}, err
-		}
-
-		// At this time the kata-oc MCP is updated. However the worker MCP might still be in Updating state
-		// We'll need to wait for the worker MCP to complete Updating before deletion
-		r.Log.Info("Wait till worker MCP has updated")
-		if (wMcp.Status.ReadyMachineCount != wMcp.Status.MachineCount) &&
-			mcfgv1.IsMachineConfigPoolConditionTrue(wMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) {
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
-		}
-
-		err = r.Client.Delete(context.TODO(), mcp)
-		if err != nil {
-			r.Log.Error(err, "Unable to delete kata-oc MachineConfigPool")
-			return ctrl.Result{}, err
-		}
-	}
-
-	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionFalse
-	_, result, err2, done = r.updateStatus(machinePool)
-	r.clearInstallStatus()
 	if !done {
 		return result, err2
 	}
@@ -914,6 +890,32 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	if err != nil {
 		r.Log.Error(err, "Unable to update KataConfig status")
 		return ctrl.Result{}, err
+	}
+
+	if isMcoUpdating {
+		r.Log.Info("Waiting for MachineConfigPool to be fully updated", "machinePool", targetPool)
+		return reconcile.Result{}, nil
+	}
+
+	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionFalse
+
+	if !isConvergedCluster {
+		r.Log.Info("Get()'ing MachineConfigPool to delete it", "machinePool", "kata-oc")
+		kataOcMcp := &mcfgv1.MachineConfigPool{}
+		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: "kata-oc"}, kataOcMcp)
+		if err == nil {
+			r.Log.Info("Deleting MachineConfigPool ", "machinePool", "kata-oc")
+			err = r.Client.Delete(context.TODO(), kataOcMcp)
+			if err != nil {
+				r.Log.Error(err, "Unable to delete kata-oc MachineConfigPool")
+				return ctrl.Result{}, err
+			}
+		} else if k8serrors.IsNotFound(err) {
+			r.Log.Info("MachineConfigPool not found", "machinePool", "kata-oc")
+		} else {
+			r.Log.Error(err, "Unable to get MachineConfigPool ", "machinePool", "kata-oc")
+			return ctrl.Result{}, err
+		}
 	}
 
 	ds := r.processDaemonsetForMonitor()
