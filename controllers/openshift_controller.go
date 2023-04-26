@@ -138,7 +138,14 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 			res, err := r.processKataConfigDeleteRequest()
 
 			updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
-			if updateErr != nil {
+			// The finalizer test is to get rid of the
+			// "Operation cannot be fulfilled [...] Precondition failed"
+			// error which happens when returning from a reconciliation that
+			// deleted our KataConfig by removing its finalizer.  So if the
+			// finalizer is missing the actual KataConfig object is probably
+			// already gone from the cluster, hence the error.
+			if updateErr != nil && controllerutil.ContainsFinalizer(r.kataConfig, kataConfigFinalizer) {
+				r.Log.Info("Updating KataConfig failed", "err", updateErr)
 				return ctrl.Result{}, updateErr
 			}
 			return res, err
