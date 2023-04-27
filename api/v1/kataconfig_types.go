@@ -66,7 +66,10 @@ type KataConfigStatus struct {
 	// +optional
 	Upgradestatus KataUpgradeStatus `json:"upgradeStatus,omitempty"`
 
-	BaseMcpGeneration int64 `json:"prevMcpGeneration"`
+	// Used internally to persist state between reconciliations
+	// +optional
+	// +kubebuilder:default:=false
+	WaitingForMcoToStart bool `json:"waitingForMcoToStart,omitempty"`
 }
 
 // +genclient
