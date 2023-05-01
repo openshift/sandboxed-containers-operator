@@ -1,17 +1,17 @@
 # Hacking on the sandboxed-containers-operator
 
 ## Prerequisites
-- Golang - 1.18.x
-- Operator SDK version - 1.25.3
+- Golang - 1.19.x
+- Operator SDK version - 1.26.1
 ```
 export ARCH=$(case $(uname -m) in x86_64) echo -n amd64 ;; aarch64) echo -n arm64 ;; *) echo -n $(uname -m) ;; esac)
 export OS=$(uname | awk '{print tolower($0)}')
-export OPERATOR_SDK_DL_URL=https://github.com/operator-framework/operator-sdk/releases/download/v1.25.3
+export OPERATOR_SDK_DL_URL=https://github.com/operator-framework/operator-sdk/releases/download/v1.26.1
 curl -LO ${OPERATOR_SDK_DL_URL}/operator-sdk_${OS}_${ARCH}
 install -m 755 operator-sdk_linux_amd64 ${SOME_DIR_IN_YOUR_PATH}/operator-sdk
 ```
 - podman, podman-docker or docker
-- Access to OpenShift cluster (4.8+)
+- Access to OpenShift cluster (4.12+)
 - Container registry to storage images
 
 ### Get a token on registry.ci.openshift.org
@@ -32,8 +32,8 @@ public images during build and test. At the time of writing, the following publi
 does the trick.
 
 ```shell
-export BUILDER_IMAGE=registry.ci.openshift.org/openshift/release:golang-1.18
-export TARGET_IMAGE=registry.ci.openshift.org/origin/4.10:base
+export BUILDER_IMAGE=registry.ci.openshift.org/openshift/release:golang-1.19
+export TARGET_IMAGE=registry.ci.openshift.org/origin/4.13:base
 make docker-build
 ```
 
@@ -61,11 +61,18 @@ make docker-push
 ```
 
 ## Building Operator bundle image
+
+If you are deploying in an OpenShift cluster then modify the
+value of the env variable `SANDBOXED_CONTAINERS_EXTENSION` to `sandboxed-containers`
+in the file `config/manager/manager.yaml` before running the below mentioned
+commands.
+
 ```
 make bundle CHANNELS=candidate
 make bundle-build
 make bundle-push
 ```
+
 
 ## Building Catalog image
 ```
