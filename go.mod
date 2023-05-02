@@ -104,4 +104,5 @@ replace (
 	k8s.io/kubelet => k8s.io/kubelet v0.25.1
 	// So that we can import MCO
 	sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.13.0
+	vbom.ml/util => github.com/fvbommel/util v0.0.3
 )
