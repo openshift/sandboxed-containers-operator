@@ -1831,12 +1831,13 @@ func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
 		if k8serrors.IsAlreadyExists(err) {
 			err = r.Client.Update(context.TODO(), &authJsonSecret)
 			if err != nil {
-				r.Log.Info("Error UPDATING auth-json-secret", "err", err)
+				r.Log.Info("Error updating auth-json-secret", "err", err)
 				return err
 			}
+		} else {
+			r.Log.Info("Error creating auth-json-secret", "err", err)
+			return err
 		}
-		r.Log.Info("Error creating auth-json-secret", "err", err)
-		return err
 	}
 
 	return err
