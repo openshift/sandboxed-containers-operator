@@ -21,7 +21,8 @@ import (
 	"flag"
 	"os"
 
-	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/controllers"
+	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl/controllers"
+	peerpodconfigcontrollers "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/controllers"
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
 	"go.uber.org/zap/zapcore"
@@ -46,6 +47,7 @@ import (
 	_ "sigs.k8s.io/controller-tools/pkg/genall/help/pretty"
 	_ "sigs.k8s.io/controller-tools/pkg/loader"
 
+	peerpod "github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl/api/v1alpha1"
 	peerpodconfig "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/api/v1alpha1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	"github.com/openshift/sandboxed-containers-operator/controllers"
@@ -73,6 +75,8 @@ func init() {
 	utilruntime.Must(kataconfigurationv1.AddToScheme(scheme))
 
 	utilruntime.Must(peerpodconfig.AddToScheme(scheme))
+
+	utilruntime.Must(peerpod.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -136,7 +140,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		if err = (&peerpodcontrollers.PeerPodConfigReconciler{
+		if err = (&peerpodconfigcontrollers.PeerPodConfigReconciler{
 			Client: mgr.GetClient(),
 			Log:    ctrl.Log.WithName("controllers").WithName("RemotePodConfig"),
 			Scheme: mgr.GetScheme(),
@@ -144,6 +148,18 @@ func main() {
 			setupLog.Error(err, "unable to create RemotePodConfig controller for OpenShift cluster", "controller", "RemotePodConfig")
 			os.Exit(1)
 		}
+
+		if err = (&peerpodcontrollers.PeerPodReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+			// setting nil will delegate Provider creation to reconcile time, make sure RBAC permits:
+			//+kubebuilder:rbac:groups="",resourceNames=peer-pods-cm;peer-pods-secret,resources=configmaps;secrets,verbs=get
+			Provider: nil,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create peerpod resources controller", "controller", "PeerPod")
+			os.Exit(1)
+		}
+
 	}
 
 	if err = (&kataconfigurationv1.KataConfig{}).SetupWebhookWithManager(mgr); err != nil {

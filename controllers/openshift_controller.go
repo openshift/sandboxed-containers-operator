@@ -1717,8 +1717,8 @@ func (r *KataConfigOpenShiftReconciler) updateFailedNodes(node *corev1.Node,
 	if err != nil {
 		return err, failedList
 	}
-	if (mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded) ||
-		mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)) {
+	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded) ||
+		mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) {
 		failedList =
 			append(r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList,
 				kataconfigurationv1.FailedNodeStatus{Name: node.GetName(),

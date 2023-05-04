@@ -70,6 +70,12 @@ TARGET_IMAGE  ?= registry.ci.openshift.org/ocp/4.11:base
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
+BUILTIN_CLOUD_PROVIDERS ?= aws azure
+# Build tags required to build cloud-api-adaptor are derived from BUILTIN_CLOUD_PROVIDERS.
+space := $() $()
+comma := ,
+GOFLAGS := -tags=$(subst $(space),$(comma),$(strip $(BUILTIN_CLOUD_PROVIDERS)))
+
 .PHONY: all
 all: build
 
@@ -110,17 +116,15 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(GOFLAGS) ./... -coverprofile cover.out
 	# set write flag on created folder, so that we can clean it up
 	chmod +w $(LOCALBIN)/k8s/$(ENVTEST_K8S_VERSION)*
-
-
 
 ##@ Build
 
 .PHONY: build
 build: generate fmt vet ## Build manager binary.
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=mod -o bin/manager main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -mod=mod -o bin/manager main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.

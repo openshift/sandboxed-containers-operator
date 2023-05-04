@@ -20,7 +20,7 @@ RUN go mod download
 # needed for docker build but not for local builds
 RUN go mod vendor
 
-RUN GOFLAGS="" make build
+RUN make build
 
 # Use OpenShift base image
 FROM ${TARGET_IMAGE}
