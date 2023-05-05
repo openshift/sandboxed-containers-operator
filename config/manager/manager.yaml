@@ -49,11 +49,28 @@ spec:
       - effect: NoSchedule
         key: node.kubernetes.io/memory-pressure
         operator: Exists
+      volumes:
+      - name: ssh
+        secret:
+          defaultMode: 384
+          optional: true
+          secretName: ssh-key-secret
       containers:
       - command:
         - /manager
         args:
         - --enable-leader-election
+        volumeMounts:
+        - mountPath: /root/.ssh/
+          name: ssh
+          readOnly: true
+        envFrom:
+        - secretRef:
+            name: peer-pods-secret
+            optional: true
+        - configMapRef:
+            name: peer-pods-cm
+            optional: true
         image: controller:latest
         name: manager
         env:
