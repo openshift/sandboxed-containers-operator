@@ -971,9 +971,9 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	// peer pod enablement
 	if r.kataConfig.Spec.EnablePeerPods {
-		err := r.enablePeerPods()
+		err := r.enablePeerPodsMc()
 		if err != nil {
-			r.Log.Info("Enabling peerpods configuration failed", "err", err)
+			r.Log.Info("Enabling peerpods machineconfigs failed", "err", err)
 			return ctrl.Result{}, err
 		}
 	}
@@ -1118,6 +1118,17 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		if err != nil {
 			// Give sometime for the error to go away before reconciling again
 			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
+
+		// create PeerPodConfig CRD and runtimeclass for peerpods
+		if r.kataConfig.Spec.EnablePeerPods {
+			err = r.enablePeerPodsMiscConfigs()
+			if err != nil {
+				r.Log.Info("Enabling peerpodconfig CR, runtimeclass etc", "err", err)
+				// Give sometime for the error to go away before reconciling again
+				return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+
+			}
 		}
 
 	} else {
@@ -1846,7 +1857,29 @@ func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
 	return err
 }
 
-func (r *KataConfigOpenShiftReconciler) enablePeerPods() error {
+// Create the MachineConfigs for PeerPod
+// We do it before kata-oc creation to optimise the reboots required for MC creation
+func (r *KataConfigOpenShiftReconciler) enablePeerPodsMc() error {
+
+	//Create MachineConfig for kata-remote hyp CRIO config
+	err := r.createMcFromFile(peerpodsCrioMachineConfigYaml)
+	if err != nil {
+		r.Log.Info("Error in creating CRIO MachineConfig", "err", err)
+		return err
+	}
+
+	//Create MachineConfig for kata-remote hyp config toml
+	err = r.createMcFromFile(peerpodsKataRemoteMachineConfigYaml)
+	if err != nil {
+		r.Log.Info("Error in creating kata remote configuration.toml MachineConfig", "err", err)
+		return err
+	}
+
+	return nil
+}
+
+// Create the PeerPodConfig CRDs and misc configs required for peer-pods
+func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 	peerPodConfig := v1alpha1.PeerPodConfig{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
@@ -1857,6 +1890,7 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPods() error {
 			CloudSecretName: "peer-pods-secret",
 			ConfigMapName:   "peer-pods-cm",
 			Limit:           DEFAULT_PEER_PODS,
+			NodeSelector:    r.getNodeSelectorAsMap(),
 		},
 	}
 
@@ -1870,20 +1904,6 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPods() error {
 	err = r.createAuthJsonSecret()
 	if err != nil {
 		r.Log.Info("Error in creating auth-json-secret", "err", err)
-		return err
-	}
-
-	//Create MachineConfig for kata-remote hyp CRIO config
-	err = r.createMcFromFile(peerpodsCrioMachineConfigYaml)
-	if err != nil {
-		r.Log.Info("Error in creating CRIO MachineConfig", "err", err)
-		return err
-	}
-
-	//Create MachineConfig for kata-remote hyp config toml
-	err = r.createMcFromFile(peerpodsKataRemoteMachineConfigYaml)
-	if err != nil {
-		r.Log.Info("Error in creating kata remote configuration.toml MachineConfig", "err", err)
 		return err
 	}
 
