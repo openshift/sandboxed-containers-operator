@@ -190,6 +190,53 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 				return k8sClient.Delete(context.Background(), kataconfig)
 			}, timeout, interval).Should(Succeed())
 
+			// The controller first deletes the extension MC and then waits for the MCO to
+			// fully process the deletion. The controller achieves that by monitoring the
+			// status of the worker MCP and looking for a "Upgrading to Upgraded" transition.
+			// This is simulated on the test side by monitoring the WaitingForMcoToStart field
+			// of the KataConfig and looking for a "true to false" transition.
+			By("Waiting for KataConfig CR WaitingForMcoToStart to become true")
+			Eventually(func() bool {
+				kataconfig := &kataconfigurationv1.KataConfig{}
+				k8sClient.Get(context.Background(), kataConfigKey, kataconfig)
+				return kataconfig.Status.WaitingForMcoToStart
+			}, 10, time.Second).Should(Equal(true))
+
+			By("Getting the worker MachineConfigPool successfully")
+			workerMcp := &mcfgv1.MachineConfigPool{}
+			Expect(k8sClient.Get(context.Background(), types.NamespacedName{Name: "worker"}, workerMcp)).Should(Succeed())
+
+			By("Updating worker MCP status to Updating")
+			workerMcp.Status.Conditions = []mcfgv1.MachineConfigPoolCondition{
+				{
+					Type:    mcfgv1.MachineConfigPoolUpdating,
+					Status:  corev1.ConditionTrue,
+					Reason:  "",
+					Message: "",
+				},
+			}
+
+			Expect(k8sClient.Status().Update(context.Background(), workerMcp)).Should(Succeed())
+
+			By("Waiting for KataConfig CR WaitingForMcoToStart to become false")
+			Eventually(func() bool {
+				kataconfig := &kataconfigurationv1.KataConfig{}
+				k8sClient.Get(context.Background(), kataConfigKey, kataconfig)
+				return kataconfig.Status.WaitingForMcoToStart
+			}, 10, time.Second).Should(Equal(false))
+
+			By("Updating worker MCP status to Updated")
+			workerMcp.Status.Conditions = []mcfgv1.MachineConfigPoolCondition{
+				{
+					Type:    mcfgv1.MachineConfigPoolUpdated,
+					Status:  corev1.ConditionTrue,
+					Reason:  "",
+					Message: "",
+				},
+			}
+
+			Expect(k8sClient.Status().Update(context.Background(), workerMcp)).Should(Succeed())
+
 			By("Ensuring kata-oc MCP is successfully deleted")
 			Eventually(func() error {
 				return k8sClient.Get(context.Background(), types.NamespacedName{Name: "kata-oc"}, mcp)
@@ -249,6 +296,52 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 				k8sClient.Get(context.Background(), kataConfigKey, kataconfig)
 				return k8sClient.Delete(context.Background(), kataconfig)
 			}, timeout, interval).Should(Succeed())
+
+			// The controller first deletes the extension MC and then waits for the MCO to
+			// fully process the deletion. The controller achieves that by monitoring the
+			// status of the worker MCP and looking for a "Upgrading to Upgraded" transition.
+			// This is simulated on the test side by monitoring the WaitingForMcoToStart field
+			// of the KataConfig and looking for a "true to false" transition.
+			By("Waiting for KataConfig CR WaitingForMcoToStart to become true")
+			Eventually(func() bool {
+				kataconfig := &kataconfigurationv1.KataConfig{}
+				k8sClient.Get(context.Background(), kataConfigKey, kataconfig)
+				return kataconfig.Status.WaitingForMcoToStart
+			}, 10, time.Second).Should(Equal(true))
+
+			By("Getting the worker MachineConfigPool successfully")
+			workerMcp := &mcfgv1.MachineConfigPool{}
+			Expect(k8sClient.Get(context.Background(), types.NamespacedName{Name: "worker"}, workerMcp)).Should(Succeed())
+
+			By("Updating worker MCP status to Updating")
+			workerMcp.Status.Conditions = []mcfgv1.MachineConfigPoolCondition{
+				{
+					Type:    mcfgv1.MachineConfigPoolUpdating,
+					Status:  corev1.ConditionTrue,
+					Reason:  "",
+					Message: "",
+				},
+			}
+
+			Expect(k8sClient.Status().Update(context.Background(), workerMcp)).Should(Succeed())
+
+			By("Waiting for KataConfig CR WaitingForMcoToStart to become false")
+			Eventually(func() bool {
+				kataconfig := &kataconfigurationv1.KataConfig{}
+				k8sClient.Get(context.Background(), kataConfigKey, kataconfig)
+				return kataconfig.Status.WaitingForMcoToStart
+			}, 10, time.Second).Should(Equal(false))
+
+			By("Updating worker MCP status to Updated")
+			workerMcp.Status.Conditions = []mcfgv1.MachineConfigPoolCondition{
+				{
+					Type:    mcfgv1.MachineConfigPoolUpdated,
+					Status:  corev1.ConditionTrue,
+					Reason:  "",
+					Message: "",
+				},
+			}
+			Expect(k8sClient.Status().Update(context.Background(), workerMcp)).Should(Succeed())
 
 			By("Ensuring kata-oc MCP is successfully deleted")
 
@@ -554,6 +647,41 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 				return k8sClient.Delete(context.Background(), kataConfig)
 			}, timeout, time.Second).Should(Succeed())
 
+			// The controller first deletes the extension MC and then waits for the MCO to
+			// fully process the deletion. The controller achieves that by monitoring the
+			// status of the worker MCP and looking for a "Upgrading to Upgraded" transition.
+			// This is simulated on the test side by monitoring the WaitingForMcoToStart field
+			// of the KataConfig and looking for a "true to false" transition.
+			By("Waiting for KataConfig CR WaitingForMcoToStart to become true")
+			Eventually(func() bool {
+				kataconfig := &kataconfigurationv1.KataConfig{}
+				k8sClient.Get(context.Background(), kataConfigKey, kataconfig)
+				return kataconfig.Status.WaitingForMcoToStart
+			}, 10, time.Second).Should(Equal(true))
+
+			By("Getting the worker MachineConfigPool successfully")
+			workerMcp := &mcfgv1.MachineConfigPool{}
+			Expect(k8sClient.Get(context.Background(), types.NamespacedName{Name: "worker"}, workerMcp)).Should(Succeed())
+
+			By("Updating worker MCP status to Updating")
+			workerMcp.Status.Conditions = []mcfgv1.MachineConfigPoolCondition{
+				{
+					Type:    mcfgv1.MachineConfigPoolUpdating,
+					Status:  corev1.ConditionTrue,
+					Reason:  "",
+					Message: "",
+				},
+			}
+
+			Expect(k8sClient.Status().Update(context.Background(), workerMcp)).Should(Succeed())
+
+			By("Waiting for KataConfig CR WaitingForMcoToStart to become false")
+			Eventually(func() bool {
+				kataconfig := &kataconfigurationv1.KataConfig{}
+				k8sClient.Get(context.Background(), kataConfigKey, kataconfig)
+				return kataconfig.Status.WaitingForMcoToStart
+			}, 10, time.Second).Should(Equal(false))
+
 			By("Updating kata-oc MCP successfully")
 			kataMcp.Status.UpdatedMachineCount = 0
 			kataMcp.Status.ReadyMachineCount = 0
@@ -572,12 +700,6 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 			}
 
 			Expect(k8sClient.Status().Update(context.Background(), kataMcp)).Should(Succeed())
-
-			By("Getting the worker MachineConfigPool successfully")
-			workerMcp := &mcfgv1.MachineConfigPool{}
-			Eventually(func() error {
-				return k8sClient.Get(context.Background(), types.NamespacedName{Name: "worker"}, workerMcp)
-			}, timeout, interval).Should(Succeed())
 
 			By("Updating worker MCP successfully")
 			workerMcp.Status.UpdatedMachineCount = 0
