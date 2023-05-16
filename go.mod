@@ -3,8 +3,8 @@ module github.com/openshift/sandboxed-containers-operator
 go 1.19
 
 require (
-	github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl v0.0.0-20230504095339-77bef7014153
-	github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl v0.0.0-20230504095339-77bef7014153
+	github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl v0.0.0-20230512144533-a9941bba4692
+	github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl v0.0.0-20230512144533-a9941bba4692
 	github.com/coreos/ignition/v2 v2.9.0
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v1.2.3
@@ -154,7 +154,6 @@ require (
 )
 
 replace (
-	//github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl => ../cloud-api-adaptor/peerpodconfig-ctrl
 	k8s.io/api => k8s.io/api v0.25.1
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.25.1
 	k8s.io/apimachinery => k8s.io/apimachinery v0.25.1
