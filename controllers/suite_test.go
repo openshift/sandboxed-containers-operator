@@ -77,7 +77,7 @@ var _ = BeforeSuite(func() {
 		WebhookInstallOptions: webhookOptions,
 	}
 
-	Expect(os.Setenv("KATA_MONITOR_IMAGE", "quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest")).To(Succeed())
+	Expect(os.Setenv("RELATED_IMAGE_KATA_MONITOR", "quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest")).To(Succeed())
 
 	var err error
 	cfg, err = testEnv.Start()
