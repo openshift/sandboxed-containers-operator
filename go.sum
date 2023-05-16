@@ -338,10 +338,10 @@ github.com/cockroachdb/logtags v0.0.0-20190617123548-eb05cc24525f/go.mod h1:i/u9
 github.com/codahale/rfc6979 v0.0.0-20141003034818-6a90f24967eb/go.mod h1:ZjrT6AXHbDs86ZSdt/osfBi5qfexBrKUdONk989Wnk4=
 github.com/confidential-containers/cloud-api-adaptor v0.5.1-0.20230504043629-580abeb128aa h1:dRChI1GYwl5maTTkBszTmcPOx541mORE1S4Cxm1mbp0=
 github.com/confidential-containers/cloud-api-adaptor v0.5.1-0.20230504043629-580abeb128aa/go.mod h1:PgjQnT5SSuSMiVM2uVKj7Qq70lMc5nVhZOPYU0lyy+s=
-github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl v0.0.0-20230504095339-77bef7014153 h1:Fi+koFVy+nTa69XzsLo+6ktjalQH15om/RxfzW0GLPQ=
-github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl v0.0.0-20230504095339-77bef7014153/go.mod h1:MHjPSHrlD3SLbWqT6RteKSgZRc2fRRZahf5lfPYbHUM=
-github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl v0.0.0-20230504095339-77bef7014153 h1:5w9u2wIXGi0DGWyjP43m8yIRL4OPcm5GS3/jWZ/6SGA=
-github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl v0.0.0-20230504095339-77bef7014153/go.mod h1:LH9ur4GVe4uZM9MnQIGIeBr5CdCVMQ9AtUHGPs1WoD4=
+github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl v0.0.0-20230512144533-a9941bba4692 h1:c+/JR7+sxetQ+wI6XwGnrZAZA/ZgWhXQtXTbO2w0siA=
+github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl v0.0.0-20230512144533-a9941bba4692/go.mod h1:MHjPSHrlD3SLbWqT6RteKSgZRc2fRRZahf5lfPYbHUM=
+github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl v0.0.0-20230512144533-a9941bba4692 h1:Ym7kkFxPKcGEY1MadMD+BPxZOX4Migp1Sbq7kLkua2U=
+github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl v0.0.0-20230512144533-a9941bba4692/go.mod h1:LH9ur4GVe4uZM9MnQIGIeBr5CdCVMQ9AtUHGPs1WoD4=
 github.com/container-orchestrated-devices/container-device-interface v0.4.0/go.mod h1:E1zcucIkq9P3eyNmY+68dBQsTcsXJh9cgRo2IVNScKQ=
 github.com/containerd/aufs v0.0.0-20200908144142-dab0cbea06f4/go.mod h1:nukgQABAEopAHvB6j7cnP5zJ+/3aVcE7hCYqvIwAHyE=
 github.com/containerd/aufs v0.0.0-20201003224125-76a6863f2989/go.mod h1:AkGGQs9NM2vtYHaUen+NljV0/baGCAPELGm2q9ZXpWU=
