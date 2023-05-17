@@ -863,7 +863,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		r.Log.Info("Couldn't get node selector for unlabelling nodes", "err", err)
 		return ctrl.Result{Requeue: true}, nil
 	}
-	err = r.unlabelNodes(kataNodeSelector)
+	labelingChanged, err := r.unlabelNodes(kataNodeSelector)
 
 	if err != nil {
 		if k8serrors.IsConflict(err) {
@@ -895,12 +895,22 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 			r.Log.Error(err, "Error found deleting machine config. If the machine config exists after installation it can be safely deleted manually.",
 				"mc", mc.Name)
 		}
+	}
+
+	isConvergedCluster, _ := r.checkConvergedCluster()
+
+	// Conditions to detect whether we need to wait for the MCO to start
+	// reconciliation differ based on whether the cluster is converged.
+	// If so then it's the fact we've just deleted the extension MC, if not
+	// then it's the node-role labeling change (if there's none it means
+	// we're deleting a KataConfig on a cluster where no nodes matched the
+	// kataConfigPoolSelector and thus there will be no change for the MCO
+	// to reconciliate).
+	if (isConvergedCluster && !isMcDeleted) || (!isConvergedCluster && labelingChanged) {
 		r.Log.Info("Starting to wait for MCO to start reconciliation")
 		r.kataConfig.Status.WaitingForMcoToStart = true
 		r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
 	}
-
-	isConvergedCluster, _ := r.checkConvergedCluster()
 
 	// When nodes migrate from a source pool to a target pool the source
 	// pool is drained immediately and the nodes then slowly join the target
@@ -1621,7 +1631,7 @@ func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (labelingChanged bool
 	return labelingChanged, nil
 }
 
-func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selector) (err error) {
+func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selector) (labelingChanged bool, err error) {
 	nodeList := &corev1.NodeList{}
 	listOpts := []client.ListOption{
 		client.MatchingLabelsSelector{Selector: nodeSelector},
@@ -1629,7 +1639,7 @@ func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selecto
 
 	if err := r.Client.List(context.TODO(), nodeList, listOpts...); err != nil {
 		r.Log.Error(err, "Getting list of nodes failed")
-		return err
+		return false, err
 	}
 
 	for _, node := range nodeList.Items {
@@ -1638,11 +1648,12 @@ func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selecto
 			err = r.Client.Update(context.TODO(), &node)
 			if err != nil {
 				r.Log.Error(err, "Error when removing labels from node", "node", node)
-				return err
+				return labelingChanged, err
 			}
+			labelingChanged = true
 		}
 	}
-	return nil
+	return labelingChanged, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) getConditionReason(conditions []mcfgv1.MachineConfigPoolCondition, conditionType mcfgv1.MachineConfigPoolConditionType) string {
