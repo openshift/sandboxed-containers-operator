@@ -278,6 +278,8 @@ github.com/blang/semver/v4 v4.0.0/go.mod h1:IbckMUScFkM3pff0VJDNKRiT6TG/YpiHIM2y
 github.com/blizzy78/varnamelen v0.3.0/go.mod h1:hbwRdBvoBqxk34XyQ6HA0UH3G0/1TKuv5AC4eaBT0Ec=
 github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869/go.mod h1:Ekp36dRnpXw/yCqJaO+ZrUyxD+3VXMFFr56k5XYrpB4=
 github.com/bombsimon/wsl/v3 v3.3.0/go.mod h1:st10JtZYLE4D5sC7b8xV4zTKZwAQjCH/Hy2Pm1FNZIc=
+github.com/bpradipt/cloud-api-adaptor/peerpodconfig-ctrl v0.0.0-20230518141914-a044ba0112d7 h1:j7RiPEM+i9J+pnCoHG109iiKIsv0FkzSgndnPCvJPM4=
+github.com/bpradipt/cloud-api-adaptor/peerpodconfig-ctrl v0.0.0-20230518141914-a044ba0112d7/go.mod h1:rKzi2D3YntaKBSwFumSIZZihzr24go1/5Pw0WNyLwNI=
 github.com/breml/bidichk v0.1.1/go.mod h1:zbfeitpevDUGI7V91Uzzuwrn4Vls8MoBMrwtt78jmso=
 github.com/bruth/assert v0.0.0-20130823105606-de420fa3b72e/go.mod h1:MT8TZkfLPRir91B19sXF7pmKBma+n6ecyjbqgXabchs=
 github.com/bshuster-repo/logrus-logstash-hook v0.4.1/go.mod h1:zsTqEiSzDgAa/8GZR7E1qaXrhYNDKBYy5/dWPTIflbk=
@@ -340,8 +342,8 @@ github.com/confidential-containers/cloud-api-adaptor v0.5.1-0.20230504043629-580
 github.com/confidential-containers/cloud-api-adaptor v0.5.1-0.20230504043629-580abeb128aa/go.mod h1:PgjQnT5SSuSMiVM2uVKj7Qq70lMc5nVhZOPYU0lyy+s=
 github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl v0.0.0-20230512144533-a9941bba4692 h1:c+/JR7+sxetQ+wI6XwGnrZAZA/ZgWhXQtXTbO2w0siA=
 github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl v0.0.0-20230512144533-a9941bba4692/go.mod h1:MHjPSHrlD3SLbWqT6RteKSgZRc2fRRZahf5lfPYbHUM=
-github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl v0.0.0-20230512144533-a9941bba4692 h1:Ym7kkFxPKcGEY1MadMD+BPxZOX4Migp1Sbq7kLkua2U=
-github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl v0.0.0-20230512144533-a9941bba4692/go.mod h1:LH9ur4GVe4uZM9MnQIGIeBr5CdCVMQ9AtUHGPs1WoD4=
+github.com/confidential-containers/cloud-api-adaptor/webhook v0.0.0-20230517153549-cb0274212c72 h1:wjx7CrHkSiCnu364LHUqBAl1ASWbYGZa4XTz1TplHgs=
+github.com/confidential-containers/cloud-api-adaptor/webhook v0.0.0-20230517153549-cb0274212c72/go.mod h1:CTkCkT/QC++Je7qcwrfBCQmoqFP82Y7/wzTJ+HnZmAU=
 github.com/container-orchestrated-devices/container-device-interface v0.4.0/go.mod h1:E1zcucIkq9P3eyNmY+68dBQsTcsXJh9cgRo2IVNScKQ=
 github.com/containerd/aufs v0.0.0-20200908144142-dab0cbea06f4/go.mod h1:nukgQABAEopAHvB6j7cnP5zJ+/3aVcE7hCYqvIwAHyE=
 github.com/containerd/aufs v0.0.0-20201003224125-76a6863f2989/go.mod h1:AkGGQs9NM2vtYHaUen+NljV0/baGCAPELGm2q9ZXpWU=

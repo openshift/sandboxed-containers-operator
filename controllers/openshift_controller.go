@@ -34,6 +34,7 @@ import (
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	nodeapi "k8s.io/api/node/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -98,6 +99,7 @@ const (
 // +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods/finalizers,verbs=update
+// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations,verbs=get;list;watch;create;update;delete
 
 func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = r.Log.WithValues("kataconfig", req.NamespacedName)
@@ -1941,6 +1943,14 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 		return err
 	}
 
+	// Create the mutating webhook
+
+	err = r.createMutatingWebhookConfig()
+	if err != nil {
+		r.Log.Info("Error in creating mutating webhook for peerpods", "err", err)
+		return err
+	}
+
 	// Create runtimeClass config for peer-pods
 	err = r.createRuntimeClass(peerpodsRuntimeClassName, peerpodsRuntimeClassCpuOverhead, peerpodsRuntimeClassMemOverhead)
 	if err != nil {
@@ -2032,5 +2042,150 @@ func (r *KataConfigOpenShiftReconciler) createMcFromFile(mcFileName string) erro
 			return err
 		}
 	}
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) createMutatingWebhookConfig() error {
+
+	webhookName := "mwebhook.peerpods.io"
+	// Define webhook path
+	webhookPath := "/mutate-v1-pod"
+
+	// Add failure policy
+	failurePolicy := admissionv1.Fail
+
+	// Add side effect
+	sideEffect := admissionv1.SideEffectClassNone
+
+	// Add list of namespaces to exclude
+	namespacesToExclude := []string{
+		"peer-pods-webhook-system",
+		"openshift-sandboxed-containers-operator",
+		"openshift",
+		"openshift-apiserver",
+		"openshift-apiserver-operator",
+		"openshift-authentication",
+		"openshift-authentication-operator",
+		"openshift-cloud-controller-manager",
+		"openshift-cloud-controller-manager-operator",
+		"openshift-cloud-credential-operator",
+		"openshift-cloud-network-config-controller",
+		"openshift-cluster-csi-drivers",
+		"openshift-cluster-machine-approver",
+		"openshift-cluster-node-tuning-operator",
+		"openshift-cluster-samples-operator",
+		"openshift-cluster-storage-operator",
+		"openshift-cluster-version",
+		"openshift-config",
+		"openshift-config-managed",
+		"openshift-config-operator",
+		"openshift-console",
+		"openshift-console-operator",
+		"openshift-console-user-settings",
+		"openshift-controller-manager",
+		"openshift-controller-manager-operator",
+		"openshift-dns",
+		"openshift-dns-operator",
+		"openshift-etcd",
+		"openshift-etcd-operator",
+		"openshift-host-network",
+		"openshift-image-registry",
+		"openshift-infra",
+		"openshift-ingress",
+		"openshift-ingress-canary",
+		"openshift-ingress-operator",
+		"openshift-insights",
+		"openshift-kni-infra",
+		"openshift-kube-apiserver",
+		"openshift-kube-apiserver-operator",
+		"openshift-kube-controller-manager",
+		"openshift-kube-scheduler",
+		"openshift-kube-scheduler-operator",
+		"openshift-kube-storage-version-migrator",
+		"openshift-kube-storage-version-migrator-operator",
+		"openshift-machine-api",
+		"openshift-machine-config-operator",
+		"openshift-marketplace",
+		"openshift-monitoring",
+		"openshift-multus",
+		"openshift-network-diagnostics",
+		"openshift-network-operator",
+		"openshift-node",
+		"openshift-nutanix-infra",
+		"openshift-oauth-apiserver",
+		"openshift-openstack-infra",
+		"openshift-operator-lifecycle-manager",
+		"openshift-operators",
+		"openshift-ovirt-infra",
+		"openshift-ovn-kubernetes",
+		"openshift-route-controller-manager",
+		"openshift-service-ca",
+		"openshift-service-ca-operator",
+		"openshift-user-workload-monitoring",
+		"openshift-vsphere-infra",
+		"kube-system",
+		"kube-node-lease",
+	}
+
+	svcNamespace := os.Getenv("PEERPODS_NAMESPACE")
+
+	// Add mutating webhook configuration
+	mutatingWebhookConfig := &admissionv1.MutatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "mutating-webhook-configuration",
+		},
+		Webhooks: []admissionv1.MutatingWebhook{
+			{
+				Name: webhookName,
+				ClientConfig: admissionv1.WebhookClientConfig{
+					Service: &admissionv1.ServiceReference{
+						Name:      "controller-manager-service",
+						Namespace: svcNamespace,
+						Path:      &webhookPath,
+					},
+				},
+				// Add rules
+				Rules: []admissionv1.RuleWithOperations{
+					{
+						Operations: []admissionv1.OperationType{
+							admissionv1.Create,
+							admissionv1.Update,
+						},
+						Rule: admissionv1.Rule{
+							APIGroups:   []string{""},
+							APIVersions: []string{"v1"},
+							Resources:   []string{"pods"},
+						},
+					},
+				},
+				// Add failure policy
+				FailurePolicy: &failurePolicy,
+				// Add side effects
+				SideEffects: &sideEffect,
+				// Add admission review versions
+				AdmissionReviewVersions: []string{"v1"},
+				// Add namespace selector using matchExpressions
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchExpressions: []metav1.LabelSelectorRequirement{
+						{
+							Key:      "kubernetes.io/metadata.name",
+							Operator: metav1.LabelSelectorOpNotIn,
+							// Take values from a predefined list
+							Values: namespacesToExclude,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Create MutatingWebhookConfiguration object
+	if err := r.Client.Create(context.Background(), mutatingWebhookConfig); err != nil {
+		if !k8serrors.IsAlreadyExists(err) {
+			r.Log.Error(err, "Failed to create MutatingWebhookConfiguration object")
+			return err
+		}
+	}
+
 	return nil
 }

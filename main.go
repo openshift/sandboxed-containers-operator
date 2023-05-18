@@ -23,6 +23,7 @@ import (
 
 	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl/controllers"
 	peerpodconfigcontrollers "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/controllers"
+	ppwebhook "github.com/confidential-containers/cloud-api-adaptor/webhook/pkg/mutating_webhook"
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
 	"go.uber.org/zap/zapcore"
@@ -38,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	// These imports are unused but required in go.mod
 	// for caching during manifest generation by controller-gen
@@ -166,6 +168,9 @@ func main() {
 		setupLog.Error(err, "unable to create webhook", "webhook", "KataConfig")
 		os.Exit(1)
 	}
+
+	// Start peerpod webhook
+	mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{Handler: &ppwebhook.PodMutator{Client: mgr.GetClient()}})
 
 	// +kubebuilder:scaffold:builder
 
