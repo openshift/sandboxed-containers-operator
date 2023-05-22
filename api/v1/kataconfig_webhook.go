@@ -19,6 +19,8 @@ package v1
 import (
 	"context"
 	"fmt"
+
+	ppwebhook "github.com/confidential-containers/cloud-api-adaptor/webhook/pkg/mutating_webhook"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -38,6 +40,16 @@ func (r *KataConfig) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(r).
+		Complete()
+}
+
+// +kubebuilder:webhook:admissionReviewVersions=v1,path=/mutate-v1-pod,mutating=true,failurePolicy=fail,groups="",resources=pods,verbs=create;update,versions=v1,name=mwebhook.peerpods.io,sideEffects=None
+func (r *KataConfig) SetupPodWebhookWithManager(mgr ctrl.Manager, podMutator *ppwebhook.PodMutator) error {
+	clientInst = mgr.GetClient()
+
+	return ctrl.NewWebhookManagedBy(mgr).
+		For(&corev1.Pod{}).
+		WithDefaulter(podMutator).
 		Complete()
 }
 

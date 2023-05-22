@@ -170,6 +170,11 @@ func main() {
 	}
 
 	// Start peerpod webhook
+	podMutator := &ppwebhook.PodMutator{Client: mgr.GetClient()}
+	if err = (&kataconfigurationv1.KataConfig{}).SetupPodWebhookWithManager(mgr, podMutator); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "PodWebhook")
+		os.Exit(1)
+	}
 	mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{Handler: &ppwebhook.PodMutator{Client: mgr.GetClient()}})
 
 	// +kubebuilder:scaffold:builder

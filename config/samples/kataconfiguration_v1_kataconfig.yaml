@@ -2,7 +2,8 @@ apiVersion: kataconfiguration.openshift.io/v1
 kind: KataConfig
 metadata:
   name: example-kataconfig
-#spec:
+spec:
+  enablePeerPods: true
 #  kataConfigPoolSelector:
 #    matchLabels:
 #       custom-kata1: test 

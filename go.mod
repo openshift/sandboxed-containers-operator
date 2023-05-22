@@ -171,4 +171,5 @@ replace (
 	vbom.ml/util => github.com/fvbommel/util v0.0.3
 )
 
-replace github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl => github.com/bpradipt/cloud-api-adaptor/peerpodconfig-ctrl v0.0.0-20230518141914-a044ba0112d7
+replace github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl => github.com/bpradipt/cloud-api-adaptor/peerpodconfig-ctrl v0.0.0-20230518150610-05f50107a228
+replace github.com/confidential-containers/cloud-api-adaptor/webhook/pkg/mutating_webhook => /home/jfreiman/go/src/github.com/openshift/sandboxed-containers-operator/webhook/pkg/mutating_webhook
