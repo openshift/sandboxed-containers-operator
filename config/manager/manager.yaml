@@ -82,6 +82,8 @@ spec:
           value: kata-containers
         - name: RELATED_IMAGE_CAA
           value: quay.io/confidential-containers/cloud-api-adaptor
+        - name: RELATED_IMAGE_PEERPODS_WEBHOOK
+          value: "quay.io/confidential-containers/peer-pods-webhook:latest" 
         imagePullPolicy: Always
         resources:
           limits:
