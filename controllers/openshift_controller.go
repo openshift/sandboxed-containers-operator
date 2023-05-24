@@ -344,7 +344,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 		runGroupID    = int64(1001)
 	)
 
-	kataMonitorImage := os.Getenv("KATA_MONITOR_IMAGE")
+	kataMonitorImage := os.Getenv("RELATED_IMAGE_KATA_MONITOR")
 	if len(kataMonitorImage) == 0 {
 		// kata-monitor image URL is generally impossible to verify or sanitise,
 		// with the empty value being pretty much the only exception where it's
@@ -352,7 +352,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 		// out of an infinite number of bad values, we choose not to return an
 		// error here (giving an impression that we can actually detect errors)
 		// but just log this incident and plow ahead.
-		r.Log.Info("KATA_MONITOR_IMAGE env var is unset or empty, kata-monitor pods will not run")
+		r.Log.Info("RELATED_IMAGE_KATA_MONITOR env var is unset or empty, kata-monitor pods will not run")
 	}
 
 	r.Log.Info("Creating monitor DaemonSet with image file: \"" + kataMonitorImage + "\"")
