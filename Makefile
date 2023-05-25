@@ -76,6 +76,12 @@ space := $() $()
 comma := ,
 GOFLAGS := -tags=$(subst $(space),$(comma),$(strip $(BUILTIN_CLOUD_PROVIDERS)))
 
+#
+# If SKIP_TESTS is set, the test target will *not* run `go test`.
+# This is to be able to temporarily work around test failures when doing
+# local development.
+SKIP_TESTS =
+
 .PHONY: all
 all: build
 
@@ -116,9 +122,13 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
+ifneq (, $(SKIP_TESTS))
+	@echo Skipping tests. Unset SKIP_TESTS to actually run them.
+else
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(GOFLAGS) ./... -coverprofile cover.out
 	# set write flag on created folder, so that we can clean it up
 	chmod +w $(LOCALBIN)/k8s/$(ENVTEST_K8S_VERSION)*
+endif
 
 ##@ Build
 
