@@ -13,17 +13,19 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    olm.skipRange: '>=1.1.0 <1.3.2'
+    olm.skipRange: '>=1.1.0 <1.4.0'
     operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
     operators.openshift.io/infrastructure-features: '["disconnected", "fips"]'
+    operators.openshift.io/valid-subscription: '["OpenShift Container Platform", "OpenShift
+      Platform Plus"]'
     operators.operatorframework.io/builder: operator-sdk-v1.20.1+git
+    operators.operatorframework.io/internal-objects: '["peerpods.confidentialcontainers.org","peerpodconfigs.confidentialcontainers.org"]'
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/sandboxed-containers-operator
-    operators.openshift.io/valid-subscription: '["OpenShift Container Platform", "OpenShift Platform Plus"]'
   labels:
     operatorframework.io/arch.amd64: supported
     operatorframework.io/os.linux: supported
-  name: sandboxed-containers-operator.v1.3.2
+  name: sandboxed-containers-operator.v1.4.0
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
@@ -363,7 +365,7 @@ spec:
   maturity: beta
   provider:
     name: Red Hat
-  version: 1.3.2
+  version: 1.4.0
   webhookdefinitions:
   - admissionReviewVersions:
     - v1

@@ -6,8 +6,12 @@ metadata:
 rules:
 - apiGroups:
   - kataconfiguration.openshift.io
+  - peerpodconfiguration.confidentialcontainers.org
+  - confidentialcontainers.org
   resources:
   - kataconfigs
+  - peerpodconfigs
+  - peerpods
   verbs:
   - create
   - delete
@@ -18,7 +22,11 @@ rules:
   - watch
 - apiGroups:
   - kataconfiguration.openshift.io
+  - peerpodconfiguration.confidentialcontainers.org
+  - confidentialcontainers.org
   resources:
   - kataconfigs/status
+  - peerpodconfigs/status
+  - peerpods/status
   verbs:
   - get

@@ -3,6 +3,9 @@ kind: Namespace
 metadata:
   labels:
     control-plane: controller-manager
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: privileged
   name: "openshift-sandboxed-containers-operator"
 ---
 apiVersion: apps/v1
@@ -46,18 +49,41 @@ spec:
       - effect: NoSchedule
         key: node.kubernetes.io/memory-pressure
         operator: Exists
+      volumes:
+      - name: ssh
+        secret:
+          defaultMode: 384
+          optional: true
+          secretName: ssh-key-secret
       containers:
       - command:
         - /manager
         args:
         - --enable-leader-election
+        volumeMounts:
+        - mountPath: /root/.ssh/
+          name: ssh
+          readOnly: true
+        envFrom:
+        - secretRef:
+            name: peer-pods-secret
+            optional: true
+        - configMapRef:
+            name: peer-pods-cm
+            optional: true
         image: controller:latest
         name: manager
         env:
-        - name: KATA_MONITOR_IMAGE
+        - name: PEERPODS_NAMESPACE
+          value: "openshift-sandboxed-containers-operator"
+        - name: RELATED_IMAGE_KATA_MONITOR
           value: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest
         - name: SANDBOXED_CONTAINERS_EXTENSION
           value: kata-containers
+        - name: RELATED_IMAGE_CAA
+          value: quay.io/confidential-containers/cloud-api-adaptor
+        - name: RELATED_IMAGE_PEERPODS_WEBHOOK
+          value: "quay.io/confidential-containers/peer-pods-webhook:latest" 
         imagePullPolicy: Always
         resources:
           limits:

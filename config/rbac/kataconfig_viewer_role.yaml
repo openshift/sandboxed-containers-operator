@@ -6,15 +6,23 @@ metadata:
 rules:
 - apiGroups:
   - kataconfiguration.openshift.io
+  - peerpodconfiguration.confidentialcontainers.org
+  - confidentialcontainers.org
   resources:
   - kataconfigs
+  - peerpodconfigs
+  - peerpods
   verbs:
   - get
   - list
   - watch
 - apiGroups:
+  - peerpodconfiguration.confidentialcontainers.org
   - kataconfiguration.openshift.io
+  - confidentialcontainers.org
   resources:
   - kataconfigs/status
+  - peerpodconfigs/status
+  - peerpods/status
   verbs:
   - get

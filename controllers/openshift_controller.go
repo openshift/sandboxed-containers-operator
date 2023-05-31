@@ -23,6 +23,8 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/api/v1alpha1"
+
 	appsv1 "k8s.io/api/apps/v1"
 
 	"k8s.io/apimachinery/pkg/labels"
@@ -39,9 +41,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	labelsutil "k8s.io/kubernetes/pkg/util/labels"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/workqueue"
+	labelsutil "k8s.io/kubernetes/pkg/util/labels"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -64,10 +66,20 @@ type KataConfigOpenShiftReconciler struct {
 }
 
 const (
-	dashboard_configmap_name      = "grafana-dashboard-sandboxed-containers"
-	dashboard_configmap_namespace = "openshift-config-managed"
-	container_runtime_config_name = "kata-crio-config"
-	extension_mc_name             = "50-enable-sandboxed-containers-extension"
+	dashboard_configmap_name            = "grafana-dashboard-sandboxed-containers"
+	dashboard_configmap_namespace       = "openshift-config-managed"
+	container_runtime_config_name       = "kata-crio-config"
+	extension_mc_name                   = "50-enable-sandboxed-containers-extension"
+	DEFAULT_PEER_PODS                   = "10"
+	peerpodConfigCrdName                = "peerpodconfig-openshift"
+	peerpodsMachineConfigPathLocation   = "/config/peerpods"
+	peerpodsCrioMachineConfig           = "50-kata-remote-cc"
+	peerpodsCrioMachineConfigYaml       = "mc-50-crio-config.yaml"
+	peerpodsKataRemoteMachineConfig     = "40-worker-kata-remote-config"
+	peerpodsKataRemoteMachineConfigYaml = "mc-40-kata-remote-config.yaml"
+	peerpodsRuntimeClassName            = "kata-remote-cc"
+	peerpodsRuntimeClassCpuOverhead     = "0.25"
+	peerpodsRuntimeClassMemOverhead     = "350Mi"
 )
 
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs;kataconfigs/finalizers,verbs=get;list;watch;create;update;patch;delete
@@ -79,6 +91,14 @@ const (
 // +kubebuilder:rbac:groups="";machineconfiguration.openshift.io,resources=nodes;machineconfigs;machineconfigpools;containerruntimeconfigs;pods;services;services/finalizers;endpoints;persistentvolumeclaims;events;configmaps;secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=use;get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;update
+// +kubebuilder:rbac:groups="",resources=nodes/status,verbs=patch
+// +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpodconfigs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpodconfigs/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpodconfigs/finalizers,verbs=update
+// +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods/finalizers,verbs=update
+// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations,verbs=get;list;watch;create;update;delete
 
 func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = r.Log.WithValues("kataconfig", req.NamespacedName)
@@ -117,14 +137,19 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		// indicated by the deletion timestamp being set.
 		if r.kataConfig.GetDeletionTimestamp() != nil {
 			res, err := r.processKataConfigDeleteRequest()
-			if err != nil {
-				return res, err
-			}
+
 			updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
-			if updateErr != nil {
+			// The finalizer test is to get rid of the
+			// "Operation cannot be fulfilled [...] Precondition failed"
+			// error which happens when returning from a reconciliation that
+			// deleted our KataConfig by removing its finalizer.  So if the
+			// finalizer is missing the actual KataConfig object is probably
+			// already gone from the cluster, hence the error.
+			if updateErr != nil && controllerutil.ContainsFinalizer(r.kataConfig, kataConfigFinalizer) {
+				r.Log.Info("Updating KataConfig failed", "err", updateErr)
 				return ctrl.Result{}, updateErr
 			}
-			return res, nil
+			return res, err
 		}
 
 		res, err := r.processKataConfigInstallRequest()
@@ -288,6 +313,31 @@ func (r *KataConfigOpenShiftReconciler) processLogLevel(desiredLogLevel string) 
 	return nil
 }
 
+func (r *KataConfigOpenShiftReconciler) removeLogLevel() error {
+
+	r.Log.Info("removing logLevel ContainerRuntimeConfig")
+
+	ctrRuntimeCfg := &mcfgv1.ContainerRuntimeConfig{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: container_runtime_config_name}, ctrRuntimeCfg)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("no logLevel ContainerRuntimeConfig found, nothing to do")
+			return nil
+		} else {
+			r.Log.Info("could not get ContainerRuntimeConfig", "err", err)
+			return err
+		}
+	}
+
+	err = r.Client.Delete(context.TODO(), ctrRuntimeCfg)
+	if err != nil {
+		r.Log.Info("error deleting ContainerRuntimeConfig", "err", err)
+		return err
+	}
+	r.Log.Info("logLevel ContainerRuntimeConfig deleted successfully")
+	return nil
+}
+
 func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.DaemonSet {
 	var (
 		runPrivileged = false
@@ -295,7 +345,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 		runGroupID    = int64(1001)
 	)
 
-	kataMonitorImage := os.Getenv("KATA_MONITOR_IMAGE")
+	kataMonitorImage := os.Getenv("RELATED_IMAGE_KATA_MONITOR")
 	if len(kataMonitorImage) == 0 {
 		// kata-monitor image URL is generally impossible to verify or sanitise,
 		// with the empty value being pretty much the only exception where it's
@@ -303,7 +353,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 		// out of an infinite number of bad values, we choose not to return an
 		// error here (giving an impression that we can actually detect errors)
 		// but just log this incident and plow ahead.
-		r.Log.Info("KATA_MONITOR_IMAGE env var is unset or empty, kata-monitor pods will not run")
+		r.Log.Info("RELATED_IMAGE_KATA_MONITOR env var is unset or empty, kata-monitor pods will not run")
 	}
 
 	r.Log.Info("Creating monitor DaemonSet with image file: \"" + kataMonitorImage + "\"")
@@ -509,6 +559,18 @@ func (r *KataConfigOpenShiftReconciler) addFinalizer() error {
 	return nil
 }
 
+func (r *KataConfigOpenShiftReconciler) removeFinalizer() error {
+	r.Log.Info("Removing finalizer from the KataConfig")
+	controllerutil.RemoveFinalizer(r.kataConfig, kataConfigFinalizer)
+
+	err := r.Client.Update(context.TODO(), r.kataConfig)
+	if err != nil {
+		r.Log.Error(err, "Unable to update KataConfig")
+		return err
+	}
+	return nil
+}
+
 func (r *KataConfigOpenShiftReconciler) listKataPods() error {
 	podList := &corev1.PodList{}
 	listOpts := []client.ListOption{
@@ -570,6 +632,11 @@ func (r *KataConfigOpenShiftReconciler) checkConvergedCluster() (bool, error) {
 func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
 	r.Log.Info("Check Node Eligibility to run Kata containers")
 	// Check if node eligibility label exists
+
+	if r.kataConfig.Spec.EnablePeerPods {
+		r.Log.Info("enablePeerPods is true. Skipping since they are mutually exclusive.")
+		return nil
+	}
 	err, nodes := r.getNodesWithLabels(map[string]string{"feature.node.kubernetes.io/runtime.kata": "true"})
 	if err != nil {
 		r.Log.Error(err, "Error in getting list of nodes with label: feature.node.kubernetes.io/runtime.kata")
@@ -638,8 +705,7 @@ func (r *KataConfigOpenShiftReconciler) createScc() error {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) createRuntimeClass() error {
-	runtimeClassName := "kata"
+func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName string, cpuOverhead string, memoryOverhead string) error {
 
 	rc := func() *nodeapi.RuntimeClass {
 		rc := &nodeapi.RuntimeClass{
@@ -655,8 +721,8 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass() error {
 			// https://github.com/kata-containers/packaging/blob/f17450317563b6e4d6b1a71f0559360b37783e19/kata-deploy/k8s-1.18/kata-runtimeClasses.yaml#L7
 			Overhead: &nodeapi.Overhead{
 				PodFixed: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("250m"),
-					corev1.ResourceMemory: resource.MustParse("350Mi"),
+					corev1.ResourceCPU:    resource.MustParse(cpuOverhead),
+					corev1.ResourceMemory: resource.MustParse(memoryOverhead),
 				},
 			},
 		}
@@ -710,7 +776,7 @@ func (r *KataConfigOpenShiftReconciler) getKataConfigNodeSelectorAsLabelSelector
 	isConvergedCluster, err := r.checkConvergedCluster()
 	if err == nil && isConvergedCluster {
 		// master MCP cannot be customized
-		return &metav1.LabelSelector { MatchLabels: map[string]string{ "node-role.kubernetes.io/master": "" }}
+		return &metav1.LabelSelector{MatchLabels: map[string]string{"node-role.kubernetes.io/master": ""}}
 	}
 
 	nodeSelector := &metav1.LabelSelector{}
@@ -744,7 +810,7 @@ func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsMap() map[string]string
 	isConvergedCluster, err := r.checkConvergedCluster()
 	if err == nil && isConvergedCluster {
 		// master MCP cannot be customized
-		return map[string]string{ "node-role.kubernetes.io/master": "" }
+		return map[string]string{"node-role.kubernetes.io/master": ""}
 	} else {
 		return map[string]string{"node-role.kubernetes.io/kata-oc": ""}
 	}
@@ -754,17 +820,21 @@ func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsLabelSelector() *metav1
 	return &metav1.LabelSelector{MatchLabels: r.getNodeSelectorAsMap()}
 }
 
+func (r *KataConfigOpenShiftReconciler) isMcpUpdating(mcpName string) bool {
+	mcp := &mcfgv1.MachineConfigPool{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcpName}, mcp)
+	if err != nil {
+		r.Log.Info("Getting MachineConfigPool failed ", "machinePool", mcpName, "err", err)
+		return false
+	}
+	return mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating)
+}
+
 func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.Result, error) {
 	r.Log.Info("KataConfig deletion in progress: ")
-	machinePool, err := r.getMcpNameIfMcpExists()
+	machinePool, err := r.getMcpName()
 	if err != nil {
 		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-	}
-
-	foundMcp := &mcfgv1.MachineConfigPool{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
-	if err != nil {
-		return ctrl.Result{}, err
 	}
 
 	if contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
@@ -794,7 +864,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		r.Log.Info("Couldn't get node selector for unlabelling nodes", "err", err)
 		return ctrl.Result{Requeue: true}, nil
 	}
-	err = r.unlabelNodes(kataNodeSelector)
+	labelingChanged, err := r.unlabelNodes(kataNodeSelector)
 
 	if err != nil {
 		if k8serrors.IsConflict(err) {
@@ -826,70 +896,77 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 			r.Log.Error(err, "Error found deleting machine config. If the machine config exists after installation it can be safely deleted manually.",
 				"mc", mc.Name)
 		}
-		// Sleep for MCP to reflect the changes
-		r.Log.Info("Pausing for a minute to make sure mcp has started syncing up")
-		time.Sleep(60 * time.Second)
 	}
 
-	mcp := &mcfgv1.MachineConfigPool{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, mcp)
-	if err != nil {
-		r.Log.Error(err, "Unable to get MachineConfigPool ", "machinePool", machinePool)
-		return ctrl.Result{}, err
+	isConvergedCluster, _ := r.checkConvergedCluster()
+
+	// Conditions to detect whether we need to wait for the MCO to start
+	// reconciliation differ based on whether the cluster is converged.
+	// If so then it's the fact we've just deleted the extension MC, if not
+	// then it's the node-role labeling change (if there's none it means
+	// we're deleting a KataConfig on a cluster where no nodes matched the
+	// kataConfigPoolSelector and thus there will be no change for the MCO
+	// to reconciliate).
+	if (isConvergedCluster && !isMcDeleted) || (!isConvergedCluster && labelingChanged) {
+		r.Log.Info("Starting to wait for MCO to start reconciliation")
+		r.kataConfig.Status.WaitingForMcoToStart = true
+		r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
 	}
-	r.Log.Info("Monitoring mcp", "mcp name", mcp.Name, "ready machines", mcp.Status.ReadyMachineCount,
-		"total machines", mcp.Status.MachineCount)
-	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
+
+	// When nodes migrate from a source pool to a target pool the source
+	// pool is drained immediately and the nodes then slowly join the target
+	// pool.  Thus the operation duration is dominated by the target pool
+	// part and the target pool is what we need to watch to find out when
+	// the operation is finished.  When uninstalling kata on a regular
+	// cluster nodes leave "kata-oc" to rejoin "worker" so "worker" is our
+	// target pool.  On a converged cluster, nodes leave "master" to rejoin
+	// it so "master" is both source and target in this case.
+	targetPool := "worker"
+	if isConvergedCluster {
+		targetPool = "master"
+	}
+	isMcoUpdating := r.isMcpUpdating(targetPool)
+
+	if !isMcoUpdating && r.kataConfig.Status.WaitingForMcoToStart {
+		r.Log.Info("Waiting for MCO to start updating.")
+		// We don't requeue, an MCP going Updated->Updating will
+		// trigger reconciliation by itself thanks to our watching MCPs.
+		return reconcile.Result{}, nil
+	} else {
+		r.Log.Info("No need to wait for MCO to start updating.", "isMcoUpdating", isMcoUpdating, "Status.WaitingForMcoToStart", r.kataConfig.Status.WaitingForMcoToStart)
+		r.kataConfig.Status.WaitingForMcoToStart = false
+	}
+
 	r.clearUninstallStatus()
 	_, result, err2, done := r.updateStatus(machinePool)
 	if !done {
 		return result, err2
 	}
 
-	if mcp.Status.ReadyMachineCount != mcp.Status.MachineCount {
-		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
-	}
-
-	// Sleep for MCP to reflect the changes
-	r.Log.Info("Pausing for a minute to make sure mcp has started syncing up")
-	time.Sleep(60 * time.Second)
-
-	//This is not applicable for converged cluster
-	isConvergedCluster, _ := r.checkConvergedCluster()
-	if !isConvergedCluster {
-		//Get "worker" MCP
-		wMcp := &mcfgv1.MachineConfigPool{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: "worker"}, wMcp)
-		if err != nil {
-			r.Log.Error(err, "Unable to get MachineConfigPool - worker")
-			return ctrl.Result{}, err
-		}
-
-		// At this time the kata-oc MCP is updated. However the worker MCP might still be in Updating state
-		// We'll need to wait for the worker MCP to complete Updating before deletion
-		r.Log.Info("Wait till worker MCP has updated")
-		if (wMcp.Status.ReadyMachineCount != wMcp.Status.MachineCount) &&
-			mcfgv1.IsMachineConfigPoolConditionTrue(wMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) {
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
-		}
-
-		err = r.Client.Delete(context.TODO(), mcp)
-		if err != nil {
-			r.Log.Error(err, "Unable to delete kata-oc MachineConfigPool")
-			return ctrl.Result{}, err
-		}
+	if isMcoUpdating {
+		r.Log.Info("Waiting for MachineConfigPool to be fully updated", "machinePool", targetPool)
+		return reconcile.Result{}, nil
 	}
 
 	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionFalse
-	_, result, err2, done = r.updateStatus(machinePool)
-	r.clearInstallStatus()
-	if !done {
-		return result, err2
-	}
-	err = r.Client.Status().Update(context.TODO(), r.kataConfig)
-	if err != nil {
-		r.Log.Error(err, "Unable to update KataConfig status")
-		return ctrl.Result{}, err
+
+	if !isConvergedCluster {
+		r.Log.Info("Get()'ing MachineConfigPool to delete it", "machinePool", "kata-oc")
+		kataOcMcp := &mcfgv1.MachineConfigPool{}
+		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: "kata-oc"}, kataOcMcp)
+		if err == nil {
+			r.Log.Info("Deleting MachineConfigPool ", "machinePool", "kata-oc")
+			err = r.Client.Delete(context.TODO(), kataOcMcp)
+			if err != nil {
+				r.Log.Error(err, "Unable to delete kata-oc MachineConfigPool")
+				return ctrl.Result{}, err
+			}
+		} else if k8serrors.IsNotFound(err) {
+			r.Log.Info("MachineConfigPool not found", "machinePool", "kata-oc")
+		} else {
+			r.Log.Error(err, "Unable to get MachineConfigPool ", "machinePool", "kata-oc")
+			return ctrl.Result{}, err
+		}
 	}
 
 	ds := r.processDaemonsetForMonitor()
@@ -903,6 +980,13 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		}
 	}
 
+	if r.kataConfig.Spec.EnablePeerPods {
+		// We are explicitly ignoring any errors in peerpodconfig and related machineconfigs removal as
+		// these can be removed manually if needed and this is not in the critical path
+		// of operator functionality
+		_ = r.disablePeerPods()
+	}
+
 	scc := GetScc()
 	err = r.Client.Delete(context.TODO(), scc)
 	if err != nil {
@@ -914,14 +998,16 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		}
 	}
 
-	r.Log.Info("Uninstallation completed. Proceeding with the KataConfig deletion")
-	controllerutil.RemoveFinalizer(r.kataConfig, kataConfigFinalizer)
-
-	err = r.Client.Update(context.TODO(), r.kataConfig)
+	err = r.removeLogLevel()
 	if err != nil {
-		r.Log.Error(err, "Unable to update KataConfig")
-		return ctrl.Result{}, err
+		return ctrl.Result{Requeue: true}, nil
 	}
+
+	r.Log.Info("Uninstallation completed. Proceeding with the KataConfig deletion")
+	if err = r.removeFinalizer(); err != nil {
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -935,6 +1021,15 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 			// If no nodes are found, requeue to check again for eligible nodes
 			r.Log.Error(err, "Failed to check Node eligibility for running Kata containers")
 			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 20}, err
+		}
+	}
+
+	// peer pod enablement
+	if r.kataConfig.Spec.EnablePeerPods {
+		err := r.enablePeerPodsMc()
+		if err != nil {
+			r.Log.Info("Enabling peerpods machineconfigs failed", "err", err)
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -1007,24 +1102,14 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		}
 	}
 
-	isMcpUpdating := func(mcpName string) bool {
-		mcp := &mcfgv1.MachineConfigPool{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mcpName}, mcp)
-		if err != nil {
-			r.Log.Info("Getting MachineConfigPool failed ", "machinePool", mcpName, "err", err)
-			return false
-		}
-		return mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating)
-	}
-
-	isKataMcpUpdating := isMcpUpdating(machinePool)
+	isKataMcpUpdating := r.isMcpUpdating(machinePool)
 	r.Log.Info("MCP updating state", "MCP name", machinePool, "is updating", isKataMcpUpdating)
 	if isKataMcpUpdating {
 		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
 	}
 	isMcoUpdating := isKataMcpUpdating
 	if !isConvergedCluster {
-		isWorkerUpdating := isMcpUpdating("worker")
+		isWorkerUpdating := r.isMcpUpdating("worker")
 		r.Log.Info("MCP updating state", "MCP name", "worker", "is updating", isWorkerUpdating)
 		if isWorkerUpdating {
 			r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
@@ -1068,7 +1153,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	if !isMcoUpdating {
 		r.Log.Info("create runtime class")
 		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionFalse
-		err := r.createRuntimeClass()
+		err := r.createRuntimeClass("kata", "0.25", "350Mi")
 		if err != nil {
 			// Give sometime for the error to go away before reconciling again
 			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
@@ -1078,6 +1163,17 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		if err != nil {
 			// Give sometime for the error to go away before reconciling again
 			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
+
+		// create PeerPodConfig CRD and runtimeclass for peerpods
+		if r.kataConfig.Spec.EnablePeerPods {
+			err = r.enablePeerPodsMiscConfigs()
+			if err != nil {
+				r.Log.Info("Enabling peerpodconfig CR, runtimeclass etc", "err", err)
+				// Give sometime for the error to go away before reconciling again
+				return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+
+			}
 		}
 
 	} else {
@@ -1297,7 +1393,6 @@ func (eh *McpEventHandler) Generic(event event.GenericEvent, queue workqueue.Rat
 	log.Info("MCP generic event")
 }
 
-
 func (r *KataConfigOpenShiftReconciler) nodeMatchesKataSelector(nodeLabels map[string]string) bool {
 	nodeSelector, err := r.getKataConfigNodeSelectorAsSelector()
 
@@ -1350,7 +1445,6 @@ func getStringMapDiff(oldMap, newMap map[string]string) (added, modified, remove
 	}
 	return added, modified, removed
 }
-
 
 type NodeEventHandler struct {
 	reconciler *KataConfigOpenShiftReconciler
@@ -1538,7 +1632,7 @@ func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (labelingChanged bool
 	return labelingChanged, nil
 }
 
-func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selector) (err error) {
+func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selector) (labelingChanged bool, err error) {
 	nodeList := &corev1.NodeList{}
 	listOpts := []client.ListOption{
 		client.MatchingLabelsSelector{Selector: nodeSelector},
@@ -1546,7 +1640,7 @@ func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selecto
 
 	if err := r.Client.List(context.TODO(), nodeList, listOpts...); err != nil {
 		r.Log.Error(err, "Getting list of nodes failed")
-		return err
+		return false, err
 	}
 
 	for _, node := range nodeList.Items {
@@ -1555,11 +1649,12 @@ func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selecto
 			err = r.Client.Update(context.TODO(), &node)
 			if err != nil {
 				r.Log.Error(err, "Error when removing labels from node", "node", node)
-				return err
+				return labelingChanged, err
 			}
+			labelingChanged = true
 		}
 	}
-	return nil
+	return labelingChanged, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) getConditionReason(conditions []mcfgv1.MachineConfigPoolCondition, conditionType mcfgv1.MachineConfigPoolConditionType) string {
@@ -1682,8 +1777,8 @@ func (r *KataConfigOpenShiftReconciler) updateFailedNodes(node *corev1.Node,
 	if err != nil {
 		return err, failedList
 	}
-	if (mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded) ||
-		mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)) {
+	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded) ||
+		mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) {
 		failedList =
 			append(r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList,
 				kataconfigurationv1.FailedNodeStatus{Name: node.GetName(),
@@ -1768,4 +1863,229 @@ func (r *KataConfigOpenShiftReconciler) clearFailedStatus(status kataconfigurati
 	status.FailedNodesCount = 0
 
 	return status
+}
+
+func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
+	var err error = nil
+
+	pullSecret := &corev1.Secret{}
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: "pull-secret", Namespace: "openshift-config"}, pullSecret)
+	if err != nil {
+		r.Log.Info("Error fetching pull-secret", "err", err)
+		return err
+	}
+
+	authJsonSecret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "auth-json-secret",
+			Namespace: "openshift-sandboxed-containers-operator",
+		},
+		Data: map[string][]byte{
+			"auth.json": pullSecret.Data[".dockerconfigjson"],
+		},
+		Type: corev1.SecretTypeOpaque,
+	}
+
+	err = r.Client.Create(context.TODO(), &authJsonSecret)
+	if err != nil {
+		if k8serrors.IsAlreadyExists(err) {
+			err = r.Client.Update(context.TODO(), &authJsonSecret)
+			if err != nil {
+				r.Log.Info("Error updating auth-json-secret", "err", err)
+				return err
+			}
+		} else {
+			r.Log.Info("Error creating auth-json-secret", "err", err)
+			return err
+		}
+	}
+
+	return err
+}
+
+// Create the MachineConfigs for PeerPod
+// We do it before kata-oc creation to optimise the reboots required for MC creation
+func (r *KataConfigOpenShiftReconciler) enablePeerPodsMc() error {
+
+	//Create MachineConfig for kata-remote hyp CRIO config
+	err := r.createMcFromFile(peerpodsCrioMachineConfigYaml)
+	if err != nil {
+		r.Log.Info("Error in creating CRIO MachineConfig", "err", err)
+		return err
+	}
+
+	//Create MachineConfig for kata-remote hyp config toml
+	err = r.createMcFromFile(peerpodsKataRemoteMachineConfigYaml)
+	if err != nil {
+		r.Log.Info("Error in creating kata remote configuration.toml MachineConfig", "err", err)
+		return err
+	}
+
+	return nil
+}
+
+// Create the PeerPodConfig CRDs and misc configs required for peer-pods
+func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
+	peerPodConfig := v1alpha1.PeerPodConfig{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      peerpodConfigCrdName,
+			Namespace: "openshift-sandboxed-containers-operator",
+		},
+		Spec: v1alpha1.PeerPodConfigSpec{
+			CloudSecretName: "peer-pods-secret",
+			ConfigMapName:   "peer-pods-cm",
+			Limit:           DEFAULT_PEER_PODS,
+			NodeSelector:    r.getNodeSelectorAsMap(),
+		},
+	}
+
+	err := r.Client.Create(context.TODO(), &peerPodConfig)
+	if err != nil && !k8serrors.IsAlreadyExists(err) {
+		r.Log.Info("Error in creating peerpodconfig", "err", err)
+		return err
+	}
+
+	//Get pull-secret from openshift-config ns and save it as auth-json-secret in our ns
+	err = r.createAuthJsonSecret()
+	if err != nil {
+		r.Log.Info("Error in creating auth-json-secret", "err", err)
+		return err
+	}
+
+	// Create the mutating webhook deployment
+	err = r.createMutatingWebhookDeployment()
+	if err != nil {
+		r.Log.Info("Error in creating mutating webhook deployment for peerpods", "err", err)
+		return err
+	}
+
+	// Create the mutating webhook service
+	err = r.createMutatingWebhookService()
+	if err != nil {
+		r.Log.Info("Error in creating mutating webhook service for peerpods", "err", err)
+		return err
+	}
+
+	// Create the mutating webhook
+
+	err = r.createMutatingWebhookConfig()
+	if err != nil {
+		r.Log.Info("Error in creating mutating webhook for peerpods", "err", err)
+		return err
+	}
+
+	// Create runtimeClass config for peer-pods
+	err = r.createRuntimeClass(peerpodsRuntimeClassName, peerpodsRuntimeClassCpuOverhead, peerpodsRuntimeClassMemOverhead)
+	if err != nil {
+		r.Log.Info("Error in creating kata remote runtimeclass", "err", err)
+		return err
+	}
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) disablePeerPods() error {
+	peerPodConfig := v1alpha1.PeerPodConfig{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      peerpodConfigCrdName,
+			Namespace: "openshift-sandboxed-containers-operator",
+		},
+	}
+	err := r.Client.Delete(context.TODO(), &peerPodConfig)
+	if err != nil {
+		// error during removing peerpodconfig. Just log the error and move on.
+		r.Log.Info("Error found deleting PeerPodConfig. If the PeerPodConfig object exists after uninstallation it can be safely deleted manually", "err", err)
+	}
+
+	mc := mcfgv1.MachineConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "machineconfiguration.openshift.io/v1",
+			Kind:       "MachineConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: peerpodsKataRemoteMachineConfig,
+		},
+	}
+
+	err = r.Client.Delete(context.TODO(), &mc)
+	if err != nil {
+		// error during removing mc. Just log the error and move on.
+		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
+			"mc", mc.Name, "err", err)
+	}
+
+	mc = mcfgv1.MachineConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "machineconfiguration.openshift.io/v1",
+			Kind:       "MachineConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: peerpodsCrioMachineConfig,
+		},
+	}
+
+	err = r.Client.Delete(context.TODO(), &mc)
+	if err != nil {
+		// error during removing mc. Just log the error and move on.
+		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
+			"mc", mc.Name, "err", err)
+	}
+
+	// Delete mutating webhook deployment
+	err = r.deleteMutatingWebhookDeployment()
+	if err != nil {
+		r.Log.Info("Error in deleting mutating webhook deployment for peerpods", "err", err)
+		return err
+	}
+
+	// Delete mutating webhook service
+	err = r.deleteMutatingWebhookService()
+	if err != nil {
+		r.Log.Info("Error in deleting mutating webhook service for peerpods", "err", err)
+		return err
+	}
+
+	// Delete the mutating webhook
+	err = r.deleteMutatingWebhookConfig()
+	if err != nil {
+		r.Log.Info("Error in deleting mutating webhook for peerpods", "err", err)
+		return err
+	}
+
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) createMcFromFile(mcFileName string) error {
+	yamlData, err := readMachineConfigYAML(mcFileName)
+	if err != nil {
+		r.Log.Info("Error in reading MachineConfigYaml", "mcFileName", mcFileName, "err", err)
+		return err
+	}
+
+	r.Log.Info("machineConfig yaml dump ", "yamlData", yamlData)
+
+	machineConfig, err := parseMachineConfigYAML(yamlData)
+	if err != nil {
+		r.Log.Info("Error in parsing MachineConfigYaml", "mcFileName", mcFileName, "err", err)
+		return err
+	}
+
+	// Default MCP is kata-oc, however for converged cluster it should be "master"
+	isConvergedCluster, err := r.checkConvergedCluster()
+	if isConvergedCluster && err == nil {
+		machineConfig.Labels["machineconfiguration.openshift.io/role"] = "master"
+	}
+
+	r.Log.Info("machineConfig dump ", "machineConfig", machineConfig)
+
+	if err := r.Client.Create(context.TODO(), machineConfig); err != nil {
+		if k8serrors.IsAlreadyExists(err) {
+			r.Log.Info("machineConfig already exists")
+			return nil
+		} else {
+			return err
+		}
+	}
+	return nil
 }

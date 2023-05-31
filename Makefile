@@ -3,7 +3,7 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 1.3.4
+VERSION ?= 1.4.0
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -61,14 +61,26 @@ GOBIN=$(shell go env GOBIN)
 endif
 
 # These images needs to be synced with the default values in the Dockerfile.
-BUILDER_IMAGE ?= registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.18-openshift-4.11
-TARGET_IMAGE  ?= registry.ci.openshift.org/ocp/4.11:base
+BUILDER_IMAGE ?= registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.19-openshift-4.13
+TARGET_IMAGE  ?= registry.ci.openshift.org/ocp/4.13:base
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # This is a requirement for 'setup-envtest.sh' in the test target.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
+
+BUILTIN_CLOUD_PROVIDERS ?= aws azure
+# Build tags required to build cloud-api-adaptor are derived from BUILTIN_CLOUD_PROVIDERS.
+space := $() $()
+comma := ,
+GOFLAGS := -tags=$(subst $(space),$(comma),$(strip $(BUILTIN_CLOUD_PROVIDERS)))
+
+#
+# If SKIP_TESTS is set, the test target will *not* run `go test`.
+# This is to be able to temporarily work around test failures when doing
+# local development.
+SKIP_TESTS =
 
 .PHONY: all
 all: build
@@ -110,17 +122,19 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
+ifneq (, $(SKIP_TESTS))
+	@echo Skipping tests. Unset SKIP_TESTS to actually run them.
+else
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(GOFLAGS) ./... -coverprofile cover.out
 	# set write flag on created folder, so that we can clean it up
 	chmod +w $(LOCALBIN)/k8s/$(ENVTEST_K8S_VERSION)*
-
-
+endif
 
 ##@ Build
 
 .PHONY: build
 build: generate fmt vet ## Build manager binary.
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=mod -o bin/manager main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -mod=mod -o bin/manager main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -199,7 +213,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.5
-CONTROLLER_TOOLS_VERSION ?= v0.9.2
+CONTROLLER_TOOLS_VERSION ?= v0.10.0
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 .PHONY: kustomize

@@ -21,6 +21,8 @@ import (
 	"flag"
 	"os"
 
+	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl/controllers"
+	peerpodconfigcontrollers "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/controllers"
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
 	"go.uber.org/zap/zapcore"
@@ -37,6 +39,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	// These imports are unused but required in go.mod
+	// for caching during manifest generation by controller-gen
+	_ "github.com/spf13/cobra"
+	_ "sigs.k8s.io/controller-tools/pkg/crd"
+	_ "sigs.k8s.io/controller-tools/pkg/genall"
+	_ "sigs.k8s.io/controller-tools/pkg/genall/help/pretty"
+	_ "sigs.k8s.io/controller-tools/pkg/loader"
+
+	peerpod "github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl/api/v1alpha1"
+	peerpodconfig "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/api/v1alpha1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	"github.com/openshift/sandboxed-containers-operator/controllers"
 	// +kubebuilder:scaffold:imports
@@ -61,6 +73,10 @@ func init() {
 	utilruntime.Must(mcfgapi.Install(scheme))
 
 	utilruntime.Must(kataconfigurationv1.AddToScheme(scheme))
+
+	utilruntime.Must(peerpodconfig.AddToScheme(scheme))
+
+	utilruntime.Must(peerpod.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -123,12 +139,34 @@ func main() {
 			setupLog.Error(err, "unable to create KataConfig controller for OpenShift cluster", "controller", "KataConfig")
 			os.Exit(1)
 		}
+
+		if err = (&peerpodconfigcontrollers.PeerPodConfigReconciler{
+			Client: mgr.GetClient(),
+			Log:    ctrl.Log.WithName("controllers").WithName("RemotePodConfig"),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create RemotePodConfig controller for OpenShift cluster", "controller", "RemotePodConfig")
+			os.Exit(1)
+		}
+
+		if err = (&peerpodcontrollers.PeerPodReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+			// setting nil will delegate Provider creation to reconcile time, make sure RBAC permits:
+			//+kubebuilder:rbac:groups="",resourceNames=peer-pods-cm;peer-pods-secret,resources=configmaps;secrets,verbs=get
+			Provider: nil,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create peerpod resources controller", "controller", "PeerPod")
+			os.Exit(1)
+		}
+
 	}
 
 	if err = (&kataconfigurationv1.KataConfig{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "KataConfig")
 		os.Exit(1)
 	}
+
 	// +kubebuilder:scaffold:builder
 
 	setupLog.Info("starting manager")
