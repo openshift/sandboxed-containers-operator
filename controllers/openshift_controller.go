@@ -98,6 +98,7 @@ const (
 // +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods/finalizers,verbs=update
+// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations,verbs=get;list;watch;create;update;delete
 
 func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = r.Log.WithValues("kataconfig", req.NamespacedName)
@@ -344,7 +345,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 		runGroupID    = int64(1001)
 	)
 
-	kataMonitorImage := os.Getenv("KATA_MONITOR_IMAGE")
+	kataMonitorImage := os.Getenv("RELATED_IMAGE_KATA_MONITOR")
 	if len(kataMonitorImage) == 0 {
 		// kata-monitor image URL is generally impossible to verify or sanitise,
 		// with the empty value being pretty much the only exception where it's
@@ -352,7 +353,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 		// out of an infinite number of bad values, we choose not to return an
 		// error here (giving an impression that we can actually detect errors)
 		// but just log this incident and plow ahead.
-		r.Log.Info("KATA_MONITOR_IMAGE env var is unset or empty, kata-monitor pods will not run")
+		r.Log.Info("RELATED_IMAGE_KATA_MONITOR env var is unset or empty, kata-monitor pods will not run")
 	}
 
 	r.Log.Info("Creating monitor DaemonSet with image file: \"" + kataMonitorImage + "\"")
@@ -1952,6 +1953,28 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 		return err
 	}
 
+	// Create the mutating webhook deployment
+	err = r.createMutatingWebhookDeployment()
+	if err != nil {
+		r.Log.Info("Error in creating mutating webhook deployment for peerpods", "err", err)
+		return err
+	}
+
+	// Create the mutating webhook service
+	err = r.createMutatingWebhookService()
+	if err != nil {
+		r.Log.Info("Error in creating mutating webhook service for peerpods", "err", err)
+		return err
+	}
+
+	// Create the mutating webhook
+
+	err = r.createMutatingWebhookConfig()
+	if err != nil {
+		r.Log.Info("Error in creating mutating webhook for peerpods", "err", err)
+		return err
+	}
+
 	// Create runtimeClass config for peer-pods
 	err = r.createRuntimeClass(peerpodsRuntimeClassName, peerpodsRuntimeClassCpuOverhead, peerpodsRuntimeClassMemOverhead)
 	if err != nil {
@@ -2007,6 +2030,27 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPods() error {
 		// error during removing mc. Just log the error and move on.
 		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
 			"mc", mc.Name, "err", err)
+	}
+
+	// Delete mutating webhook deployment
+	err = r.deleteMutatingWebhookDeployment()
+	if err != nil {
+		r.Log.Info("Error in deleting mutating webhook deployment for peerpods", "err", err)
+		return err
+	}
+
+	// Delete mutating webhook service
+	err = r.deleteMutatingWebhookService()
+	if err != nil {
+		r.Log.Info("Error in deleting mutating webhook service for peerpods", "err", err)
+		return err
+	}
+
+	// Delete the mutating webhook
+	err = r.deleteMutatingWebhookConfig()
+	if err != nil {
+		r.Log.Info("Error in deleting mutating webhook for peerpods", "err", err)
+		return err
 	}
 
 	return nil

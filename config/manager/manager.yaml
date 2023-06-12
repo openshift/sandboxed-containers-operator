@@ -76,10 +76,14 @@ spec:
         env:
         - name: PEERPODS_NAMESPACE
           value: "openshift-sandboxed-containers-operator"
-        - name: KATA_MONITOR_IMAGE
+        - name: RELATED_IMAGE_KATA_MONITOR
           value: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest
         - name: SANDBOXED_CONTAINERS_EXTENSION
           value: kata-containers
+        - name: RELATED_IMAGE_CAA
+          value: quay.io/confidential-containers/cloud-api-adaptor
+        - name: RELATED_IMAGE_PEERPODS_WEBHOOK
+          value: "quay.io/confidential-containers/peer-pods-webhook:latest" 
         imagePullPolicy: Always
         resources:
           limits:
