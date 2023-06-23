@@ -1667,6 +1667,18 @@ func (r *KataConfigOpenShiftReconciler) getConditionReason(conditions []mcfgv1.M
 	return ""
 }
 
+func (r *KataConfigOpenShiftReconciler) getMcpByName(mcpName string) (*mcfgv1.MachineConfigPool, error) {
+
+	mcp := &mcfgv1.MachineConfigPool{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcpName}, mcp)
+	if err != nil {
+		r.Log.Info("Getting MachineConfigPool failed ", "machinePool", mcp, "err", err)
+		return nil, err
+	}
+
+	return mcp, nil
+}
+
 func (r *KataConfigOpenShiftReconciler) updateStatus(machinePool string) (*mcfgv1.MachineConfigPool, ctrl.Result, error, bool) {
 	/* update KataConfig according to occurred error
 	 * We need to pull the status information from the machine config pool object
