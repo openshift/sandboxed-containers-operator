@@ -1815,6 +1815,55 @@ func (r *KataConfigOpenShiftReconciler) processDoneNode(node *corev1.Node) error
 	return nil
 }
 
+// If multiple errors occur during execution of this function the last one
+// will be returned.
+func (r *KataConfigOpenShiftReconciler) updateStatusNew() error {
+
+	if r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress != corev1.ConditionTrue &&
+		r.kataConfig.Status.InstallationStatus.IsInProgress != corev1.ConditionTrue {
+		return nil
+	}
+
+	err, nodeList := r.getNodes()
+	if err != nil {
+		return err
+	}
+
+	r.clearInstallStatus()
+	r.clearUninstallStatus()
+
+	r.kataConfig.Status.TotalNodesCount = func() int {
+		err, nodes := r.getNodesWithLabels(r.getNodeSelectorAsMap())
+		if err != nil {
+			r.Log.Info("Error retrieving kata-oc labelled Nodes to count them", "err", err)
+			return 0
+		}
+		return len(nodes.Items)
+	}()
+
+	for _, node := range nodeList.Items {
+		if annotation, ok := node.Annotations["machineconfiguration.openshift.io/state"]; ok {
+			switch annotation {
+			case NodeDone:
+				e := r.processDoneNode(&node)
+				if e != nil {
+					err = e
+				}
+			case NodeDegraded:
+			case NodeWorking:
+				e := r.processTransitioningNode(&node)
+				if e != nil {
+					err = e
+				}
+			default:
+				err = fmt.Errorf("Unexpected machineconfiguration.openshift.io/state: %v ", annotation)
+				r.Log.Info("Unexpected machineconfiguration.openshift.io/state", "node", node.GetName(), "state", annotation)
+			}
+		}
+	}
+	return err
+}
+
 func (r *KataConfigOpenShiftReconciler) updateStatus(machinePool string) (*mcfgv1.MachineConfigPool, ctrl.Result, error, bool) {
 	/* update KataConfig according to occurred error
 	 * We need to pull the status information from the machine config pool object
