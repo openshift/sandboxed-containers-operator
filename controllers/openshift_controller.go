@@ -33,6 +33,7 @@ import (
 	"github.com/go-logr/logr"
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	nodeapi "k8s.io/api/node/v1"
@@ -1682,6 +1683,78 @@ func (r *KataConfigOpenShiftReconciler) getMcpByName(mcpName string) (*mcfgv1.Ma
 	}
 
 	return mcp, nil
+}
+
+const (
+	// "Working"
+	NodeWorking = mcfgconsts.MachineConfigDaemonStateWorking
+	// "Done"
+	NodeDone = mcfgconsts.MachineConfigDaemonStateDone
+	// "Degraded"
+	NodeDegraded = mcfgconsts.MachineConfigDaemonStateDegraded
+)
+
+func (r *KataConfigOpenShiftReconciler) processTransitioningNode(node *corev1.Node) error {
+	// Don't bother checking the second return value, the annotation is there
+	// otherwise we wouldn't be here (our caller checked already).
+	mcoNodeState, _ := node.Annotations["machineconfiguration.openshift.io/state"]
+
+	// Transitioning (Working & Degraded) nodes' handling only differs in
+	// which list a node ultimately goes to so we parameterise this.
+	var putOnInstallList, putOnUninstallList func(node *corev1.Node)
+
+	if mcoNodeState == NodeWorking {
+		putOnInstallList = func(node *corev1.Node) {
+			installInProgressList := &r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList
+			*installInProgressList = append(*installInProgressList, node.GetName())
+		}
+		putOnUninstallList = func(node *corev1.Node) {
+			uninstallInProgressList := &r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList
+			*uninstallInProgressList = append(*uninstallInProgressList, node.GetName())
+		}
+	} else { // mcoNodeState == NodeDegraded
+		failedNodeStatus := kataconfigurationv1.FailedNodeStatus{
+			Name:  node.GetName(),
+			Error: node.Annotations["machineconfiguration.openshift.io/reason"],
+		}
+		putOnInstallList = func(node *corev1.Node) {
+			installFailedList := &r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList
+			*installFailedList = append(*installFailedList, failedNodeStatus)
+		}
+		putOnUninstallList = func(node *corev1.Node) {
+			uninstallFailedList := &r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList
+			*uninstallFailedList = append(*uninstallFailedList, failedNodeStatus)
+		}
+	}
+
+	log := r.Log.WithName("updateStatus").WithValues("node name", node.GetName(), "node state", mcoNodeState)
+
+	if corev1.ConditionTrue == r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress {
+		log.Info("putting transitioning node on uninstallation list since we're uninstalling")
+		putOnUninstallList(node)
+		return nil
+	}
+
+	isConvergedCluster, err := r.checkConvergedCluster()
+	if err != nil {
+		return err
+	}
+
+	if isConvergedCluster {
+		log.Info("putting transitioning node on installation list on converged cluster")
+		putOnInstallList(node)
+		return nil
+	}
+
+	_, nodeLabeledForKata := node.Labels["node-role.kubernetes.io/kata-oc"]
+	if nodeLabeledForKata {
+		log.Info("putting transitioning node on installation list since it's labeled")
+		putOnInstallList(node)
+	} else {
+		log.Info("putting transitioning node on uninstallation list since it's not labeled")
+		putOnUninstallList(node)
+	}
+	return nil
 }
 
 func (r *KataConfigOpenShiftReconciler) processDoneNode(node *corev1.Node) error {
