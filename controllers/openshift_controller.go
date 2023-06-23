@@ -1684,6 +1684,69 @@ func (r *KataConfigOpenShiftReconciler) getMcpByName(mcpName string) (*mcfgv1.Ma
 	return mcp, nil
 }
 
+func (r *KataConfigOpenShiftReconciler) processDoneNode(node *corev1.Node) error {
+
+	isConvergedCluster, err := r.checkConvergedCluster()
+	if err != nil {
+		return err
+	}
+
+	targetMcpName := func() string {
+		if isConvergedCluster {
+			return "master"
+		}
+		_, nodeLabeledForKata := node.Labels["node-role.kubernetes.io/kata-oc"]
+		if nodeLabeledForKata {
+			return "kata-oc"
+		} else {
+			return "worker"
+		}
+	}()
+
+	targetMcp, err := r.getMcpByName(targetMcpName)
+	if err != nil {
+		return err
+	}
+
+	installCompletedList := &r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesList
+	uninstallCompletedList := &r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList
+
+	currentNodeConfig, ok := node.Annotations["machineconfiguration.openshift.io/currentConfig"]
+
+	log := r.Log.WithName("updateStatus").WithValues("node name", node.GetName(), "target pool", targetMcpName, "current config", currentNodeConfig, "target pool config", targetMcp.Spec.Configuration.Name)
+	if ok && currentNodeConfig == targetMcp.Spec.Configuration.Name {
+		// This Node is at its target configuration so it's going to
+		// go to a Completed list, either installation's or uninstallation's.
+		// To decide which we consider:
+		// - if uninstallation is in progress, any settled Node must
+		//   belong to uninstallation's Complete list as no
+		//   installations can take place while uninstalling kata from
+		//   cluster
+		// - OTOH if installation is in progress, settled Nodes will go
+		//   to installation's Completed list by default as expected
+		//   *unless* the Node's target pool is "worker" in which case
+		//   the Node shouldn't and doesn't have kata on it and thus
+		//   belongs to uninstallation's Completed list.
+		if r.kataConfig.Status.InstallationStatus.IsInProgress == corev1.ConditionTrue {
+			if targetMcpName == "worker" {
+				log.Info("putting done node on uninstallation completed list")
+				*uninstallCompletedList = append(*uninstallCompletedList, node.GetName())
+				r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesCount = int(targetMcp.Status.UpdatedMachineCount)
+			} else {
+				log.Info("putting done node on installation completed list")
+				*installCompletedList = append(*installCompletedList, node.GetName())
+				r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount = int(targetMcp.Status.UpdatedMachineCount)
+			}
+		} else if r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress == corev1.ConditionTrue {
+			log.Info("putting done node on uninstallation completed list")
+			*uninstallCompletedList = append(*uninstallCompletedList, node.GetName())
+			r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesCount = int(targetMcp.Status.UpdatedMachineCount)
+		}
+	}
+
+	return nil
+}
+
 func (r *KataConfigOpenShiftReconciler) updateStatus(machinePool string) (*mcfgv1.MachineConfigPool, ctrl.Result, error, bool) {
 	/* update KataConfig according to occurred error
 	 * We need to pull the status information from the machine config pool object
