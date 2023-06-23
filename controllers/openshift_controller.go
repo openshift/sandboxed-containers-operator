@@ -651,23 +651,6 @@ func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) getMcpNameIfMcpExists() (string, error) {
-	r.Log.Info("Getting MachineConfigPool Name")
-
-	kataOC, err := r.kataOcExists()
-	if kataOC && err == nil {
-		r.Log.Info("kata-oc MachineConfigPool exists")
-		return "kata-oc", nil
-	}
-	isConvergedCluster, err := r.checkConvergedCluster()
-	if err == nil && isConvergedCluster {
-		r.Log.Info("Converged Cluster. Not creating kata-oc MCP")
-		return "master", nil
-	}
-	r.Log.Info("No valid MCP found")
-	return "", err
-}
-
 func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
 	isConvergedCluster, err := r.checkConvergedCluster()
 	if err != nil {
@@ -938,7 +921,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		r.kataConfig.Status.WaitingForMcoToStart = false
 	}
 
-	err = r.updateStatusNew()
+	err = r.updateStatus()
 	if err != nil {
 		r.Log.Info("Error updating KataConfig.status", "err", err)
 	}
@@ -1143,7 +1126,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.kataConfig.Status.WaitingForMcoToStart = false
 	}
 
-	err = r.updateStatusNew()
+	err = r.updateStatus()
 	if err != nil {
 		r.Log.Info("Error updating KataConfig.status", "err", err)
 	}
@@ -1538,22 +1521,6 @@ func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error
 		Complete(r)
 }
 
-func (r *KataConfigOpenShiftReconciler) getMcp() (*mcfgv1.MachineConfigPool, error) {
-	machinePool, err := r.getMcpNameIfMcpExists()
-	if err != nil {
-		return nil, err
-	}
-
-	foundMcp := &mcfgv1.MachineConfigPool{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
-	if err != nil {
-		r.Log.Error(err, "Getting MachineConfigPool failed ", "machinePool", machinePool)
-		return nil, err
-	}
-
-	return foundMcp, nil
-}
-
 func (r *KataConfigOpenShiftReconciler) getNodes() (error, *corev1.NodeList) {
 	nodes := &corev1.NodeList{}
 	labelSelector := labels.SelectorFromSet(map[string]string{"node-role.kubernetes.io/worker": ""})
@@ -1814,7 +1781,7 @@ func (r *KataConfigOpenShiftReconciler) processDoneNode(node *corev1.Node) error
 
 // If multiple errors occur during execution of this function the last one
 // will be returned.
-func (r *KataConfigOpenShiftReconciler) updateStatusNew() error {
+func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 
 	if r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress != corev1.ConditionTrue &&
 		r.kataConfig.Status.InstallationStatus.IsInProgress != corev1.ConditionTrue {
