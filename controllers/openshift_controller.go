@@ -503,6 +503,20 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool 
 	return mcp
 }
 
+func getExtensionName() string {
+	// RHCOS uses "sandboxed-containers" as thats resolved/translated in the machine-config-operator to "kata-containers"
+	// FCOS however does not get any translation in the machine-config-operator so we need to
+	// send in "kata-containers".
+	// Both are later send to rpm-ostree for installation.
+	//
+	// As RHCOS is rather special variant, use "kata-containers" by default, which also applies to FCOS
+	extension := os.Getenv("SANDBOXED_CONTAINERS_EXTENSION")
+	if len(extension) == 0 {
+		extension = "kata-containers"
+	}
+	return extension
+}
+
 func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
 	r.Log.Info("Creating MachineConfig for Custom Resource")
 
@@ -517,16 +531,7 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 		return nil, err
 	}
 
-	// RHCOS uses "sandboxed-containers" as thats resolved/translated in the machine-config-operator to "kata-containers"
-	// FCOS however does not get any translation in the machine-config-operator so we need to
-	// send in "kata-containers".
-	// Both are later send to rpm-ostree for installation.
-	//
-	// As RHCOS is rather special variant, use "kata-containers" by default, which also applies to FCOS
-	extension := os.Getenv("SANDBOXED_CONTAINERS_EXTENSION")
-	if len(extension) == 0 {
-		extension = "kata-containers"
-	}
+	extension := getExtensionName()
 
 	mc := mcfgv1.MachineConfig{
 		TypeMeta: metav1.TypeMeta{
