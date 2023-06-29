@@ -1805,6 +1805,7 @@ func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 
 	r.clearInstallStatus()
 	r.clearUninstallStatus()
+	r.clearNodeStatusLists()
 
 	r.kataConfig.Status.TotalNodesCount = func() int {
 		err, nodes := r.getNodesWithLabels(r.getNodeSelectorAsMap())
@@ -1817,6 +1818,9 @@ func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 
 	for _, node := range nodeList.Items {
 		if annotation, ok := node.Annotations["machineconfiguration.openshift.io/state"]; ok {
+
+			r.putNodeOnStatusList(&node)
+
 			switch annotation {
 			case NodeDone:
 				e := r.processDoneNode(&node)
