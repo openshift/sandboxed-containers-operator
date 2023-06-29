@@ -1957,20 +1957,27 @@ func (r *KataConfigOpenShiftReconciler) putNodeOnStatusList(node *corev1.Node) e
 
 	if isNodeInstalled(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
 		r.Log.Info("node is Installed", "node", node.GetName())
+		r.kataConfig.Status.KataNodes.Installed = append(r.kataConfig.Status.KataNodes.Installed, node.GetName())
 	} else if isNodeNotInstalled(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
 		r.Log.Info("node is NotInstalled", "node", node.GetName())
 	} else if isNodeInstalling(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
 		r.Log.Info("node is Installing", "node", node.GetName())
+		r.kataConfig.Status.KataNodes.Installing = append(r.kataConfig.Status.KataNodes.Installing, node.GetName())
 	} else if isNodeUninstalling(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
 		r.Log.Info("node is Uninstalling", "node", node.GetName())
+		r.kataConfig.Status.KataNodes.Uninstalling = append(r.kataConfig.Status.KataNodes.Uninstalling, node.GetName())
 	} else if isNodeWaitingToInstall(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
 		r.Log.Info("node is WaitingToInstall", "node", node.GetName())
+		r.kataConfig.Status.KataNodes.WaitingToInstall = append(r.kataConfig.Status.KataNodes.WaitingToInstall, node.GetName())
 	} else if isNodeWaitingToUninstall(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
 		r.Log.Info("node is WaitingToUninstall", "node", node.GetName())
+		r.kataConfig.Status.KataNodes.WaitingToUninstall = append(r.kataConfig.Status.KataNodes.WaitingToUninstall, node.GetName())
 	} else if isNodeFailedToInstall(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
 		r.Log.Info("node is FailedToInstall", "node", node.GetName())
+		r.kataConfig.Status.KataNodes.FailedToInstall = append(r.kataConfig.Status.KataNodes.FailedToInstall, node.GetName())
 	} else if isNodeFailedToUninstall(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
 		r.Log.Info("node is FailedToUninstall", "node", node.GetName())
+		r.kataConfig.Status.KataNodes.FailedToUninstall = append(r.kataConfig.Status.KataNodes.FailedToUninstall, node.GetName())
 	}
 
 	return nil

@@ -66,6 +66,9 @@ type KataConfigStatus struct {
 	// +optional
 	Upgradestatus KataUpgradeStatus `json:"upgradeStatus,omitempty"`
 
+	// +optional
+	KataNodes KataNodesStatus `json:"kataNodes,omitempty"`
+
 	// Used internally to persist state between reconciliations
 	// +optional
 	// +kubebuilder:default:=false
@@ -189,4 +192,22 @@ type FailedNodeStatus struct {
 	Name string `json:"name"`
 	// Error message of the failed node reported by the installation daemon
 	Error string `json:"error"`
+}
+
+type KataNodesStatus struct {
+	// +optional
+	Installed []string `json:"installed,omitempty"`
+	// +optional
+	Installing []string `json:"installing,omitempty"`
+	// +optional
+	WaitingToInstall []string `json:"waitingToInstall,omitempty"`
+	// +optional
+	FailedToInstall []string `json:"failedToInstall,omitempty"`
+
+	// +optional
+	Uninstalling []string `json:"uninstalling,omitempty"`
+	// +optional
+	WaitingToUninstall []string `json:"waitingToUninstall,omitempty"`
+	// +optional
+	FailedToUninstall []string `json:"failedToUninstall,omitempty"`
 }
