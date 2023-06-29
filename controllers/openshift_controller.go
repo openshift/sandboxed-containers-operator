@@ -1833,6 +1833,44 @@ func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 	return err
 }
 
+// A set of mutually exclusive predicate functions that figure out kata
+// installation status on a given Node from four pieces of data:
+// - Node's MCO state
+// - MachineConfig the Node is currently at
+// - MachineConfig the Node is supposed to be at
+// - and whether kata is enabled for the Node
+func isNodeInstalled(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeDone && nodeCurrMc == nodeTargetMc && isKataEnabledOnNode
+}
+
+func isNodeNotInstalled(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeDone && nodeCurrMc == nodeTargetMc && !isKataEnabledOnNode
+}
+
+func isNodeInstalling(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeWorking && isKataEnabledOnNode
+}
+
+func isNodeUninstalling(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeWorking && !isKataEnabledOnNode
+}
+
+func isNodeWaitingToInstall(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeDone && nodeCurrMc != nodeTargetMc && isKataEnabledOnNode
+}
+
+func isNodeWaitingToUninstall(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeDone && nodeCurrMc != nodeTargetMc && !isKataEnabledOnNode
+}
+
+func isNodeFailedToInstall(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeDegraded && isKataEnabledOnNode
+}
+
+func isNodeFailedToUninstall(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeDegraded && !isKataEnabledOnNode
+}
+
 func (r *KataConfigOpenShiftReconciler) clearInstallStatus() {
 	r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesList = nil
 	r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount = 0
