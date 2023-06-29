@@ -1983,6 +1983,17 @@ func (r *KataConfigOpenShiftReconciler) putNodeOnStatusList(node *corev1.Node) e
 	return nil
 }
 
+func (r *KataConfigOpenShiftReconciler) clearNodeStatusLists() {
+	r.kataConfig.Status.KataNodes.Installed = nil
+	r.kataConfig.Status.KataNodes.Installing = nil
+	r.kataConfig.Status.KataNodes.WaitingToInstall = nil
+	r.kataConfig.Status.KataNodes.FailedToInstall = nil
+
+	r.kataConfig.Status.KataNodes.Uninstalling = nil
+	r.kataConfig.Status.KataNodes.WaitingToUninstall = nil
+	r.kataConfig.Status.KataNodes.FailedToUninstall = nil
+}
+
 func (r *KataConfigOpenShiftReconciler) clearInstallStatus() {
 	r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesList = nil
 	r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount = 0
