@@ -198,6 +198,13 @@ type FailedNodeStatus struct {
 }
 
 type KataNodesStatus struct {
+	// Number of cluster nodes that have kata installed on them including
+	// those queued for installation and currently installing, though
+	// excluding nodes that have a kata installation but are queued for
+	// uninstallation or currently uninstalling.
+	// +optional
+	NodeCount int `json:"nodeCount"`
+
 	// +optional
 	Installed []string `json:"installed,omitempty"`
 	// +optional

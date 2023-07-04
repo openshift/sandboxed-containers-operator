@@ -1828,6 +1828,8 @@ func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 		return len(nodes.Items)
 	}()
 
+	r.kataConfig.Status.KataNodes.NodeCount = r.kataConfig.Status.TotalNodesCount
+
 	for _, node := range nodeList.Items {
 		if annotation, ok := node.Annotations["machineconfiguration.openshift.io/state"]; ok {
 
