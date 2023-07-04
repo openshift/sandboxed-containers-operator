@@ -69,6 +69,9 @@ type KataConfigStatus struct {
 	// +optional
 	KataNodes KataNodesStatus `json:"kataNodes,omitempty"`
 
+	// +optional
+	Conditions []KataConfigCondition `json:"conditions,omitempty"`
+
 	// Used internally to persist state between reconciliations
 	// +optional
 	// +kubebuilder:default:=false
@@ -210,4 +213,18 @@ type KataNodesStatus struct {
 	WaitingToUninstall []string `json:"waitingToUninstall,omitempty"`
 	// +optional
 	FailedToUninstall []string `json:"failedToUninstall,omitempty"`
+}
+
+type KataConfigConditionType string
+
+const (
+	KataConfigInProgress KataConfigConditionType = "InProgress"
+)
+
+type KataConfigCondition struct {
+	Type               KataConfigConditionType `json:"type"`
+	Status             corev1.ConditionStatus  `json:"status"`
+	LastTransitionTime metav1.Time             `json:"lastTransitionTime"`
+	Reason             string                  `json:"reason"`
+	Message            string                  `json:"message"`
 }
