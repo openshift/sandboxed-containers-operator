@@ -2025,12 +2025,83 @@ func (r *KataConfigOpenShiftReconciler) findInProgressCondition() *kataconfigura
 	return nil
 }
 
+func (r *KataConfigOpenShiftReconciler) getInProgressConditionValue() corev1.ConditionStatus {
+	cond := r.findInProgressCondition()
+	if cond == nil {
+		return corev1.ConditionUnknown
+	}
+	return cond.Status
+}
+
 func (r *KataConfigOpenShiftReconciler) addInProgressCondition() *kataconfigurationv1.KataConfigCondition {
 	r.kataConfig.Status.Conditions = append(r.kataConfig.Status.Conditions, kataconfigurationv1.KataConfigCondition{Type: kataconfigurationv1.KataConfigInProgress})
 
 	r.Log.Info("InProgress Condition added")
 
 	return &r.kataConfig.Status.Conditions[len(r.kataConfig.Status.Conditions)-1]
+}
+
+// This is just a technical helper to all InProgress Condition mutators,
+// factoring their common preamble out into an own function.
+func (r *KataConfigOpenShiftReconciler) retrieveInProgressConditionForChange() *kataconfigurationv1.KataConfigCondition {
+	cond := r.findInProgressCondition()
+	if cond == nil {
+		cond = r.addInProgressCondition()
+	}
+
+	cond.LastTransitionTime = metav1.Now()
+
+	return cond
+}
+
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToInstalling() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = "Installing"
+	cond.Message = "Performing initial installation of kata on cluster"
+
+	r.Log.Info("InProgress Condition set to Installing")
+}
+
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToUninstalling() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = "Uninstalling"
+	cond.Message = "Removing kata from cluster"
+
+	r.Log.Info("InProgress Condition set to Uninstalling")
+}
+
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToUpdating() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = "Updating"
+	cond.Message = "Adding and/or removing kata-enabled nodes"
+
+	r.Log.Info("InProgress Condition set to Updating")
+}
+
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToFailed(failingNode *corev1.Node) {
+	reasonForDegraded, ok := failingNode.Annotations["machineconfiguration.openshift.io/reason"]
+	if !ok {
+		r.Log.Info("Missing machineconfiguration.openshift.io/reason on Degraded node", "node", failingNode.GetName())
+	}
+
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = "Failed"
+	cond.Message = "Node " + failingNode.GetName() + " Degraded: " + reasonForDegraded
+
+	r.Log.Info("InProgress Condition set to Failed")
+}
+
+func (r *KataConfigOpenShiftReconciler) resetInProgressCondition() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionFalse
+	cond.Reason = ""
+	cond.Message = ""
+
+	r.Log.Info("InProgress Condition reset")
 }
 
 func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
