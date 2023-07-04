@@ -870,6 +870,8 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 
 	r.Log.Info("Making sure parent MCP is synced properly, SCNodeRole=" + machinePool)
 	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
+	r.setInProgressConditionToUninstalling()
+
 	mc, err := r.newMCForCR(machinePool)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -942,6 +944,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	}
 
 	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionFalse
+	r.resetInProgressCondition()
 
 	if !isConvergedCluster {
 		r.Log.Info("Get()'ing MachineConfigPool to delete it", "machinePool", "kata-oc")
@@ -1048,6 +1051,10 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	if wasMcJustCreated {
+		r.setInProgressConditionToInstalling()
+	}
+
 	// Create kata-oc MCP only if it's not a converged cluster
 	if !isConvergedCluster {
 		labelingChanged, err := r.updateNodeLabels()
@@ -1110,6 +1117,10 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		isMcoUpdating = isKataMcpUpdating || isWorkerUpdating
 	}
 
+	if isMcoUpdating && r.getInProgressConditionValue() == corev1.ConditionFalse {
+		r.setInProgressConditionToUpdating()
+	}
+
 	// This condition might look tricky so here's a quick rundown of
 	// what each possible state means:
 	// - isMcoUpdating && WaitingForMcoToStart:
@@ -1144,6 +1155,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	if !isMcoUpdating {
 		r.Log.Info("create runtime class")
 		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionFalse
+		r.resetInProgressCondition()
 		err := r.createRuntimeClass("kata", "0.25", "350Mi")
 		if err != nil {
 			// Give sometime for the error to go away before reconciling again
@@ -1979,9 +1991,11 @@ func (r *KataConfigOpenShiftReconciler) putNodeOnStatusList(node *corev1.Node) e
 	} else if isNodeFailedToInstall(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
 		r.Log.Info("node is FailedToInstall", "node", node.GetName())
 		r.kataConfig.Status.KataNodes.FailedToInstall = append(r.kataConfig.Status.KataNodes.FailedToInstall, node.GetName())
+		r.setInProgressConditionToFailed(node)
 	} else if isNodeFailedToUninstall(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
 		r.Log.Info("node is FailedToUninstall", "node", node.GetName())
 		r.kataConfig.Status.KataNodes.FailedToUninstall = append(r.kataConfig.Status.KataNodes.FailedToUninstall, node.GetName())
+		r.setInProgressConditionToFailed(node)
 	}
 
 	return nil
