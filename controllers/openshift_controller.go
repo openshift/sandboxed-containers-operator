@@ -2016,6 +2016,23 @@ func (r *KataConfigOpenShiftReconciler) clearUninstallStatus() {
 	r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesCount = 0
 }
 
+func (r *KataConfigOpenShiftReconciler) findInProgressCondition() *kataconfigurationv1.KataConfigCondition {
+	for i := 0; i < len(r.kataConfig.Status.Conditions); i++ {
+		if r.kataConfig.Status.Conditions[i].Type == kataconfigurationv1.KataConfigInProgress {
+			return &r.kataConfig.Status.Conditions[i]
+		}
+	}
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) addInProgressCondition() *kataconfigurationv1.KataConfigCondition {
+	r.kataConfig.Status.Conditions = append(r.kataConfig.Status.Conditions, kataconfigurationv1.KataConfigCondition{Type: kataconfigurationv1.KataConfigInProgress})
+
+	r.Log.Info("InProgress Condition added")
+
+	return &r.kataConfig.Status.Conditions[len(r.kataConfig.Status.Conditions)-1]
+}
+
 func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
 	var err error = nil
 
