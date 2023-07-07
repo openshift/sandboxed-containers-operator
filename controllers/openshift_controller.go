@@ -384,6 +384,11 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 				Spec: corev1.PodSpec{
 					ServiceAccountName: "monitor",
 					NodeSelector:       nodeSelector,
+					Tolerations: []corev1.Toleration{
+						{
+							Operator: corev1.TolerationOpExists,
+						},
+					},
 					Containers: []corev1.Container{
 						{
 							Name:            "kata-monitor",
