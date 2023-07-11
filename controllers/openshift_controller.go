@@ -835,21 +835,13 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		// Get the list of pods that might be running using kata runtime
 		err := r.listKataPods()
 		if err != nil {
-			r.kataConfig.Status.UnInstallationStatus.ErrorMessage = err.Error()
+			r.setInProgressConditionToBlockedByExistingKataPods(err.Error())
 			updErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
 			if updErr != nil {
 				return ctrl.Result{}, updErr
 			}
 			r.Log.Info("Kata PODs are present. Requeue for reconciliation ")
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-		} else {
-			if r.kataConfig.Status.UnInstallationStatus.ErrorMessage != "" {
-				r.kataConfig.Status.UnInstallationStatus.ErrorMessage = ""
-				updErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
-				if updErr != nil {
-					return ctrl.Result{}, updErr
-				}
-			}
 		}
 	}
 
@@ -869,7 +861,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	}
 
 	r.Log.Info("Making sure parent MCP is synced properly, SCNodeRole=" + machinePool)
-	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
 	r.setInProgressConditionToUninstalling()
 
 	mc, err := r.newMCForCR(machinePool)
@@ -906,7 +897,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	if (isConvergedCluster && !isMcDeleted) || (!isConvergedCluster && labelingChanged) {
 		r.Log.Info("Starting to wait for MCO to start reconciliation")
 		r.kataConfig.Status.WaitingForMcoToStart = true
-		r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
 	}
 
 	// When nodes migrate from a source pool to a target pool the source
@@ -943,7 +933,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		return reconcile.Result{}, nil
 	}
 
-	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionFalse
 	r.resetInProgressCondition()
 
 	if !isConvergedCluster {
@@ -2112,6 +2101,15 @@ func (r *KataConfigOpenShiftReconciler) setInProgressConditionToFailed(failingNo
 	cond.Message = "Node " + failingNode.GetName() + " Degraded: " + reasonForDegraded
 
 	r.Log.Info("InProgress Condition set to Failed")
+}
+
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToBlockedByExistingKataPods(message string) {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionFalse
+	cond.Reason = "BlockedByExistingKataPods"
+	cond.Message = message
+
+	r.Log.Info("InProgress Condition set to BlockedByExistingKataPods")
 }
 
 func (r *KataConfigOpenShiftReconciler) resetInProgressCondition() {
