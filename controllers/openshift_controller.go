@@ -1658,138 +1658,11 @@ const (
 	NodeDegraded = mcfgconsts.MachineConfigDaemonStateDegraded
 )
 
-func (r *KataConfigOpenShiftReconciler) processTransitioningNode(node *corev1.Node) error {
-	// Don't bother checking the second return value, the annotation is there
-	// otherwise we wouldn't be here (our caller checked already).
-	mcoNodeState, _ := node.Annotations["machineconfiguration.openshift.io/state"]
-
-	// Transitioning (Working & Degraded) nodes' handling only differs in
-	// which list a node ultimately goes to so we parameterise this.
-	var putOnInstallList, putOnUninstallList func(node *corev1.Node)
-
-	if mcoNodeState == NodeWorking {
-		putOnInstallList = func(node *corev1.Node) {
-			installInProgressList := &r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList
-			*installInProgressList = append(*installInProgressList, node.GetName())
-		}
-		putOnUninstallList = func(node *corev1.Node) {
-			uninstallInProgressList := &r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList
-			*uninstallInProgressList = append(*uninstallInProgressList, node.GetName())
-		}
-	} else { // mcoNodeState == NodeDegraded
-		failedNodeStatus := kataconfigurationv1.FailedNodeStatus{
-			Name:  node.GetName(),
-			Error: node.Annotations["machineconfiguration.openshift.io/reason"],
-		}
-		putOnInstallList = func(node *corev1.Node) {
-			installFailedList := &r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList
-			*installFailedList = append(*installFailedList, failedNodeStatus)
-		}
-		putOnUninstallList = func(node *corev1.Node) {
-			uninstallFailedList := &r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList
-			*uninstallFailedList = append(*uninstallFailedList, failedNodeStatus)
-		}
-	}
-
-	log := r.Log.WithName("updateStatus").WithValues("node name", node.GetName(), "node state", mcoNodeState)
-
-	if corev1.ConditionTrue == r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress {
-		log.Info("putting transitioning node on uninstallation list since we're uninstalling")
-		putOnUninstallList(node)
-		return nil
-	}
-
-	isConvergedCluster, err := r.checkConvergedCluster()
-	if err != nil {
-		return err
-	}
-
-	if isConvergedCluster {
-		log.Info("putting transitioning node on installation list on converged cluster")
-		putOnInstallList(node)
-		return nil
-	}
-
-	_, nodeLabeledForKata := node.Labels["node-role.kubernetes.io/kata-oc"]
-	if nodeLabeledForKata {
-		log.Info("putting transitioning node on installation list since it's labeled")
-		putOnInstallList(node)
-	} else {
-		log.Info("putting transitioning node on uninstallation list since it's not labeled")
-		putOnUninstallList(node)
-	}
-	return nil
-}
-
-func (r *KataConfigOpenShiftReconciler) processDoneNode(node *corev1.Node) error {
-
-	isConvergedCluster, err := r.checkConvergedCluster()
-	if err != nil {
-		return err
-	}
-
-	targetMcpName := func() string {
-		if isConvergedCluster {
-			return "master"
-		}
-		_, nodeLabeledForKata := node.Labels["node-role.kubernetes.io/kata-oc"]
-		if nodeLabeledForKata {
-			return "kata-oc"
-		} else {
-			return "worker"
-		}
-	}()
-
-	targetMcp, err := r.getMcpByName(targetMcpName)
-	if err != nil {
-		return err
-	}
-
-	installCompletedList := &r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesList
-	uninstallCompletedList := &r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList
-
-	currentNodeConfig, ok := node.Annotations["machineconfiguration.openshift.io/currentConfig"]
-
-	log := r.Log.WithName("updateStatus").WithValues("node name", node.GetName(), "target pool", targetMcpName, "current config", currentNodeConfig, "target pool config", targetMcp.Spec.Configuration.Name)
-	if ok && currentNodeConfig == targetMcp.Spec.Configuration.Name {
-		// This Node is at its target configuration so it's going to
-		// go to a Completed list, either installation's or uninstallation's.
-		// To decide which we consider:
-		// - if uninstallation is in progress, any settled Node must
-		//   belong to uninstallation's Complete list as no
-		//   installations can take place while uninstalling kata from
-		//   cluster
-		// - OTOH if installation is in progress, settled Nodes will go
-		//   to installation's Completed list by default as expected
-		//   *unless* the Node's target pool is "worker" in which case
-		//   the Node shouldn't and doesn't have kata on it and thus
-		//   belongs to uninstallation's Completed list.
-		if r.kataConfig.Status.InstallationStatus.IsInProgress == corev1.ConditionTrue {
-			if targetMcpName == "worker" {
-				log.Info("putting done node on uninstallation completed list")
-				*uninstallCompletedList = append(*uninstallCompletedList, node.GetName())
-				r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesCount = int(targetMcp.Status.UpdatedMachineCount)
-			} else {
-				log.Info("putting done node on installation completed list")
-				*installCompletedList = append(*installCompletedList, node.GetName())
-				r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount = int(targetMcp.Status.UpdatedMachineCount)
-			}
-		} else if r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress == corev1.ConditionTrue {
-			log.Info("putting done node on uninstallation completed list")
-			*uninstallCompletedList = append(*uninstallCompletedList, node.GetName())
-			r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesCount = int(targetMcp.Status.UpdatedMachineCount)
-		}
-	}
-
-	return nil
-}
-
 // If multiple errors occur during execution of this function the last one
 // will be returned.
 func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 
-	if r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress != corev1.ConditionTrue &&
-		r.kataConfig.Status.InstallationStatus.IsInProgress != corev1.ConditionTrue {
+	if r.getInProgressConditionValue() != corev1.ConditionTrue {
 		return nil
 	}
 
@@ -1798,11 +1671,9 @@ func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 		return err
 	}
 
-	r.clearInstallStatus()
-	r.clearUninstallStatus()
 	r.clearNodeStatusLists()
 
-	r.kataConfig.Status.TotalNodesCount = func() int {
+	r.kataConfig.Status.KataNodes.NodeCount = func() int {
 		err, nodes := r.getNodesWithLabels(r.getNodeSelectorAsMap())
 		if err != nil {
 			r.Log.Info("Error retrieving kata-oc labelled Nodes to count them", "err", err)
@@ -1811,29 +1682,10 @@ func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 		return len(nodes.Items)
 	}()
 
-	r.kataConfig.Status.KataNodes.NodeCount = r.kataConfig.Status.TotalNodesCount
-
 	for _, node := range nodeList.Items {
-		if annotation, ok := node.Annotations["machineconfiguration.openshift.io/state"]; ok {
-
-			r.putNodeOnStatusList(&node)
-
-			switch annotation {
-			case NodeDone:
-				e := r.processDoneNode(&node)
-				if e != nil {
-					err = e
-				}
-			case NodeDegraded:
-			case NodeWorking:
-				e := r.processTransitioningNode(&node)
-				if e != nil {
-					err = e
-				}
-			default:
-				err = fmt.Errorf("Unexpected machineconfiguration.openshift.io/state: %v ", annotation)
-				r.Log.Info("Unexpected machineconfiguration.openshift.io/state", "node", node.GetName(), "state", annotation)
-			}
+		e := r.putNodeOnStatusList(&node)
+		if e != nil {
+			err = e
 		}
 	}
 
@@ -1998,24 +1850,6 @@ func (r *KataConfigOpenShiftReconciler) clearNodeStatusLists() {
 	r.kataConfig.Status.KataNodes.Uninstalling = nil
 	r.kataConfig.Status.KataNodes.WaitingToUninstall = nil
 	r.kataConfig.Status.KataNodes.FailedToUninstall = nil
-}
-
-func (r *KataConfigOpenShiftReconciler) clearInstallStatus() {
-	r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesList = nil
-	r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount = 0
-	r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList = nil
-	r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList = nil
-	r.kataConfig.Status.InstallationStatus.Failed.FailedReason = ""
-	r.kataConfig.Status.InstallationStatus.Failed.FailedNodesCount = 0
-}
-
-func (r *KataConfigOpenShiftReconciler) clearUninstallStatus() {
-	r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList = nil
-	r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesCount = 0
-	r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList = nil
-	r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList = nil
-	r.kataConfig.Status.UnInstallationStatus.Failed.FailedReason = ""
-	r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesCount = 0
 }
 
 func (r *KataConfigOpenShiftReconciler) findInProgressCondition() *kataconfigurationv1.KataConfigCondition {
