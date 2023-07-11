@@ -1044,6 +1044,8 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.setInProgressConditionToInstalling()
 	}
 
+	isInstallationInProgress := r.isMcpUpdating(machinePool) || (!isConvergedCluster && r.isMcpUpdating("worker"))
+
 	// Create kata-oc MCP only if it's not a converged cluster
 	if !isConvergedCluster {
 		labelingChanged, err := r.updateNodeLabels()
@@ -1056,14 +1058,12 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		}
 		if labelingChanged {
 			r.Log.Info("node labels updated")
-			// IsInProgress == ConditionFalse would be more direct and clear but it doesn't handle
-			// the possibility that IsInProgress == "" which actually comes up right after
-			// KataConfig is created.
-			if r.kataConfig.Status.InstallationStatus.IsInProgress != corev1.ConditionTrue {
+
+			if !isInstallationInProgress {
 				r.Log.Info("Starting to wait for MCO to start")
 				r.kataConfig.Status.WaitingForMcoToStart = true
 			} else {
-				r.Log.Info("installation already in progress", "IsInProgress", r.kataConfig.Status.InstallationStatus.IsInProgress)
+				r.Log.Info("installation already in progress")
 			}
 		}
 
@@ -1093,16 +1093,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	isKataMcpUpdating := r.isMcpUpdating(machinePool)
 	r.Log.Info("MCP updating state", "MCP name", machinePool, "is updating", isKataMcpUpdating)
-	if isKataMcpUpdating {
-		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
-	}
+
 	isMcoUpdating := isKataMcpUpdating
 	if !isConvergedCluster {
 		isWorkerUpdating := r.isMcpUpdating("worker")
 		r.Log.Info("MCP updating state", "MCP name", "worker", "is updating", isWorkerUpdating)
-		if isWorkerUpdating {
-			r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
-		}
 		isMcoUpdating = isKataMcpUpdating || isWorkerUpdating
 	}
 
@@ -1143,7 +1138,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	if !isMcoUpdating {
 		r.Log.Info("create runtime class")
-		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionFalse
 		r.resetInProgressCondition()
 		err := r.createRuntimeClass("kata", "0.25", "350Mi")
 		if err != nil {
