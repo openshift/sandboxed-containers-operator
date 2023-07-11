@@ -85,9 +85,9 @@ type KataConfigStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:path=kataconfigs,scope=Cluster
-// +kubebuilder:printcolumn:name="InProgress",type=string,JSONPath=".status.installationStatus.IsInProgress",description="Status of Kata runtime installation"
-// +kubebuilder:printcolumn:name="Completed",type=integer,JSONPath=".status.installationStatus.completed.completedNodesCount",description="Number of nodes with Kata runtime installed"
-// +kubebuilder:printcolumn:name="Total",type=integer,JSONPath=".status.totalNodesCount",description="Total number of nodes"
+// +kubebuilder:printcolumn:name="InProgress",type=string,JSONPath=".status.conditions[?(@.type=='InProgress')].status",description="Status of Kata runtime installation"
+// +kubebuilder:printcolumn:name="Completed",type=integer,JSONPath=".status.kataNodes.readyNodeCount",description="Number of nodes with Kata runtime installed"
+// +kubebuilder:printcolumn:name="Total",type=integer,JSONPath=".status.kataNodes.nodeCount",description="Total number of nodes"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp",description="Age of the KataConfig Custom Resource"
 type KataConfig struct {
 	metav1.TypeMeta   `json:",inline"`
