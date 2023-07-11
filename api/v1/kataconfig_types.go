@@ -205,6 +205,11 @@ type KataNodesStatus struct {
 	// +optional
 	NodeCount int `json:"nodeCount"`
 
+	// Number of cluster nodes that have kata installed on them and are
+	// currently ready to run kata workloads.
+	// +optional
+	ReadyNodeCount int `json:"readyNodeCount"`
+
 	// +optional
 	Installed []string `json:"installed,omitempty"`
 	// +optional
