@@ -1853,6 +1853,9 @@ func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 			}
 		}
 	}
+
+	r.kataConfig.Status.KataNodes.ReadyNodeCount = len(r.kataConfig.Status.KataNodes.Installed)
+
 	return err
 }
 
