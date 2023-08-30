@@ -42,9 +42,9 @@ spec:
           - name: PUBLISHER
             value: "RedHat"
           - name: OFFER
-            value: "RHEL"
+            value: "rhel-raw"
           - name: SKU
-            value: "9-lvm"
+            value: "9_2"
         envFrom:
         - secretRef:
             name: peer-pods-secret
