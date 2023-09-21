@@ -44,7 +44,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/workqueue"
-	labelsutil "k8s.io/kubernetes/pkg/util/labels"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -779,7 +778,7 @@ func (r *KataConfigOpenShiftReconciler) getKataConfigNodeSelectorAsLabelSelector
 	}
 
 	if r.kataConfig.Spec.CheckNodeEligibility {
-		nodeSelector = labelsutil.AddLabelToSelector(nodeSelector, "feature.node.kubernetes.io/runtime.kata", "true")
+		nodeSelector = metav1.AddLabelToSelector(nodeSelector, "feature.node.kubernetes.io/runtime.kata", "true")
 	}
 	r.Log.Info("getKataConfigNodeSelectorAsLabelSelector()", "selector", nodeSelector)
 	return nodeSelector
