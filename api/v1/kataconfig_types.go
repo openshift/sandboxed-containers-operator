@@ -48,8 +48,9 @@ type KataConfigSpec struct {
 
 // KataConfigStatus defines the observed state of KataConfig
 type KataConfigStatus struct {
-	// RuntimeClass is the name of the runtime class used in CRIO configuration
-	RuntimeClass string `json:"runtimeClass"`
+	// RuntimeClass is the names of the RuntimeClasses created by this controller
+	// +optional
+	RuntimeClass []string `json:"runtimeClass"`
 
 	// +optional
 	KataNodes KataNodesStatus `json:"kataNodes,omitempty"`
