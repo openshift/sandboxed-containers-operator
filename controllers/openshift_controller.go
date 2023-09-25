@@ -177,12 +177,14 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 			//node. One of the ways to ensure this is to check for the existence of "kata" runtimeclass before
 			//creating the DS
 			//Alternatively we can create the DS post execution of createRuntimeClass()
-			if k8serrors.IsNotFound(err) && r.kataConfig.Status.RuntimeClass == "kata" {
-				r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-				err = r.Client.Create(context.TODO(), ds)
-				if err != nil {
-					r.Log.Error(err, "error when creating monitor daemonset")
-					res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+			if k8serrors.IsNotFound(err) {
+				if contains(r.kataConfig.Status.RuntimeClass, "kata") {
+					r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
+					err = r.Client.Create(context.TODO(), ds)
+					if err != nil {
+						r.Log.Error(err, "error when creating monitor daemonset")
+						res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+					}
 				}
 			} else {
 				r.Log.Error(err, "could not get monitor daemonset, try again")
