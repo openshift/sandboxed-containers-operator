@@ -73,11 +73,11 @@ const (
 	DEFAULT_PEER_PODS                   = "10"
 	peerpodConfigCrdName                = "peerpodconfig-openshift"
 	peerpodsMachineConfigPathLocation   = "/config/peerpods"
-	peerpodsCrioMachineConfig           = "50-kata-remote-cc"
+	peerpodsCrioMachineConfig           = "50-kata-remote"
 	peerpodsCrioMachineConfigYaml       = "mc-50-crio-config.yaml"
 	peerpodsKataRemoteMachineConfig     = "40-worker-kata-remote-config"
 	peerpodsKataRemoteMachineConfigYaml = "mc-40-kata-remote-config.yaml"
-	peerpodsRuntimeClassName            = "kata-remote-cc"
+	peerpodsRuntimeClassName            = "kata-remote"
 	peerpodsRuntimeClassCpuOverhead     = "0.25"
 	peerpodsRuntimeClassMemOverhead     = "350Mi"
 )
