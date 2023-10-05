@@ -71,6 +71,7 @@ const (
 	DEFAULT_PEER_PODS                   = "10"
 	peerpodConfigCrdName                = "peerpodconfig-openshift"
 	peerpodsMachineConfigPathLocation   = "/config/peerpods"
+	peerpodsImageJobsPathLocation       = "/config/peerpods/podvm"
 	peerpodsCrioMachineConfig           = "50-kata-remote"
 	peerpodsCrioMachineConfigYaml       = "mc-50-crio-config.yaml"
 	peerpodsKataRemoteMachineConfig     = "40-worker-kata-remote-config"
@@ -97,6 +98,9 @@ const (
 // +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods/finalizers,verbs=update
 // +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations,verbs=get;list;watch;create;update;delete
+// +kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get;list;watch
+// +kubebuilder:rbac:groups="batch",resources=jobs,verbs=create;get;list;watch;delete
+// +kubebuilder:rbac:groups="",resources=pods/log,verbs=get
 
 func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = r.Log.WithValues("kataconfig", req.NamespacedName)
@@ -965,6 +969,10 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		// these can be removed manually if needed and this is not in the critical path
 		// of operator functionality
 		_ = r.disablePeerPods()
+		completed, res := ImageDelete(r.Client)
+		if !completed {
+			return res, nil
+		}
 	}
 
 	scc := GetScc()
@@ -1006,6 +1014,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	// peer pod enablement
 	if r.kataConfig.Spec.EnablePeerPods {
+		completed, res := ImageCreate(r.Client)
+		if !completed {
+			return res, nil
+		}
+
 		err := r.enablePeerPodsMc()
 		if err != nil {
 			r.Log.Info("Enabling peerpods machineconfigs failed", "err", err)
