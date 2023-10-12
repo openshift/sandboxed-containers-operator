@@ -1,0 +1,150 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: azure-confidential-image-creation
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 1
+  template:
+    metadata:
+      name: azure-confidential-image-creation
+    spec:
+      volumes:
+      - name: shared-data
+        emptyDir: {}
+      - name: image-id
+        emptyDir: {}
+
+      initContainers:
+      - name: payload
+        image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-payload:rhel92cvm
+        imagePullPolicy: Always
+        volumeMounts:
+        - name: shared-data
+          mountPath: /payload
+        command: ["/bin/sh"]
+        args: ["-c", "cp /podvm-binaries.tar.gz /payload/"]
+
+      containers:
+      - name: create
+        image: registry.access.redhat.com/ubi9/ubi:9.2
+        securityContext:
+          runAsUser: 0 # needed for container mode dnf access
+        volumeMounts:
+        - name: shared-data
+          mountPath: /payload
+        - name: image-id
+          mountPath: /output
+        env:
+          - name: PODVM_DISTRO
+            value: rhel
+          - name: PUBLISHER
+            value: "redhat"
+          - name: OFFER
+            value: "rhel-cvm-test-preview"
+          - name: SKU
+            value: "9_2"
+          - name: GALLERY_NAME
+            value: "rhelCVMGallery"
+          - name: GALLERY_IMAGE_NAME
+            value: "cvm-image"
+          - name: GALLERY_VERSION
+            value: "0.0.1"
+          - name: VM_SIZE
+            value: "Standard_D2as_v5"
+          - name: IMAGE_NAME
+            value: "cvm-rhel-image"
+          - name: DISABLE_CLOUD_CONFIG
+            value: "true"
+
+        envFrom:
+        - secretRef:
+            name: peer-pods-secret
+        - configMapRef:
+            name: peer-pods-cm
+            optional: true
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          rpm --import https://packages.microsoft.com/keys/microsoft.asc
+          dnf install -y https://packages.microsoft.com/config/rhel/9.0/packages-microsoft-prod.rpm # TODO: evaluate legitimacy
+          yum install -y unzip make git azure-cli
+          curl https://releases.hashicorp.com/packer/1.9.4/packer_1.9.4_linux_amd64.zip -o packer_1.9.4_linux_amd64.zip
+          echo "6cd5269c4245aa8c99e551d1b862460d63fe711c58bec618fade25f8492e80d9  packer_1.9.4_linux_amd64.zip" | sha256sum -c
+          unzip packer_1.9.4_linux_amd64.zip -d /usr/bin/
+          export PATH="/usr/bin:/usr/local/bin:${PATH}"
+          curl -L https://github.com/mikefarah/yq/releases/download/v4.35.2/yq_linux_amd64 -o /usr/bin/yq
+          echo "8afd786b3b8ba8053409c5e7d154403e2d4ed4cf3e93c237462dc9ef75f38c8d /usr/bin/yq" | sha256sum -c
+          chmod +x /usr/bin/yq
+          git clone https://github.com/confidential-containers/cloud-api-adaptor.git && (cd cloud-api-adaptor && git checkout 88cfd39a0747f24d6aaf0e3fd92af4c0d4fc5f5a)
+          tar xvf /payload/podvm-binaries.tar.gz -C cloud-api-adaptor/podvm/files
+          mkdir cloud-api-adaptor/podvm/files/pause_bundle # workaround to avoid pause image requirement
+          [[ ! "${AZURE_REGION}" ]] && echo "AZURE_REGION is missing" && exit 1
+          [[ ! "${AZURE_TENANT_ID}" ]] && echo "AZURE_TENANT_ID is missing" && exit 1
+          [[ ! "${AZURE_RESOURCE_GROUP}" ]] && echo "AZURE_RESOURCE_GROUP is missing" && exit 1
+          [[ ! "${AZURE_SUBSCRIPTION_ID}" ]] && echo "AZURE_SUBSCRIPTION_ID is missing" && exit 1
+          [[ ! "${AZURE_CLIENT_SECRET}" ]] && echo "AZURE_CLIENT_SECRET is missing" && exit 1
+          [[ ! "${AZURE_CLIENT_ID}" ]] && echo "AZURE_CLIENT_ID is missing" && exit 1
+          az login --service-principal -u ${AZURE_CLIENT_ID} -p ${AZURE_CLIENT_SECRET} --tenant ${AZURE_TENANT_ID}
+          az sig create --gallery-name "${GALLERY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --location "${AZURE_REGION}"
+          az sig image-definition create \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --gallery-name "${GALLERY_NAME}" \
+            --gallery-image-definition "${GALLERY_IMAGE_NAME}" \
+            --publisher GreatPublisher \
+            --offer GreatOffer \
+            --sku GreatSku \
+            --os-type "Linux" \
+            --os-state "Generalized" \
+            --hyper-v-generation "V2" \
+            --location "${AZURE_REGION}" \
+            --architecture "x64" \
+            --features SecurityType=ConfidentialVmSupported
+          export PKR_VAR_client_id=${AZURE_CLIENT_ID}
+          export PKR_VAR_client_secret=${AZURE_CLIENT_SECRET}
+          export PKR_VAR_subscription_id=${AZURE_SUBSCRIPTION_ID}
+          export PKR_VAR_tenant_id=${AZURE_TENANT_ID}
+          export PKR_VAR_resource_group=${AZURE_RESOURCE_GROUP}
+          export PKR_VAR_location=${AZURE_LOCATION}
+          export PKR_VAR_az_image_name=${IMAGE_NAME}
+          export PKR_VAR_vm_size=${VM_SIZE:-Standard_A2_v2}
+          export PKR_VAR_ssh_username=${SSH_USERNAME:-peerpod}
+          export PKR_VAR_publisher=${PUBLISHER}
+          export PKR_VAR_offer=${OFFER}
+          export PKR_VAR_sku=${SKU}
+          export PKR_VAR_plan_name=${PLAN_NAME}
+          export PKR_VAR_plan_product=${PLAN_PRODUCT}
+          export PKR_VAR_plan_publisher=${PLAN_PUBLISHER}
+          export PKR_VAR_az_gallery_image_name=${GALLERY_IMAGE_NAME}
+          export PKR_VAR_az_gallery_name=${GALLERY_NAME}
+          export PKR_VAR_az_gallery_image_version=${GALLERY_VERSION}
+          cd cloud-api-adaptor/azure/image
+          packer init ${PODVM_DISTRO}/
+          make BINARIES= PAUSE_BUNDLE= image
+          AZURE_IMAGE_ID=$(az sig image-version list --resource-group $AZURE_RESOURCE_GROUP --gallery-name ${GALLERY_NAME} --gallery-image-definition ${GALLERY_IMAGE_NAME} --query "[].{Id: id}" --output tsv)
+          echo ${AZURE_IMAGE_ID} >> /output/image-id
+          echo "DONE: ${AZURE_IMAGE_ID}"
+
+      - name: result
+        image: registry.access.redhat.com/ubi9/ubi:9.2
+        volumeMounts:
+        - name: image-id
+          mountPath: /output
+        envFrom:
+        - secretRef:
+            name: peer-pods-secret
+        - configMapRef:
+            name: peer-pods-cm
+            optional: true
+        command:
+        - /bin/sh
+        - -c
+        - |
+          while  [ ! -f /output/image-id  ]; do sleep 5; done
+          cat /output/image-id
+
+      restartPolicy: Never
