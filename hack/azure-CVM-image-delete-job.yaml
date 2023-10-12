@@ -1,0 +1,75 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: azure-confidential-image-deletion
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 1
+  template:
+    metadata:
+      name: azure-confidential-image-deletion
+    spec:
+      securityContext:
+        runAsUser: 0 # needed for container mode dnf access
+
+      containers:
+      - name: delete
+        image: registry.access.redhat.com/ubi9/ubi:9.2
+        env:
+#          - name: VM_SIZE
+#            value: "Standard_A2_v2"
+          - name: PODVM_DISTRO
+            value: rhel
+          - name: PUBLISHER
+            value: "redhat"
+          - name: OFFER
+            value: "rhel-cvm-test-preview"
+          - name: SKU
+            value: "9_2"
+          - name: GALLERY_NAME
+            value: "rhelCVMGallery"
+          - name: GALLERY_IMAGE_NAME
+            value: "cvm-image"
+          - name: GALLERY_VERSION
+            value: "0.0.1"
+          - name: IMAGE_NAME
+            value: "cvm-rhel-image"
+          - name: VM_SIZE
+            value: "Standard_D2as_v5"
+
+        envFrom:
+        - secretRef:
+            name: peer-pods-secret
+        - configMapRef:
+            name: peer-pods-cm
+            optional: true
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          rpm --import https://packages.microsoft.com/keys/microsoft.asc
+          dnf install -y https://packages.microsoft.com/config/rhel/9.0/packages-microsoft-prod.rpm
+          yum install -y azure-cli
+          PATH="/usr/bin:${PATH}"
+          [[ ! "${AZURE_REGION}" ]] && echo "AZURE_REGION is missing" && exit 1
+          [[ ! "${AZURE_TENANT_ID}" ]] && echo "AZURE_TENANT_ID is missing" && exit 1
+          [[ ! "${AZURE_RESOURCE_GROUP}" ]] && echo "AZURE_RESOURCE_GROUP is missing" && exit 1
+          [[ ! "${AZURE_SUBSCRIPTION_ID}" ]] && echo "AZURE_SUBSCRIPTION_ID is missing" && exit 1
+          [[ ! "${AZURE_CLIENT_SECRET}" ]] && echo "AZURE_CLIENT_SECRET is missing" && exit 1
+          [[ ! "${AZURE_CLIENT_ID}" ]] && echo "AZURE_CLIENT_ID is missing" && exit 1
+          az login --service-principal -u "${AZURE_CLIENT_ID}" -p "${AZURE_CLIENT_SECRET}" --tenant "${AZURE_TENANT_ID}"
+          echo "Delete the image"
+          az image delete --image-name "${IMAGE_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}"
+          echo "Delete an image version"
+          az sig image-version delete --resource-group "${AZURE_RESOURCE_GROUP}" --gallery-name "${GALLERY_NAME}" --gallery-image-definition "${GALLERY_IMAGE_NAME}"  --gallery-image-version "${GALLERY_VERSION}"
+          az sig image-version wait --deleted --resource-group "${AZURE_RESOURCE_GROUP}" --gallery-name "${GALLERY_NAME}" --gallery-image-definition "${GALLERY_IMAGE_NAME}" --gallery-image-version "${GALLERY_VERSION}"
+          echo "Delete an image definition"
+          az sig image-definition delete --gallery-name "${GALLERY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --gallery-image-definition "${GALLERY_IMAGE_NAME}"
+          az sig image-definition wait --deleted --gallery-name "${GALLERY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --gallery-image-definition "${GALLERY_IMAGE_NAME}"
+          echo "Delete the gallery"
+          az sig delete --resource-group "${AZURE_RESOURCE_GROUP}"  --gallery-name "${GALLERY_NAME}"
+          echo "DONE"
+      restartPolicy: Never
