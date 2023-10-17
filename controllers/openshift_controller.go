@@ -136,8 +136,10 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		}
 
 		// Check if the KataConfig instance is marked to be deleted, which is
-		// indicated by the deletion timestamp being set.
-		if r.kataConfig.GetDeletionTimestamp() != nil {
+		// indicated by the deletion timestamp being set.  However, don't let
+		// uninstallation commence if another operation (installation, update)
+		// is underway.
+		if r.kataConfig.GetDeletionTimestamp() != nil && !r.isInstalling() && !r.isUpdating() {
 			res, err := r.processKataConfigDeleteRequest()
 
 			updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
@@ -1955,6 +1957,22 @@ func (r *KataConfigOpenShiftReconciler) resetInProgressCondition() {
 	cond.Message = ""
 
 	r.Log.Info("InProgress Condition reset")
+}
+
+func (r *KataConfigOpenShiftReconciler) isInstalling() bool {
+	cond := r.findInProgressCondition()
+	if cond == nil {
+		return false;
+	}
+	return cond.Status == corev1.ConditionTrue && cond.Reason == "Installing";
+}
+
+func (r *KataConfigOpenShiftReconciler) isUpdating() bool {
+	cond := r.findInProgressCondition()
+	if cond == nil {
+		return false;
+	}
+	return cond.Status == corev1.ConditionTrue && cond.Reason == "Updating";
 }
 
 func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
