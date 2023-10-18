@@ -19,24 +19,37 @@ package main
 import (
 	"context"
 	"flag"
-	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller/controllers"
+	"os"
+
+	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl/controllers"
+	peerpodconfigcontrollers "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/controllers"
+	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
+	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
+	nodeapi "k8s.io/api/node/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	nodeapi "k8s.io/kubernetes/pkg/apis/node/v1"
-	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	peerpodconfig "github.com/confidential-containers/cloud-api-adaptor/peer-pod-controller/api/v1alpha1"
+	// These imports are unused but required in go.mod
+	// for caching during manifest generation by controller-gen
+	_ "github.com/spf13/cobra"
+	_ "sigs.k8s.io/controller-tools/pkg/crd"
+	_ "sigs.k8s.io/controller-tools/pkg/genall"
+	_ "sigs.k8s.io/controller-tools/pkg/genall/help/pretty"
+	_ "sigs.k8s.io/controller-tools/pkg/loader"
+
+	peerpod "github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl/api/v1alpha1"
+	peerpodconfig "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/api/v1alpha1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	"github.com/openshift/sandboxed-containers-operator/controllers"
 	// +kubebuilder:scaffold:imports
@@ -63,7 +76,17 @@ func init() {
 	utilruntime.Must(kataconfigurationv1.AddToScheme(scheme))
 
 	utilruntime.Must(peerpodconfig.AddToScheme(scheme))
+
+	utilruntime.Must(peerpod.AddToScheme(scheme))
+
+	utilruntime.Must(configv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
+}
+
+func SetTimeEncoderToRfc3339() zap.Opts {
+	return func(o *zap.Options) {
+		o.TimeEncoder = zapcore.RFC3339TimeEncoder
+	}
 }
 
 func main() {
@@ -75,7 +98,7 @@ func main() {
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), SetTimeEncoderToRfc3339()))
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:             scheme,
@@ -120,7 +143,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		if err = (&peerpodcontrollers.PeerPodConfigReconciler{
+		if err = (&peerpodconfigcontrollers.PeerPodConfigReconciler{
 			Client: mgr.GetClient(),
 			Log:    ctrl.Log.WithName("controllers").WithName("RemotePodConfig"),
 			Scheme: mgr.GetScheme(),
@@ -128,6 +151,18 @@ func main() {
 			setupLog.Error(err, "unable to create RemotePodConfig controller for OpenShift cluster", "controller", "RemotePodConfig")
 			os.Exit(1)
 		}
+
+		if err = (&peerpodcontrollers.PeerPodReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+			// setting nil will delegate Provider creation to reconcile time, make sure RBAC permits:
+			//+kubebuilder:rbac:groups="",resourceNames=peer-pods-cm;peer-pods-secret,resources=configmaps;secrets,verbs=get
+			Provider: nil,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create peerpod resources controller", "controller", "PeerPod")
+			os.Exit(1)
+		}
+
 	}
 
 	if err = (&kataconfigurationv1.KataConfig{}).SetupWebhookWithManager(mgr); err != nil {

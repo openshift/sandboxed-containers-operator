@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: aws-image-deletion
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 1
+  template:
+    metadata:
+      name: aws-image-deletion
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: aws-image-deletion
+        image: registry.access.redhat.com/ubi9/ubi:9.2
+        securityContext:
+          runAsUser: 0 # needed for container mode dnf access
+        envFrom:
+        - secretRef:
+            name: peer-pods-secret
+        - configMapRef:
+            name: peer-pods-cm
+            optional: true
+        env:
+          - name: PODVM_DISTRO
+            value: rhel
+          - name: IMAGE_NAME
+            value: "peer-pod-ami"
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          dnf install -y unzip
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install
+          PATH="/usr/bin:${PATH}"
+          export MAC=$(curl -m 3 -s http://169.254.169.254/latest/meta-data/mac)
+          [[ ! "${AWS_REGION}" ]] && export AWS_REGION=$(curl -m 30 -s --show-error http://169.254.169.254/latest/meta-data/placement/region)
+          [[ ! "${AWS_REGION}" ]] && echo "AWS_REGION is missing" && exit 1
+          export IMAGE_NAME=${IMAGE_NAME:-peer-pod-ami}
+          PODVM_AMI_ID=$(aws ec2 describe-images --query "Images[*].[ImageId]" --filters "Name=name,Values=${IMAGE_NAME}" --region ${AWS_REGION} --output text) && \
+          echo "Deleting AMI: ${PODVM_AMI_ID}"
+          aws ec2 deregister-image --image-id ${PODVM_AMI_ID} --region ${AWS_REGION}
+          echo "Deleting AMI: ${PODVM_AMI_ID} - DONE"

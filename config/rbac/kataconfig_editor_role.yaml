@@ -7,9 +7,17 @@ rules:
 - apiGroups:
   - kataconfiguration.openshift.io
   - peerpodconfiguration.confidentialcontainers.org
+<<<<<<< HEAD
   resources:
   - kataconfigs
   - peerpodconfigs
+=======
+  - confidentialcontainers.org
+  resources:
+  - kataconfigs
+  - peerpodconfigs
+  - peerpods
+>>>>>>> devel
   verbs:
   - create
   - delete
@@ -21,8 +29,16 @@ rules:
 - apiGroups:
   - kataconfiguration.openshift.io
   - peerpodconfiguration.confidentialcontainers.org
+<<<<<<< HEAD
   resources:
   - kataconfigs/status
   - peerpodconfigs/status
+=======
+  - confidentialcontainers.org
+  resources:
+  - kataconfigs/status
+  - peerpodconfigs/status
+  - peerpods/status
+>>>>>>> devel
   verbs:
   - get

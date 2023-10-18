@@ -20,11 +20,20 @@ spec:
     matchLabels:
       control-plane: controller-manager
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   template:
     metadata:
       labels:
         control-plane: controller-manager
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       tolerations:
       - effect: NoSchedule
         key: node-role.kubernetes.io/master
@@ -40,6 +49,12 @@ spec:
       - effect: NoSchedule
         key: node.kubernetes.io/memory-pressure
         operator: Exists
+      volumes:
+      - name: ssh
+        secret:
+          defaultMode: 384
+          optional: true
+          secretName: ssh-key-secret
       containers:
       - command:
         - /manager
@@ -50,8 +65,30 @@ spec:
           value: "openshift-sandboxed-containers-operator"
         args:
         - --enable-leader-election
+        volumeMounts:
+        - mountPath: /root/.ssh/
+          name: ssh
+          readOnly: true
+        envFrom:
+        - secretRef:
+            name: peer-pods-secret
+            optional: true
+        - configMapRef:
+            name: peer-pods-cm
+            optional: true
         image: controller:latest
         name: manager
+        env:
+        - name: PEERPODS_NAMESPACE
+          value: "openshift-sandboxed-containers-operator"
+        - name: RELATED_IMAGE_KATA_MONITOR
+          value: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest
+        - name: SANDBOXED_CONTAINERS_EXTENSION
+          value: kata-containers
+        - name: RELATED_IMAGE_CAA
+          value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9:latest
+        - name: RELATED_IMAGE_PEERPODS_WEBHOOK
+          value: "quay.io/confidential-containers/peer-pods-webhook:latest" 
         imagePullPolicy: Always
         resources:
           limits:
@@ -60,4 +97,9 @@ spec:
           requests:
             cpu: 100m
             memory: 40Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
       terminationGracePeriodSeconds: 10

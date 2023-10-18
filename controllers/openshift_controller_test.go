@@ -6,7 +6,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	"time"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
@@ -277,9 +277,6 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 					Name:      name,
 					Namespace: "openshift-sandboxed-containers-operator",
 				},
-				Spec: kataconfigurationv1.KataConfigSpec{
-					KataMonitorImage: "quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest",
-				},
 			}
 
 			By("Creating the KataConfig CR successfully")
@@ -353,11 +350,11 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 
 			fmt.Fprintf(GinkgoWriter, "[DEBUG] kata-oc MachineConfigPool: %+v\n", kataMcp)
 
-			By("Checking the KataConfig CR InstallationStatus")
+			By("Checking the KataConfig CR InProgress Condition")
 
 			Eventually(func() corev1.ConditionStatus {
 				k8sClient.Get(context.Background(), types.NamespacedName{Name: kataConfig.Name}, kataConfig)
-				return kataConfig.Status.InstallationStatus.IsInProgress
+				return kataConfig.Status.Conditions[0].Status
 			}, timeout, interval).Should(Equal(corev1.ConditionTrue))
 
 			fmt.Fprintf(GinkgoWriter, "[DEBUG] kataConfig: %v\n", kataConfig)
@@ -406,10 +403,10 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 			By("Checking KataConfig Completed status")
 			Eventually(func() int {
 				k8sClient.Get(context.Background(), types.NamespacedName{Name: kataConfig.Name}, kataConfig)
-				return kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount
+				return kataConfig.Status.KataNodes.ReadyNodeCount
 			}, timeout, interval).Should(Equal(1))
 
-			Expect(kataConfig.Status.InstallationStatus.Completed.CompletedNodesList).Should(ContainElement("worker0"))
+			Expect(kataConfig.Status.KataNodes.Installed).Should(ContainElement("worker0"))
 
 			By("Creating the RuntimeClass successfully")
 			rc := &nodeapi.RuntimeClass{}
@@ -499,19 +496,19 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 			By("Updating kata-oc MCP status to Updating")
 			Expect(k8sClient.Status().Update(context.Background(), kataMcp)).Should(Succeed())
 
-			By("Checking the KataConfig CR InstallationStatus")
+			By("Checking the KataConfig CR InProgress Condition")
 			Expect(k8sClient.Get(context.Background(), types.NamespacedName{Name: kataConfig.Name}, kataConfig)).Should(Succeed())
 
 			Eventually(func() corev1.ConditionStatus {
 				k8sClient.Get(context.Background(), types.NamespacedName{Name: kataConfig.Name}, kataConfig)
-				return kataConfig.Status.InstallationStatus.IsInProgress
+				return kataConfig.Status.Conditions[0].Status
 			}, timeout, interval).Should(Equal(corev1.ConditionTrue))
 
 			fmt.Fprintf(GinkgoWriter, "[DEBUG] kataConfig: %v\n", kataConfig)
 
 			//TBD InProgressNodesCount is not updated
-			Expect(kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList).Should(ContainElement("worker1"))
-			Expect(kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList).ShouldNot(ContainElement("worker0"))
+			Expect(kataConfig.Status.KataNodes.Installing).Should(ContainElement("worker1"))
+			Expect(kataConfig.Status.KataNodes.Installing).ShouldNot(ContainElement("worker0"))
 
 			// Change node state to indicate Install complete
 			nodeRet = &corev1.Node{}
@@ -544,10 +541,10 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 			By("Checking KataConfig Completed status")
 			Eventually(func() int {
 				k8sClient.Get(context.Background(), types.NamespacedName{Name: kataConfig.Name}, kataConfig)
-				return kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount
+				return kataConfig.Status.KataNodes.ReadyNodeCount
 			}, timeout, interval).Should(Equal(2))
 
-			Expect(kataConfig.Status.InstallationStatus.Completed.CompletedNodesList).Should(ContainElements("worker0", "worker1"))
+			Expect(kataConfig.Status.KataNodes.Installed).Should(ContainElements("worker0", "worker1"))
 
 			//Delete
 			By("Deleting KataConfig CR successfully")
@@ -633,6 +630,54 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 
 			By("Creating the KataConfig CR successfully")
 			Expect(k8sClient.Create(context.Background(), kataConfig)).Should(Succeed())
+
+			// Delete
+			By("Deleting KataConfig CR successfully")
+			kataConfigKey := types.NamespacedName{Name: kataConfig.Name}
+			Eventually(func() error {
+				k8sClient.Get(context.Background(), kataConfigKey, kataConfig)
+				return k8sClient.Delete(context.Background(), kataConfig)
+			}, timeout, interval).Should(Succeed())
+
+			By("Expecting to delete KataConfig CR successfully")
+			Eventually(func() error {
+				return k8sClient.Get(context.Background(), kataConfigKey, kataConfig)
+			}, timeout, interval).ShouldNot(Succeed())
+
+		})
+	})
+	Context("Custom KataConfig with CheckNodeEligibility and PeerPods enabled", func() {
+		It("Should ignore CheckNodeEligibility when PeerPods is enabled", func() {
+
+			kataConfig := &kataconfigurationv1.KataConfig{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "kataconfiguration.openshift.io/v1",
+					Kind:       "KataConfig",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name + "-with-peerpods",
+				},
+				Spec: kataconfigurationv1.KataConfigSpec{
+					CheckNodeEligibility: true,
+					EnablePeerPods:       true,
+				},
+			}
+
+			By("Creating the KataConfig CR successfully")
+			Expect(k8sClient.Create(context.Background(), kataConfig)).Should(Succeed())
+
+			// Delete
+			By("Deleting KataConfig CR successfully")
+			kataConfigKey := types.NamespacedName{Name: kataConfig.Name}
+			Eventually(func() error {
+				k8sClient.Get(context.Background(), kataConfigKey, kataConfig)
+				return k8sClient.Delete(context.Background(), kataConfig)
+			}, timeout, interval).Should(Succeed())
+
+			By("Expecting to delete KataConfig CR successfully")
+			Eventually(func() error {
+				return k8sClient.Get(context.Background(), kataConfigKey, kataConfig)
+			}, timeout, interval).ShouldNot(Succeed())
 
 		})
 	})
