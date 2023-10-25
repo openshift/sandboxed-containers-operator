@@ -1,0 +1,6 @@
+[crio.runtime.runtimes.kata-remote]
+ runtime_path = "/opt/kata/containerd-shim-kata-v2-coco"
+ runtime_type = "vm"
+ runtime_root = "/run/vc"
+ runtime_config_path = "/opt/kata/configuration-remote.toml"
+ privileged_without_host_devices = true
