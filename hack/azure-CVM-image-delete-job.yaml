@@ -11,12 +11,11 @@ spec:
     metadata:
       name: azure-confidential-image-deletion
     spec:
-      securityContext:
-        runAsUser: 0 # needed for container mode dnf access
-
       containers:
       - name: delete
         image: registry.access.redhat.com/ubi9/ubi:9.2
+        securityContext:
+          runAsUser: 0 # needed for container mode dnf access
         env:
           - name: PODVM_DISTRO
             value: rhel
