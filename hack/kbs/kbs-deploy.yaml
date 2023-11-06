@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kbs
+  namespace: coco-kbs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kbs
+  template:
+    metadata:
+      labels:
+        app: kbs
+    spec:
+      containers:
+      - name: kbs
+        image: quay.io/openshift_sandboxed_containers/kbs:dev-preview
+        ports:
+        - containerPort: 8080
+        imagePullPolicy: Always
+        command:
+        - /usr/local/bin/kbs
+        - --config-file
+        - /etc/kbs/kbs-config.toml
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - name: kbs-auth-public-key
+          mountPath: /kbs/
+        - name: keys
+          mountPath: /opt/confidential-containers/kbs/repository/mysecret/workload-keys
+        - mountPath: /etc/kbs/
+          name: kbs-config
+      volumes:
+      - name: kbs-auth-public-key
+        secret:
+          defaultMode: 420
+          secretName: kbs-auth-public-key
+      - configMap:
+          defaultMode: 420
+          name: kbs-config
+        name: kbs-config
+      - name: keys
+        secret:
+          defaultMode: 420
+          secretName: kbs-keys
+---
+# Service to expose the KBS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kbs
+  namespace: coco-kbs
+spec:
+  selector:
+    app: kbs
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 8080
+---
+
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+ name: kbs-route
+ namespace: coco-kbs
+spec:
+ to:
+   kind: Service
+   name: kbs
+   weight: 100

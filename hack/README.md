@@ -80,6 +80,11 @@ Patch the CAA deployment to use coco enabled CAA image
 oc set image ds/peerpodconfig-ctrl-caa-daemon -n openshift-sandboxed-containers-operator cc-runtime-install-pod=quay.io/confidential-containers/cloud-api-adaptor:dev-88cfd39a0747f24d6aaf0e3fd92af4c0d4fc5f5a
 ```
 
+## Deploy KBS
+
+[Setup KBS](kbs/README.md)
+
+
 ## Image Deletion
 
 ```
