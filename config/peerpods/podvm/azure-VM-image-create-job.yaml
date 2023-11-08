@@ -99,7 +99,7 @@ spec:
           cd cloud-api-adaptor/azure/image
           packer init ${PODVM_DISTRO}/
           make BINARIES= PAUSE_BUNDLE= image && \
-          az login --service-principal -u "${AZURE_CLIENT_ID}" -p "${AZURE_CLIENT_SECRET}" --tenant "${AZURE_TENANT_ID}" && \
+          az login --service-principal --user=${AZURE_CLIENT_ID} --password=${AZURE_CLIENT_SECRET} --tenant=${AZURE_TENANT_ID} && \
           AZURE_IMAGE_ID=$(az image list --resource-group ${AZURE_RESOURCE_GROUP} --query "[].{Id: id} | [? contains(Id, '${IMAGE_NAME}')]" --output tsv) && \
           echo ${AZURE_IMAGE_ID} >> /output/image-id
           echo "DONE: ${AZURE_IMAGE_ID}"
