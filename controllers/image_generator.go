@@ -142,6 +142,11 @@ func newImageGenerator(client client.Client) (*ImageGenerator, error) {
 	}
 	ig.fips = fips == 1
 
+	err = ig.setupCloudProvider()
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup cloud provider: %v", err)
+	}
+
 	igLogger.Info("ImageGenerator instance has been initialized successfully", "fips", ig.fips)
 	return &ig, nil
 }
@@ -164,17 +169,8 @@ func (r *ImageGenerator) getCloudProviderFromInfra() string {
 	return strings.ToLower(string(infrastructure.Status.PlatformStatus.Type))
 }
 
-func (r *ImageGenerator) setupCloudProvider(cm *corev1.ConfigMap) error {
-	var provider string
-	if r.provider != "" && r.CMimageIDKey != "" {
-		return nil
-	}
-
-	if cm.Data["CLOUD_PROVIDER"] != "" {
-		provider = cm.Data["CLOUD_PROVIDER"]
-	} else {
-		provider = r.getCloudProviderFromInfra()
-	}
+func (r *ImageGenerator) setupCloudProvider() error {
+	provider := r.getCloudProviderFromInfra()
 
 	switch provider {
 	case "aws":
@@ -275,11 +271,6 @@ func (r *ImageGenerator) imageJobRunner(op string) (bool, ctrl.Result) {
 	latestCM, err := r.getPeerPodsCM()
 	if latestCM == nil || err != nil {
 		igLogger.Info("error getting peer-pods ConfigMap", "err", err)
-		return false, ctrl.Result{Requeue: true}
-	}
-
-	if err = r.setupCloudProvider(latestCM); err != nil {
-		igLogger.Info("error getting cloud provider", "err", err)
 		return false, ctrl.Result{Requeue: true}
 	}
 
