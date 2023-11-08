@@ -68,6 +68,7 @@ Every image deletion job should preform the following:
 
 const (
 	peerpodsCMName          = "peer-pods-cm"
+	peerPodsSecretName      = "peer-pods-secret"
 	peerpodsCMAWSImageKey   = "PODVM_AMI_ID"
 	peerpodsCMAzureImageKey = "AZURE_IMAGE_ID"
 	fipsCMKey               = "BOOT_FIPS"
@@ -96,6 +97,12 @@ func ImageCreate(c client.Client) (bool, ctrl.Result) {
 			return false, ctrl.Result{Requeue: true}
 		}
 	}
+
+	if err := ig.validatePeerPodsConfigs(); err != nil {
+		igLogger.Info("error validating peer-pods configs", "err", err)
+		return false, ctrl.Result{Requeue: true, RequeueAfter: 30 * time.Second}
+	}
+
 	return ig.imageJobRunner("create")
 }
 
@@ -109,6 +116,12 @@ func ImageDelete(c client.Client) (bool, ctrl.Result) {
 			return false, ctrl.Result{Requeue: true}
 		}
 	}
+
+	if err := ig.validatePeerPodsConfigs(); err != nil {
+		igLogger.Info("error validating peer-pods configs", "err", err)
+		return false, ctrl.Result{Requeue: true, RequeueAfter: 30 * time.Second}
+	}
+
 	return ig.imageJobRunner("delete")
 }
 
@@ -250,7 +263,6 @@ func (r *ImageGenerator) deleteJobFromFile(jobFileName string, keepPods bool) er
 }
 
 func (r *ImageGenerator) getPeerPodsCM() (*corev1.ConfigMap, error) {
-	igLogger.Info("Getting peer-pods ConfigMap")
 	peerPodsCM := &corev1.ConfigMap{}
 	err := r.client.Get(context.TODO(), types.NamespacedName{
 		Name:      peerpodsCMName,
@@ -259,9 +271,19 @@ func (r *ImageGenerator) getPeerPodsCM() (*corev1.ConfigMap, error) {
 	if err != nil {
 		return nil, err
 	}
-	// TODO: check in peer-pods-secret as well?
-
 	return peerPodsCM, nil
+}
+
+func (r *ImageGenerator) getPeerPodsSecret() (*corev1.Secret, error) {
+	peerPodsSecret := &corev1.Secret{}
+	err := r.client.Get(context.TODO(), types.NamespacedName{
+		Name:      peerPodsSecretName,
+		Namespace: "openshift-sandboxed-containers-operator",
+	}, peerPodsSecret)
+	if err != nil {
+		return nil, err
+	}
+	return peerPodsSecret, nil
 }
 
 func (r *ImageGenerator) imageJobRunner(op string) (bool, ctrl.Result) {
@@ -395,4 +417,36 @@ func (r *ImageGenerator) getImageIDFromJobLogs(job *batchv1.Job) (string, error)
 
 	igLogger.Info("Job's \"result\" container logs", "logs", str, "pod-name", podList.Items[0].Name)
 	return str, nil
+}
+
+func (r *ImageGenerator) validatePeerPodsConfigs() error {
+	peerPodsCM, err := r.getPeerPodsCM()
+	if err != nil || peerPodsCM == nil {
+		return fmt.Errorf("validatePeerPodsConfigs: %v", err)
+	}
+
+	peerPodsSecret, err := r.getPeerPodsSecret()
+	if err != nil || peerPodsSecret == nil {
+		return fmt.Errorf("validatePeerPodsConfigs: %v", err)
+	}
+
+	var essentialKeys []string
+	switch r.provider {
+	case "aws":
+		awsEssentials := []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION", "AWS_SUBNET_ID", "AWS_VPC_ID", "AWS_SG_IDS"}
+		essentialKeys = append(essentialKeys, awsEssentials...)
+	case "azure":
+		azureEssentials := []string{"AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_RESOURCE_GROUP", "AZURE_SUBSCRIPTION_ID", "AZURE_REGION"}
+		essentialKeys = append(essentialKeys, azureEssentials...)
+	default:
+		return fmt.Errorf("validatePeerPodsConfigs: Unsupported cloud provider: %s", r.provider)
+	}
+
+	// check if all essential keys are present in either ConfigMap or Secret
+	for _, k := range essentialKeys {
+		if len(peerPodsCM.Data[k]) < 1 && len(peerPodsSecret.Data[k]) < 1 {
+			return fmt.Errorf("validatePeerPodsConfigs: cannot find an essential valid parameter %s configured in peer-pods ConfigMap/Secret (%v)", k, essentialKeys)
+		}
+	}
+	return nil
 }
