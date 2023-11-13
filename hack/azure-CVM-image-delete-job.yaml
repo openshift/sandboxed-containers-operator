@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
       - name: delete
-        image: registry.access.redhat.com/ubi9/ubi:9.2
+        image: registry.access.redhat.com/ubi9/ubi:9.3
         securityContext:
           runAsUser: 0 # needed for container mode dnf access
         env:
@@ -22,9 +22,9 @@ spec:
           - name: PUBLISHER
             value: "redhat"
           - name: OFFER
-            value: "rhel-cvm-test-preview"
+            value: "rhel-cvm"
           - name: SKU
-            value: "9_2"
+            value: "9_3_cvm_sev_snp"
           - name: GALLERY_NAME
             value: "rhelCVMGallery"
           - name: GALLERY_IMAGE_NAME

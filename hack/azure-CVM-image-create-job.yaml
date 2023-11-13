@@ -19,7 +19,7 @@ spec:
 
       initContainers:
       - name: payload
-        image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-payload:rhel92cvm
+        image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-payload:rhel93snp
         imagePullPolicy: Always
         volumeMounts:
         - name: shared-data
@@ -29,7 +29,7 @@ spec:
 
       containers:
       - name: create
-        image: registry.access.redhat.com/ubi9/ubi:9.2
+        image: registry.access.redhat.com/ubi9/ubi:9.3
         securityContext:
           runAsUser: 0 # needed for container mode dnf access
         volumeMounts:
@@ -43,9 +43,9 @@ spec:
           - name: PUBLISHER
             value: "redhat"
           - name: OFFER
-            value: "rhel-cvm-test-preview"
+            value: "rhel-cvm"
           - name: SKU
-            value: "9_2"
+            value: "9_3_cvm_sev_snp"
           - name: GALLERY_NAME
             value: "rhelCVMGallery"
           - name: GALLERY_IMAGE_NAME
@@ -130,7 +130,7 @@ spec:
           echo "DONE: ${AZURE_IMAGE_ID}"
 
       - name: result
-        image: registry.access.redhat.com/ubi9/ubi:9.2
+        image: registry.access.redhat.com/ubi9/ubi:9.3
         volumeMounts:
         - name: image-id
           mountPath: /output
