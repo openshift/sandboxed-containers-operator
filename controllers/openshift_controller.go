@@ -33,7 +33,6 @@ import (
 	"github.com/go-logr/logr"
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	mcfgconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	nodeapi "k8s.io/api/node/v1"
@@ -656,6 +655,23 @@ func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
 	return nil
 }
 
+func (r *KataConfigOpenShiftReconciler) getMcpNameIfMcpExists() (string, error) {
+	r.Log.Info("Getting MachineConfigPool Name")
+
+	kataOC, err := r.kataOcExists()
+	if kataOC && err == nil {
+		r.Log.Info("kata-oc MachineConfigPool exists")
+		return "kata-oc", nil
+	}
+	isConvergedCluster, err := r.checkConvergedCluster()
+	if err == nil && isConvergedCluster {
+		r.Log.Info("Converged Cluster. Not creating kata-oc MCP")
+		return "master", nil
+	}
+	r.Log.Info("No valid MCP found")
+	return "", err
+}
+
 func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
 	isConvergedCluster, err := r.checkConvergedCluster()
 	if err != nil {
@@ -926,9 +942,10 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		r.kataConfig.Status.WaitingForMcoToStart = false
 	}
 
-	err = r.updateStatus()
-	if err != nil {
-		r.Log.Info("Error updating KataConfig.status", "err", err)
+	r.clearUninstallStatus()
+	_, result, err2, done := r.updateStatus(machinePool)
+	if !done {
+		return result, err2
 	}
 
 	if isMcoUpdating {
@@ -1131,10 +1148,12 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.kataConfig.Status.WaitingForMcoToStart = false
 	}
 
-	err = r.updateStatus()
-	if err != nil {
-		r.Log.Info("Error updating KataConfig.status", "err", err)
+	foundMcp, doReconcile, err, done := r.updateStatus(machinePool)
+	if !done {
+		return doReconcile, err
 	}
+
+	r.kataConfig.Status.TotalNodesCount = int(foundMcp.Status.MachineCount)
 
 	if !isMcoUpdating {
 		r.Log.Info("create runtime class")
@@ -1526,6 +1545,22 @@ func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error
 		Complete(r)
 }
 
+func (r *KataConfigOpenShiftReconciler) getMcp() (*mcfgv1.MachineConfigPool, error) {
+	machinePool, err := r.getMcpNameIfMcpExists()
+	if err != nil {
+		return nil, err
+	}
+
+	foundMcp := &mcfgv1.MachineConfigPool{}
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
+	if err != nil {
+		r.Log.Error(err, "Getting MachineConfigPool failed ", "machinePool", machinePool)
+		return nil, err
+	}
+
+	return foundMcp, nil
+}
+
 func (r *KataConfigOpenShiftReconciler) getNodes() (error, *corev1.NodeList) {
 	nodes := &corev1.NodeList{}
 	labelSelector := labels.SelectorFromSet(map[string]string{"node-role.kubernetes.io/worker": ""})
@@ -1637,200 +1672,176 @@ func (r *KataConfigOpenShiftReconciler) getConditionReason(conditions []mcfgv1.M
 	return ""
 }
 
-func (r *KataConfigOpenShiftReconciler) getMcpByName(mcpName string) (*mcfgv1.MachineConfigPool, error) {
-
-	mcp := &mcfgv1.MachineConfigPool{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcpName}, mcp)
-	if err != nil {
-		r.Log.Info("Getting MachineConfigPool failed ", "machinePool", mcp, "err", err)
-		return nil, err
+func (r *KataConfigOpenShiftReconciler) updateStatus(machinePool string) (*mcfgv1.MachineConfigPool, ctrl.Result, error, bool) {
+	/* update KataConfig according to occurred error
+	 * We need to pull the status information from the machine config pool object
+	 */
+	foundMcp := &mcfgv1.MachineConfigPool{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
+	if err != nil && k8serrors.IsNotFound(err) {
+		r.Log.Error(err, "Unable to get MachineConfigPool ", "machinePool", machinePool)
+		return nil, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil, true
 	}
 
-	return mcp, nil
-}
-
-const (
-	// "Working"
-	NodeWorking = mcfgconsts.MachineConfigDaemonStateWorking
-	// "Done"
-	NodeDone = mcfgconsts.MachineConfigDaemonStateDone
-	// "Degraded"
-	NodeDegraded = mcfgconsts.MachineConfigDaemonStateDegraded
-)
-
-func (r *KataConfigOpenShiftReconciler) processTransitioningNode(node *corev1.Node) error {
-	// Don't bother checking the second return value, the annotation is there
-	// otherwise we wouldn't be here (our caller checked already).
-	mcoNodeState, _ := node.Annotations["machineconfiguration.openshift.io/state"]
-
-	// Transitioning (Working & Degraded) nodes' handling only differs in
-	// which list a node ultimately goes to so we parameterise this.
-	var putOnInstallList, putOnUninstallList func(node *corev1.Node)
-
-	if mcoNodeState == NodeWorking {
-		putOnInstallList = func(node *corev1.Node) {
-			installInProgressList := &r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList
-			*installInProgressList = append(*installInProgressList, node.GetName())
+	/* installation status */
+	if corev1.ConditionTrue == r.kataConfig.Status.InstallationStatus.IsInProgress {
+		err, _ := r.updateInstallStatus()
+		if err != nil {
+			return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
 		}
-		putOnUninstallList = func(node *corev1.Node) {
-			uninstallInProgressList := &r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList
-			*uninstallInProgressList = append(*uninstallInProgressList, node.GetName())
-		}
-	} else { // mcoNodeState == NodeDegraded
-		failedNodeStatus := kataconfigurationv1.FailedNodeStatus{
-			Name:  node.GetName(),
-			Error: node.Annotations["machineconfiguration.openshift.io/reason"],
-		}
-		putOnInstallList = func(node *corev1.Node) {
-			installFailedList := &r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList
-			*installFailedList = append(*installFailedList, failedNodeStatus)
-		}
-		putOnUninstallList = func(node *corev1.Node) {
-			uninstallFailedList := &r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList
-			*uninstallFailedList = append(*uninstallFailedList, failedNodeStatus)
-		}
-	}
-
-	log := r.Log.WithName("updateStatus").WithValues("node name", node.GetName(), "node state", mcoNodeState)
-
-	if corev1.ConditionTrue == r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress {
-		log.Info("putting transitioning node on uninstallation list since we're uninstalling")
-		putOnUninstallList(node)
-		return nil
-	}
-
-	isConvergedCluster, err := r.checkConvergedCluster()
-	if err != nil {
-		return err
-	}
-
-	if isConvergedCluster {
-		log.Info("putting transitioning node on installation list on converged cluster")
-		putOnInstallList(node)
-		return nil
-	}
-
-	_, nodeLabeledForKata := node.Labels["node-role.kubernetes.io/kata-oc"]
-	if nodeLabeledForKata {
-		log.Info("putting transitioning node on installation list since it's labeled")
-		putOnInstallList(node)
-	} else {
-		log.Info("putting transitioning node on uninstallation list since it's not labeled")
-		putOnUninstallList(node)
-	}
-	return nil
-}
-
-func (r *KataConfigOpenShiftReconciler) processDoneNode(node *corev1.Node) error {
-
-	isConvergedCluster, err := r.checkConvergedCluster()
-	if err != nil {
-		return err
-	}
-
-	targetMcpName := func() string {
-		if isConvergedCluster {
-			return "master"
-		}
-		_, nodeLabeledForKata := node.Labels["node-role.kubernetes.io/kata-oc"]
-		if nodeLabeledForKata {
-			return "kata-oc"
-		} else {
-			return "worker"
-		}
-	}()
-
-	targetMcp, err := r.getMcpByName(targetMcpName)
-	if err != nil {
-		return err
-	}
-
-	installCompletedList := &r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesList
-	uninstallCompletedList := &r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList
-
-	currentNodeConfig, ok := node.Annotations["machineconfiguration.openshift.io/currentConfig"]
-
-	log := r.Log.WithName("updateStatus").WithValues("node name", node.GetName(), "target pool", targetMcpName, "current config", currentNodeConfig, "target pool config", targetMcp.Spec.Configuration.Name)
-	if ok && currentNodeConfig == targetMcp.Spec.Configuration.Name {
-		// This Node is at its target configuration so it's going to
-		// go to a Completed list, either installation's or uninstallation's.
-		// To decide which we consider:
-		// - if uninstallation is in progress, any settled Node must
-		//   belong to uninstallation's Complete list as no
-		//   installations can take place while uninstalling kata from
-		//   cluster
-		// - OTOH if installation is in progress, settled Nodes will go
-		//   to installation's Completed list by default as expected
-		//   *unless* the Node's target pool is "worker" in which case
-		//   the Node shouldn't and doesn't have kata on it and thus
-		//   belongs to uninstallation's Completed list.
-		if r.kataConfig.Status.InstallationStatus.IsInProgress == corev1.ConditionTrue {
-			if targetMcpName == "worker" {
-				log.Info("putting done node on uninstallation completed list")
-				*uninstallCompletedList = append(*uninstallCompletedList, node.GetName())
-				r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesCount = int(targetMcp.Status.UpdatedMachineCount)
-			} else {
-				log.Info("putting done node on installation completed list")
-				*installCompletedList = append(*installCompletedList, node.GetName())
-				r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount = int(targetMcp.Status.UpdatedMachineCount)
+		if foundMcp.Status.DegradedMachineCount > 0 || mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions,
+			mcfgv1.MachineConfigPoolDegraded) {
+			err, r.kataConfig.Status.InstallationStatus.Failed = r.updateFailedStatus(r.kataConfig.Status.InstallationStatus.Failed)
+			if err != nil {
+				return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
 			}
-		} else if r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress == corev1.ConditionTrue {
-			log.Info("putting done node on uninstallation completed list")
-			*uninstallCompletedList = append(*uninstallCompletedList, node.GetName())
-			r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesCount = int(targetMcp.Status.UpdatedMachineCount)
 		}
 	}
 
-	return nil
-}
-
-// If multiple errors occur during execution of this function the last one
-// will be returned.
-func (r *KataConfigOpenShiftReconciler) updateStatus() error {
-
-	if r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress != corev1.ConditionTrue &&
-		r.kataConfig.Status.InstallationStatus.IsInProgress != corev1.ConditionTrue {
-		return nil
+	/* uninstallation status */
+	if corev1.ConditionTrue == r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress {
+		err, _ := r.updateUninstallStatus()
+		if err != nil {
+			return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
+		}
+		if foundMcp.Status.DegradedMachineCount > 0 || mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions,
+			mcfgv1.MachineConfigPoolDegraded) {
+			err, r.kataConfig.Status.UnInstallationStatus.Failed = r.updateFailedStatus(r.kataConfig.Status.UnInstallationStatus.Failed)
+			if err != nil {
+				return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
+			}
+		}
 	}
 
+	return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil, true
+}
+
+func (r *KataConfigOpenShiftReconciler) updateUninstallStatus() (error, bool) {
+	var err error
 	err, nodeList := r.getNodes()
 	if err != nil {
-		return err
+		return err, false
 	}
 
-	r.clearInstallStatus()
 	r.clearUninstallStatus()
-
-	r.kataConfig.Status.TotalNodesCount = func() int {
-		err, nodes := r.getNodesWithLabels(r.getNodeSelectorAsMap())
-		if err != nil {
-			r.Log.Info("Error retrieving kata-oc labelled Nodes to count them", "err", err)
-			return 0
-		}
-		return len(nodes.Items)
-	}()
 
 	for _, node := range nodeList.Items {
 		if annotation, ok := node.Annotations["machineconfiguration.openshift.io/state"]; ok {
 			switch annotation {
-			case NodeDone:
-				e := r.processDoneNode(&node)
-				if e != nil {
-					err = e
-				}
-			case NodeDegraded:
-			case NodeWorking:
-				e := r.processTransitioningNode(&node)
-				if e != nil {
-					err = e
-				}
+			case "Done":
+				err, r.kataConfig.Status.UnInstallationStatus.Completed =
+					r.updateCompletedNodes(&node, r.kataConfig.Status.UnInstallationStatus.Completed)
+			case "Degraded":
+				err, r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList =
+					r.updateFailedNodes(&node, r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList)
+			case "Working":
+				err, r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList =
+					r.updateInProgressNodes(&node, r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList)
 			default:
-				err = fmt.Errorf("Unexpected machineconfiguration.openshift.io/state: %v ", annotation)
-				r.Log.Info("Unexpected machineconfiguration.openshift.io/state", "node", node.GetName(), "state", annotation)
+				err = fmt.Errorf("Invalid machineconfig state: %v ", annotation)
+				r.Log.Error(err, "Error updating Uninstall status")
 			}
 		}
 	}
-	return err
+	return err, true
+}
+
+func (r *KataConfigOpenShiftReconciler) updateInProgressNodes(node *corev1.Node, inProgressList []string) (error, []string) {
+	foundMcp, err := r.getMcp()
+	if err != nil {
+		return err, inProgressList
+	}
+	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) {
+		inProgressList = append(inProgressList, node.GetName())
+	}
+
+	return nil, inProgressList
+}
+
+func (r *KataConfigOpenShiftReconciler) updateCompletedNodes(node *corev1.Node, completedStatus kataconfigurationv1.KataConfigCompletedStatus) (error, kataconfigurationv1.KataConfigCompletedStatus) {
+	foundMcp, err := r.getMcp()
+	if err != nil {
+		return err, completedStatus
+	}
+	currentNodeConfig, ok := node.Annotations["machineconfiguration.openshift.io/currentConfig"]
+	if ok && foundMcp.Spec.Configuration.Name == currentNodeConfig &&
+		(r.kataConfig.Status.InstallationStatus.IsInProgress == corev1.ConditionTrue ||
+			r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress == corev1.ConditionTrue) {
+
+		completedStatus.CompletedNodesList = append(completedStatus.CompletedNodesList, node.GetName())
+		completedStatus.CompletedNodesCount = int(foundMcp.Status.UpdatedMachineCount)
+	}
+
+	return nil, completedStatus
+}
+
+func (r *KataConfigOpenShiftReconciler) updateFailedNodes(node *corev1.Node,
+	failedList []kataconfigurationv1.FailedNodeStatus) (error, []kataconfigurationv1.FailedNodeStatus) {
+
+	foundMcp, err := r.getMcp()
+	if err != nil {
+		return err, failedList
+	}
+	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded) ||
+		mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) {
+		failedList =
+			append(r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList,
+				kataconfigurationv1.FailedNodeStatus{Name: node.GetName(),
+					Error: node.Annotations["machineconfiguration.openshift.io/reason"]})
+	}
+
+	return nil, failedList
+}
+
+func (r *KataConfigOpenShiftReconciler) updateInstallStatus() (error, bool) {
+	var err error
+	err, nodeList := r.getNodes()
+	if err != nil {
+		return err, false
+	}
+
+	r.clearInstallStatus()
+
+	for _, node := range nodeList.Items {
+		if annotation, ok := node.Annotations["machineconfiguration.openshift.io/state"]; ok {
+			switch annotation {
+			case "Done":
+				err, r.kataConfig.Status.InstallationStatus.Completed =
+					r.updateCompletedNodes(&node, r.kataConfig.Status.InstallationStatus.Completed)
+			case "Degraded":
+				err, r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList =
+					r.updateFailedNodes(&node, r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList)
+			case "Working":
+				err, r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList =
+					r.updateInProgressNodes(&node, r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList)
+			default:
+				err = fmt.Errorf("Invalid machineconfig state: %v ", annotation)
+				r.Log.Error(err, "Error updating Install status")
+			}
+		}
+	}
+	return err, true
+}
+
+func (r *KataConfigOpenShiftReconciler) updateFailedStatus(status kataconfigurationv1.KataFailedNodeStatus) (error, kataconfigurationv1.KataFailedNodeStatus) {
+	foundMcp, err := r.getMcp()
+	if err != nil {
+		r.Log.Error(err, "couldn't get MachineConfigPool information")
+		return err, status
+	}
+
+	status = r.clearFailedStatus(status)
+
+	if foundMcp.Status.DegradedMachineCount > 0 {
+		status.FailedReason = r.getConditionReason(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded)
+		return nil, status
+	} else if mcfgv1.IsMachineConfigPoolConditionPresentAndEqual(foundMcp.Status.Conditions,
+		mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue) {
+		status.FailedReason = r.getConditionReason(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)
+		return nil, status
+	}
+
+	return err, status
 }
 
 func (r *KataConfigOpenShiftReconciler) clearInstallStatus() {
@@ -1849,6 +1860,14 @@ func (r *KataConfigOpenShiftReconciler) clearUninstallStatus() {
 	r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList = nil
 	r.kataConfig.Status.UnInstallationStatus.Failed.FailedReason = ""
 	r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesCount = 0
+}
+
+func (r *KataConfigOpenShiftReconciler) clearFailedStatus(status kataconfigurationv1.KataFailedNodeStatus) kataconfigurationv1.KataFailedNodeStatus {
+	status.FailedNodesList = nil
+	status.FailedReason = ""
+	status.FailedNodesCount = 0
+
+	return status
 }
 
 func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
