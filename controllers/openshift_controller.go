@@ -33,6 +33,7 @@ import (
 	"github.com/go-logr/logr"
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	nodeapi "k8s.io/api/node/v1"
@@ -41,9 +42,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/workqueue"
-	labelsutil "k8s.io/kubernetes/pkg/util/labels"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -61,7 +60,6 @@ type KataConfigOpenShiftReconciler struct {
 	Log    logr.Logger
 	Scheme *runtime.Scheme
 
-	clientset  kubernetes.Interface
 	kataConfig *kataconfigurationv1.KataConfig
 }
 
@@ -73,11 +71,12 @@ const (
 	DEFAULT_PEER_PODS                   = "10"
 	peerpodConfigCrdName                = "peerpodconfig-openshift"
 	peerpodsMachineConfigPathLocation   = "/config/peerpods"
-	peerpodsCrioMachineConfig           = "50-kata-remote-cc"
+	peerpodsImageJobsPathLocation       = "/config/peerpods/podvm"
+	peerpodsCrioMachineConfig           = "50-kata-remote"
 	peerpodsCrioMachineConfigYaml       = "mc-50-crio-config.yaml"
 	peerpodsKataRemoteMachineConfig     = "40-worker-kata-remote-config"
 	peerpodsKataRemoteMachineConfigYaml = "mc-40-kata-remote-config.yaml"
-	peerpodsRuntimeClassName            = "kata-remote-cc"
+	peerpodsRuntimeClassName            = "kata-remote"
 	peerpodsRuntimeClassCpuOverhead     = "0.25"
 	peerpodsRuntimeClassMemOverhead     = "350Mi"
 )
@@ -99,6 +98,9 @@ const (
 // +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods/finalizers,verbs=update
 // +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations,verbs=get;list;watch;create;update;delete
+// +kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get;list;watch
+// +kubebuilder:rbac:groups="batch",resources=jobs,verbs=create;get;list;watch;delete
+// +kubebuilder:rbac:groups="",resources=pods/log,verbs=get
 
 func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = r.Log.WithValues("kataconfig", req.NamespacedName)
@@ -134,8 +136,10 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		}
 
 		// Check if the KataConfig instance is marked to be deleted, which is
-		// indicated by the deletion timestamp being set.
-		if r.kataConfig.GetDeletionTimestamp() != nil {
+		// indicated by the deletion timestamp being set.  However, don't let
+		// uninstallation commence if another operation (installation, update)
+		// is underway.
+		if r.kataConfig.GetDeletionTimestamp() != nil && !r.isInstalling() && !r.isUpdating() {
 			res, err := r.processKataConfigDeleteRequest()
 
 			updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
@@ -176,12 +180,14 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 			//node. One of the ways to ensure this is to check for the existence of "kata" runtimeclass before
 			//creating the DS
 			//Alternatively we can create the DS post execution of createRuntimeClass()
-			if k8serrors.IsNotFound(err) && r.kataConfig.Status.RuntimeClass == "kata" {
-				r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-				err = r.Client.Create(context.TODO(), ds)
-				if err != nil {
-					r.Log.Error(err, "error when creating monitor daemonset")
-					res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+			if k8serrors.IsNotFound(err) {
+				if contains(r.kataConfig.Status.RuntimeClass, "kata") {
+					r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
+					err = r.Client.Create(context.TODO(), ds)
+					if err != nil {
+						r.Log.Error(err, "error when creating monitor daemonset")
+						res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+					}
 				}
 			} else {
 				r.Log.Error(err, "could not get monitor daemonset, try again")
@@ -502,6 +508,20 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool 
 	return mcp
 }
 
+func getExtensionName() string {
+	// RHCOS uses "sandboxed-containers" as thats resolved/translated in the machine-config-operator to "kata-containers"
+	// FCOS however does not get any translation in the machine-config-operator so we need to
+	// send in "kata-containers".
+	// Both are later send to rpm-ostree for installation.
+	//
+	// As RHCOS is rather special variant, use "kata-containers" by default, which also applies to FCOS
+	extension := os.Getenv("SANDBOXED_CONTAINERS_EXTENSION")
+	if len(extension) == 0 {
+		extension = "kata-containers"
+	}
+	return extension
+}
+
 func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
 	r.Log.Info("Creating MachineConfig for Custom Resource")
 
@@ -516,16 +536,7 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 		return nil, err
 	}
 
-	// RHCOS uses "sandboxed-containers" as thats resolved/translated in the machine-config-operator to "kata-containers"
-	// FCOS however does not get any translation in the machine-config-operator so we need to
-	// send in "kata-containers".
-	// Both are later send to rpm-ostree for installation.
-	//
-	// As RHCOS is rather special variant, use "kata-containers" by default, which also applies to FCOS
-	extension := os.Getenv("SANDBOXED_CONTAINERS_EXTENSION")
-	if len(extension) == 0 {
-		extension = "kata-containers"
-	}
+	extension := getExtensionName()
 
 	mc := mcfgv1.MachineConfig{
 		TypeMeta: metav1.TypeMeta{
@@ -586,8 +597,8 @@ func (r *KataConfigOpenShiftReconciler) listKataPods() error {
 	}
 	for _, pod := range podList.Items {
 		if pod.Spec.RuntimeClassName != nil {
-			if *pod.Spec.RuntimeClassName == r.kataConfig.Status.RuntimeClass {
-				return fmt.Errorf("Existing pods using Kata Runtime found. Please delete the pods manually for KataConfig deletion to proceed")
+			if contains(r.kataConfig.Status.RuntimeClass, *pod.Spec.RuntimeClassName) {
+				return fmt.Errorf("Existing pods using \"%v\" RuntimeClass found. Please delete the pods manually for KataConfig deletion to proceed", *pod.Spec.RuntimeClassName)
 			}
 		}
 	}
@@ -653,23 +664,6 @@ func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
 	}
 
 	return nil
-}
-
-func (r *KataConfigOpenShiftReconciler) getMcpNameIfMcpExists() (string, error) {
-	r.Log.Info("Getting MachineConfigPool Name")
-
-	kataOC, err := r.kataOcExists()
-	if kataOC && err == nil {
-		r.Log.Info("kata-oc MachineConfigPool exists")
-		return "kata-oc", nil
-	}
-	isConvergedCluster, err := r.checkConvergedCluster()
-	if err == nil && isConvergedCluster {
-		r.Log.Info("Converged Cluster. Not creating kata-oc MCP")
-		return "master", nil
-	}
-	r.Log.Info("No valid MCP found")
-	return "", err
 }
 
 func (r *KataConfigOpenShiftReconciler) getMcpName() (string, error) {
@@ -762,12 +756,8 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName stri
 		}
 	}
 
-	if r.kataConfig.Status.RuntimeClass == "" {
-		r.kataConfig.Status.RuntimeClass = runtimeClassName
-		err = r.Client.Status().Update(context.TODO(), r.kataConfig)
-		if err != nil {
-			return err
-		}
+	if !contains(r.kataConfig.Status.RuntimeClass, runtimeClassName) {
+		r.kataConfig.Status.RuntimeClass = append(r.kataConfig.Status.RuntimeClass, runtimeClassName)
 	}
 
 	return nil
@@ -790,7 +780,7 @@ func (r *KataConfigOpenShiftReconciler) getKataConfigNodeSelectorAsLabelSelector
 	}
 
 	if r.kataConfig.Spec.CheckNodeEligibility {
-		nodeSelector = labelsutil.AddLabelToSelector(nodeSelector, "feature.node.kubernetes.io/runtime.kata", "true")
+		nodeSelector = metav1.AddLabelToSelector(nodeSelector, "feature.node.kubernetes.io/runtime.kata", "true")
 	}
 	r.Log.Info("getKataConfigNodeSelectorAsLabelSelector()", "selector", nodeSelector)
 	return nodeSelector
@@ -846,21 +836,13 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		// Get the list of pods that might be running using kata runtime
 		err := r.listKataPods()
 		if err != nil {
-			r.kataConfig.Status.UnInstallationStatus.ErrorMessage = err.Error()
+			r.setInProgressConditionToBlockedByExistingKataPods(err.Error())
 			updErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
 			if updErr != nil {
 				return ctrl.Result{}, updErr
 			}
 			r.Log.Info("Kata PODs are present. Requeue for reconciliation ")
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-		} else {
-			if r.kataConfig.Status.UnInstallationStatus.ErrorMessage != "" {
-				r.kataConfig.Status.UnInstallationStatus.ErrorMessage = ""
-				updErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
-				if updErr != nil {
-					return ctrl.Result{}, updErr
-				}
-			}
 		}
 	}
 
@@ -880,7 +862,8 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	}
 
 	r.Log.Info("Making sure parent MCP is synced properly, SCNodeRole=" + machinePool)
-	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
+	r.setInProgressConditionToUninstalling()
+
 	mc, err := r.newMCForCR(machinePool)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -915,7 +898,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	if (isConvergedCluster && !isMcDeleted) || (!isConvergedCluster && labelingChanged) {
 		r.Log.Info("Starting to wait for MCO to start reconciliation")
 		r.kataConfig.Status.WaitingForMcoToStart = true
-		r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionTrue
 	}
 
 	// When nodes migrate from a source pool to a target pool the source
@@ -942,10 +924,9 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		r.kataConfig.Status.WaitingForMcoToStart = false
 	}
 
-	r.clearUninstallStatus()
-	_, result, err2, done := r.updateStatus(machinePool)
-	if !done {
-		return result, err2
+	err = r.updateStatus()
+	if err != nil {
+		r.Log.Info("Error updating KataConfig.status", "err", err)
 	}
 
 	if isMcoUpdating {
@@ -953,7 +934,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		return reconcile.Result{}, nil
 	}
 
-	r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress = corev1.ConditionFalse
+	r.resetInProgressCondition()
 
 	if !isConvergedCluster {
 		r.Log.Info("Get()'ing MachineConfigPool to delete it", "machinePool", "kata-oc")
@@ -990,6 +971,10 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		// these can be removed manually if needed and this is not in the critical path
 		// of operator functionality
 		_ = r.disablePeerPods()
+		completed, res := ImageDelete(r.Client)
+		if !completed {
+			return res, nil
+		}
 	}
 
 	scc := GetScc()
@@ -1031,6 +1016,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	// peer pod enablement
 	if r.kataConfig.Spec.EnablePeerPods {
+		completed, res := ImageCreate(r.Client)
+		if !completed {
+			return res, nil
+		}
+
 		err := r.enablePeerPodsMc()
 		if err != nil {
 			r.Log.Info("Enabling peerpods machineconfigs failed", "err", err)
@@ -1060,6 +1050,12 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	if wasMcJustCreated {
+		r.setInProgressConditionToInstalling()
+	}
+
+	isInstallationInProgress := r.isMcpUpdating(machinePool) || (!isConvergedCluster && r.isMcpUpdating("worker"))
+
 	// Create kata-oc MCP only if it's not a converged cluster
 	if !isConvergedCluster {
 		labelingChanged, err := r.updateNodeLabels()
@@ -1072,14 +1068,12 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		}
 		if labelingChanged {
 			r.Log.Info("node labels updated")
-			// IsInProgress == ConditionFalse would be more direct and clear but it doesn't handle
-			// the possibility that IsInProgress == "" which actually comes up right after
-			// KataConfig is created.
-			if r.kataConfig.Status.InstallationStatus.IsInProgress != corev1.ConditionTrue {
+
+			if !isInstallationInProgress {
 				r.Log.Info("Starting to wait for MCO to start")
 				r.kataConfig.Status.WaitingForMcoToStart = true
 			} else {
-				r.Log.Info("installation already in progress", "IsInProgress", r.kataConfig.Status.InstallationStatus.IsInProgress)
+				r.Log.Info("installation already in progress")
 			}
 		}
 
@@ -1109,17 +1103,16 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	isKataMcpUpdating := r.isMcpUpdating(machinePool)
 	r.Log.Info("MCP updating state", "MCP name", machinePool, "is updating", isKataMcpUpdating)
-	if isKataMcpUpdating {
-		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
-	}
+
 	isMcoUpdating := isKataMcpUpdating
 	if !isConvergedCluster {
 		isWorkerUpdating := r.isMcpUpdating("worker")
 		r.Log.Info("MCP updating state", "MCP name", "worker", "is updating", isWorkerUpdating)
-		if isWorkerUpdating {
-			r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionTrue
-		}
 		isMcoUpdating = isKataMcpUpdating || isWorkerUpdating
+	}
+
+	if isMcoUpdating && r.getInProgressConditionValue() == corev1.ConditionFalse {
+		r.setInProgressConditionToUpdating()
 	}
 
 	// This condition might look tricky so here's a quick rundown of
@@ -1148,16 +1141,14 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.kataConfig.Status.WaitingForMcoToStart = false
 	}
 
-	foundMcp, doReconcile, err, done := r.updateStatus(machinePool)
-	if !done {
-		return doReconcile, err
+	err = r.updateStatus()
+	if err != nil {
+		r.Log.Info("Error updating KataConfig.status", "err", err)
 	}
-
-	r.kataConfig.Status.TotalNodesCount = int(foundMcp.Status.MachineCount)
 
 	if !isMcoUpdating {
 		r.Log.Info("create runtime class")
-		r.kataConfig.Status.InstallationStatus.IsInProgress = corev1.ConditionFalse
+		r.resetInProgressCondition()
 		err := r.createRuntimeClass("kata", "0.25", "350Mi")
 		if err != nil {
 			// Give sometime for the error to go away before reconciling again
@@ -1545,22 +1536,6 @@ func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error
 		Complete(r)
 }
 
-func (r *KataConfigOpenShiftReconciler) getMcp() (*mcfgv1.MachineConfigPool, error) {
-	machinePool, err := r.getMcpNameIfMcpExists()
-	if err != nil {
-		return nil, err
-	}
-
-	foundMcp := &mcfgv1.MachineConfigPool{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
-	if err != nil {
-		r.Log.Error(err, "Getting MachineConfigPool failed ", "machinePool", machinePool)
-		return nil, err
-	}
-
-	return foundMcp, nil
-}
-
 func (r *KataConfigOpenShiftReconciler) getNodes() (error, *corev1.NodeList) {
 	nodes := &corev1.NodeList{}
 	labelSelector := labels.SelectorFromSet(map[string]string{"node-role.kubernetes.io/worker": ""})
@@ -1672,202 +1647,332 @@ func (r *KataConfigOpenShiftReconciler) getConditionReason(conditions []mcfgv1.M
 	return ""
 }
 
-func (r *KataConfigOpenShiftReconciler) updateStatus(machinePool string) (*mcfgv1.MachineConfigPool, ctrl.Result, error, bool) {
-	/* update KataConfig according to occurred error
-	 * We need to pull the status information from the machine config pool object
-	 */
-	foundMcp := &mcfgv1.MachineConfigPool{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, foundMcp)
-	if err != nil && k8serrors.IsNotFound(err) {
-		r.Log.Error(err, "Unable to get MachineConfigPool ", "machinePool", machinePool)
-		return nil, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil, true
+func (r *KataConfigOpenShiftReconciler) getMcpByName(mcpName string) (*mcfgv1.MachineConfigPool, error) {
+
+	mcp := &mcfgv1.MachineConfigPool{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcpName}, mcp)
+	if err != nil {
+		r.Log.Info("Getting MachineConfigPool failed ", "machinePool", mcp, "err", err)
+		return nil, err
 	}
 
-	/* installation status */
-	if corev1.ConditionTrue == r.kataConfig.Status.InstallationStatus.IsInProgress {
-		err, _ := r.updateInstallStatus()
-		if err != nil {
-			return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
-		}
-		if foundMcp.Status.DegradedMachineCount > 0 || mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions,
-			mcfgv1.MachineConfigPoolDegraded) {
-			err, r.kataConfig.Status.InstallationStatus.Failed = r.updateFailedStatus(r.kataConfig.Status.InstallationStatus.Failed)
-			if err != nil {
-				return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
-			}
-		}
-	}
-
-	/* uninstallation status */
-	if corev1.ConditionTrue == r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress {
-		err, _ := r.updateUninstallStatus()
-		if err != nil {
-			return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
-		}
-		if foundMcp.Status.DegradedMachineCount > 0 || mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions,
-			mcfgv1.MachineConfigPoolDegraded) {
-			err, r.kataConfig.Status.UnInstallationStatus.Failed = r.updateFailedStatus(r.kataConfig.Status.UnInstallationStatus.Failed)
-			if err != nil {
-				return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err, false
-			}
-		}
-	}
-
-	return foundMcp, reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil, true
+	return mcp, nil
 }
 
-func (r *KataConfigOpenShiftReconciler) updateUninstallStatus() (error, bool) {
-	var err error
+const (
+	// "Working"
+	NodeWorking = mcfgconsts.MachineConfigDaemonStateWorking
+	// "Done"
+	NodeDone = mcfgconsts.MachineConfigDaemonStateDone
+	// "Degraded"
+	NodeDegraded = mcfgconsts.MachineConfigDaemonStateDegraded
+)
+
+// If multiple errors occur during execution of this function the last one
+// will be returned.
+func (r *KataConfigOpenShiftReconciler) updateStatus() error {
+
+	if r.getInProgressConditionValue() != corev1.ConditionTrue {
+		return nil
+	}
+
 	err, nodeList := r.getNodes()
 	if err != nil {
-		return err, false
+		return err
 	}
 
-	r.clearUninstallStatus()
+	r.clearNodeStatusLists()
+
+	r.kataConfig.Status.KataNodes.NodeCount = func() int {
+		err, nodes := r.getNodesWithLabels(r.getNodeSelectorAsMap())
+		if err != nil {
+			r.Log.Info("Error retrieving kata-oc labelled Nodes to count them", "err", err)
+			return 0
+		}
+		return len(nodes.Items)
+	}()
 
 	for _, node := range nodeList.Items {
-		if annotation, ok := node.Annotations["machineconfiguration.openshift.io/state"]; ok {
-			switch annotation {
-			case "Done":
-				err, r.kataConfig.Status.UnInstallationStatus.Completed =
-					r.updateCompletedNodes(&node, r.kataConfig.Status.UnInstallationStatus.Completed)
-			case "Degraded":
-				err, r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList =
-					r.updateFailedNodes(&node, r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList)
-			case "Working":
-				err, r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList =
-					r.updateInProgressNodes(&node, r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList)
-			default:
-				err = fmt.Errorf("Invalid machineconfig state: %v ", annotation)
-				r.Log.Error(err, "Error updating Uninstall status")
-			}
+		e := r.putNodeOnStatusList(&node)
+		if e != nil {
+			err = e
 		}
 	}
-	return err, true
+
+	r.kataConfig.Status.KataNodes.ReadyNodeCount = len(r.kataConfig.Status.KataNodes.Installed)
+
+	return err
 }
 
-func (r *KataConfigOpenShiftReconciler) updateInProgressNodes(node *corev1.Node, inProgressList []string) (error, []string) {
-	foundMcp, err := r.getMcp()
-	if err != nil {
-		return err, inProgressList
-	}
-	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) {
-		inProgressList = append(inProgressList, node.GetName())
-	}
-
-	return nil, inProgressList
+// A set of mutually exclusive predicate functions that figure out kata
+// installation status on a given Node from four pieces of data:
+// - Node's MCO state
+// - MachineConfig the Node is currently at
+// - MachineConfig the Node is supposed to be at
+// - and whether kata is enabled for the Node
+func isNodeInstalled(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeDone && nodeCurrMc == nodeTargetMc && isKataEnabledOnNode
 }
 
-func (r *KataConfigOpenShiftReconciler) updateCompletedNodes(node *corev1.Node, completedStatus kataconfigurationv1.KataConfigCompletedStatus) (error, kataconfigurationv1.KataConfigCompletedStatus) {
-	foundMcp, err := r.getMcp()
-	if err != nil {
-		return err, completedStatus
-	}
-	currentNodeConfig, ok := node.Annotations["machineconfiguration.openshift.io/currentConfig"]
-	if ok && foundMcp.Spec.Configuration.Name == currentNodeConfig &&
-		(r.kataConfig.Status.InstallationStatus.IsInProgress == corev1.ConditionTrue ||
-			r.kataConfig.Status.UnInstallationStatus.InProgress.IsInProgress == corev1.ConditionTrue) {
-
-		completedStatus.CompletedNodesList = append(completedStatus.CompletedNodesList, node.GetName())
-		completedStatus.CompletedNodesCount = int(foundMcp.Status.UpdatedMachineCount)
-	}
-
-	return nil, completedStatus
+func isNodeNotInstalled(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeDone && nodeCurrMc == nodeTargetMc && !isKataEnabledOnNode
 }
 
-func (r *KataConfigOpenShiftReconciler) updateFailedNodes(node *corev1.Node,
-	failedList []kataconfigurationv1.FailedNodeStatus) (error, []kataconfigurationv1.FailedNodeStatus) {
-
-	foundMcp, err := r.getMcp()
-	if err != nil {
-		return err, failedList
-	}
-	if mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded) ||
-		mcfgv1.IsMachineConfigPoolConditionTrue(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) {
-		failedList =
-			append(r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList,
-				kataconfigurationv1.FailedNodeStatus{Name: node.GetName(),
-					Error: node.Annotations["machineconfiguration.openshift.io/reason"]})
-	}
-
-	return nil, failedList
+func isNodeInstalling(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeWorking && isKataEnabledOnNode
 }
 
-func (r *KataConfigOpenShiftReconciler) updateInstallStatus() (error, bool) {
-	var err error
-	err, nodeList := r.getNodes()
+func isNodeUninstalling(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeWorking && !isKataEnabledOnNode
+}
+
+func isNodeWaitingToInstall(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeDone && nodeCurrMc != nodeTargetMc && isKataEnabledOnNode
+}
+
+func isNodeWaitingToUninstall(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeDone && nodeCurrMc != nodeTargetMc && !isKataEnabledOnNode
+}
+
+func isNodeFailedToInstall(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeDegraded && isKataEnabledOnNode
+}
+
+func isNodeFailedToUninstall(nodeMcoState string, nodeCurrMc string, nodeTargetMc string, isKataEnabledOnNode bool) bool {
+	return nodeMcoState == NodeDegraded && !isKataEnabledOnNode
+}
+
+func (r *KataConfigOpenShiftReconciler) putNodeOnStatusList(node *corev1.Node) error {
+
+	isConvergedCluster, err := r.checkConvergedCluster()
 	if err != nil {
-		return err, false
+		return err
 	}
 
-	r.clearInstallStatus()
+	targetMcpName := func() string {
+		if isConvergedCluster {
+			return "master"
+		}
+		_, nodeLabeledForKata := node.Labels["node-role.kubernetes.io/kata-oc"]
+		if nodeLabeledForKata {
+			return "kata-oc"
+		} else {
+			return "worker"
+		}
+	}()
 
-	for _, node := range nodeList.Items {
-		if annotation, ok := node.Annotations["machineconfiguration.openshift.io/state"]; ok {
-			switch annotation {
-			case "Done":
-				err, r.kataConfig.Status.InstallationStatus.Completed =
-					r.updateCompletedNodes(&node, r.kataConfig.Status.InstallationStatus.Completed)
-			case "Degraded":
-				err, r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList =
-					r.updateFailedNodes(&node, r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList)
-			case "Working":
-				err, r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList =
-					r.updateInProgressNodes(&node, r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList)
-			default:
-				err = fmt.Errorf("Invalid machineconfig state: %v ", annotation)
-				r.Log.Error(err, "Error updating Install status")
+	targetMcp, err := r.getMcpByName(targetMcpName)
+	if err != nil {
+		return err
+	}
+
+	nodeMcoState, ok := node.Annotations["machineconfiguration.openshift.io/state"]
+	if !ok {
+		return fmt.Errorf("Missing machineconfiguration.openshift.io/state on node %v", node.GetName())
+	}
+
+	nodeCurrMc, ok := node.Annotations["machineconfiguration.openshift.io/currentConfig"]
+	if !ok {
+		return fmt.Errorf("Missing machineconfiguration.openshift.io/currentConfig on node %v", node.GetName())
+	}
+
+	// Note that to figure out the MachineConfig our Node should be at we
+	// unfortunately cannot use
+	// machineconfiguration.openshift.io/desiredConfig as would seem
+	// logical and easy.  The reason is that the MCO only sets
+	// `desiredConfig` to the actual desired config right before it starts
+	// updating the Node.  So to get the correct target MachineConfig we
+	// need to look at the MachineConfigPool that our Node belongs to or
+	// will belong to shortly.
+	nodeTargetMc := targetMcp.Spec.Configuration.Name
+
+	// `isKataEnabledOnNode` is a per Node condition on regular clusters
+	// but cluster-wide on converged ones.
+	// On regular clusters, this is ultimately determined by
+	// KataConfig.spec.kataConfigPoolSelector (we use the
+	// node-role.kubernetes.io/kata-oc to find this above in this function,
+	// and the node-role is in turn assigned to Nodes based on the pool
+	// selector).
+	// On converged clusters, basically only two operations are possible:
+	// installing kata on all masters and uninstalling kata from all
+	// masters, no per-Node options can be supported.  We find if kata is
+	// supposed to be installed on the cluster by examining the "master"
+	// MCP's MachineConfig to see if it installs the kata containers
+	// extension.
+	var isKataEnabledOnNode bool
+	if isConvergedCluster {
+		targetMc := &mcfgv1.MachineConfig{}
+		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: targetMcp.Spec.Configuration.Name}, targetMc)
+		if err != nil {
+			r.Log.Info("Failed to retrieve MachineConfig", "MC name", targetMcp.Spec.Configuration.Name, targetMc, "MCP name", targetMcpName)
+			return err
+		}
+
+		isKataEnabledOnNode = func() bool {
+			extensionName := getExtensionName()
+			for _, extName := range targetMc.Spec.Extensions {
+				if extName == extensionName {
+					return true
+				}
 			}
+			return false
+		}()
+	} else {
+		isKataEnabledOnNode = targetMcpName == "kata-oc"
+	}
+
+	if isNodeInstalled(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
+		r.Log.Info("node is Installed", "node", node.GetName())
+		r.kataConfig.Status.KataNodes.Installed = append(r.kataConfig.Status.KataNodes.Installed, node.GetName())
+	} else if isNodeNotInstalled(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
+		r.Log.Info("node is NotInstalled", "node", node.GetName())
+	} else if isNodeInstalling(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
+		r.Log.Info("node is Installing", "node", node.GetName())
+		r.kataConfig.Status.KataNodes.Installing = append(r.kataConfig.Status.KataNodes.Installing, node.GetName())
+	} else if isNodeUninstalling(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
+		r.Log.Info("node is Uninstalling", "node", node.GetName())
+		r.kataConfig.Status.KataNodes.Uninstalling = append(r.kataConfig.Status.KataNodes.Uninstalling, node.GetName())
+	} else if isNodeWaitingToInstall(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
+		r.Log.Info("node is WaitingToInstall", "node", node.GetName())
+		r.kataConfig.Status.KataNodes.WaitingToInstall = append(r.kataConfig.Status.KataNodes.WaitingToInstall, node.GetName())
+	} else if isNodeWaitingToUninstall(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
+		r.Log.Info("node is WaitingToUninstall", "node", node.GetName())
+		r.kataConfig.Status.KataNodes.WaitingToUninstall = append(r.kataConfig.Status.KataNodes.WaitingToUninstall, node.GetName())
+	} else if isNodeFailedToInstall(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
+		r.Log.Info("node is FailedToInstall", "node", node.GetName())
+		r.kataConfig.Status.KataNodes.FailedToInstall = append(r.kataConfig.Status.KataNodes.FailedToInstall, node.GetName())
+		r.setInProgressConditionToFailed(node)
+	} else if isNodeFailedToUninstall(nodeMcoState, nodeCurrMc, nodeTargetMc, isKataEnabledOnNode) {
+		r.Log.Info("node is FailedToUninstall", "node", node.GetName())
+		r.kataConfig.Status.KataNodes.FailedToUninstall = append(r.kataConfig.Status.KataNodes.FailedToUninstall, node.GetName())
+		r.setInProgressConditionToFailed(node)
+	}
+
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) clearNodeStatusLists() {
+	r.kataConfig.Status.KataNodes.Installed = nil
+	r.kataConfig.Status.KataNodes.Installing = nil
+	r.kataConfig.Status.KataNodes.WaitingToInstall = nil
+	r.kataConfig.Status.KataNodes.FailedToInstall = nil
+
+	r.kataConfig.Status.KataNodes.Uninstalling = nil
+	r.kataConfig.Status.KataNodes.WaitingToUninstall = nil
+	r.kataConfig.Status.KataNodes.FailedToUninstall = nil
+}
+
+func (r *KataConfigOpenShiftReconciler) findInProgressCondition() *kataconfigurationv1.KataConfigCondition {
+	for i := 0; i < len(r.kataConfig.Status.Conditions); i++ {
+		if r.kataConfig.Status.Conditions[i].Type == kataconfigurationv1.KataConfigInProgress {
+			return &r.kataConfig.Status.Conditions[i]
 		}
 	}
-	return err, true
+	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) updateFailedStatus(status kataconfigurationv1.KataFailedNodeStatus) (error, kataconfigurationv1.KataFailedNodeStatus) {
-	foundMcp, err := r.getMcp()
-	if err != nil {
-		r.Log.Error(err, "couldn't get MachineConfigPool information")
-		return err, status
+func (r *KataConfigOpenShiftReconciler) getInProgressConditionValue() corev1.ConditionStatus {
+	cond := r.findInProgressCondition()
+	if cond == nil {
+		return corev1.ConditionUnknown
+	}
+	return cond.Status
+}
+
+func (r *KataConfigOpenShiftReconciler) addInProgressCondition() *kataconfigurationv1.KataConfigCondition {
+	r.kataConfig.Status.Conditions = append(r.kataConfig.Status.Conditions, kataconfigurationv1.KataConfigCondition{Type: kataconfigurationv1.KataConfigInProgress})
+
+	r.Log.Info("InProgress Condition added")
+
+	return &r.kataConfig.Status.Conditions[len(r.kataConfig.Status.Conditions)-1]
+}
+
+// This is just a technical helper to all InProgress Condition mutators,
+// factoring their common preamble out into an own function.
+func (r *KataConfigOpenShiftReconciler) retrieveInProgressConditionForChange() *kataconfigurationv1.KataConfigCondition {
+	cond := r.findInProgressCondition()
+	if cond == nil {
+		cond = r.addInProgressCondition()
 	}
 
-	status = r.clearFailedStatus(status)
+	cond.LastTransitionTime = metav1.Now()
 
-	if foundMcp.Status.DegradedMachineCount > 0 {
-		status.FailedReason = r.getConditionReason(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded)
-		return nil, status
-	} else if mcfgv1.IsMachineConfigPoolConditionPresentAndEqual(foundMcp.Status.Conditions,
-		mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue) {
-		status.FailedReason = r.getConditionReason(foundMcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)
-		return nil, status
+	return cond
+}
+
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToInstalling() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = "Installing"
+	cond.Message = "Performing initial installation of kata on cluster"
+
+	r.Log.Info("InProgress Condition set to Installing")
+}
+
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToUninstalling() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = "Uninstalling"
+	cond.Message = "Removing kata from cluster"
+
+	r.Log.Info("InProgress Condition set to Uninstalling")
+}
+
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToUpdating() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = "Updating"
+	cond.Message = "Adding and/or removing kata-enabled nodes"
+
+	r.Log.Info("InProgress Condition set to Updating")
+}
+
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToFailed(failingNode *corev1.Node) {
+	reasonForDegraded, ok := failingNode.Annotations["machineconfiguration.openshift.io/reason"]
+	if !ok {
+		r.Log.Info("Missing machineconfiguration.openshift.io/reason on Degraded node", "node", failingNode.GetName())
 	}
 
-	return err, status
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = "Failed"
+	cond.Message = "Node " + failingNode.GetName() + " Degraded: " + reasonForDegraded
+
+	r.Log.Info("InProgress Condition set to Failed")
 }
 
-func (r *KataConfigOpenShiftReconciler) clearInstallStatus() {
-	r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesList = nil
-	r.kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount = 0
-	r.kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList = nil
-	r.kataConfig.Status.InstallationStatus.Failed.FailedNodesList = nil
-	r.kataConfig.Status.InstallationStatus.Failed.FailedReason = ""
-	r.kataConfig.Status.InstallationStatus.Failed.FailedNodesCount = 0
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToBlockedByExistingKataPods(message string) {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionFalse
+	cond.Reason = "BlockedByExistingKataPods"
+	cond.Message = message
+
+	r.Log.Info("InProgress Condition set to BlockedByExistingKataPods")
 }
 
-func (r *KataConfigOpenShiftReconciler) clearUninstallStatus() {
-	r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesList = nil
-	r.kataConfig.Status.UnInstallationStatus.Completed.CompletedNodesCount = 0
-	r.kataConfig.Status.UnInstallationStatus.InProgress.BinariesUnInstalledNodesList = nil
-	r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesList = nil
-	r.kataConfig.Status.UnInstallationStatus.Failed.FailedReason = ""
-	r.kataConfig.Status.UnInstallationStatus.Failed.FailedNodesCount = 0
+func (r *KataConfigOpenShiftReconciler) resetInProgressCondition() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionFalse
+	cond.Reason = ""
+	cond.Message = ""
+
+	r.Log.Info("InProgress Condition reset")
 }
 
-func (r *KataConfigOpenShiftReconciler) clearFailedStatus(status kataconfigurationv1.KataFailedNodeStatus) kataconfigurationv1.KataFailedNodeStatus {
-	status.FailedNodesList = nil
-	status.FailedReason = ""
-	status.FailedNodesCount = 0
+func (r *KataConfigOpenShiftReconciler) isInstalling() bool {
+	cond := r.findInProgressCondition()
+	if cond == nil {
+		return false;
+	}
+	return cond.Status == corev1.ConditionTrue && cond.Reason == "Installing";
+}
 
-	return status
+func (r *KataConfigOpenShiftReconciler) isUpdating() bool {
+	cond := r.findInProgressCondition()
+	if cond == nil {
+		return false;
+	}
+	return cond.Status == corev1.ConditionTrue && cond.Reason == "Updating";
 }
 
 func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {

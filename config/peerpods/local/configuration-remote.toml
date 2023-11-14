@@ -13,7 +13,8 @@
 
 [hypervisor.remote]
 remote_hypervisor_socket = "/run/peerpod/hypervisor.sock"
-remote_hypervisor_timeout = 600
+remote_hypervisor_timeout = 900
+disable_guest_selinux = true
 
 
 # Enable confidential guest support.
@@ -32,7 +33,7 @@ remote_hypervisor_timeout = 600
 # List of valid annotation names for the hypervisor
 # Each member of the list is a regular expression, which is the base name
 # of the annotation, e.g. "path" for io.katacontainers.config.hypervisor.path"
-enable_annotations = []
+enable_annotations = ["default_vcpus", "default_memory", "machine_type"]
 
 # List of valid annotations values for the hypervisor
 # Each member of the list is a path pattern as described by glob(3).
@@ -536,6 +537,7 @@ disable_new_netns = true
 # The sandbox cgroup is constrained if there is no container type annotation.
 # See: https://godoc.org/github.com/kata-containers/runtime/virtcontainers#ContainerType
 sandbox_cgroup_only=false
+static_sandbox_resource_mgmt = true
 
 # If specified, sandbox_bind_mounts identifieds host paths to be mounted (ro) into the sandboxes shared path.
 # This is only valid if filesystem sharing is utilized. The provided path(s) will be bindmounted into the shared fs directory.
