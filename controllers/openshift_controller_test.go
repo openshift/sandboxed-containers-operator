@@ -350,11 +350,11 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 
 			fmt.Fprintf(GinkgoWriter, "[DEBUG] kata-oc MachineConfigPool: %+v\n", kataMcp)
 
-			By("Checking the KataConfig CR InstallationStatus")
+			By("Checking the KataConfig CR InProgress Condition")
 
 			Eventually(func() corev1.ConditionStatus {
 				k8sClient.Get(context.Background(), types.NamespacedName{Name: kataConfig.Name}, kataConfig)
-				return kataConfig.Status.InstallationStatus.IsInProgress
+				return kataConfig.Status.Conditions[0].Status
 			}, timeout, interval).Should(Equal(corev1.ConditionTrue))
 
 			fmt.Fprintf(GinkgoWriter, "[DEBUG] kataConfig: %v\n", kataConfig)
@@ -403,10 +403,10 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 			By("Checking KataConfig Completed status")
 			Eventually(func() int {
 				k8sClient.Get(context.Background(), types.NamespacedName{Name: kataConfig.Name}, kataConfig)
-				return kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount
+				return kataConfig.Status.KataNodes.ReadyNodeCount
 			}, timeout, interval).Should(Equal(1))
 
-			Expect(kataConfig.Status.InstallationStatus.Completed.CompletedNodesList).Should(ContainElement("worker0"))
+			Expect(kataConfig.Status.KataNodes.Installed).Should(ContainElement("worker0"))
 
 			By("Creating the RuntimeClass successfully")
 			rc := &nodeapi.RuntimeClass{}
@@ -496,19 +496,19 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 			By("Updating kata-oc MCP status to Updating")
 			Expect(k8sClient.Status().Update(context.Background(), kataMcp)).Should(Succeed())
 
-			By("Checking the KataConfig CR InstallationStatus")
+			By("Checking the KataConfig CR InProgress Condition")
 			Expect(k8sClient.Get(context.Background(), types.NamespacedName{Name: kataConfig.Name}, kataConfig)).Should(Succeed())
 
 			Eventually(func() corev1.ConditionStatus {
 				k8sClient.Get(context.Background(), types.NamespacedName{Name: kataConfig.Name}, kataConfig)
-				return kataConfig.Status.InstallationStatus.IsInProgress
+				return kataConfig.Status.Conditions[0].Status
 			}, timeout, interval).Should(Equal(corev1.ConditionTrue))
 
 			fmt.Fprintf(GinkgoWriter, "[DEBUG] kataConfig: %v\n", kataConfig)
 
 			//TBD InProgressNodesCount is not updated
-			Expect(kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList).Should(ContainElement("worker1"))
-			Expect(kataConfig.Status.InstallationStatus.InProgress.BinariesInstalledNodesList).ShouldNot(ContainElement("worker0"))
+			Expect(kataConfig.Status.KataNodes.Installing).Should(ContainElement("worker1"))
+			Expect(kataConfig.Status.KataNodes.Installing).ShouldNot(ContainElement("worker0"))
 
 			// Change node state to indicate Install complete
 			nodeRet = &corev1.Node{}
@@ -541,10 +541,10 @@ var _ = Describe("OpenShift KataConfig Controller", func() {
 			By("Checking KataConfig Completed status")
 			Eventually(func() int {
 				k8sClient.Get(context.Background(), types.NamespacedName{Name: kataConfig.Name}, kataConfig)
-				return kataConfig.Status.InstallationStatus.Completed.CompletedNodesCount
+				return kataConfig.Status.KataNodes.ReadyNodeCount
 			}, timeout, interval).Should(Equal(2))
 
-			Expect(kataConfig.Status.InstallationStatus.Completed.CompletedNodesList).Should(ContainElements("worker0", "worker1"))
+			Expect(kataConfig.Status.KataNodes.Installed).Should(ContainElements("worker0", "worker1"))
 
 			//Delete
 			By("Deleting KataConfig CR successfully")
