@@ -17,7 +17,7 @@ spec:
         node-role.kubernetes.io/kata-oc: ""
       containers:
       - name: file-copy-container
-        image: quay.io/openshift_sandboxed_containers/kata-shim:latest
+        image: quay.io/openshift_sandboxed_containers/kata-shim:coco-dev-preview
         command: ["/bin/sh", "-c"]
         args:
           - |

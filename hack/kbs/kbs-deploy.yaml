@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: kbs
-        image: quay.io/openshift_sandboxed_containers/kbs:dev-preview
+        image: quay.io/openshift_sandboxed_containers/kbs:coco-dev-preview
         ports:
         - containerPort: 8080
         imagePullPolicy: Always
