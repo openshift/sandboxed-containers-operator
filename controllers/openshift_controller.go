@@ -1962,17 +1962,17 @@ func (r *KataConfigOpenShiftReconciler) resetInProgressCondition() {
 func (r *KataConfigOpenShiftReconciler) isInstalling() bool {
 	cond := r.findInProgressCondition()
 	if cond == nil {
-		return false;
+		return false
 	}
-	return cond.Status == corev1.ConditionTrue && cond.Reason == "Installing";
+	return cond.Status == corev1.ConditionTrue && cond.Reason == "Installing"
 }
 
 func (r *KataConfigOpenShiftReconciler) isUpdating() bool {
 	cond := r.findInProgressCondition()
 	if cond == nil {
-		return false;
+		return false
 	}
-	return cond.Status == corev1.ConditionTrue && cond.Reason == "Updating";
+	return cond.Status == corev1.ConditionTrue && cond.Reason == "Updating"
 }
 
 func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
