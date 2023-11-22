@@ -67,12 +67,13 @@ Every image deletion job should preform the following:
 */
 
 const (
-	peerpodsCMName          = "peer-pods-cm"
-	peerPodsSecretName      = "peer-pods-secret"
-	peerpodsCMAWSImageKey   = "PODVM_AMI_ID"
-	peerpodsCMAzureImageKey = "AZURE_IMAGE_ID"
-	fipsCMKey               = "BOOT_FIPS"
-	defaultVMType           = "VM"
+	unsupportedCloudProvider = "unsupported"
+	peerpodsCMName           = "peer-pods-cm"
+	peerPodsSecretName       = "peer-pods-secret"
+	peerpodsCMAWSImageKey    = "PODVM_AMI_ID"
+	peerpodsCMAzureImageKey  = "AZURE_IMAGE_ID"
+	fipsCMKey                = "BOOT_FIPS"
+	defaultVMType            = "VM"
 )
 
 type ImageGenerator struct {
@@ -98,6 +99,11 @@ func ImageCreate(c client.Client) (bool, ctrl.Result) {
 		}
 	}
 
+	if ig.provider == unsupportedCloudProvider {
+		igLogger.Info("unsupported cloud provider, skipping image creation")
+		return true, ctrl.Result{}
+	}
+
 	if err := ig.validatePeerPodsConfigs(); err != nil {
 		igLogger.Info("error validating peer-pods configs", "err", err)
 		return false, ctrl.Result{Requeue: true, RequeueAfter: 30 * time.Second}
@@ -115,6 +121,11 @@ func ImageDelete(c client.Client) (bool, ctrl.Result) {
 			igLogger.Info("error initializing ImageGenerator instance", "err", err)
 			return false, ctrl.Result{Requeue: true}
 		}
+	}
+
+	if ig.provider == unsupportedCloudProvider {
+		igLogger.Info("unsupported cloud provider, skipping image deletion")
+		return true, ctrl.Result{}
 	}
 
 	if err := ig.validatePeerPodsConfigs(); err != nil {
@@ -155,48 +166,39 @@ func newImageGenerator(client client.Client) (*ImageGenerator, error) {
 	}
 	ig.fips = fips == 1
 
-	err = ig.setupCloudProvider()
-	if err != nil {
-		return nil, fmt.Errorf("failed to setup cloud provider: %v", err)
+	if provider, err := ig.getCloudProviderFromInfra(); err != nil {
+		return nil, fmt.Errorf("failed to get cloud provider from infra: %v", err)
+	} else {
+		switch provider {
+		case "aws":
+			ig.CMimageIDKey = peerpodsCMAWSImageKey
+			ig.provider = provider
+		case "azure":
+			ig.CMimageIDKey = peerpodsCMAzureImageKey
+			ig.provider = provider
+		default:
+			igLogger.Info("unsupported cloud provider, image creation will be disabled", "provider", provider)
+			ig.provider = unsupportedCloudProvider
+		}
 	}
 
 	igLogger.Info("ImageGenerator instance has been initialized successfully", "fips", ig.fips)
 	return &ig, nil
 }
 
-func (r *ImageGenerator) getCloudProviderFromInfra() string {
+func (r *ImageGenerator) getCloudProviderFromInfra() (string, error) {
 	// TODO: first check if it's indeed openshift
 	infrastructure := &configv1.Infrastructure{}
 	err := r.client.Get(context.TODO(), types.NamespacedName{Name: "cluster"}, infrastructure)
 	if err != nil {
-		igLogger.Info("getCloudProviderInfra: Error getting Infrastructure object", "err", err)
-		return ""
+		return "", err
 	}
 
 	if infrastructure.Status.PlatformStatus == nil {
-		igLogger.Info("getCloudProviderInfra: Infrastructure.status.platformStatus is empty")
-		return ""
+		return "", fmt.Errorf("Infrastructure.status.platformStatus is empty")
 	}
 
-	igLogger.Info("Got cloud provider from infrastructure object")
-	return strings.ToLower(string(infrastructure.Status.PlatformStatus.Type))
-}
-
-func (r *ImageGenerator) setupCloudProvider() error {
-	provider := r.getCloudProviderFromInfra()
-
-	switch provider {
-	case "aws":
-		r.CMimageIDKey = peerpodsCMAWSImageKey
-	case "azure":
-		r.CMimageIDKey = peerpodsCMAzureImageKey
-	default:
-		return fmt.Errorf("getCloudProvider: Unsupported cloud provider: %s", provider)
-	}
-	r.provider = provider
-
-	igLogger.Info("Cloud provider fetched successfully", "provider", r.provider, "keyID", r.CMimageIDKey)
-	return nil
+	return strings.ToLower(string(infrastructure.Status.PlatformStatus.Type)), nil
 }
 
 func (r *ImageGenerator) createJobFromFile(jobFileName string) (*batchv1.Job, error) {
