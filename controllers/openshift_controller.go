@@ -165,42 +165,6 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 			return ctrl.Result{}, updateErr
 		}
 
-		ds := r.processDaemonsetForMonitor()
-		// Set KataConfig instance as the owner and controller
-		if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
-			r.Log.Error(err, "failed to set controller reference on the monitor daemonset")
-			return ctrl.Result{}, err
-		}
-		r.Log.Info("controller reference set for the monitor daemonset")
-
-		foundDs := &appsv1.DaemonSet{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDs)
-		if err != nil {
-			//The DaemonSet (DS) should be ideally created after the required SeLinux policy is installed on the
-			//node. One of the ways to ensure this is to check for the existence of "kata" runtimeclass before
-			//creating the DS
-			//Alternatively we can create the DS post execution of createRuntimeClass()
-			if k8serrors.IsNotFound(err) {
-				if contains(r.kataConfig.Status.RuntimeClass, "kata") {
-					r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-					err = r.Client.Create(context.TODO(), ds)
-					if err != nil {
-						r.Log.Error(err, "error when creating monitor daemonset")
-						res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
-					}
-				}
-			} else {
-				r.Log.Error(err, "could not get monitor daemonset, try again")
-				res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
-			}
-		} else {
-			r.Log.Info("Updating monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-			err = r.Client.Update(context.TODO(), ds)
-			if err != nil {
-				r.Log.Error(err, "error when updating monitor daemonset")
-				res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
-			}
-		}
 		cMap := r.processDashboardConfigMap()
 		if cMap == nil {
 			r.Log.Info("failed to generate config map for metrics dashboard")
@@ -1159,6 +1123,37 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		if err != nil {
 			// Give sometime for the error to go away before reconciling again
 			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
+
+		ds := r.processDaemonsetForMonitor()
+		// Set KataConfig instance as the owner and controller
+		if err = controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
+			r.Log.Error(err, "failed to set controller reference on the monitor daemonset")
+			return ctrl.Result{}, err
+		}
+		r.Log.Info("controller reference set for the monitor daemonset")
+
+		foundDs := &appsv1.DaemonSet{}
+		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDs)
+		if err != nil {
+			if k8serrors.IsNotFound(err) {
+				r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
+				err = r.Client.Create(context.TODO(), ds)
+				if err != nil {
+					r.Log.Error(err, "error when creating monitor daemonset")
+					return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+				}
+			} else {
+				r.Log.Error(err, "could not get monitor daemonset, try again")
+				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			}
+		} else {
+			r.Log.Info("Updating monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
+			err = r.Client.Update(context.TODO(), ds)
+			if err != nil {
+				r.Log.Error(err, "error when updating monitor daemonset")
+				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			}
 		}
 
 		// create PeerPodConfig CRD and runtimeclass for peerpods
