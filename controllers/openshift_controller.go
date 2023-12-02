@@ -561,7 +561,7 @@ func (r *KataConfigOpenShiftReconciler) listKataPods() error {
 	}
 	for _, pod := range podList.Items {
 		if pod.Spec.RuntimeClassName != nil {
-			if contains(r.kataConfig.Status.RuntimeClass, *pod.Spec.RuntimeClassName) {
+			if contains(r.kataConfig.Status.RuntimeClasses, *pod.Spec.RuntimeClassName) {
 				return fmt.Errorf("Existing pods using \"%v\" RuntimeClass found. Please delete the pods manually for KataConfig deletion to proceed", *pod.Spec.RuntimeClassName)
 			}
 		}
@@ -720,8 +720,8 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName stri
 		}
 	}
 
-	if !contains(r.kataConfig.Status.RuntimeClass, runtimeClassName) {
-		r.kataConfig.Status.RuntimeClass = append(r.kataConfig.Status.RuntimeClass, runtimeClassName)
+	if !contains(r.kataConfig.Status.RuntimeClasses, runtimeClassName) {
+		r.kataConfig.Status.RuntimeClasses = append(r.kataConfig.Status.RuntimeClasses, runtimeClassName)
 	}
 
 	return nil

@@ -48,9 +48,9 @@ type KataConfigSpec struct {
 
 // KataConfigStatus defines the observed state of KataConfig
 type KataConfigStatus struct {
-	// RuntimeClass is the names of the RuntimeClasses created by this controller
+	// RuntimeClasses is the names of the RuntimeClasses created by this controller
 	// +optional
-	RuntimeClass []string `json:"runtimeClass"`
+	RuntimeClasses []string `json:"runtimeClasses"`
 
 	// +optional
 	KataNodes KataNodesStatus `json:"kataNodes,omitempty"`
