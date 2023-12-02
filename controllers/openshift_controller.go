@@ -1667,10 +1667,6 @@ const (
 // will be returned.
 func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 
-	if r.getInProgressConditionValue() != corev1.ConditionTrue {
-		return nil
-	}
-
 	err, nodeList := r.getNodes()
 	if err != nil {
 		return err
