@@ -40,6 +40,8 @@ spec:
         env:
 #          - name: VM_SIZE
 #            value: "Standard_A2_v2"
+          - name: CLOUD_PROVIDER
+            value: azure
           - name: PODVM_DISTRO
             value: rhel
           - name: PUBLISHER
