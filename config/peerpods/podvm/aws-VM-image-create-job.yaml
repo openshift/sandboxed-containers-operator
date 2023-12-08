@@ -40,6 +40,8 @@ spec:
         - name: image-id
           mountPath: /output
         env:
+          - name: CLOUD_PROVIDER
+            value: aws
           - name: PODVM_DISTRO
             value: rhel
           - name: IMAGE_NAME
