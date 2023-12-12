@@ -50,8 +50,6 @@ spec:
             value: "rhel-raw"
           - name: SKU
             value: "9_2"
-          - name: IMAGE_NAME
-            value: "peer-pod-vmimage"
         envFrom:
         - secretRef:
             name: peer-pods-secret
@@ -63,6 +61,7 @@ spec:
         - -c
         - |
           set -e
+          [[ ! "${IMAGE_NAME}" ]] && UUID=$(uuidgen) && export IMAGE_NAME="peer-pod-vmimage-${UUID::6}" && echo "IMAGE_NAME:${IMAGE_NAME}"
           rpm --import https://packages.microsoft.com/keys/microsoft.asc
           dnf install -y https://packages.microsoft.com/config/rhel/9.0/packages-microsoft-prod.rpm
           dnf install -y make git azure-cli unzip

@@ -17,8 +17,6 @@ spec:
         securityContext:
           runAsUser: 0 # needed for container mode dnf access
         env:
-          - name: IMAGE_NAME
-            value: "peer-pod-vmimage"
         envFrom:
         - secretRef:
             name: peer-pods-secret
@@ -30,6 +28,8 @@ spec:
         - -c
         - |
           set -e
+          [[ ! "${AZURE_IMAGE_ID}" ]] && echo "AZURE_IMAGE_ID is missing, it's unknown which image should be deleted" && exit 1
+          [[ "${IMAGE_NAME}" ]] && echo "IMAGE_NAME:${IMAGE_NAME} is set, it implies image was not automatically created, delete it manually " && exit 0
           rpm --import https://packages.microsoft.com/keys/microsoft.asc
           dnf install -y https://packages.microsoft.com/config/rhel/9.0/packages-microsoft-prod.rpm
           yum install -y azure-cli
@@ -41,6 +41,6 @@ spec:
           [[ ! "${AZURE_CLIENT_SECRET}" ]] && echo "AZURE_CLIENT_SECRET is missing" && exit 1
           [[ ! "${AZURE_CLIENT_ID}" ]] && echo "AZURE_CLIENT_ID is missing" && exit 1
           az login --service-principal --user=${AZURE_CLIENT_ID} --password=${AZURE_CLIENT_SECRET} --tenant=${AZURE_TENANT_ID} && \
-          az image delete --image-name "${IMAGE_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" && \
+          az image delete --ids "${AZURE_IMAGE_ID}" && \
           echo "DONE"
       restartPolicy: Never

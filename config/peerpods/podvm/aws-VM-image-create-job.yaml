@@ -44,8 +44,6 @@ spec:
             value: aws
           - name: PODVM_DISTRO
             value: rhel
-          - name: IMAGE_NAME
-            value: "peer-pod-ami"
 #          - name: INSTANCE_TYPE
 #            value: "t3.small" # default is t3.small, uncomment and modify if not available in your region
         envFrom:
@@ -59,6 +57,7 @@ spec:
         - -c
         - |
           set -e
+          [[ ! "${IMAGE_NAME}" ]] && UUID=$(uuidgen) && export IMAGE_NAME="peer-pod-ami-${UUID::6}" && echo "IMAGE_NAME:${IMAGE_NAME}"
           dnf install -y make git unzip
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           unzip awscliv2.zip
