@@ -11,7 +11,7 @@ oc adm must-gather --image=registry.redhat.io/openshift-sandboxed-containers/osc
 Data about other parts of the cluster is gathered with `oc adm must-gather`. Run `oc adm must-gather -h` to see more options.
 
 ### Openshift Sandboxed Containers
-Kata runtime is the `containerd-shim-kata-v2` process that talks to the lata agent in the VM.
+Kata runtime is the `containerd-shim-kata-v2` process that talks to the kata agent in the VM.
 See also the [Official 1.5 documentation](https://access.redhat.com/documentation/en-us/openshift_sandboxed_containers/1.5/html-single/openshift_sandboxed_containers_user_guide/index#troubleshooting-sandboxed-containers)
 
 #### Gathered Data
@@ -20,7 +20,10 @@ See also the [Official 1.5 documentation](https://access.redhat.com/documentatio
 - All namespaces and child objects with OSC resources
 - All OSC custom resource definitions (CRDs)
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/**_*_**\_description
-- virtiofsd
+- versions
+  - kata-containers
+  - qemu
+  - virtiofsd
 
 
 #### Locations
