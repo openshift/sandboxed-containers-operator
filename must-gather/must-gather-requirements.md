@@ -20,7 +20,7 @@ See also the [Official 1.5 documentation](https://access.redhat.com/documentatio
 - All namespaces and child objects with OSC resources
 - All OSC custom resource definitions (CRDs)
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/**_*_**\_description
-- versions
+- versions in nodes/**_nodename_**/**_nodename_**/version
   - kata-containers
   - qemu
   - virtiofsd
@@ -31,10 +31,8 @@ See also the [Official 1.5 documentation](https://access.redhat.com/documentatio
   - nodes/**_nodename_**/**_nodename_**\_logs\_crio
 - QEMU
   - logs are part of the **CRI-O** logs as _subsystem=qemu_ , _subsystem=qmp_ and/or _qemuPID=**PID**_
-  - version
-    - nodes/**_nodename_**/**_nodename_**/version
 - virtiofsd
-  - virtiofsd logs are part of the **CRI-O** logs
+  - nodes/**_nodename_**/**_nodename_**\_logs\_virtiofsd
 - Audits
   - audit_logs/**_nodename_**-audit.log.gz
 - Logs
