@@ -113,19 +113,14 @@ wait
 
 # Collect journal logs for specified units for all nodes
 NODE_UNITS=(kubelet crio)
-NODES=$(oc get nodes --no-headers -o custom-columns=':metadata.name')
-for NODE in $NODES; do
+for NODE in $(oc get nodes --no-headers -o custom-columns=':metadata.name'); do
     NODE_PATH=${NODES_PATH}/$NODE
     mkdir -p "${NODE_PATH}"
     for UNIT in "${NODE_UNITS[@]}"; do
         oc adm node-logs "$NODE" -u "$UNIT" > "${NODE_PATH}/${NODE}_logs_$UNIT" &
     done
-    # virtiofsd is in syslog and started by shim so -u won't work
-    # Rust regression prevents oc adm node-logs "$NODE" -t virtiofsd # 20240104
-    oc adm node-logs "$NODE" -g 'virtiofsd\[[[:digit:]]+\]:' > "${NODE_PATH}/${NODE}_logs_virtiofsd" &
 
-    oc debug node/${NODE} -- sh -c "(chroot /host rpm -qa | egrep '(kata-containers|qemu|virtiofsd)' | sort)" > "${NODE_PATH}/version"
-
+    oc debug node/${NODE} -- sh -c "(chroot /host rpm -qa | egrep '(kata-containers|qemu)' | sort)" > "${NODE_PATH}/version"
 done
 
 oc delete -f $DAEMONSET_MANIFEST

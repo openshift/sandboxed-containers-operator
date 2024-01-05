@@ -23,7 +23,6 @@ See also the [Official 1.5 documentation](https://access.redhat.com/documentatio
 - versions in nodes/**_nodename_**/**_nodename_**/version
   - kata-containers
   - qemu
-  - virtiofsd
 
 
 #### Locations
@@ -31,8 +30,6 @@ See also the [Official 1.5 documentation](https://access.redhat.com/documentatio
   - nodes/**_nodename_**/**_nodename_**\_logs\_crio
 - QEMU
   - logs are part of the **CRI-O** logs as _subsystem=qemu_ , _subsystem=qmp_ and/or _qemuPID=**PID**_
-- virtiofsd
-  - nodes/**_nodename_**/**_nodename_**\_logs\_virtiofsd
 - Audits
   - audit_logs/**_nodename_**-audit.log.gz
 - Logs
