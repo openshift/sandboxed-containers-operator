@@ -33,11 +33,11 @@ See also the [Official 1.5 documentation](https://access.redhat.com/documentatio
 - Audits
   - audit_logs/**_nodename_**-audit.log.gz
 - Logs
-  - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/controller-manager-**_*\_logs_**
-  - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/install-**_*\_logs_**
-  - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/openshift-sandboxed-containers-monitor-**_*\_logs_**
-  - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/peerpodconfig-ctrl-caa-daemon-**_*\_logs_**
-  - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/peer-pods-webhook-**_*\_logs_**
+  - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/controller-manager-**_*_**\_logs
+  - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/install-**_*_**\_logs
+  - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/openshift-sandboxed-containers-monitor-**_*_**\_logs
+  - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/peerpodconfig-ctrl-caa-daemon-**_*_**\_logs
+  - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/peer-pods-webhook-**_*_**\_logs
 -  OSC CRDs
     -  sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/**_*_**\_description
    - sandboxed-containers/clusterserviceversion_description
