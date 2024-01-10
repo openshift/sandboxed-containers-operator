@@ -39,12 +39,12 @@ See also the [Official 1.5 documentation](https://access.redhat.com/documentatio
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/peerpodconfig-ctrl-caa-daemon-**_*_**\_logs
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/peer-pods-webhook-**_*_**\_logs
 -  OSC CRDs
-    -  sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/**_*_**\_description
-   - sandboxed-containers/clusterserviceversion_description
-   - sandboxed-containers/kataconfig_description
-    - sandboxed-containers/services_description
-    - sandboxed-containers/subscription_description
-    -   sandboxed-containers/validatingwebhookconfigurations_description
+  - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/**_*_**\_description
+  - sandboxed-containers/clusterserviceversion_description
+  - sandboxed-containers/kataconfig_description
+  - sandboxed-containers/services_description
+  - sandboxed-containers/subscription_description
+  - sandboxed-containers/validatingwebhookconfigurations_description
 - apiservices/v1.kataconfiguration.openshift.io.yaml
 - cluster-scoped-resources/apiextensions.k8s.io/customresourcedefinitions/kataconfigs.kataconfiguration.openshift.io.yaml
 
