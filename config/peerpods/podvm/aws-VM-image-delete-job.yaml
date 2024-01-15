@@ -26,13 +26,13 @@ spec:
         env:
           - name: PODVM_DISTRO
             value: rhel
-          - name: IMAGE_NAME
-            value: "peer-pod-ami"
         command:
         - /bin/sh
         - -c
         - |
           set -e
+          [[ ! "${PODVM_AMI_ID}" ]] && echo "PODVM_AMI_ID is missing, it's unknown which image to delete" && exit 1
+          [[ "${IMAGE_NAME}" ]] && echo "IMAGE_NAME:${IMAGE_NAME} is set, it implies image was not automatically created, delete it manually" && exit 0
           dnf install -y unzip
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           unzip awscliv2.zip
@@ -41,8 +41,8 @@ spec:
           export MAC=$(curl -m 3 -s http://169.254.169.254/latest/meta-data/mac)
           [[ ! "${AWS_REGION}" ]] && export AWS_REGION=$(curl -m 30 -s --show-error http://169.254.169.254/latest/meta-data/placement/region)
           [[ ! "${AWS_REGION}" ]] && echo "AWS_REGION is missing" && exit 1
-          export IMAGE_NAME=${IMAGE_NAME:-peer-pod-ami}
-          PODVM_AMI_ID=$(aws ec2 describe-images --query "Images[*].[ImageId]" --filters "Name=name,Values=${IMAGE_NAME}" --region ${AWS_REGION} --output text) && \
           echo "Deleting AMI: ${PODVM_AMI_ID}"
-          aws ec2 deregister-image --image-id ${PODVM_AMI_ID} --region ${AWS_REGION}
-          echo "Deleting AMI: ${PODVM_AMI_ID} - DONE"
+          RES=$(aws ec2 deregister-image --image-id "${PODVM_AMI_ID}" --region "${AWS_REGION}" 2>&1) || ERR=true
+          echo ${RES}
+          [[ ${ERR} ]] && [[ "$RES" =~ InvalidAMIID\.(Unavailable|NotFound) ]] # if deregister returned error and image is already deleted, continue
+          echo "Deleted AMI: ${PODVM_AMI_ID} - DONE"
