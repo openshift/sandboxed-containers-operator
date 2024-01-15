@@ -50,6 +50,8 @@ spec:
             value: "rhel-raw"
           - name: SKU
             value: "9_2"
+#          - name: IMAGE_NAME
+#            value: "azure-podvm-image-name" # set custom image name for custom image if you wish to avoid its deletion
         envFrom:
         - secretRef:
             name: peer-pods-secret

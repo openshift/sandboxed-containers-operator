@@ -46,6 +46,8 @@ spec:
             value: rhel
 #          - name: INSTANCE_TYPE
 #            value: "t3.small" # default is t3.small, uncomment and modify if not available in your region
+#          - name: IMAGE_NAME
+#            value: "aws-podvm-image-name" # set custom image name for custom image if you wish to avoid its deletion
         envFrom:
         - secretRef:
             name: peer-pods-secret
