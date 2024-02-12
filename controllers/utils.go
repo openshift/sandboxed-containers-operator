@@ -7,6 +7,7 @@ import (
 	yaml "github.com/ghodss/yaml"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/discovery"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
@@ -72,4 +73,27 @@ func readMachineConfigYAML(mcFileName string) ([]byte, error) {
 		return nil, err
 	}
 	return yamlData, nil
+}
+
+// Method to read config map yaml
+
+func readConfigMapYAML(cmFileName string) ([]byte, error) {
+	configMapFilePath := filepath.Join(peerpodsImageJobsPathLocation, cmFileName)
+	yamlData, err := os.ReadFile(configMapFilePath)
+	if err != nil {
+		return nil, err
+	}
+	return yamlData, nil
+}
+
+// Method to parse config map yaml
+// Returns a pointer to a ConfigMap object and an error
+
+func parseConfigMapYAML(yamlData []byte) (*corev1.ConfigMap, error) {
+	configMap := &corev1.ConfigMap{}
+	err := yaml.Unmarshal(yamlData, configMap)
+	if err != nil {
+		return nil, err
+	}
+	return configMap, nil
 }
