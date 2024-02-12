@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: osc-podvm-image-creation
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 1
+  template:
+    metadata:
+      name: osc-podvm-image-creation
+    spec:
+      containers:
+        - name: create
+          # This image contains the following
+          # podvm binaries under /payload/podvm-binaries.tar.gz
+          # azure-podvm-image-handler.sh script under /scripts/azure-podvm-image-handler.sh
+          # aws-podvm-image-handler.sh script under /scripts/aws-podvm-image-handler.sh
+          # sources for cloud-api-adaptor under /src/cloud-api-adaptor
+          # Binaries like kubectl, packer and yq under /usr/local/bin
+          image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-podvm-builder:latest
+          securityContext:
+            runAsUser: 0 # needed for container mode dnf access
+          envFrom:
+            - secretRef:
+                name: peer-pods-secret
+            - configMapRef:
+                name: peer-pods-cm
+                optional: true
+            - configMapRef:
+                name: azure-podvm-image-cm
+                optional: true
+            - configMapRef:
+                name: aws-podvm-image-cm
+                optional: true
+          command: ["/podvm-builder.sh", "create"]
+
+      restartPolicy: Never
