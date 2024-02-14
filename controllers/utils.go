@@ -11,6 +11,7 @@ import (
 
 	yaml "github.com/ghodss/yaml"
 	configv1 "github.com/openshift/api/config/v1"
+	ccov1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -93,6 +94,24 @@ func parseMachineConfigYAML(yamlData []byte) (*mcfgv1.MachineConfig, error) {
 func readMachineConfigYAML(mcFileName string) ([]byte, error) {
 	machineConfigFilePath := filepath.Join(peerpodsMachineConfigPathLocation, mcFileName)
 	yamlData, err := os.ReadFile(machineConfigFilePath)
+	if err != nil {
+		return nil, err
+	}
+	return yamlData, nil
+}
+
+func parseCredentialsRequestYAML(yamlData []byte) (*ccov1.CredentialsRequest, error) {
+	credentialsRequest := &ccov1.CredentialsRequest{}
+	err := yaml.Unmarshal(yamlData, credentialsRequest)
+	if err != nil {
+		return nil, err
+	}
+	return credentialsRequest, nil
+}
+
+func readCredentialsRequestYAML(crFileName string) ([]byte, error) {
+	credentialsRequestsFilePath := filepath.Join(peerpodsCredentialsRequestsPathLocation, crFileName)
+	yamlData, err := os.ReadFile(credentialsRequestsFilePath)
 	if err != nil {
 		return nil, err
 	}

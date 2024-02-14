@@ -50,6 +50,8 @@ import (
 
 	peerpod "github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl/api/v1alpha1"
 	peerpodconfig "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/api/v1alpha1"
+	ccov1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
+
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	"github.com/openshift/sandboxed-containers-operator/controllers"
 	// +kubebuilder:scaffold:imports
@@ -80,6 +82,8 @@ func init() {
 	utilruntime.Must(peerpod.AddToScheme(scheme))
 
 	utilruntime.Must(configv1.AddToScheme(scheme))
+
+	utilruntime.Must(ccov1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -170,6 +174,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controllers.SecretReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Log:    ctrl.Log.WithName("controllers").WithName("Credentials"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Credentials")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	setupLog.Info("starting manager")
