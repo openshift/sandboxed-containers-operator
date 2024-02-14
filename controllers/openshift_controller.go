@@ -935,10 +935,15 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		// these can be removed manually if needed and this is not in the critical path
 		// of operator functionality
 		_ = r.disablePeerPods()
-		completed, res := ImageDelete(r.Client)
-		if !completed {
-			return res, nil
+
+		// Handle podvm image deletion
+		status, err := ImageDelete(r.Client)
+		if status == RequeueNeeded && err == nil {
+			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, nil
+		} else if status == ImageDeletionFailed {
+			return reconcile.Result{}, err
 		}
+
 	}
 
 	scc := GetScc()
@@ -980,11 +985,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	// peer pod enablement
 	if r.kataConfig.Spec.EnablePeerPods {
-		completed, res := ImageCreate(r.Client)
-		if !completed {
-			return res, nil
-		}
-
 		err := r.enablePeerPodsMc()
 		if err != nil {
 			r.Log.Info("Enabling peerpods machineconfigs failed", "err", err)
@@ -1156,8 +1156,16 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 			}
 		}
 
-		// create PeerPodConfig CRD and runtimeclass for peerpods
+		// create Pod VM image PeerPodConfig CRD and runtimeclass for peerpods
 		if r.kataConfig.Spec.EnablePeerPods {
+			// Create the podvm image
+			status, err := ImageCreate(r.Client)
+			if status == RequeueNeeded && err == nil {
+				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+			} else if status == ImageCreationFailed {
+				return ctrl.Result{}, err
+			}
+
 			err = r.enablePeerPodsMiscConfigs()
 			if err != nil {
 				r.Log.Info("Enabling peerpodconfig CR, runtimeclass etc", "err", err)
@@ -2069,7 +2077,6 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 	}
 
 	// Create the mutating webhook
-
 	err = r.createMutatingWebhookConfig()
 	if err != nil {
 		r.Log.Info("Error in creating mutating webhook for peerpods", "err", err)
