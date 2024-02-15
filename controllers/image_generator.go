@@ -816,6 +816,6 @@ func (r *ImageGenerator) createJobEvent(namespace, jobName, reason, message, eve
 		EventTime:           metav1.NewMicroTime(time.Now()),
 	}
 
-	_, err := r.clientset.CoreV1().Events(namespace).Create(context.TODO(), event, metav1.CreateOptions{})
-	return err
+	return createKubernetesEvent(r.clientset, event, reason, metav1.CreateOptions{})
+
 }
