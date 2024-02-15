@@ -1,16 +1,31 @@
 package controllers
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	yaml "github.com/ghodss/yaml"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
+
+// Define a struct to represent event information
+type eventInfo struct {
+	timestamp time.Time
+	key       string
+}
+
+// Map to store the recently generated events
+var eventCache = make(map[string]eventInfo)
+var mutex = &sync.Mutex{}
 
 // IsOpenShift detects if we are running in OpenShift using the discovery client
 func IsOpenShift() (bool, error) {
@@ -96,4 +111,35 @@ func parseConfigMapYAML(yamlData []byte) (*corev1.ConfigMap, error) {
 		return nil, err
 	}
 	return configMap, nil
+}
+
+// Method to create Kubernetes event
+// Input: clientset, event object, cachekey, createoptions
+// The cache-key is used to avoid emitting frequent events for the same object
+// Returns an error
+
+func createKubernetesEvent(clientset *kubernetes.Clientset, event *corev1.Event, cacheKey string, createOptions metav1.CreateOptions) error {
+	// Define the suppression duration for the event
+	suppressionDuration := 2 * time.Minute
+
+	// Check if an event with the same reason has been created recently
+	mutex.Lock()
+	if info, ok := eventCache[cacheKey]; ok {
+		// Calculate the time elapsed since the last event with the same reason
+		elapsedTime := time.Since(info.timestamp)
+		// If less than a certain duration, suppress the event creation
+		if elapsedTime < suppressionDuration {
+			mutex.Unlock()
+			return nil
+		}
+	}
+	// Save the event information to the cache
+	eventCache[cacheKey] = eventInfo{timestamp: time.Now(), key: event.Reason}
+	mutex.Unlock()
+
+	_, err := clientset.CoreV1().Events(event.InvolvedObject.Namespace).Create(context.TODO(), event, createOptions)
+	if err != nil {
+		return err
+	}
+	return nil
 }
