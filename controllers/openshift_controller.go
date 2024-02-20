@@ -71,7 +71,6 @@ const (
 	DEFAULT_PEER_PODS                   = "10"
 	peerpodConfigCrdName                = "peerpodconfig-openshift"
 	peerpodsMachineConfigPathLocation   = "/config/peerpods"
-	peerpodsImageJobsPathLocation       = "/config/peerpods/podvm"
 	peerpodsCrioMachineConfig           = "50-kata-remote"
 	peerpodsCrioMachineConfigYaml       = "mc-50-crio-config.yaml"
 	peerpodsKataRemoteMachineConfig     = "40-worker-kata-remote-config"
