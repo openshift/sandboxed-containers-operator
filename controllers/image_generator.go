@@ -47,15 +47,16 @@ The image generator builds and deletes pod VM images for a cloud provider. It us
 */
 
 const (
-	unsupportedCloudProvider = "unsupported"
-	peerpodsCMName           = "peer-pods-cm"
-	peerPodsSecretName       = "peer-pods-secret"
-	peerpodsCMAWSImageKey    = "PODVM_AMI_ID"
-	peerpodsCMAzureImageKey  = "AZURE_IMAGE_ID"
-	fipsCMKey                = "BOOT_FIPS"
-	procFIPS                 = "/proc/sys/crypto/fips_enabled"
-	AWSProvider              = "aws"
-	AzureProvider            = "azure"
+	unsupportedCloudProvider      = "unsupported"
+	peerpodsCMName                = "peer-pods-cm"
+	peerPodsSecretName            = "peer-pods-secret"
+	peerpodsCMAWSImageKey         = "PODVM_AMI_ID"
+	peerpodsCMAzureImageKey       = "AZURE_IMAGE_ID"
+	fipsCMKey                     = "BOOT_FIPS"
+	procFIPS                      = "/proc/sys/crypto/fips_enabled"
+	AWSProvider                   = "aws"
+	AzureProvider                 = "azure"
+	peerpodsImageJobsPathLocation = "/config/peerpods/podvm"
 )
 
 // Return values for ImageCreate and ImageDelete
