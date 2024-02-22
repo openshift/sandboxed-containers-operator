@@ -568,6 +568,7 @@ func (r *KataConfigOpenShiftReconciler) listKataPods() error {
 	return nil
 }
 
+//lint:ignore U1000 This method is unused, but let's keep it for now
 func (r *KataConfigOpenShiftReconciler) kataOcExists() (bool, error) {
 	kataOcMcp := &mcfgv1.MachineConfigPool{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "kata-oc"}, kataOcMcp)
@@ -1675,6 +1676,7 @@ func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selecto
 	return labelingChanged, nil
 }
 
+//lint:ignore U1000 This method is unused, but let's keep it for now
 func (r *KataConfigOpenShiftReconciler) getConditionReason(conditions []mcfgv1.MachineConfigPoolCondition, conditionType mcfgv1.MachineConfigPoolConditionType) string {
 	for _, c := range conditions {
 		if c.Type == conditionType {
