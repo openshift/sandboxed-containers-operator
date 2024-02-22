@@ -556,12 +556,12 @@ func (r *KataConfigOpenShiftReconciler) listKataPods() error {
 		client.InNamespace(corev1.NamespaceAll),
 	}
 	if err := r.Client.List(context.TODO(), podList, listOpts...); err != nil {
-		return fmt.Errorf("Failed to list kata pods: %v", err)
+		return fmt.Errorf("failed to list kata pods: %v", err)
 	}
 	for _, pod := range podList.Items {
 		if pod.Spec.RuntimeClassName != nil {
 			if contains(r.kataConfig.Status.RuntimeClasses, *pod.Spec.RuntimeClassName) {
-				return fmt.Errorf("Existing pods using \"%v\" RuntimeClass found. Please delete the pods manually for KataConfig deletion to proceed", *pod.Spec.RuntimeClassName)
+				return fmt.Errorf("existing pods using \"%v\" RuntimeClass found. Please delete the pods manually for KataConfig deletion to proceed", *pod.Spec.RuntimeClassName)
 			}
 		}
 	}
@@ -622,7 +622,7 @@ func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
 		return err
 	}
 	if len(nodes.Items) == 0 {
-		err = fmt.Errorf("No Nodes with required labels found. Is NFD running?")
+		err = fmt.Errorf("no Nodes with required labels found. Is NFD running?")
 		return err
 	}
 
@@ -1802,12 +1802,12 @@ func (r *KataConfigOpenShiftReconciler) putNodeOnStatusList(node *corev1.Node) e
 
 	nodeMcoState, ok := node.Annotations["machineconfiguration.openshift.io/state"]
 	if !ok {
-		return fmt.Errorf("Missing machineconfiguration.openshift.io/state on node %v", node.GetName())
+		return fmt.Errorf("missing machineconfiguration.openshift.io/state on node %v", node.GetName())
 	}
 
 	nodeCurrMc, ok := node.Annotations["machineconfiguration.openshift.io/currentConfig"]
 	if !ok {
-		return fmt.Errorf("Missing machineconfiguration.openshift.io/currentConfig on node %v", node.GetName())
+		return fmt.Errorf("missing machineconfiguration.openshift.io/currentConfig on node %v", node.GetName())
 	}
 
 	// Note that to figure out the MachineConfig our Node should be at we
