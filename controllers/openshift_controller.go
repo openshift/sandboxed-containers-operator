@@ -938,10 +938,27 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		// Handle podvm image deletion
 		status, err := ImageDelete(r.Client)
 		if status == RequeueNeeded && err == nil {
+			// Set the KataConfig status to PodVM Image Deleting
+			r.setInProgressConditionToPodVMImageDeleting()
 			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, nil
 		} else if status == ImageDeletionFailed {
+			// Set the KataConfig status to PodVM Image Deletion Failed
+			r.setInProgressConditionToPodVMImageDeletionFailed()
 			return reconcile.Result{}, err
+		} else if status == ImageDeletionStatusUnknown {
+			// Set the KataConfig status to PodVM Image Deletion Status Unknown
+			r.setInProgressConditionToPodVMImageDeletionUnknown()
+
+			// Reconcile with error
+			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
+
+		} else if err != nil {
+			// Reconcile with error
+			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
 		}
+
+		// Set the KataConfig status to PodVM Image Deleted
+		r.setInProgressConditionToPodVMImageDeleted()
 
 	}
 
@@ -1160,10 +1177,26 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 			// Create the podvm image
 			status, err := ImageCreate(r.Client)
 			if status == RequeueNeeded && err == nil {
+				// Set the KataConfig status to PodVM Image Creating
+				r.setInProgressConditionToPodVMImageCreating()
 				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 			} else if status == ImageCreationFailed {
+				// Set the KataConfig status to PodVM Image Creation Failed
+				r.setInProgressConditionToPodVMImageCreationFailed()
 				return ctrl.Result{}, err
+			} else if status == ImageCreationStatusUnknown {
+				// Set the KataConfig status to PodVM Image Creation Status Unknown
+				r.setInProgressConditionToPodVMImageCreationUnknown()
+
+				// Reconcile with error
+				return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
+			} else if err != nil {
+				// Reconcile with error
+				return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
 			}
+
+			// Set the KataConfig status to PodVM Image Created
+			r.setInProgressConditionToPodVMImageCreated()
 
 			err = r.enablePeerPodsMiscConfigs()
 			if err != nil {
@@ -1172,6 +1205,9 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 				return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 
 			}
+
+			// Reset the in progress condition
+			r.resetInProgressCondition()
 		}
 
 	} else {
@@ -1955,6 +1991,86 @@ func (r *KataConfigOpenShiftReconciler) resetInProgressCondition() {
 	cond.Message = ""
 
 	r.Log.Info("InProgress Condition reset")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Image is being created
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageCreating() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = PodVMImageJobRunning
+	cond.Message = "Creating Pod VM Image"
+
+	r.Log.Info("InProgress Condition set to PodVMImageJobRunning")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Image has been created
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageCreated() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = PodVMImageJobCompleted
+	cond.Message = "Created Pod VM Image"
+
+	r.Log.Info("InProgress Condition set to PodVMImageJobCompleted")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Image creation has failed
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageCreationFailed() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = PodVMImageJobFailed
+	cond.Message = "Failed to create Pod VM Image"
+
+	r.Log.Info("InProgress Condition set to PodVMImageJobFailed")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Image creation status is unknown
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageCreationUnknown() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionUnknown
+	cond.Reason = PodVMImageJobStatusUnknown
+	cond.Message = "Pod VM Image creation status is unknown"
+
+	r.Log.Info("InProgress Condition set to PodVMImageJobStatusUnknown")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Image is being deleted
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageDeleting() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = PodVMImageJobRunning
+	cond.Message = "Deleting Pod VM Image"
+
+	r.Log.Info("InProgress Condition set to PodVMImageJobRunning")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Image has been deleted
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageDeleted() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = PodVMImageJobCompleted
+	cond.Message = "Deleted Pod VM Image"
+
+	r.Log.Info("InProgress Condition set to PodVMImageJobCompleted")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Image deletion has failed
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageDeletionFailed() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = PodVMImageJobFailed
+	cond.Message = "Failed to delete Pod VM Image"
+
+	r.Log.Info("InProgress Condition set to PodVMImageJobFailed")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Image deletion status is unknown
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageDeletionUnknown() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionUnknown
+	cond.Reason = PodVMImageJobStatusUnknown
+	cond.Message = "Pod VM Image deletion status is unknown"
+
+	r.Log.Info("InProgress Condition set to PodVMImageJobStatusUnknown")
 }
 
 func (r *KataConfigOpenShiftReconciler) isInstalling() bool {
