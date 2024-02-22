@@ -616,7 +616,7 @@ func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
 		r.Log.Info("enablePeerPods is true. Skipping since they are mutually exclusive.")
 		return nil
 	}
-	err, nodes := r.getNodesWithLabels(map[string]string{"feature.node.kubernetes.io/runtime.kata": "true"})
+	nodes, err := r.getNodesWithLabels(map[string]string{"feature.node.kubernetes.io/runtime.kata": "true"})
 	if err != nil {
 		r.Log.Error(err, "Error in getting list of nodes with label: feature.node.kubernetes.io/runtime.kata")
 		return err
@@ -1574,7 +1574,7 @@ func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error
 		Complete(r)
 }
 
-func (r *KataConfigOpenShiftReconciler) getNodes() (error, *corev1.NodeList) {
+func (r *KataConfigOpenShiftReconciler) getNodes() (*corev1.NodeList, error) {
 	nodes := &corev1.NodeList{}
 	labelSelector := labels.SelectorFromSet(map[string]string{"node-role.kubernetes.io/worker": ""})
 	listOpts := []client.ListOption{
@@ -1583,12 +1583,12 @@ func (r *KataConfigOpenShiftReconciler) getNodes() (error, *corev1.NodeList) {
 
 	if err := r.Client.List(context.TODO(), nodes, listOpts...); err != nil {
 		r.Log.Error(err, "Getting list of nodes failed")
-		return err, &corev1.NodeList{}
+		return &corev1.NodeList{}, err
 	}
-	return nil, nodes
+	return nodes, nil
 }
 
-func (r *KataConfigOpenShiftReconciler) getNodesWithLabels(nodeLabels map[string]string) (error, *corev1.NodeList) {
+func (r *KataConfigOpenShiftReconciler) getNodesWithLabels(nodeLabels map[string]string) (*corev1.NodeList, error) {
 	nodes := &corev1.NodeList{}
 	labelSelector := labels.SelectorFromSet(nodeLabels)
 	listOpts := []client.ListOption{
@@ -1597,9 +1597,9 @@ func (r *KataConfigOpenShiftReconciler) getNodesWithLabels(nodeLabels map[string
 
 	if err := r.Client.List(context.TODO(), nodes, listOpts...); err != nil {
 		r.Log.Error(err, "Getting list of nodes having specified labels failed")
-		return err, &corev1.NodeList{}
+		return &corev1.NodeList{}, err
 	}
-	return nil, nodes
+	return nodes, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (labelingChanged bool, err error) {
@@ -1710,7 +1710,7 @@ const (
 // will be returned.
 func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 
-	err, nodeList := r.getNodes()
+	nodeList, err := r.getNodes()
 	if err != nil {
 		return err
 	}
@@ -1718,7 +1718,7 @@ func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 	r.clearNodeStatusLists()
 
 	r.kataConfig.Status.KataNodes.NodeCount = func() int {
-		err, nodes := r.getNodesWithLabels(r.getNodeSelectorAsMap())
+		nodes, err := r.getNodesWithLabels(r.getNodeSelectorAsMap())
 		if err != nil {
 			r.Log.Info("Error retrieving kata-oc labelled Nodes to count them", "err", err)
 			return 0
