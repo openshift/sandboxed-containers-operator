@@ -763,7 +763,7 @@ func (r *ImageGenerator) checkJobStatus(jobName, namespace string) (int, error) 
 
 	if r.hasJobFailed(job) {
 		action := "Check the logs for the job"
-		err = r.createJobEvent(namespace, jobName, "PodVMImageJobFailed",
+		err = r.createJobEvent(namespace, jobName, PodVMImageJobFailed,
 			fmt.Sprintf("PodVM image job (%s) failed", jobName), corev1.EventTypeWarning, action)
 		if err != nil {
 			igLogger.Info("error creating event for failed Job", "job name", job.Name, "err", err)
@@ -774,7 +774,7 @@ func (r *ImageGenerator) checkJobStatus(jobName, namespace string) (int, error) 
 	if r.hasJobCompleted(job) {
 		igLogger.Info("JobStatus: Job has completed successfully", "job name", job.Name)
 		action := "Check the pod vm image details in peer-pods-cm configmap"
-		err = r.createJobEvent(namespace, jobName, "PodVMImageJobCompleted",
+		err = r.createJobEvent(namespace, jobName, PodVMImageJobCompleted,
 			fmt.Sprintf("PodVM image job (%s) completed successfully", jobName), corev1.EventTypeNormal, action)
 		if err != nil {
 			igLogger.Info("error creating event for completed Job", "job name", job.Name, "err", err)
@@ -785,7 +785,7 @@ func (r *ImageGenerator) checkJobStatus(jobName, namespace string) (int, error) 
 	if r.isJobActive(job) {
 		igLogger.Info("JobStatus: Job is still running", "job name", job.Name)
 		action := "Check the logs for the job"
-		err = r.createJobEvent(namespace, jobName, "PodVMImageJobRunning",
+		err = r.createJobEvent(namespace, jobName, PodVMImageJobRunning,
 			fmt.Sprintf("PodVM image job (%s) is running", jobName), corev1.EventTypeNormal, action)
 		if err != nil {
 			igLogger.Info("error creating event for running Job", "job name", job.Name, "err", err)
