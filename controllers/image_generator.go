@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	configv1 "github.com/openshift/api/config/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -49,7 +48,6 @@ The image generator builds and deletes pod VM images for a cloud provider. It us
 const (
 	unsupportedCloudProvider      = "unsupported"
 	peerpodsCMName                = "peer-pods-cm"
-	peerPodsSecretName            = "peer-pods-secret"
 	peerpodsCMAWSImageKey         = "PODVM_AMI_ID"
 	peerpodsCMAzureImageKey       = "AZURE_IMAGE_ID"
 	fipsCMKey                     = "BOOT_FIPS"
@@ -218,7 +216,7 @@ func newImageGenerator(client client.Client) (*ImageGenerator, error) {
 	}
 	ig.fips = fips == 1
 
-	provider, err := ig.getCloudProviderFromInfra()
+	provider, err := getCloudProviderFromInfra(client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cloud provider from infra: %v", err)
 	}
@@ -238,21 +236,6 @@ func newImageGenerator(client client.Client) (*ImageGenerator, error) {
 
 	igLogger.Info("ImageGenerator instance has been initialized successfully for cloud provider", "provider", ig.provider)
 	return ig, nil
-}
-
-func (r *ImageGenerator) getCloudProviderFromInfra() (string, error) {
-	// TODO: first check if it's indeed openshift
-	infrastructure := &configv1.Infrastructure{}
-	err := r.client.Get(context.TODO(), types.NamespacedName{Name: "cluster"}, infrastructure)
-	if err != nil {
-		return "", err
-	}
-
-	if infrastructure.Status.PlatformStatus == nil {
-		return "", fmt.Errorf("Infrastructure.status.platformStatus is empty")
-	}
-
-	return strings.ToLower(string(infrastructure.Status.PlatformStatus.Type)), nil
 }
 
 // Method to create a Kubernetes Job from yaml file
@@ -356,22 +339,6 @@ func (r *ImageGenerator) getPeerPodsCM() (*corev1.ConfigMap, error) {
 	}
 
 	return peerPodsCM, nil
-}
-
-// Method to get peer-pods-secret object
-func (r *ImageGenerator) getPeerPodsSecret() (*corev1.Secret, error) {
-	peerPodsSecret := &corev1.Secret{}
-
-	err := r.client.Get(context.TODO(), types.NamespacedName{
-		Name:      peerPodsSecretName,
-		Namespace: "openshift-sandboxed-containers-operator",
-	}, peerPodsSecret)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return peerPodsSecret, nil
 }
 
 // Method to run image creation job
@@ -560,7 +527,7 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 		return fmt.Errorf("validatePeerPodsConfigs: %v", err)
 	}
 
-	peerPodsSecret, err := r.getPeerPodsSecret()
+	peerPodsSecret, err := getPeerPodsSecret(r.client)
 	if err != nil || peerPodsSecret == nil {
 		return fmt.Errorf("validatePeerPodsConfigs: %v", err)
 	}
