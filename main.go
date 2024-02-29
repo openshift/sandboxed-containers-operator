@@ -54,6 +54,7 @@ import (
 
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	"github.com/openshift/sandboxed-containers-operator/controllers"
+	"github.com/openshift/sandboxed-containers-operator/internal/featuregates"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -142,6 +143,11 @@ func main() {
 			Client: mgr.GetClient(),
 			Log:    ctrl.Log.WithName("controllers").WithName("KataConfig"),
 			Scheme: mgr.GetScheme(),
+			FeatureGates: &featuregates.FeatureGates{
+				Client:        mgr.GetClient(),
+				Namespace:     OperatorNamespace,
+				ConfigMapName: "osc-feature-gates",
+			},
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create KataConfig controller for OpenShift cluster", "controller", "KataConfig")
 			os.Exit(1)

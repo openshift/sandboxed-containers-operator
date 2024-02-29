@@ -35,6 +35,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
+	"github.com/openshift/sandboxed-containers-operator/internal/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	nodeapi "k8s.io/api/node/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -44,9 +45,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -59,7 +63,8 @@ type KataConfigOpenShiftReconciler struct {
 	Log    logr.Logger
 	Scheme *runtime.Scheme
 
-	kataConfig *kataconfigurationv1.KataConfig
+	kataConfig   *kataconfigurationv1.KataConfig
+	FeatureGates *featuregates.FeatureGates
 }
 
 const (
@@ -118,6 +123,10 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		// Error reading the object - requeue the request.
 		r.Log.Error(err, "Cannot retrieve kataConfig")
 		return ctrl.Result{}, err
+	}
+
+	if r.FeatureGates.IsEnabled(ctx, "timeTravel") {
+		r.Log.Info("TimeTravel feature is enabled. Performing feature-specific logic...")
 	}
 
 	return func() (ctrl.Result, error) {
@@ -1563,6 +1572,38 @@ func (eh *NodeEventHandler) Delete(ctx context.Context, event event.DeleteEvent,
 func (eh *NodeEventHandler) Generic(ctx context.Context, event event.GenericEvent, queue workqueue.RateLimitingInterface) {
 }
 
+func configMapFilterPredicate(reconciler *KataConfigOpenShiftReconciler) predicate.Predicate {
+	isRelevantConfigMap := func(obj client.Object) bool {
+		if reconciler == nil || reconciler.FeatureGates == nil {
+			return false
+		}
+
+		configMap, ok := obj.(*corev1.ConfigMap)
+		if !ok {
+			return false
+		}
+
+		relevantNamespace := configMap.Namespace == reconciler.FeatureGates.Namespace
+		relevantName := configMap.Name == reconciler.FeatureGates.ConfigMapName
+		return relevantNamespace && relevantName
+	}
+
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return isRelevantConfigMap(e.Object)
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return isRelevantConfigMap(e.ObjectNew)
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return isRelevantConfigMap(e.Object)
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return isRelevantConfigMap(e.Object)
+		},
+	}
+}
+
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
@@ -1572,7 +1613,11 @@ func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error
 		Watches(
 			&corev1.Node{},
 			&NodeEventHandler{r}).
-		Complete(r)
+		Watches(
+			&corev1.ConfigMap{},
+			&handler.EnqueueRequestForObject{},
+			builder.WithPredicates(configMapFilterPredicate(r)),
+		).Complete(r)
 }
 
 func (r *KataConfigOpenShiftReconciler) getNodes() (*corev1.NodeList, error) {
