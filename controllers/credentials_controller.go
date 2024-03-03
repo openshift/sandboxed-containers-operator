@@ -122,16 +122,16 @@ func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func secretsFilterPredicate() predicate.Predicate {
 	return predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool { // to handle Secret rotation
-			return e.ObjectNew.GetNamespace() == "openshift-sandboxed-containers-operator" && e.ObjectNew.GetName() == credentialsRequestSecretRefName
+			return e.ObjectNew.GetNamespace() == OperatorNamespace && e.ObjectNew.GetName() == credentialsRequestSecretRefName
 		},
 		CreateFunc: func(e event.CreateEvent) bool {
-			return e.Object.GetNamespace() == "openshift-sandboxed-containers-operator" && e.Object.GetName() == credentialsRequestSecretRefName
+			return e.Object.GetNamespace() == OperatorNamespace && e.Object.GetName() == credentialsRequestSecretRefName
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			// cco-secret deletion is done by cloud-credentials-operator, followed by owned peer-pods secret deletion
 			return false
 			// consider dynamic triggering of cco support using reconciliation against deletion of peer-pods secreta and creation of credentialsRequest
-			//return e.Object.GetNamespace() == "openshift-sandboxed-containers-operator" && e.Object.GetName() == peerPodsSecretName
+			//return e.Object.GetNamespace() == OperatorNamespace && e.Object.GetName() == peerPodsSecretName
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
 			return false
@@ -175,7 +175,7 @@ func (r *SecretReconciler) newOwnedPeerPodsSecret(ownedSecret *corev1.Secret) *c
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            peerPodsSecretName,
-			Namespace:       "openshift-sandboxed-containers-operator",
+			Namespace:       OperatorNamespace,
 			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(ownedSecret, corev1.SchemeGroupVersion.WithKind("Secret"))},
 			Labels: map[string]string{
 				labelCredentialsRequest: labelCredentialsRequestValue, // used to mark it's owned by a secret (cco-secret) created by cloud-credentials-operator

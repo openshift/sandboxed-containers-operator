@@ -63,6 +63,7 @@ type KataConfigOpenShiftReconciler struct {
 }
 
 const (
+	OperatorNamespace                   = "openshift-sandboxed-containers-operator"
 	dashboard_configmap_name            = "grafana-dashboard-sandboxed-containers"
 	dashboard_configmap_namespace       = "openshift-config-managed"
 	container_runtime_config_name       = "kata-crio-config"
@@ -339,7 +340,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      dsName,
-			Namespace: "openshift-sandboxed-containers-operator",
+			Namespace: OperatorNamespace,
 		},
 		Spec: appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
@@ -415,7 +416,7 @@ func (r *KataConfigOpenShiftReconciler) processDashboardConfigMap() *corev1.Conf
 
 	// retrieve content of the dashboard from our own namespace
 	foundCm := &corev1.ConfigMap{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: dashboard_configmap_name, Namespace: "openshift-sandboxed-containers-operator"}, foundCm)
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: dashboard_configmap_name, Namespace: OperatorNamespace}, foundCm)
 	if err != nil {
 		r.Log.Error(err, "could not get dashboard data")
 		return nil
@@ -511,7 +512,7 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 				"machineconfiguration.openshift.io/role": machinePool,
 				"app":                                    r.kataConfig.Name,
 			},
-			Namespace: "openshift-sandboxed-containers-operator",
+			Namespace: OperatorNamespace,
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Extensions: []string{extension},
@@ -2103,7 +2104,7 @@ func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
 	authJsonSecret := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "auth-json-secret",
-			Namespace: "openshift-sandboxed-containers-operator",
+			Namespace: OperatorNamespace,
 		},
 		Data: map[string][]byte{
 			"auth.json": pullSecret.Data[".dockerconfigjson"],
@@ -2155,7 +2156,7 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      peerpodConfigCrdName,
-			Namespace: "openshift-sandboxed-containers-operator",
+			Namespace: OperatorNamespace,
 		},
 		Spec: v1alpha1.PeerPodConfigSpec{
 			CloudSecretName: "peer-pods-secret",
@@ -2213,7 +2214,7 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPods() error {
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      peerpodConfigCrdName,
-			Namespace: "openshift-sandboxed-containers-operator",
+			Namespace: OperatorNamespace,
 		},
 	}
 	err := r.Client.Delete(context.TODO(), &peerPodConfig)

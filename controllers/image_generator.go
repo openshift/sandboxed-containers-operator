@@ -331,7 +331,7 @@ func (r *ImageGenerator) getPeerPodsCM() (*corev1.ConfigMap, error) {
 
 	err := r.client.Get(context.TODO(), types.NamespacedName{
 		Name:      peerpodsCMName,
-		Namespace: "openshift-sandboxed-containers-operator",
+		Namespace: OperatorNamespace,
 	}, peerPodsCM)
 
 	if err != nil {
@@ -623,7 +623,7 @@ func (r *ImageGenerator) createImageConfigMapFromFile() error {
 
 	if err := r.client.Get(context.TODO(), types.NamespacedName{
 		Name:      r.provider + "-podvm-image-cm",
-		Namespace: "openshift-sandboxed-containers-operator",
+		Namespace: OperatorNamespace,
 	}, &corev1.ConfigMap{}); err == nil {
 		igLogger.Info("ConfigMap already exists", "name", r.provider+"-podvm-image-cm")
 		return nil
@@ -662,7 +662,7 @@ func (r *ImageGenerator) updateImageConfigMap() error {
 	cm := &corev1.ConfigMap{}
 	if err := r.client.Get(context.TODO(), types.NamespacedName{
 		Name:      cmName,
-		Namespace: "openshift-sandboxed-containers-operator",
+		Namespace: OperatorNamespace,
 	}, cm); err != nil {
 		return err
 	}
