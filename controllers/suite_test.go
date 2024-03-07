@@ -21,9 +21,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	configv1 "github.com/openshift/api/config/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -35,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	secv1 "github.com/openshift/api/security/v1"
+	credv1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
@@ -51,6 +54,15 @@ var (
 	k8sManager ctrl.Manager
 	ctx        context.Context
 	cancel     context.CancelFunc
+)
+
+const (
+	oscNamespace = "openshift-sandboxed-containers-operator"
+	// Have a higher timeout to account for waits in the operator reconciliation logic
+	// There are two 60s sleep in operator reconciliation logic during uninstall in addition to
+	// wait time before triggering reconciliation logic
+	timeout  = time.Second * 160
+	interval = time.Second * 2
 )
 
 func TestAPIs(t *testing.T) {
@@ -74,11 +86,15 @@ var _ = BeforeSuite(func() {
 			filepath.Join("..", "config", "extension-crds", "machineconfig.crd.yaml"),
 			filepath.Join("..", "config", "extension-crds", "machineconfigpool.crd.yaml"),
 			filepath.Join("..", "config", "extension-crds", "scc.crd.yaml"),
+			filepath.Join("..", "config", "extension-crds", "credentialsrequest.crd.yaml"),
+			filepath.Join("..", "config", "extension-crds", "infrastructure.crd.yaml"),
 		},
+		Scheme:                scheme.Scheme,
 		WebhookInstallOptions: webhookOptions,
 	}
 
 	Expect(os.Setenv("RELATED_IMAGE_KATA_MONITOR", "quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest")).To(Succeed())
+	Expect(os.Setenv("TEST_USE_RELATIVE_PATH", "true")).To(Succeed())
 
 	var err error
 	cfg, err = testEnv.Start()
@@ -89,6 +105,8 @@ var _ = BeforeSuite(func() {
 
 	s.AddKnownTypes(appsv1.SchemeGroupVersion, &appsv1.DaemonSet{})
 	s.AddKnownTypes(corev1.SchemeGroupVersion, &corev1.NodeList{})
+	s.AddKnownTypes(credv1.SchemeGroupVersion, &credv1.CredentialsRequest{})
+	s.AddKnownTypes(configv1.SchemeGroupVersion, &configv1.Infrastructure{})
 
 	err = kataconfigurationv1.AddToScheme(s)
 	Expect(err).NotTo(HaveOccurred())
@@ -98,13 +116,19 @@ var _ = BeforeSuite(func() {
 
 	err = secv1.AddToScheme(s)
 	Expect(err).ToNot(HaveOccurred())
-	err = corev1.AddToScheme(scheme.Scheme)
+	err = corev1.AddToScheme(s)
 	Expect(err).NotTo(HaveOccurred())
 
+	err = credv1.AddToScheme(s)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = configv1.AddToScheme(s)
+	Expect(err).NotTo(HaveOccurred())
 	// +kubebuilder:scaffold:scheme
 
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
-		Scheme:  scheme.Scheme,
+		//Scheme:  scheme.Scheme,
+		Scheme:  s,
 		Port:    testEnv.WebhookInstallOptions.LocalServingPort,
 		Host:    testEnv.WebhookInstallOptions.LocalServingHost,
 		CertDir: testEnv.WebhookInstallOptions.LocalServingCertDir,
@@ -119,6 +143,13 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&kataconfigurationv1.KataConfig{}).SetupWebhookWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	err = (&SecretReconciler{
+		Client: k8sManager.GetClient(),
+		Scheme: k8sManager.GetScheme(),
+		Log:    ctrl.Log.WithName("controllers").WithName("Credentials"),
+	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
 	go func() {

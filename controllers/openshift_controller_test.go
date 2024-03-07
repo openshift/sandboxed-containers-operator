@@ -3,8 +3,9 @@ package controllers
 import (
 	"context"
 	"fmt"
-	appsv1 "k8s.io/api/apps/v1"
 	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -18,11 +19,6 @@ import (
 
 const (
 	name = "example-kataconfig"
-	// Have a higher timeout to account for waits in the operator reconciliation logic
-	// There are two 60s sleep in operator reconciliation logic during uninstall in addition to
-	// wait time before triggering reconciliation logic
-	timeout  = time.Second * 160
-	interval = time.Second * 2
 )
 
 var _ = Describe("OpenShift KataConfig Controller", func() {
