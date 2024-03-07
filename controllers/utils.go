@@ -2,19 +2,29 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	yaml "github.com/ghodss/yaml"
+	configv1 "github.com/openshift/api/config/v1"
+	ccov1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
+)
+
+const (
+	peerPodsSecretName = "peer-pods-secret"
 )
 
 // Define a struct to represent event information
@@ -90,6 +100,24 @@ func readMachineConfigYAML(mcFileName string) ([]byte, error) {
 	return yamlData, nil
 }
 
+func parseCredentialsRequestYAML(yamlData []byte) (*ccov1.CredentialsRequest, error) {
+	credentialsRequest := &ccov1.CredentialsRequest{}
+	err := yaml.Unmarshal(yamlData, credentialsRequest)
+	if err != nil {
+		return nil, err
+	}
+	return credentialsRequest, nil
+}
+
+func readCredentialsRequestYAML(crFileName string) ([]byte, error) {
+	credentialsRequestsFilePath := filepath.Join(peerpodsCredentialsRequestsPathLocation, crFileName)
+	yamlData, err := os.ReadFile(credentialsRequestsFilePath)
+	if err != nil {
+		return nil, err
+	}
+	return yamlData, nil
+}
+
 // Method to read config map yaml
 
 func readConfigMapYAML(cmFileName string) ([]byte, error) {
@@ -142,4 +170,35 @@ func createKubernetesEvent(clientset *kubernetes.Clientset, event *corev1.Event,
 		return err
 	}
 	return nil
+}
+
+// Method to get peer-pods-secret object
+func getPeerPodsSecret(c client.Client) (*corev1.Secret, error) {
+	peerPodsSecret := &corev1.Secret{}
+
+	err := c.Get(context.TODO(), types.NamespacedName{
+		Name:      peerPodsSecretName,
+		Namespace: "openshift-sandboxed-containers-operator",
+	}, peerPodsSecret)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return peerPodsSecret, nil
+}
+
+// Method to get cloud provider from infrastructure (lowercase)
+func getCloudProviderFromInfra(c client.Client) (string, error) {
+	infrastructure := &configv1.Infrastructure{}
+	err := c.Get(context.TODO(), types.NamespacedName{Name: "cluster"}, infrastructure)
+	if err != nil {
+		return "", err
+	}
+
+	if infrastructure.Status.PlatformStatus == nil {
+		return "", fmt.Errorf("Infrastructure.status.platformStatus is empty")
+	}
+
+	return strings.ToLower(string(infrastructure.Status.PlatformStatus.Type)), nil
 }

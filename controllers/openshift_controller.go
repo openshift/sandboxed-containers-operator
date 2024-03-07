@@ -48,7 +48,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 // blank assignment to verify that KataConfigOpenShiftReconciler implements reconcile.Reconciler
@@ -64,6 +63,7 @@ type KataConfigOpenShiftReconciler struct {
 }
 
 const (
+	OperatorNamespace                   = "openshift-sandboxed-containers-operator"
 	dashboard_configmap_name            = "grafana-dashboard-sandboxed-containers"
 	dashboard_configmap_namespace       = "openshift-config-managed"
 	container_runtime_config_name       = "kata-crio-config"
@@ -340,7 +340,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      dsName,
-			Namespace: "openshift-sandboxed-containers-operator",
+			Namespace: OperatorNamespace,
 		},
 		Spec: appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
@@ -416,7 +416,7 @@ func (r *KataConfigOpenShiftReconciler) processDashboardConfigMap() *corev1.Conf
 
 	// retrieve content of the dashboard from our own namespace
 	foundCm := &corev1.ConfigMap{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: dashboard_configmap_name, Namespace: "openshift-sandboxed-containers-operator"}, foundCm)
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: dashboard_configmap_name, Namespace: OperatorNamespace}, foundCm)
 	if err != nil {
 		r.Log.Error(err, "could not get dashboard data")
 		return nil
@@ -512,7 +512,7 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 				"machineconfiguration.openshift.io/role": machinePool,
 				"app":                                    r.kataConfig.Name,
 			},
-			Namespace: "openshift-sandboxed-containers-operator",
+			Namespace: OperatorNamespace,
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Extensions: []string{extension},
@@ -1333,7 +1333,7 @@ type McpEventHandler struct {
 	reconciler *KataConfigOpenShiftReconciler
 }
 
-func (eh *McpEventHandler) Create(event event.CreateEvent, queue workqueue.RateLimitingInterface) {
+func (eh *McpEventHandler) Create(ctx context.Context, event event.CreateEvent, queue workqueue.RateLimitingInterface) {
 	mcp := event.Object
 
 	if !isMcpRelevant(mcp) {
@@ -1347,7 +1347,7 @@ func (eh *McpEventHandler) Create(event event.CreateEvent, queue workqueue.RateL
 	log.Info("MCP created")
 }
 
-func (eh *McpEventHandler) Update(event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
+func (eh *McpEventHandler) Update(ctx context.Context, event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
 	mcpOld := event.ObjectOld
 	mcpNew := event.ObjectNew
 
@@ -1402,7 +1402,7 @@ func (eh *McpEventHandler) Update(event event.UpdateEvent, queue workqueue.RateL
 	}
 }
 
-func (eh *McpEventHandler) Delete(event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
+func (eh *McpEventHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
 	mcp := event.Object
 
 	if !isMcpRelevant(mcp) {
@@ -1415,7 +1415,7 @@ func (eh *McpEventHandler) Delete(event event.DeleteEvent, queue workqueue.RateL
 	log.Info("MCP deleted")
 }
 
-func (eh *McpEventHandler) Generic(event event.GenericEvent, queue workqueue.RateLimitingInterface) {
+func (eh *McpEventHandler) Generic(ctx context.Context, event event.GenericEvent, queue workqueue.RateLimitingInterface) {
 	mcp := event.Object
 
 	if !isMcpRelevant(mcp) {
@@ -1485,7 +1485,7 @@ type NodeEventHandler struct {
 	reconciler *KataConfigOpenShiftReconciler
 }
 
-func (eh *NodeEventHandler) Create(event event.CreateEvent, queue workqueue.RateLimitingInterface) {
+func (eh *NodeEventHandler) Create(ctx context.Context, event event.CreateEvent, queue workqueue.RateLimitingInterface) {
 	node := event.Object
 
 	log := eh.reconciler.Log.WithName("NodeCreate").WithValues("node name", node.GetName())
@@ -1507,7 +1507,7 @@ func (eh *NodeEventHandler) Create(event event.CreateEvent, queue workqueue.Rate
 	queue.Add(eh.reconciler.makeReconcileRequest())
 }
 
-func (eh *NodeEventHandler) Update(event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
+func (eh *NodeEventHandler) Update(ctx context.Context, event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
 	// This function assumes that a node cannot change its role from master to
 	// worker or vice-versa.
 	nodeOld := event.ObjectOld
@@ -1557,20 +1557,20 @@ func (eh *NodeEventHandler) Update(event event.UpdateEvent, queue workqueue.Rate
 	}
 }
 
-func (eh *NodeEventHandler) Delete(event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
+func (eh *NodeEventHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
 }
 
-func (eh *NodeEventHandler) Generic(event event.GenericEvent, queue workqueue.RateLimitingInterface) {
+func (eh *NodeEventHandler) Generic(ctx context.Context, event event.GenericEvent, queue workqueue.RateLimitingInterface) {
 }
 
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
 		Watches(
-			&source.Kind{Type: &mcfgv1.MachineConfigPool{}},
+			&mcfgv1.MachineConfigPool{},
 			&McpEventHandler{r}).
 		Watches(
-			&source.Kind{Type: &corev1.Node{}},
+			&corev1.Node{},
 			&NodeEventHandler{r}).
 		Complete(r)
 }
@@ -2104,7 +2104,7 @@ func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
 	authJsonSecret := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "auth-json-secret",
-			Namespace: "openshift-sandboxed-containers-operator",
+			Namespace: OperatorNamespace,
 		},
 		Data: map[string][]byte{
 			"auth.json": pullSecret.Data[".dockerconfigjson"],
@@ -2156,7 +2156,7 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      peerpodConfigCrdName,
-			Namespace: "openshift-sandboxed-containers-operator",
+			Namespace: OperatorNamespace,
 		},
 		Spec: v1alpha1.PeerPodConfigSpec{
 			CloudSecretName: "peer-pods-secret",
@@ -2214,7 +2214,7 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPods() error {
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      peerpodConfigCrdName,
-			Namespace: "openshift-sandboxed-containers-operator",
+			Namespace: OperatorNamespace,
 		},
 	}
 	err := r.Client.Delete(context.TODO(), &peerPodConfig)
