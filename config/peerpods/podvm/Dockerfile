@@ -4,7 +4,7 @@ FROM quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-paylo
 # azure-podvm-image-handler.sh script under /scripts/azure-podvm-image-handler.sh
 # aws-podvm-image-handler.sh script under /scripts/aws-podvm-image-handler.sh
 # sources for cloud-api-adaptor under /src/cloud-api-adaptor
-# Binaries like kubectl, packer and yq under /usr/local/bin
+# Binaries like kubectl, packer and yq under /usr/local/bin will be installed by the scripts
 
 
 FROM registry.access.redhat.com/ubi9/ubi:9.3
@@ -18,12 +18,9 @@ COPY --from=payload /podvm-binaries.tar.gz /payload/
 ADD lib.sh aws-podvm-image-handler.sh azure-podvm-image-handler.sh  /scripts/
 
 RUN /scripts/azure-podvm-image-handler.sh -- install_rpms
-RUN /scripts/azure-podvm-image-handler.sh -- install_cli
-RUN /scripts/aws-podvm-image-handler.sh -- install_cli
-RUN /scripts/aws-podvm-image-handler.sh -- install_binaries
 
-ARG CAA_SRC
-ARG CAA_REF
+ARG CAA_SRC=https://github.com/confidential-containers/cloud-api-adaptor
+ARG CAA_REF=main
 ENV CAA_SRC=$CAA_SRC
 ENV CAA_REF=$CAA_REF
 RUN git clone ${CAA_SRC} -b ${CAA_REF} /src/cloud-api-adaptor
