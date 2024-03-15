@@ -1,6 +1,22 @@
 #!/bin/bash
 #
 
+# Function to install Azure deps
+function install_azure_deps() {
+  echo "Installing Azure deps"
+  # Install the required packages
+  /scripts/azure-podvm-image-handler.sh -- install_cli
+  /scripts/azure-podvm-image-handler.sh -- install_binaries
+}
+
+# Function to install AWS deps
+function install_aws_deps() {
+  echo "Installing AWS deps"
+  # Install the required packages
+  /scripts/aws-podvm-image-handler.sh -- install_cli
+  /scripts/aws-podvm-image-handler.sh -- install_binaries
+}
+
 # Function to check if peer-pods-cm configmap exists
 function check_peer_pods_cm_exists() {
   if kubectl get configmap peer-pods-cm -n openshift-sandboxed-containers-operator >/dev/null 2>&1; then
@@ -82,7 +98,6 @@ function delete_podvm_image() {
 
   case "${CLOUD_PROVIDER}" in
   azure)
-
     # If IMAGE_ID is not set, then exit
     if [ -z "${IMAGE_ID}" ]; then
       echo "IMAGE_ID is not set. Skipping the deletion of Azure image"
@@ -173,8 +188,27 @@ function delete_podvm_image_gallery() {
   fi
 }
 
-# Call the function to create or delete podvm image based on argument
+function display_usage() {
+  echo "Usage: $0 {create|delete [-f]|delete-gallery [-f]}"
+}
 
+# Check if CLOUD_PROVIDER is set to azure or aws
+# Install the required dependencies
+case "${CLOUD_PROVIDER}" in
+azure)
+  install_azure_deps
+  ;;
+aws)
+  install_aws_deps
+  ;;
+*)
+  echo "CLOUD_PROVIDER is not set to azure or aws"
+  display_usage
+  exit 1
+  ;;
+esac
+
+# Call the function to create or delete podvm image based on argument
 case "$1" in
 create)
   create_podvm_image
@@ -186,7 +220,7 @@ delete-gallery)
   delete_podvm_image_gallery "$2"
   ;;
 *)
-  echo "Usage: $0 {create|delete [-f]|delete-gallery [-f]}"
+  display_usage
   exit 1
   ;;
 esac
