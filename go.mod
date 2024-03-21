@@ -1,6 +1,6 @@
 module github.com/openshift/sandboxed-containers-operator
 
-go 1.19
+go 1.21
 
 require (
 	github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl v0.8.0-alpha.1

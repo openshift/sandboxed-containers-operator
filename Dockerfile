@@ -1,7 +1,7 @@
 # Use OpenShift golang builder image
 # These images needs to be synced with the images in the Makefile.
-ARG BUILDER_IMAGE=${BUILDER_IMAGE:-registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.19-openshift-4.13}
-ARG TARGET_IMAGE=${TARGET_IMAGE:-registry.ci.openshift.org/ocp/4.13:base}
+ARG BUILDER_IMAGE=${BUILDER_IMAGE:-registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.21-openshift-4.16}
+ARG TARGET_IMAGE=${TARGET_IMAGE:-registry.ci.openshift.org/ocp/4.16:base}
 FROM ${BUILDER_IMAGE} AS builder
 
 WORKDIR /workspace
