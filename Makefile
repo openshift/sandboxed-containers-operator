@@ -61,8 +61,8 @@ GOBIN=$(shell go env GOBIN)
 endif
 
 # These images needs to be synced with the default values in the Dockerfile.
-BUILDER_IMAGE ?= registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.19-openshift-4.13
-TARGET_IMAGE  ?= registry.ci.openshift.org/ocp/4.13:base
+BUILDER_IMAGE ?= registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.21-openshift-4.16
+TARGET_IMAGE  ?= registry.ci.openshift.org/ocp/4.16:base
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # This is a requirement for 'setup-envtest.sh' in the test target.
