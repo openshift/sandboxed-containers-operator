@@ -61,7 +61,7 @@ GOBIN=$(shell go env GOBIN)
 endif
 
 # These images needs to be synced with the default values in the Dockerfile.
-BUILDER_IMAGE ?= registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.19-openshift-4.13
+BUILDER_IMAGE ?= registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.21-openshift-4.13
 TARGET_IMAGE  ?= registry.ci.openshift.org/ocp/4.13:base
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
