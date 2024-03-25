@@ -1,19 +1,16 @@
-FROM quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-payload:37c1125179912e5d1104c43fd83d567914278bcb as payload
+FROM registry.access.redhat.com/ubi9/ubi:9.3
 
-# podvm binaries under /payload/podvm-binaries.tar.gz
 # azure-podvm-image-handler.sh script under /scripts/azure-podvm-image-handler.sh
 # aws-podvm-image-handler.sh script under /scripts/aws-podvm-image-handler.sh
 # sources for cloud-api-adaptor under /src/cloud-api-adaptor
+# The podvm binaries are expected to be under /payload/podvm-binaries.tar.gz
 # Binaries like kubectl, packer and yq under /usr/local/bin will be installed by the scripts
 
-
-FROM registry.access.redhat.com/ubi9/ubi:9.3
 
 LABEL kata_src=https://github.com/kata-containers/kata-containers/tree/CC-0.8.0
 LABEL kata_src_commit=8de1f8e19f858134ba455a7c04edcb21d8bcf6b1
 
-RUN mkdir -p /payload /scripts
-COPY --from=payload /podvm-binaries.tar.gz /payload/
+RUN mkdir -p /scripts
 
 ADD lib.sh aws-podvm-image-handler.sh azure-podvm-image-handler.sh  /scripts/
 
