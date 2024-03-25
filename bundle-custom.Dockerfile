@@ -10,6 +10,7 @@ COPY go.sum go.sum
 COPY api api/
 COPY config config/
 COPY controllers controllers/
+COPY internal internal/
 
 RUN go mod download
 # needed for docker build but not for local builds
