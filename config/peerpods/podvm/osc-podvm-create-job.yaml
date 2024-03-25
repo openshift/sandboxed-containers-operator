@@ -11,15 +11,30 @@ spec:
     metadata:
       name: osc-podvm-image-creation
     spec:
+      # Add initContainers to pull the image from the registry and copy
+      # /podvm-binaries.tar.gz /payload/podvm-binaries.tar.gz
+      initContainers:
+        - name: copy
+          image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-podvm-payload:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Copying the payload files"
+              cp /podvm-binaries.tar.gz /payload/podvm-binaries.tar.gz || exit 1
+              echo "Copied the payload files successfully"
+          volumeMounts:
+            - name: payload
+              mountPath: /payload
       containers:
         - name: create
+          # Binaries like kubectl, packer and yq are expected to be under /usr/local/bin
+          # podvm binaries are expected to be under /payload/podvm-binaries.tar.gz
+          image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-podvm-builder:latest
           # This image contains the following
-          # podvm binaries under /payload/podvm-binaries.tar.gz
           # azure-podvm-image-handler.sh script under /scripts/azure-podvm-image-handler.sh
           # aws-podvm-image-handler.sh script under /scripts/aws-podvm-image-handler.sh
           # sources for cloud-api-adaptor under /src/cloud-api-adaptor
-          # Binaries like kubectl, packer and yq under /usr/local/bin
-          image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-podvm-builder:latest
+
           securityContext:
             runAsUser: 0 # needed for container mode dnf access
           envFrom:
@@ -35,5 +50,10 @@ spec:
                 name: aws-podvm-image-cm
                 optional: true
           command: ["/podvm-builder.sh", "create"]
-
+          volumeMounts:
+            - name: payload
+              mountPath: /payload
+      volumes:
+        - name: payload
+          emptyDir: {}
       restartPolicy: Never
