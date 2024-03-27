@@ -64,6 +64,14 @@ func IsOpenShift() (bool, error) {
 	return false, nil
 }
 
+// method to use the relative path at test time
+func pathFix(path string) string {
+	if os.Getenv("TEST_USE_RELATIVE_PATH") == "true" {
+		return filepath.Join("../", path)
+	}
+	return path
+}
+
 func parseJobYAML(yamlData []byte) (*batchv1.Job, error) {
 	job := &batchv1.Job{}
 	err := yaml.Unmarshal(yamlData, job)
@@ -111,7 +119,7 @@ func parseCredentialsRequestYAML(yamlData []byte) (*ccov1.CredentialsRequest, er
 
 func readCredentialsRequestYAML(crFileName string) ([]byte, error) {
 	credentialsRequestsFilePath := filepath.Join(peerpodsCredentialsRequestsPathLocation, crFileName)
-	yamlData, err := os.ReadFile(credentialsRequestsFilePath)
+	yamlData, err := os.ReadFile(pathFix(credentialsRequestsFilePath))
 	if err != nil {
 		return nil, err
 	}
