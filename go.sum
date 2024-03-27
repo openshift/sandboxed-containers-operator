@@ -351,10 +351,10 @@ github.com/cockroachdb/logtags v0.0.0-20190617123548-eb05cc24525f/go.mod h1:i/u9
 github.com/codahale/rfc6979 v0.0.0-20141003034818-6a90f24967eb/go.mod h1:ZjrT6AXHbDs86ZSdt/osfBi5qfexBrKUdONk989Wnk4=
 github.com/confidential-containers/cloud-api-adaptor v0.8.1-0.20231116150709-232acecae0ca h1:rZyWST0USTn7y7Wa72XSgkxnHbyDWmGtmi7Vw1w+pTI=
 github.com/confidential-containers/cloud-api-adaptor v0.8.1-0.20231116150709-232acecae0ca/go.mod h1:hlRWfbYbTJlpgsiQqlDlNRLREr6IhNbSCJ6ysF3I8v0=
-github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl v0.8.0-alpha.1.0.20231117105612-4bb0a8dfe349 h1:ziwNQFH0LSSGkJrFrb3fJ1flrSkHxYkzx4QTDHQddiY=
-github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl v0.8.0-alpha.1.0.20231117105612-4bb0a8dfe349/go.mod h1:O/rY9qes+h4TnN+QwveaCVWJAUGF+XFtG0fE1dmNNMI=
-github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl v0.7.1-0.20230905053535-9fc762f85a98 h1:uv5KOwkXD7woY+wEhKHzZFOx3NtdoSRmeCnCIVlx/FU=
-github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl v0.7.1-0.20230905053535-9fc762f85a98/go.mod h1:VYXcZnc8B7spkQTZUMSI+GyLC6MKo+YXwZudMUOdG6U=
+github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl v0.8.0-alpha.1 h1:mYukEiy1MIF0wUJbJ2wEhmuxsRngz5ewJnrvfpG2o10=
+github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl v0.8.0-alpha.1/go.mod h1:BlGEDPqPs10AVlqdgMgcxCMwTql2Wc5cqI2ynQEN3+M=
+github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl v0.8.0-alpha.1 h1:k0zOSyQKCIP6Z1CB9NzTFtPWYOwcppdRyAtUJlZdi2w=
+github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl v0.8.0-alpha.1/go.mod h1:VYXcZnc8B7spkQTZUMSI+GyLC6MKo+YXwZudMUOdG6U=
 github.com/container-orchestrated-devices/container-device-interface v0.4.0/go.mod h1:E1zcucIkq9P3eyNmY+68dBQsTcsXJh9cgRo2IVNScKQ=
 github.com/containerd/aufs v0.0.0-20200908144142-dab0cbea06f4/go.mod h1:nukgQABAEopAHvB6j7cnP5zJ+/3aVcE7hCYqvIwAHyE=
 github.com/containerd/aufs v0.0.0-20201003224125-76a6863f2989/go.mod h1:AkGGQs9NM2vtYHaUen+NljV0/baGCAPELGm2q9ZXpWU=
