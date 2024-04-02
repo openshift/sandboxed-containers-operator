@@ -35,7 +35,6 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
-	"github.com/openshift/sandboxed-containers-operator/internal/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	nodeapi "k8s.io/api/node/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -45,13 +44,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 // blank assignment to verify that KataConfigOpenShiftReconciler implements reconcile.Reconciler
@@ -63,12 +60,10 @@ type KataConfigOpenShiftReconciler struct {
 	Log    logr.Logger
 	Scheme *runtime.Scheme
 
-	kataConfig   *kataconfigurationv1.KataConfig
-	FeatureGates *featuregates.FeatureGates
+	kataConfig *kataconfigurationv1.KataConfig
 }
 
 const (
-	OperatorNamespace                   = "openshift-sandboxed-containers-operator"
 	dashboard_configmap_name            = "grafana-dashboard-sandboxed-containers"
 	dashboard_configmap_namespace       = "openshift-config-managed"
 	container_runtime_config_name       = "kata-crio-config"
@@ -76,6 +71,7 @@ const (
 	DEFAULT_PEER_PODS                   = "10"
 	peerpodConfigCrdName                = "peerpodconfig-openshift"
 	peerpodsMachineConfigPathLocation   = "/config/peerpods"
+	peerpodsImageJobsPathLocation       = "/config/peerpods/podvm"
 	peerpodsCrioMachineConfig           = "50-kata-remote"
 	peerpodsCrioMachineConfigYaml       = "mc-50-crio-config.yaml"
 	peerpodsKataRemoteMachineConfig     = "40-worker-kata-remote-config"
@@ -123,10 +119,6 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		// Error reading the object - requeue the request.
 		r.Log.Error(err, "Cannot retrieve kataConfig")
 		return ctrl.Result{}, err
-	}
-
-	if r.FeatureGates.IsEnabled(ctx, "timeTravel") {
-		r.Log.Info("TimeTravel feature is enabled. Performing feature-specific logic...")
 	}
 
 	return func() (ctrl.Result, error) {
@@ -349,7 +341,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      dsName,
-			Namespace: OperatorNamespace,
+			Namespace: "openshift-sandboxed-containers-operator",
 		},
 		Spec: appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
@@ -425,7 +417,7 @@ func (r *KataConfigOpenShiftReconciler) processDashboardConfigMap() *corev1.Conf
 
 	// retrieve content of the dashboard from our own namespace
 	foundCm := &corev1.ConfigMap{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: dashboard_configmap_name, Namespace: OperatorNamespace}, foundCm)
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: dashboard_configmap_name, Namespace: "openshift-sandboxed-containers-operator"}, foundCm)
 	if err != nil {
 		r.Log.Error(err, "could not get dashboard data")
 		return nil
@@ -521,7 +513,7 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 				"machineconfiguration.openshift.io/role": machinePool,
 				"app":                                    r.kataConfig.Name,
 			},
-			Namespace: OperatorNamespace,
+			Namespace: "openshift-sandboxed-containers-operator",
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Extensions: []string{extension},
@@ -565,19 +557,18 @@ func (r *KataConfigOpenShiftReconciler) listKataPods() error {
 		client.InNamespace(corev1.NamespaceAll),
 	}
 	if err := r.Client.List(context.TODO(), podList, listOpts...); err != nil {
-		return fmt.Errorf("failed to list kata pods: %v", err)
+		return fmt.Errorf("Failed to list kata pods: %v", err)
 	}
 	for _, pod := range podList.Items {
 		if pod.Spec.RuntimeClassName != nil {
 			if contains(r.kataConfig.Status.RuntimeClasses, *pod.Spec.RuntimeClassName) {
-				return fmt.Errorf("existing pods using \"%v\" RuntimeClass found. Please delete the pods manually for KataConfig deletion to proceed", *pod.Spec.RuntimeClassName)
+				return fmt.Errorf("Existing pods using \"%v\" RuntimeClass found. Please delete the pods manually for KataConfig deletion to proceed", *pod.Spec.RuntimeClassName)
 			}
 		}
 	}
 	return nil
 }
 
-//lint:ignore U1000 This method is unused, but let's keep it for now
 func (r *KataConfigOpenShiftReconciler) kataOcExists() (bool, error) {
 	kataOcMcp := &mcfgv1.MachineConfigPool{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "kata-oc"}, kataOcMcp)
@@ -626,13 +617,13 @@ func (r *KataConfigOpenShiftReconciler) checkNodeEligibility() error {
 		r.Log.Info("enablePeerPods is true. Skipping since they are mutually exclusive.")
 		return nil
 	}
-	nodes, err := r.getNodesWithLabels(map[string]string{"feature.node.kubernetes.io/runtime.kata": "true"})
+	err, nodes := r.getNodesWithLabels(map[string]string{"feature.node.kubernetes.io/runtime.kata": "true"})
 	if err != nil {
 		r.Log.Error(err, "Error in getting list of nodes with label: feature.node.kubernetes.io/runtime.kata")
 		return err
 	}
 	if len(nodes.Items) == 0 {
-		err = fmt.Errorf("no Nodes with required labels found. Is NFD running?")
+		err = fmt.Errorf("No Nodes with required labels found. Is NFD running?")
 		return err
 	}
 
@@ -944,32 +935,10 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		// these can be removed manually if needed and this is not in the critical path
 		// of operator functionality
 		_ = r.disablePeerPods()
-
-		// Handle podvm image deletion
-		status, err := ImageDelete(r.Client)
-		if status == RequeueNeeded && err == nil {
-			// Set the KataConfig status to PodVM Image Deleting
-			r.setInProgressConditionToPodVMImageDeleting()
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, nil
-		} else if status == ImageDeletionFailed {
-			// Set the KataConfig status to PodVM Image Deletion Failed
-			r.setInProgressConditionToPodVMImageDeletionFailed()
-			return reconcile.Result{}, err
-		} else if status == ImageDeletionStatusUnknown {
-			// Set the KataConfig status to PodVM Image Deletion Status Unknown
-			r.setInProgressConditionToPodVMImageDeletionUnknown()
-
-			// Reconcile with error
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
-
-		} else if err != nil {
-			// Reconcile with error
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
+		completed, res := ImageDelete(r.Client)
+		if !completed {
+			return res, nil
 		}
-
-		// Set the KataConfig status to PodVM Image Deleted
-		r.setInProgressConditionToPodVMImageDeleted()
-
 	}
 
 	scc := GetScc()
@@ -1011,6 +980,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 	// peer pod enablement
 	if r.kataConfig.Spec.EnablePeerPods {
+		completed, res := ImageCreate(r.Client)
+		if !completed {
+			return res, nil
+		}
+
 		err := r.enablePeerPodsMc()
 		if err != nil {
 			r.Log.Info("Enabling peerpods machineconfigs failed", "err", err)
@@ -1182,32 +1156,8 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 			}
 		}
 
-		// create Pod VM image PeerPodConfig CRD and runtimeclass for peerpods
+		// create PeerPodConfig CRD and runtimeclass for peerpods
 		if r.kataConfig.Spec.EnablePeerPods {
-			// Create the podvm image
-			status, err := ImageCreate(r.Client)
-			if status == RequeueNeeded && err == nil {
-				// Set the KataConfig status to PodVM Image Creating
-				r.setInProgressConditionToPodVMImageCreating()
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
-			} else if status == ImageCreationFailed {
-				// Set the KataConfig status to PodVM Image Creation Failed
-				r.setInProgressConditionToPodVMImageCreationFailed()
-				return ctrl.Result{}, err
-			} else if status == ImageCreationStatusUnknown {
-				// Set the KataConfig status to PodVM Image Creation Status Unknown
-				r.setInProgressConditionToPodVMImageCreationUnknown()
-
-				// Reconcile with error
-				return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
-			} else if err != nil {
-				// Reconcile with error
-				return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
-			}
-
-			// Set the KataConfig status to PodVM Image Created
-			r.setInProgressConditionToPodVMImageCreated()
-
 			err = r.enablePeerPodsMiscConfigs()
 			if err != nil {
 				r.Log.Info("Enabling peerpodconfig CR, runtimeclass etc", "err", err)
@@ -1215,9 +1165,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 				return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 
 			}
-
-			// Reset the in progress condition
-			r.resetInProgressCondition()
 		}
 
 	} else {
@@ -1342,7 +1289,7 @@ type McpEventHandler struct {
 	reconciler *KataConfigOpenShiftReconciler
 }
 
-func (eh *McpEventHandler) Create(ctx context.Context, event event.CreateEvent, queue workqueue.RateLimitingInterface) {
+func (eh *McpEventHandler) Create(event event.CreateEvent, queue workqueue.RateLimitingInterface) {
 	mcp := event.Object
 
 	if !isMcpRelevant(mcp) {
@@ -1356,7 +1303,7 @@ func (eh *McpEventHandler) Create(ctx context.Context, event event.CreateEvent, 
 	log.Info("MCP created")
 }
 
-func (eh *McpEventHandler) Update(ctx context.Context, event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
+func (eh *McpEventHandler) Update(event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
 	mcpOld := event.ObjectOld
 	mcpNew := event.ObjectNew
 
@@ -1411,7 +1358,7 @@ func (eh *McpEventHandler) Update(ctx context.Context, event event.UpdateEvent, 
 	}
 }
 
-func (eh *McpEventHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
+func (eh *McpEventHandler) Delete(event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
 	mcp := event.Object
 
 	if !isMcpRelevant(mcp) {
@@ -1424,7 +1371,7 @@ func (eh *McpEventHandler) Delete(ctx context.Context, event event.DeleteEvent, 
 	log.Info("MCP deleted")
 }
 
-func (eh *McpEventHandler) Generic(ctx context.Context, event event.GenericEvent, queue workqueue.RateLimitingInterface) {
+func (eh *McpEventHandler) Generic(event event.GenericEvent, queue workqueue.RateLimitingInterface) {
 	mcp := event.Object
 
 	if !isMcpRelevant(mcp) {
@@ -1494,7 +1441,7 @@ type NodeEventHandler struct {
 	reconciler *KataConfigOpenShiftReconciler
 }
 
-func (eh *NodeEventHandler) Create(ctx context.Context, event event.CreateEvent, queue workqueue.RateLimitingInterface) {
+func (eh *NodeEventHandler) Create(event event.CreateEvent, queue workqueue.RateLimitingInterface) {
 	node := event.Object
 
 	log := eh.reconciler.Log.WithName("NodeCreate").WithValues("node name", node.GetName())
@@ -1516,7 +1463,7 @@ func (eh *NodeEventHandler) Create(ctx context.Context, event event.CreateEvent,
 	queue.Add(eh.reconciler.makeReconcileRequest())
 }
 
-func (eh *NodeEventHandler) Update(ctx context.Context, event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
+func (eh *NodeEventHandler) Update(event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
 	// This function assumes that a node cannot change its role from master to
 	// worker or vice-versa.
 	nodeOld := event.ObjectOld
@@ -1566,61 +1513,25 @@ func (eh *NodeEventHandler) Update(ctx context.Context, event event.UpdateEvent,
 	}
 }
 
-func (eh *NodeEventHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
+func (eh *NodeEventHandler) Delete(event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
 }
 
-func (eh *NodeEventHandler) Generic(ctx context.Context, event event.GenericEvent, queue workqueue.RateLimitingInterface) {
-}
-
-func configMapFilterPredicate(reconciler *KataConfigOpenShiftReconciler) predicate.Predicate {
-	isRelevantConfigMap := func(obj client.Object) bool {
-		if reconciler == nil || reconciler.FeatureGates == nil {
-			return false
-		}
-
-		configMap, ok := obj.(*corev1.ConfigMap)
-		if !ok {
-			return false
-		}
-
-		relevantNamespace := configMap.Namespace == reconciler.FeatureGates.Namespace
-		relevantName := configMap.Name == reconciler.FeatureGates.ConfigMapName
-		return relevantNamespace && relevantName
-	}
-
-	return predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
-			return isRelevantConfigMap(e.Object)
-		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			return isRelevantConfigMap(e.ObjectNew)
-		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
-			return isRelevantConfigMap(e.Object)
-		},
-		GenericFunc: func(e event.GenericEvent) bool {
-			return isRelevantConfigMap(e.Object)
-		},
-	}
+func (eh *NodeEventHandler) Generic(event event.GenericEvent, queue workqueue.RateLimitingInterface) {
 }
 
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
 		Watches(
-			&mcfgv1.MachineConfigPool{},
+			&source.Kind{Type: &mcfgv1.MachineConfigPool{}},
 			&McpEventHandler{r}).
 		Watches(
-			&corev1.Node{},
+			&source.Kind{Type: &corev1.Node{}},
 			&NodeEventHandler{r}).
-		Watches(
-			&corev1.ConfigMap{},
-			&handler.EnqueueRequestForObject{},
-			builder.WithPredicates(configMapFilterPredicate(r)),
-		).Complete(r)
+		Complete(r)
 }
 
-func (r *KataConfigOpenShiftReconciler) getNodes() (*corev1.NodeList, error) {
+func (r *KataConfigOpenShiftReconciler) getNodes() (error, *corev1.NodeList) {
 	nodes := &corev1.NodeList{}
 	labelSelector := labels.SelectorFromSet(map[string]string{"node-role.kubernetes.io/worker": ""})
 	listOpts := []client.ListOption{
@@ -1629,12 +1540,12 @@ func (r *KataConfigOpenShiftReconciler) getNodes() (*corev1.NodeList, error) {
 
 	if err := r.Client.List(context.TODO(), nodes, listOpts...); err != nil {
 		r.Log.Error(err, "Getting list of nodes failed")
-		return &corev1.NodeList{}, err
+		return err, &corev1.NodeList{}
 	}
-	return nodes, nil
+	return nil, nodes
 }
 
-func (r *KataConfigOpenShiftReconciler) getNodesWithLabels(nodeLabels map[string]string) (*corev1.NodeList, error) {
+func (r *KataConfigOpenShiftReconciler) getNodesWithLabels(nodeLabels map[string]string) (error, *corev1.NodeList) {
 	nodes := &corev1.NodeList{}
 	labelSelector := labels.SelectorFromSet(nodeLabels)
 	listOpts := []client.ListOption{
@@ -1643,9 +1554,9 @@ func (r *KataConfigOpenShiftReconciler) getNodesWithLabels(nodeLabels map[string
 
 	if err := r.Client.List(context.TODO(), nodes, listOpts...); err != nil {
 		r.Log.Error(err, "Getting list of nodes having specified labels failed")
-		return &corev1.NodeList{}, err
+		return err, &corev1.NodeList{}
 	}
-	return nodes, nil
+	return nil, nodes
 }
 
 func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (labelingChanged bool, err error) {
@@ -1721,7 +1632,6 @@ func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selecto
 	return labelingChanged, nil
 }
 
-//lint:ignore U1000 This method is unused, but let's keep it for now
 func (r *KataConfigOpenShiftReconciler) getConditionReason(conditions []mcfgv1.MachineConfigPoolCondition, conditionType mcfgv1.MachineConfigPoolConditionType) string {
 	for _, c := range conditions {
 		if c.Type == conditionType {
@@ -1757,7 +1667,7 @@ const (
 // will be returned.
 func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 
-	nodeList, err := r.getNodes()
+	err, nodeList := r.getNodes()
 	if err != nil {
 		return err
 	}
@@ -1765,7 +1675,7 @@ func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 	r.clearNodeStatusLists()
 
 	r.kataConfig.Status.KataNodes.NodeCount = func() int {
-		nodes, err := r.getNodesWithLabels(r.getNodeSelectorAsMap())
+		err, nodes := r.getNodesWithLabels(r.getNodeSelectorAsMap())
 		if err != nil {
 			r.Log.Info("Error retrieving kata-oc labelled Nodes to count them", "err", err)
 			return 0
@@ -1849,12 +1759,12 @@ func (r *KataConfigOpenShiftReconciler) putNodeOnStatusList(node *corev1.Node) e
 
 	nodeMcoState, ok := node.Annotations["machineconfiguration.openshift.io/state"]
 	if !ok {
-		return fmt.Errorf("missing machineconfiguration.openshift.io/state on node %v", node.GetName())
+		return fmt.Errorf("Missing machineconfiguration.openshift.io/state on node %v", node.GetName())
 	}
 
 	nodeCurrMc, ok := node.Annotations["machineconfiguration.openshift.io/currentConfig"]
 	if !ok {
-		return fmt.Errorf("missing machineconfiguration.openshift.io/currentConfig on node %v", node.GetName())
+		return fmt.Errorf("Missing machineconfiguration.openshift.io/currentConfig on node %v", node.GetName())
 	}
 
 	// Note that to figure out the MachineConfig our Node should be at we
@@ -2040,86 +1950,6 @@ func (r *KataConfigOpenShiftReconciler) resetInProgressCondition() {
 	r.Log.Info("InProgress Condition reset")
 }
 
-// Method to set the InProgress condition to indicate that the Pod VM Image is being created
-func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageCreating() {
-	cond := r.retrieveInProgressConditionForChange()
-	cond.Status = corev1.ConditionTrue
-	cond.Reason = PodVMImageJobRunning
-	cond.Message = "Creating Pod VM Image"
-
-	r.Log.Info("InProgress Condition set to PodVMImageJobRunning")
-}
-
-// Method to set the InProgress condition to indicate that the Pod VM Image has been created
-func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageCreated() {
-	cond := r.retrieveInProgressConditionForChange()
-	cond.Status = corev1.ConditionTrue
-	cond.Reason = PodVMImageJobCompleted
-	cond.Message = "Created Pod VM Image"
-
-	r.Log.Info("InProgress Condition set to PodVMImageJobCompleted")
-}
-
-// Method to set the InProgress condition to indicate that the Pod VM Image creation has failed
-func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageCreationFailed() {
-	cond := r.retrieveInProgressConditionForChange()
-	cond.Status = corev1.ConditionTrue
-	cond.Reason = PodVMImageJobFailed
-	cond.Message = "Failed to create Pod VM Image"
-
-	r.Log.Info("InProgress Condition set to PodVMImageJobFailed")
-}
-
-// Method to set the InProgress condition to indicate that the Pod VM Image creation status is unknown
-func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageCreationUnknown() {
-	cond := r.retrieveInProgressConditionForChange()
-	cond.Status = corev1.ConditionUnknown
-	cond.Reason = PodVMImageJobStatusUnknown
-	cond.Message = "Pod VM Image creation status is unknown"
-
-	r.Log.Info("InProgress Condition set to PodVMImageJobStatusUnknown")
-}
-
-// Method to set the InProgress condition to indicate that the Pod VM Image is being deleted
-func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageDeleting() {
-	cond := r.retrieveInProgressConditionForChange()
-	cond.Status = corev1.ConditionTrue
-	cond.Reason = PodVMImageJobRunning
-	cond.Message = "Deleting Pod VM Image"
-
-	r.Log.Info("InProgress Condition set to PodVMImageJobRunning")
-}
-
-// Method to set the InProgress condition to indicate that the Pod VM Image has been deleted
-func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageDeleted() {
-	cond := r.retrieveInProgressConditionForChange()
-	cond.Status = corev1.ConditionTrue
-	cond.Reason = PodVMImageJobCompleted
-	cond.Message = "Deleted Pod VM Image"
-
-	r.Log.Info("InProgress Condition set to PodVMImageJobCompleted")
-}
-
-// Method to set the InProgress condition to indicate that the Pod VM Image deletion has failed
-func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageDeletionFailed() {
-	cond := r.retrieveInProgressConditionForChange()
-	cond.Status = corev1.ConditionTrue
-	cond.Reason = PodVMImageJobFailed
-	cond.Message = "Failed to delete Pod VM Image"
-
-	r.Log.Info("InProgress Condition set to PodVMImageJobFailed")
-}
-
-// Method to set the InProgress condition to indicate that the Pod VM Image deletion status is unknown
-func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageDeletionUnknown() {
-	cond := r.retrieveInProgressConditionForChange()
-	cond.Status = corev1.ConditionUnknown
-	cond.Reason = PodVMImageJobStatusUnknown
-	cond.Message = "Pod VM Image deletion status is unknown"
-
-	r.Log.Info("InProgress Condition set to PodVMImageJobStatusUnknown")
-}
-
 func (r *KataConfigOpenShiftReconciler) isInstalling() bool {
 	cond := r.findInProgressCondition()
 	if cond == nil {
@@ -2149,7 +1979,7 @@ func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
 	authJsonSecret := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "auth-json-secret",
-			Namespace: OperatorNamespace,
+			Namespace: "openshift-sandboxed-containers-operator",
 		},
 		Data: map[string][]byte{
 			"auth.json": pullSecret.Data[".dockerconfigjson"],
@@ -2201,7 +2031,7 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      peerpodConfigCrdName,
-			Namespace: OperatorNamespace,
+			Namespace: "openshift-sandboxed-containers-operator",
 		},
 		Spec: v1alpha1.PeerPodConfigSpec{
 			CloudSecretName: "peer-pods-secret",
@@ -2239,6 +2069,7 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 	}
 
 	// Create the mutating webhook
+
 	err = r.createMutatingWebhookConfig()
 	if err != nil {
 		r.Log.Info("Error in creating mutating webhook for peerpods", "err", err)
@@ -2259,7 +2090,7 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPods() error {
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      peerpodConfigCrdName,
-			Namespace: OperatorNamespace,
+			Namespace: "openshift-sandboxed-containers-operator",
 		},
 	}
 	err := r.Client.Delete(context.TODO(), &peerPodConfig)
