@@ -19,14 +19,12 @@ package v1
 import (
 	"context"
 	"fmt"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 var (
@@ -51,7 +49,7 @@ func (r *KataConfig) SetupWebhookWithManager(mgr ctrl.Manager) error {
 var _ webhook.Validator = &KataConfig{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *KataConfig) ValidateCreate() (admission.Warnings, error) {
+func (r *KataConfig) ValidateCreate() error {
 	kataconfiglog.Info("validate create", "name", r.Name)
 
 	kataConfigList := &KataConfigList{}
@@ -59,28 +57,28 @@ func (r *KataConfig) ValidateCreate() (admission.Warnings, error) {
 		client.InNamespace(corev1.NamespaceAll),
 	}
 	if err := clientInst.List(context.TODO(), kataConfigList, listOpts...); err != nil {
-		return nil, fmt.Errorf("Failed to list KataConfig custom resources: %v", err)
+		return fmt.Errorf("Failed to list KataConfig custom resources: %v", err)
 	}
 
 	if len(kataConfigList.Items) == 1 {
-		return nil, fmt.Errorf("A KataConfig instance already exists, refusing to create a duplicate")
+		return fmt.Errorf("A KataConfig instance already exists, refusing to create a duplicate")
 	}
 
-	return nil, nil
+	return nil
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *KataConfig) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
+func (r *KataConfig) ValidateUpdate(old runtime.Object) error {
 	kataconfiglog.Info("validate update", "name", r.Name)
 
 	// TODO(user): fill in your validation logic upon object update.
-	return nil, nil
+	return nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *KataConfig) ValidateDelete() (admission.Warnings, error) {
+func (r *KataConfig) ValidateDelete() error {
 	kataconfiglog.Info("validate delete", "name", r.Name)
 
 	// TODO(user): fill in your validation logic upon object deletion.
-	return nil, nil
+	return nil
 }
