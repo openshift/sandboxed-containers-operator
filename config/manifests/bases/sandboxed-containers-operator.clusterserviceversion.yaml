@@ -365,6 +365,7 @@ spec:
   maturity: beta
   provider:
     name: Red Hat
+  replaces: sandboxed-containers-operator.v1.5.1
   version: 1.5.2
   webhookdefinitions:
   - admissionReviewVersions:
