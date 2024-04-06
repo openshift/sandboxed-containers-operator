@@ -35,9 +35,7 @@ import (
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	"github.com/openshift/sandboxed-containers-operator/internal/featuregates"
 	corev1 "k8s.io/api/core/v1"
-	nodeapi "k8s.io/api/node/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -76,9 +74,6 @@ const (
 	peerpodsCrioMachineConfigYaml       = "mc-50-crio-config.yaml"
 	peerpodsKataRemoteMachineConfig     = "40-worker-kata-remote-config"
 	peerpodsKataRemoteMachineConfigYaml = "mc-40-kata-remote-config.yaml"
-	peerpodsRuntimeClassName            = "kata-remote"
-	peerpodsRuntimeClassCpuOverhead     = "0.25"
-	peerpodsRuntimeClassMemOverhead     = "350Mi"
 )
 
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs;kataconfigs/finalizers,verbs=get;list;watch;create;update;patch;delete
@@ -632,69 +627,6 @@ func (r *KataConfigOpenShiftReconciler) createScc() error {
 	return nil
 }
 
-type RuntimeClassConfig struct {
-	ClassName      string
-	CPUOverhead    string
-	MemoryOverhead string
-}
-
-func (r *KataConfigOpenShiftReconciler) createRuntimeClasses(runtimeClassConfigs []RuntimeClassConfig) error {
-	for _, config := range runtimeClassConfigs {
-		rc := func() *nodeapi.RuntimeClass {
-			rc := &nodeapi.RuntimeClass{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "node.k8s.io/v1",
-					Kind:       "RuntimeClass",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name: config.ClassName,
-				},
-				Handler: config.ClassName,
-				Overhead: &nodeapi.Overhead{
-					PodFixed: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse(config.CPUOverhead),
-						corev1.ResourceMemory: resource.MustParse(config.MemoryOverhead),
-					},
-				},
-			}
-
-			nodeSelector := r.getNodeSelectorAsMap()
-
-			rc.Scheduling = &nodeapi.Scheduling{
-				NodeSelector: nodeSelector,
-			}
-
-			r.Log.Info("RuntimeClass NodeSelector:", "nodeSelector", nodeSelector)
-
-			return rc
-		}()
-
-		if err := controllerutil.SetControllerReference(r.kataConfig, rc, r.Scheme); err != nil {
-			return err
-		}
-
-		foundRc := &nodeapi.RuntimeClass{}
-		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: rc.Name}, foundRc)
-		if err != nil {
-			if !k8serrors.IsNotFound(err) {
-				return err
-			}
-
-			r.Log.Info("Creating a new RuntimeClass", "rc.Name", rc.Name)
-			err = r.Client.Create(context.TODO(), rc)
-			if err != nil {
-				return err
-			}
-		}
-
-		if !contains(r.kataConfig.Status.RuntimeClasses, config.ClassName) {
-			r.kataConfig.Status.RuntimeClasses = append(r.kataConfig.Status.RuntimeClasses, config.ClassName)
-		}
-	}
-
-	return nil
-}
-
 // "KataConfigNodeSelector" in the names of the following couple of helper
 // functions refers to the value of KataConfig.spec.kataConfigPoolSelector,
 // i.e. the original selector supplied by the user of KataConfig.
@@ -1162,15 +1094,16 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	}
 
 	if !isMcoUpdating {
-		r.Log.Info("create runtime class")
+		r.Log.Info("create default runtime class")
 		r.resetInProgressCondition()
-		err = r.createRuntimeClasses([]RuntimeClassConfig{
-			{
-				ClassName:      "kata",
-				CPUOverhead:    "0.25",
-				MemoryOverhead: "350Mi",
-			},
-		})
+		err = r.createDefaultRuntimeClass()
+		if err != nil {
+			// Give sometime for the error to go away before reconciling again
+			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
+
+		r.Log.Info("handle additional runtimeClasses if present")
+		err = r.handleAdditionalRuntimeClasses()
 		if err != nil {
 			// Give sometime for the error to go away before reconciling again
 			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
@@ -2207,13 +2140,7 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 	}
 
 	// Create runtimeClass config for peer-pods
-	err = r.createRuntimeClasses([]RuntimeClassConfig{
-		{
-			ClassName:      peerpodsRuntimeClassName,
-			CPUOverhead:    peerpodsRuntimeClassCpuOverhead,
-			MemoryOverhead: peerpodsRuntimeClassMemOverhead,
-		},
-	})
+	err = r.createPeerPodsRuntimeClass()
 	if err != nil {
 		r.Log.Info("Error in creating kata remote runtimeclass", "err", err)
 		return err
@@ -2287,6 +2214,13 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPods() error {
 	err = r.deleteMutatingWebhookConfig()
 	if err != nil {
 		r.Log.Info("Error in deleting mutating webhook for peerpods", "err", err)
+		return err
+	}
+
+	// Delete runtimeClass config for peer-pods
+	err = r.deleteRuntimeClasses([]string{peerpodsRuntimeClassName})
+	if err != nil {
+		r.Log.Info("Error in deleting kata remote runtimeclass", "err", err)
 		return err
 	}
 
