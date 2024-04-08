@@ -20,7 +20,7 @@ spec:
 
       initContainers:
       - name: payload
-        image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.5.3
+        image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.5.2
         imagePullPolicy: Always
         volumeMounts:
         - name: shared-data
