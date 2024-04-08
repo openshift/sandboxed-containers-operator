@@ -11,8 +11,9 @@ import "strings"
 */
 
 const (
-	FeatureGatesConfigMapName = "osc-feature-gates"
-	LayeredImageDeployment    = "LayeredImageDeployment"
+	FeatureGatesConfigMapName    = "osc-feature-gates"
+	LayeredImageDeployment       = "LayeredImageDeployment"
+	LayeredImageDeploymentConfig = "layeredimagedeployment-config"
 )
 
 // Sample ConfigMap with Features
@@ -44,4 +45,17 @@ func GetFeatureGateConfigMapName(feature string) string {
 
 	return strings.ToLower(feature) + "-config"
 
+}
+
+// Check if the configmap is a feature gate configmap
+// We use explicit check for the feature gate configmap
+// and avoid reconstructing the feature name from configmap name
+// and do the match
+func IsFeatureGateConfigMap(configMapName string) bool {
+	switch configMapName {
+	case FeatureGatesConfigMapName, LayeredImageDeploymentConfig:
+		return true
+	default:
+		return false
+	}
 }
