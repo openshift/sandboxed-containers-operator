@@ -1,9 +1,0 @@
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: controller-manager
-spec:
-  containers:
-    image: quay.io/openshift_sandboxed_containers/osc-peer-pods
-    newTag: latest
-
