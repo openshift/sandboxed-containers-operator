@@ -86,6 +86,8 @@ spec:
               value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9:latest
             - name: RELATED_IMAGE_PODVM_BUILDER
               value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:latest
+            - name: RELATED_IMAGE_PODVM_PAYLOAD
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:latest
           imagePullPolicy: Always
           resources:
             limits:
