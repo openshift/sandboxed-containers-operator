@@ -77,15 +77,15 @@ spec:
             - name: PEERPODS_NAMESPACE
               value: "openshift-sandboxed-containers-operator"
             - name: RELATED_IMAGE_KATA_MONITOR
-              value: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-monitor:latest
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:latest
             - name: SANDBOXED_CONTAINERS_EXTENSION
               value: kata-containers
             - name: RELATED_IMAGE_CAA
               value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9:latest
             - name: RELATED_IMAGE_PEERPODS_WEBHOOK
-              value: "quay.io/confidential-containers/peer-pods-webhook:latest"
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9:latest
             - name: RELATED_IMAGE_PODVM_BUILDER
-              value: "quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-podvm-builder:latest"
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:latest
           imagePullPolicy: Always
           resources:
             limits:
