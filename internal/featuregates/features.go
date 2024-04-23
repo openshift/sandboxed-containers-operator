@@ -1,5 +1,7 @@
 package featuregates
 
+import "strings"
+
 /* Design aspects of implementing feature gates
 
 - feature gate is only for experimental features
@@ -10,6 +12,7 @@ package featuregates
 
 const (
 	FeatureGatesConfigMapName = "osc-feature-gates"
+	LayeredImageDeployment    = "LayeredImageDeployment"
 )
 
 // Sample ConfigMap with Features
@@ -21,6 +24,24 @@ metadata:
   name: osc-feature-gates
   namespace: openshift-sandboxed-containers-operator
 data:
-  "timeTravel":              false,
-  "quantumEntanglementSync": false,
+  LayeredImageDeployment: "false"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: layeredimagedeployment-config
+  namespace: openshift-sandboxed-containers-operator
+data:
+  osImageURL="quay.io/...."
+  kernelArguments="a=b c=d ..."
 */
+
+// Get the feature gate configmap name from the feature gate name
+// The feature configmap is lower case of the feature name with -config suffix
+// Kubernetes expects the name to be a lowercase RFC 1123 subdomain
+func GetFeatureGateConfigMapName(feature string) string {
+
+	return strings.ToLower(feature) + "-config"
+
+}

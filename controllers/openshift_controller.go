@@ -17,7 +17,6 @@ package controllers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -29,7 +28,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/labels"
 
-	ignTypes "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -66,6 +64,7 @@ type KataConfigOpenShiftReconciler struct {
 	kataConfig         *kataconfigurationv1.KataConfig
 	FeatureGates       *featuregates.FeatureGates
 	FeatureGatesStatus featuregates.FeatureGateStatus
+	deploymentState    DeploymentState
 }
 
 const (
@@ -73,7 +72,6 @@ const (
 	dashboard_configmap_name            = "grafana-dashboard-sandboxed-containers"
 	dashboard_configmap_namespace       = "openshift-config-managed"
 	container_runtime_config_name       = "kata-crio-config"
-	extension_mc_name                   = "50-enable-sandboxed-containers-extension"
 	DEFAULT_PEER_PODS                   = "10"
 	peerpodConfigCrdName                = "peerpodconfig-openshift"
 	peerpodsMachineConfigPathLocation   = "/config/peerpods"
@@ -492,46 +490,6 @@ func getExtensionName() string {
 		extension = "kata-containers"
 	}
 	return extension
-}
-
-func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
-	r.Log.Info("Creating MachineConfig for Custom Resource")
-
-	ic := ignTypes.Config{
-		Ignition: ignTypes.Ignition{
-			Version: "3.2.0",
-		},
-	}
-
-	icb, err := json.Marshal(ic)
-	if err != nil {
-		return nil, err
-	}
-
-	extension := getExtensionName()
-
-	mc := mcfgv1.MachineConfig{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "machineconfiguration.openshift.io/v1",
-			Kind:       "MachineConfig",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: extension_mc_name,
-			Labels: map[string]string{
-				"machineconfiguration.openshift.io/role": machinePool,
-				"app":                                    r.kataConfig.Name,
-			},
-			Namespace: OperatorNamespace,
-		},
-		Spec: mcfgv1.MachineConfigSpec{
-			Extensions: []string{extension},
-			Config: runtime.RawExtension{
-				Raw: icb,
-			},
-		},
-	}
-
-	return &mc, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) addFinalizer() error {
@@ -1035,9 +993,75 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.Log.Info("SCNodeRole is: " + machinePool)
 	}
 
-	wasMcJustCreated, err := r.createExtensionMc(machinePool)
-	if err != nil {
-		return ctrl.Result{Requeue: true}, nil
+	// Based on LayeredImageDeployment feature, we'll either create an ExtensionMachineConfig or
+	// just apply the image
+	wasMcJustCreated := false
+
+	// If featuregate LayeredImageDeployment is enabled then create the image based MC
+	// If it's disabled, create the extension based MC
+
+	if r.FeatureGatesStatus[featuregates.LayeredImageDeployment] {
+		r.Log.Info("PreviousMcName and PreviousMethod, ImageBasedDeployment=true",
+			"PreviousMcName", r.deploymentState.PreviousMcName, "PreviousMethod", r.deploymentState.PreviousMethod)
+		// Check if LayeredImageDeployment config is provided
+		// If not log an error and return
+		if !r.FeatureGates.IsFeatureConfigMapPresent(context.TODO(), featuregates.LayeredImageDeployment) {
+			r.Log.Info("LayeredImageDeployment feature is enabled but no configuration provided")
+			err := fmt.Errorf("LayeredImageDeployment feature is enabled but no configuration provided")
+			return ctrl.Result{Requeue: true}, err
+		}
+
+		// Check if the previous deployment method was different
+		// When we first time enter this condition the PreviousMethod will be empty
+		if r.deploymentState.PreviousMethod != "image" {
+			// Rollback the previous deployment
+			if r.deploymentState.PreviousMcName != "" {
+				// Delete the previous MachineConfig
+				err := r.deleteMc(r.deploymentState.PreviousMcName)
+				if err != nil {
+					r.Log.Info("Error deleting previous MachineConfig", "MachineConfig",
+						r.deploymentState.PreviousMcName, "err", err)
+					return ctrl.Result{Requeue: true}, err
+				}
+			}
+			wasMcJustCreated, err = r.createMc(machinePool)
+			if err != nil {
+				r.Log.Info("Error creating image MachineConfig for Image based deployment", "err", err)
+				return ctrl.Result{Requeue: true}, err
+			}
+			// Update deployment state
+			r.deploymentState.PreviousMethod = "image"
+			r.deploymentState.PreviousMcName = image_mc_name
+		}
+		// We don't handle any updates to the ImageBasedDeployment configuration
+		r.Log.Info("LayeredImageDeployment is enabled, no updates to the configuration will be handled")
+
+	} else {
+		r.Log.Info("PreviousMcName and PreviousMethod, ImageBasedDeployment=false",
+			"PreviousMcName", r.deploymentState.PreviousMcName, "PreviousMethod", r.deploymentState.PreviousMethod)
+		// Check if the previous deployment method was different
+		// When we first time enter this condition the PreviousMethod will be empty
+		if r.deploymentState.PreviousMethod != "extension" {
+			// Rollback the previous deployment
+			if r.deploymentState.PreviousMcName != "" {
+				// Delete the previous MachineConfig
+				err := r.deleteMc(r.deploymentState.PreviousMcName)
+				if err != nil {
+					r.Log.Info("Error deleting previous MachineConfig", "MachineConfig",
+						r.deploymentState.PreviousMcName, "err", err)
+					return ctrl.Result{Requeue: true}, err
+				}
+			}
+			wasMcJustCreated, err = r.createMc(machinePool)
+			if err != nil {
+				r.Log.Info("Error creating extension MachineConfig for Extension based deployment", "err", err)
+				return ctrl.Result{Requeue: true}, err
+			}
+
+			// Update deployment state
+			r.deploymentState.PreviousMethod = "extension"
+			r.deploymentState.PreviousMcName = extension_mc_name
+		}
 	}
 
 	if wasMcJustCreated {
@@ -1144,6 +1168,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 			// Give sometime for the error to go away before reconciling again
 			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 		}
+
 		r.Log.Info("create Scc")
 		err = r.createScc()
 		if err != nil {
@@ -1227,44 +1252,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.Log.Info("Waiting for MachineConfigPool to be fully updated", "machinePool", machinePool)
 	}
 	return ctrl.Result{}, nil
-}
-
-// If the first return value is 'true' it means that the MC was just created
-// by this call, 'false' means that it's already existed.  As usual, the first
-// return value is only valid if the second one is nil.
-func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (bool, error) {
-
-	// In case we're returning an error we want to make it explicit that
-	// the first return value is "not care".  Unfortunately golang seems
-	// to lack syntax for creating an expression with default bool value
-	// hence this work-around.
-	var dummy bool
-
-	/* Create Machine Config object to enable sandboxed containers RHCOS extension */
-	mc := &mcfgv1.MachineConfig{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: extension_mc_name}, mc)
-	if err != nil && (k8serrors.IsNotFound(err) || k8serrors.IsGone(err)) {
-
-		r.Log.Info("creating RHCOS extension MachineConfig")
-		mc, err = r.newMCForCR(machinePool)
-		if err != nil {
-			return dummy, err
-		}
-
-		err = r.Client.Create(context.TODO(), mc)
-		if err != nil {
-			r.Log.Error(err, "Failed to create a new MachineConfig ", "mc.Name", mc.Name)
-			return dummy, err
-		}
-		r.Log.Info("MachineConfig successfully created", "mc.Name", mc.Name)
-		return true, nil
-	} else if err != nil {
-		r.Log.Info("failed to retrieve extension MachineConfig", "err", err)
-		return dummy, err
-	} else {
-		r.Log.Info("extension MachineConfig already exists")
-		return false, nil
-	}
 }
 
 func (r *KataConfigOpenShiftReconciler) makeReconcileRequest() reconcile.Request {

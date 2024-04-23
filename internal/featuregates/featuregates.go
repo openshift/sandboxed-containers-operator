@@ -20,9 +20,7 @@ type FeatureGates struct {
 type FeatureGateStatus map[string]bool
 
 var DefaultFeatureGates = map[string]bool{
-	"timeTravel":              false,
-	"quantumEntanglementSync": false,
-	"autoHealingWithAI":       true,
+	LayeredImageDeployment: false,
 }
 
 var fgLogger logr.Logger = ctrl.Log.WithName("featuregates")
@@ -50,6 +48,34 @@ func (fg *FeatureGates) IsEnabled(ctx context.Context, feature string) bool {
 		return defaultValue
 	}
 	return false
+}
+
+// Method to read the feature specific config parameters from the configmap
+// The feature specific config params are stored in their own configmap like this
+// data: |
+//  key1=value1
+//  key2=value2
+
+func (fg *FeatureGates) GetFeatureGateParams(ctx context.Context, feature string) map[string]string {
+
+	fgParams := make(map[string]string)
+
+	if fg == nil {
+		return fgParams
+	}
+	featureCmName := GetFeatureGateConfigMapName(feature)
+
+	cfgMap := &corev1.ConfigMap{}
+	err := fg.Client.Get(ctx,
+		client.ObjectKey{Name: featureCmName, Namespace: fg.Namespace},
+		cfgMap)
+
+	if err != nil {
+		fgLogger.Info("Error fetching config params for feature", "feature", feature, "err", err)
+		return fgParams
+	}
+	fgParams = cfgMap.Data
+	return fgParams
 }
 
 // Method to update the FeatureGate status struct with the status of all the feature gates
