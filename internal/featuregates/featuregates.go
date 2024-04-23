@@ -2,8 +2,10 @@ package featuregates
 
 import (
 	"context"
+
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	"log"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -13,11 +15,16 @@ type FeatureGates struct {
 	ConfigMapName string
 }
 
+// FeatureGate Status Struct map of string and bool
+type FeatureGateStatus map[string]bool
+
 var DefaultFeatureGates = map[string]bool{
 	"timeTravel":              false,
 	"quantumEntanglementSync": false,
 	"autoHealingWithAI":       true,
 }
+
+var fgLogger logr.Logger = ctrl.Log.WithName("featuregates")
 
 func (fg *FeatureGates) IsEnabled(ctx context.Context, feature string) bool {
 	if fg == nil {
@@ -29,9 +36,10 @@ func (fg *FeatureGates) IsEnabled(ctx context.Context, feature string) bool {
 		cfgMap)
 
 	if err != nil {
-		log.Printf("Error fetching feature gates: %v", err)
+		fgLogger.Info("Error fetching feature gates", "err", err)
 	} else {
 		if value, exists := cfgMap.Data[feature]; exists {
+			fgLogger.Info("Feature gate enabled", "feature", feature)
 			return value == "true"
 		}
 	}
@@ -41,4 +49,36 @@ func (fg *FeatureGates) IsEnabled(ctx context.Context, feature string) bool {
 		return defaultValue
 	}
 	return false
+}
+
+// Method to update the FeatureGate status struct with the status of all the feature gates
+func (fg *FeatureGates) GetFeatureGateStatus(ctx context.Context) FeatureGateStatus {
+	featureGateStatus := make(FeatureGateStatus)
+
+	// Read the configmap to get the status of all the feature gates and populate the status struct
+	// Ignore key with feature.params as these are the feature gate specific config params
+	cfgMap := &corev1.ConfigMap{}
+	err := fg.Client.Get(ctx,
+		client.ObjectKey{Name: fg.ConfigMapName, Namespace: fg.Namespace},
+		cfgMap)
+	if err != nil {
+		fgLogger.Info("Error fetching feature gates", "err", err)
+		return nil
+	} else {
+		for key, value := range cfgMap.Data {
+			featureGateStatus[key] = value == "true"
+		}
+	}
+
+	// Populate the status struct with the default values for the feature gates which are not present in the configmap
+	for key, value := range DefaultFeatureGates {
+		if _, exists := featureGateStatus[key]; !exists {
+			featureGateStatus[key] = value
+		}
+	}
+
+	fgLogger.Info("Feature gate status", "status", featureGateStatus)
+
+	return featureGateStatus
+
 }

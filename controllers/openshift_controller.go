@@ -63,8 +63,9 @@ type KataConfigOpenShiftReconciler struct {
 	Log    logr.Logger
 	Scheme *runtime.Scheme
 
-	kataConfig   *kataconfigurationv1.KataConfig
-	FeatureGates *featuregates.FeatureGates
+	kataConfig         *kataconfigurationv1.KataConfig
+	FeatureGates       *featuregates.FeatureGates
+	FeatureGatesStatus featuregates.FeatureGateStatus
 }
 
 const (
@@ -125,9 +126,8 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	if r.FeatureGates.IsEnabled(ctx, "timeTravel") {
-		r.Log.Info("TimeTravel feature is enabled. Performing feature-specific logic...")
-	}
+	// Check for enabled FeatureGates by retrieving the FeatureGateStatus
+	r.FeatureGatesStatus = r.FeatureGates.GetFeatureGateStatus(ctx)
 
 	return func() (ctrl.Result, error) {
 
