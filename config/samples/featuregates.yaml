@@ -4,19 +4,46 @@ metadata:
   name: osc-feature-gates
   namespace: openshift-sandboxed-containers-operator
 data:
-  # timeTravel allows navigating through cluster states across time.
-  # It is useful for scenarios where you want to view historical data or
-  # predict future states based on current trends. Default is "false".
-  # timeTravel: "false"
+  # OpenShift supports image layering, that allows deployment of packages by
+  # providing a custom RHCOS image. LayeredImageDeployment feature enables the
+  # support for Kata artifacts deployment using RHCOS image layer
 
-  # quantumEntanglementSync enables instant state consistency across clusters
-  # using principles of quantum mechanics. This advanced feature ensures
-  # data is synchronized across different locations without traditional
-  # network latency. Default is "false".
-  # quantumEntanglementSync: "false"
+  # Additionally you'll need to create a configmap named layeredimagedeployment-config to provide relevant
+  # configurations for this feature. Check the example yaml later on in this file
 
-  # autoHealingWithAI employs artificial intelligence to automatically
-  # detect and resolve cluster issues. It leverages machine learning algorithms
-  # to predict potential problems before they occur, ensuring high availability.
-  # Default is "true".
-  # autoHealingWithAI: "true"
+  #LayeredImageDeployment: "false"
+
+  # AdditionalRuntimeClasses feature is enables creating additional runtimeClasses
+  # This feature typically will be used with other features.
+  # For example this feature can be used with the layered image based deployment feature as well.
+  # The layered image based deployment might have configuration for multiple
+  # runtimeclasses which is then exposed to users as RuntimeClass objects
+  # created by OSC operator when this feature gate is enabled.
+
+  # Additionally you'll need to create a configmap named additionalruntimeclasses-config to provide relevant
+  # configurations for this feature. Check the example yaml later on in this file
+
+  #AdditionalRuntimeClasses: "false"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: layeredimagedeployment-config
+  namespace: openshift-sandboxed-containers-operator
+data:
+  # Provide the configurations for the LayeredImageDeployment feature
+  # osImageURL is mandatory and should be a valid URL containing the RHCOS layered image
+  #osImageURL: "quay.io/...."
+  #kernelArguments: "a=b c=d ..."
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: additionalruntimeclasses-config
+  namespace: openshift-sandboxed-containers-operator
+data:
+  # Use any one of the formats below to provide the runtime class configurations
+  #runtimeClassConfig: "name1:cpuOverHead1:memOverHead1, name2:cpuOverHead2:memOverHead2"
+  #runtimeClassConfig: "name1, name2"
