@@ -53,6 +53,21 @@ func (ch *ConfigMapEventHandler) Update(ctx context.Context, event event.UpdateE
 }
 
 func (ch *ConfigMapEventHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
+	if ch.reconciler.kataConfig == nil {
+		return
+	}
+
+	cm := event.Object
+
+	// Check if the configmap name is one of the feature gates configmap or
+	// feature config
+	if cm.GetNamespace() != OperatorNamespace || !featuregates.IsFeatureGateConfigMap(cm.GetName()) {
+		return
+	}
+	log := ch.reconciler.Log.WithName("CMDelete").WithValues("cm name", cm.GetName())
+	log.Info("FeatureGates configmap deleted")
+
+	queue.Add(ch.reconciler.makeReconcileRequest())
 }
 
 func (ch *ConfigMapEventHandler) Generic(ctx context.Context, event event.GenericEvent, queue workqueue.RateLimitingInterface) {
