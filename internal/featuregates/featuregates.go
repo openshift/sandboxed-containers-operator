@@ -26,31 +26,6 @@ var DefaultFeatureGates = map[string]bool{
 
 var fgLogger logr.Logger = ctrl.Log.WithName("featuregates")
 
-func (fg *FeatureGates) IsEnabled(ctx context.Context, feature string) bool {
-	if fg == nil {
-		return false
-	}
-	cfgMap := &corev1.ConfigMap{}
-	err := fg.Client.Get(ctx,
-		client.ObjectKey{Name: fg.ConfigMapName, Namespace: fg.Namespace},
-		cfgMap)
-
-	if err != nil {
-		fgLogger.Info("Error fetching feature gates", "err", err)
-	} else {
-		if value, exists := cfgMap.Data[feature]; exists {
-			fgLogger.Info("Feature gate enabled", "feature", feature)
-			return value == "true"
-		}
-	}
-
-	defaultValue, exists := DefaultFeatureGates[feature]
-	if exists {
-		return defaultValue
-	}
-	return false
-}
-
 // Method to read the feature specific config parameters from the configmap
 // The feature specific config params are stored in their own configmap like this
 // data: |
