@@ -119,6 +119,14 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 	// Check for enabled FeatureGates by retrieving the FeatureGateStatus
 	r.FeatureGatesStatus = r.FeatureGates.GetFeatureGateStatus(ctx)
 
+	// If FeatureGateStatus is nil, we cannot proceed. Log the error and reconcile
+	// This ensures we don't take any action if we cannot determine the FeatureGateStatus
+	// Which could be due to an error in fetching the ConfigMap or the ConfigMap not being present
+	if r.FeatureGatesStatus == nil {
+		r.Log.Info("FeatureGateStatus is nil, cannot proceed. Check if the feature gate configmap is present")
+		return ctrl.Result{}, nil
+	}
+
 	return func() (ctrl.Result, error) {
 
 		// k8s resource correctness checking on creation/modification
