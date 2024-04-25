@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 
 	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl/controllers"
@@ -139,6 +140,9 @@ func main() {
 
 		setupLog.Info("added labels")
 
+		setupLog.Info("Creating feature gate status configmap")
+		err = createFeatureGateStatusConfigMap(context.TODO(), mgr)
+
 		if err = (&controllers.KataConfigOpenShiftReconciler{
 			Client: mgr.GetClient(),
 			Log:    ctrl.Log.WithName("controllers").WithName("KataConfig"),
@@ -243,4 +247,47 @@ func labelNamespace(ctx context.Context, mgr manager.Manager) error {
 	ns.ObjectMeta.Labels["pod-security.kubernetes.io/warn"] = "privileged"
 
 	return mgr.GetClient().Update(ctx, ns)
+}
+
+// Create feature gate status config map
+func createFeatureGateStatusConfigMap(ctx context.Context, mgr manager.Manager) error {
+
+	// Check if featuregates.FeatureGatesStatusConfigMapName
+	// already exists in the namespace
+	fg := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      featuregates.FeatureGatesStatusConfigMapName,
+			Namespace: OperatorNamespace,
+		},
+	}
+
+	err := mgr.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(fg), fg)
+	if err == nil {
+		setupLog.Info("Feature gate status configmap already exists")
+		return nil
+	}
+
+	// Create ConfigMap data object from featuregates.DefaultFeatureGatesStatus
+	// The values are bool, which needs to be converted to string for configMap
+
+	data := make(map[string]string)
+	for key, value := range featuregates.DefaultFeatureGatesStatus {
+		data[key] = fmt.Sprintf("%t", value)
+	}
+
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "osc-feature-gates",
+			Namespace: "openshift-sandboxed-containers-operator",
+		},
+		Data: data,
+	}
+
+	err = mgr.GetClient().Create(ctx, configMap)
+	if err != nil && !k8serrors.IsAlreadyExists(err) {
+		setupLog.Error(err, "unable to create feature gate status configmap")
+		return err
+	}
+
+	return nil
 }
