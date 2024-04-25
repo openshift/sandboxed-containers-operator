@@ -19,6 +19,7 @@ require (
 	k8s.io/apimachinery v0.28.3
 	k8s.io/client-go v0.28.3
 	k8s.io/cri-api v0.23.1
+	k8s.io/kubectl v0.22.1
 	sigs.k8s.io/controller-runtime v0.15.0
 	sigs.k8s.io/controller-tools v0.11.3
 )
@@ -61,6 +62,7 @@ require (
 	github.com/coreos/vcontext v0.0.0-20201120045928-b0e13dab675c // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.9.0 // indirect
+	github.com/evanphx/json-patch v4.12.0+incompatible // indirect
 	github.com/evanphx/json-patch/v5 v5.6.0 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
