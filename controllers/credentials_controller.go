@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/go-logr/logr"
 	v1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
@@ -293,7 +294,8 @@ func (kh *KataConfigHandler) getCredentialsRequest() (*v1.CredentialsRequest, er
 	}
 
 	fileName := fmt.Sprintf(peerpodsCredentialsRequestFileFormat, provider)
-	yamlData, err := readCredentialsRequestYAML(fileName)
+	credentialsRequestsYamlFile := filepath.Join(peerpodsCredentialsRequestsPathLocation, fileName)
+	yamlData, err := readYamlFile(credentialsRequestsYamlFile)
 	if os.IsNotExist(err) {
 		kh.reconciler.Log.Info("no CredentialsRequestYAML for provider", "err", err, "provider", provider)
 		return nil, nil
@@ -324,7 +326,8 @@ func (kh *KataConfigHandler) skipCredentialRequests() bool {
 	// check if CredentialsRequest implementation exists for the cloud provider
 	if provider, err := getCloudProviderFromInfra(kh.reconciler.Client); err == nil {
 		fileName := fmt.Sprintf(peerpodsCredentialsRequestFileFormat, provider)
-		if _, err := readCredentialsRequestYAML(fileName); os.IsNotExist(err) {
+		credentialsRequestsYamlFile := filepath.Join(peerpodsCredentialsRequestsPathLocation, fileName)
+		if _, err := readYamlFile(credentialsRequestsYamlFile); os.IsNotExist(err) {
 			kh.reconciler.Log.Info("no CredentialsRequest yaml file for provider, skipping", "provider", provider, "filename", fileName)
 			return true
 		}

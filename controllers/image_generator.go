@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -242,7 +243,9 @@ func newImageGenerator(client client.Client) (*ImageGenerator, error) {
 func (r *ImageGenerator) createJobFromFile(jobFileName string) (*batchv1.Job, error) {
 	igLogger.Info("Create Job out of YAML file", "jobFileName", jobFileName)
 
-	yamlData, err := readJobYAML(jobFileName)
+	jobYamlFile := filepath.Join(peerpodsImageJobsPathLocation, jobFileName)
+
+	yamlData, err := readYamlFile(jobYamlFile)
 	if err != nil {
 		return nil, err
 	}
@@ -630,7 +633,8 @@ func (r *ImageGenerator) createImageConfigMapFromFile() error {
 	}
 
 	filename := r.provider + "-podvm-image-cm.yaml"
-	yamlData, err := readConfigMapYAML(filename)
+	configMapYamlFile := filepath.Join(peerpodsImageJobsPathLocation, filename)
+	yamlData, err := readYamlFile(configMapYamlFile)
 	if err != nil {
 		return err
 	}

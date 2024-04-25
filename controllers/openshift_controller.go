@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"time"
 
@@ -2081,14 +2082,16 @@ func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
 func (r *KataConfigOpenShiftReconciler) enablePeerPodsMc() error {
 
 	//Create MachineConfig for kata-remote hyp CRIO config
-	err := r.createMcFromFile(peerpodsCrioMachineConfigYaml)
+	crioMachineConfigFilePath := filepath.Join(peerpodsMachineConfigPathLocation, peerpodsCrioMachineConfigYaml)
+	err := r.createMcFromFile(crioMachineConfigFilePath)
 	if err != nil {
 		r.Log.Info("Error in creating CRIO MachineConfig", "err", err)
 		return err
 	}
 
 	//Create MachineConfig for kata-remote hyp config toml
-	err = r.createMcFromFile(peerpodsKataRemoteMachineConfigYaml)
+	kataConfigMachineConfigFilePath := filepath.Join(peerpodsMachineConfigPathLocation, peerpodsKataRemoteMachineConfigYaml)
+	err = r.createMcFromFile(kataConfigMachineConfigFilePath)
 	if err != nil {
 		r.Log.Info("Error in creating kata remote configuration.toml MachineConfig", "err", err)
 		return err
@@ -2235,10 +2238,12 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPods() error {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) createMcFromFile(mcFileName string) error {
-	yamlData, err := readMachineConfigYAML(mcFileName)
+// Create the MachineConfigs from file
+// Full path of the file should be provided
+func (r *KataConfigOpenShiftReconciler) createMcFromFile(machineConfigYamlFile string) error {
+	yamlData, err := readYamlFile(machineConfigYamlFile)
 	if err != nil {
-		r.Log.Info("Error in reading MachineConfigYaml", "mcFileName", mcFileName, "err", err)
+		r.Log.Info("Error in reading MachineConfigYaml", "mcFile", machineConfigYamlFile, "err", err)
 		return err
 	}
 
@@ -2246,7 +2251,7 @@ func (r *KataConfigOpenShiftReconciler) createMcFromFile(mcFileName string) erro
 
 	machineConfig, err := parseMachineConfigYAML(yamlData)
 	if err != nil {
-		r.Log.Info("Error in parsing MachineConfigYaml", "mcFileName", mcFileName, "err", err)
+		r.Log.Info("Error in parsing MachineConfigYaml", "mcFile", machineConfigYamlFile, "err", err)
 		return err
 	}
 
