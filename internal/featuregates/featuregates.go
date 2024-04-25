@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -81,4 +82,23 @@ func (fg *FeatureGates) GetFeatureGateStatus(ctx context.Context) FeatureGateSta
 
 	return featureGateStatus
 
+}
+
+// Check if feature gate configmap is present in the namespace
+func (fg *FeatureGates) IsFeatureConfigMapPresent(ctx context.Context, feature string) bool {
+	featureCmName := GetFeatureGateConfigMapName(feature)
+
+	cfgMap := &corev1.ConfigMap{}
+	err := fg.Client.Get(ctx,
+		client.ObjectKey{Name: featureCmName, Namespace: fg.Namespace},
+		cfgMap)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			fgLogger.Info("Feature configmap not found. Please create it", "feature", feature)
+		} else {
+			fgLogger.Info("Error fetching feature configmap", "feature", feature, "err", err)
+		}
+		return false
+	}
+	return true
 }
