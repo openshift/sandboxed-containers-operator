@@ -150,7 +150,7 @@ func main() {
 			FeatureGates: &featuregates.FeatureGates{
 				Client:        mgr.GetClient(),
 				Namespace:     OperatorNamespace,
-				ConfigMapName: featuregates.FeatureGatesConfigMapName,
+				ConfigMapName: featuregates.FeatureGatesStatusConfigMapName,
 			},
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create KataConfig controller for OpenShift cluster", "controller", "KataConfig")

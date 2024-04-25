@@ -10,11 +10,11 @@ import "strings"
 */
 
 const (
-	FeatureGatesConfigMapName      = "osc-feature-gates"
-	LayeredImageDeployment         = "LayeredImageDeployment"
-	LayeredImageDeploymentConfig   = "layeredimagedeployment-config"
-	AdditionalRuntimeClasses       = "AdditionalRuntimeClasses"
-	AdditionalRuntimeClassesConfig = "additionalruntimeclasses-config"
+	FeatureGatesStatusConfigMapName = "osc-feature-gates"
+	LayeredImageDeployment          = "LayeredImageDeployment"
+	LayeredImageDeploymentConfig    = "layeredimagedeployment-config"
+	AdditionalRuntimeClasses        = "AdditionalRuntimeClasses"
+	AdditionalRuntimeClassesConfig  = "additionalruntimeclasses-config"
 )
 
 // Sample ConfigMap with Features
@@ -66,7 +66,7 @@ func GetFeatureGateConfigMapName(feature string) string {
 // and do the match
 func IsFeatureGateConfigMap(configMapName string) bool {
 	switch configMapName {
-	case FeatureGatesConfigMapName, LayeredImageDeploymentConfig, AdditionalRuntimeClassesConfig:
+	case FeatureGatesStatusConfigMapName, LayeredImageDeploymentConfig, AdditionalRuntimeClassesConfig:
 		return true
 	default:
 		return false
