@@ -19,7 +19,7 @@ type FeatureGates struct {
 // FeatureGate Status Struct map of string and bool
 type FeatureGateStatus map[string]bool
 
-var DefaultFeatureGates = map[string]bool{
+var DefaultFeatureGatesStatus = map[string]bool{
 	LayeredImageDeployment:   false,
 	AdditionalRuntimeClasses: false,
 }
@@ -74,7 +74,7 @@ func (fg *FeatureGates) GetFeatureGateStatus(ctx context.Context) FeatureGateSta
 	}
 
 	// Populate the status struct with the default values for the feature gates which are not present in the configmap
-	for key, value := range DefaultFeatureGates {
+	for key, value := range DefaultFeatureGatesStatus {
 		if _, exists := featureGateStatus[key]; !exists {
 			featureGateStatus[key] = value
 		}
