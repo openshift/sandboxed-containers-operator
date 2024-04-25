@@ -2,10 +2,12 @@ package featuregates
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -103,4 +105,29 @@ func (fg *FeatureGates) IsFeatureConfigMapPresent(ctx context.Context, feature s
 		return false
 	}
 	return true
+}
+
+// Method to revert the feature gate status configmap to default values
+func (fg *FeatureGates) RevertFeatureGateStatusConfigMapToDefault(ctx context.Context) error {
+	data := make(map[string]string)
+	for key, value := range DefaultFeatureGatesStatus {
+		data[key] = fmt.Sprintf("%t", value)
+	}
+
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fg.ConfigMapName,
+			Namespace: fg.Namespace,
+		},
+
+		Data: data,
+	}
+
+	err := fg.Client.Update(ctx, configMap)
+	if err != nil {
+		fgLogger.Info("Error reverting feature gate status configmap", "err", err)
+		return err
+	}
+	fgLogger.Info("Feature gate status configmap reverted to default values")
+	return nil
 }

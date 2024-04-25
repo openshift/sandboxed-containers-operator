@@ -888,6 +888,13 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	// Revert the feature gate status configmap to default
+	err = r.FeatureGates.RevertFeatureGateStatusConfigMapToDefault(context.TODO())
+	if err != nil {
+		r.Log.Info("Error reverting feature gate status configmap to default", "err", err)
+		return ctrl.Result{Requeue: true}, err
+	}
+
 	r.Log.Info("Uninstallation completed. Proceeding with the KataConfig deletion")
 	if err = r.removeFinalizer(); err != nil {
 		return ctrl.Result{Requeue: true}, nil
