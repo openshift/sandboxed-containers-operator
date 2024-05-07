@@ -18,8 +18,15 @@ RUN /scripts/azure-podvm-image-handler.sh -- install_rpms
 
 ARG CAA_SRC=https://github.com/confidential-containers/cloud-api-adaptor
 ARG CAA_REF=main
+ARG CERT_RPM
 ENV CAA_SRC=$CAA_SRC
 ENV CAA_REF=$CAA_REF
+ENV CERT_RPM=$CERT_RPM
+
+RUN if [[ -n "$CERT_RPM" ]] ; then \
+    dnf install -y $CERT_RPM ; \
+    fi
+
 RUN git clone ${CAA_SRC} -b ${CAA_REF} /src/cloud-api-adaptor
 
 ADD podvm-builder.sh /podvm-builder.sh
