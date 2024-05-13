@@ -637,22 +637,6 @@ function delete_image_gallery() {
     echo "Azure image gallery deleted successfully"
 }
 
-# Function to delete the image from Azure given the image name
-# Resource group is must
-# Input is of the form /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Compute/images/<image-name>
-
-function delete_image_using_name() {
-    echo "Deleting Azure image"
-    # If any error occurs, exit the script with an error message
-
-    # Delete the image
-    az image delete --resource-group "${AZURE_RESOURCE_GROUP}" \
-        --name "${IMAGE_NAME}" ||
-        error_exit "Failed to delete the image"
-
-    echo "Azure image deleted successfully"
-}
-
 # Function to delete the image from Azure given the image id
 # Input is of the form
 # /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Compute/galleries/<gallery-name>/images/<image-name>/versions/<image-version>
