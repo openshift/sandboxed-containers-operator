@@ -8,7 +8,13 @@ data:
   PODVM_DISTRO: rhel
 
   # Gallery
-  IMAGE_GALLERY_NAME: "PodVMGallery"
+  # Set the gallery name explicitly, otherwise it'll be set by the operator to
+  # PodVMGallery_${cluster-id}. If a gallery name is provided, the job will
+  # use the specific gallery name.
+  # Note that the gallery name must be unique across the subscription and not exceed 80 characters.
+  # Also, the allowed characters are English alphanumeric characters,
+  # with underscores and periods allowed in the middle
+  IMAGE_GALLERY_NAME: ""
 
   # Image definition
   IMAGE_DEFINITION_NAME: "podvm-image"
