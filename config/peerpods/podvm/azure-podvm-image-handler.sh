@@ -654,8 +654,8 @@ function delete_image_using_name() {
 }
 
 # Function to delete the image from Azure given the image id
-# Input is of the form /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Compute/images/<image-name>
-# or /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Compute/galleries/<gallery-name>/images/<image-name>/versions/<image-version>
+# Input is of the form
+# /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Compute/galleries/<gallery-name>/images/<image-name>/versions/<image-version>
 
 function delete_image_using_id() {
     echo "Deleting Azure image"
@@ -665,7 +665,7 @@ function delete_image_using_id() {
     [[ -z "${IMAGE_ID}" ]] && error_exit "IMAGE_ID is empty"
 
     # Delete the image
-    az image delete --ids "${IMAGE_ID}" ||
+    az sig image-version delete --ids "${IMAGE_ID}" ||
         error_exit "Failed to delete the image"
 
     # Remove the image id annotation from peer-pods-cm configmap
