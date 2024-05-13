@@ -26,8 +26,7 @@ function check_peer_pods_cm_exists() {
   fi
 }
 
-# function to create podvm image
-
+# Function to create podvm image
 function create_podvm_image() {
   case "${CLOUD_PROVIDER}" in
   azure)
@@ -87,8 +86,22 @@ function create_podvm_image() {
 # Function to delete podvm image
 # IMAGE_ID or AMI_ID is the input and expected to be set
 # These are checked in individual cloud provider scripts and if not set, the script will exit
+# Accepts two optional arguments
+# -f : force delete the image
+# -g : delete the image gallery
 
 function delete_podvm_image() {
+
+  local args=("$@")
+  local force=false
+  local delete_gallery=false
+
+  for ((i = 0; i < ${#args[@]}; i++)); do
+    case "${args[$i]}" in
+    -f) force=true ;;
+    -g) delete_gallery=true ;;
+    esac
+  done
 
   # Check for the existence of peer-pods-cm configmap. If not present, then exit
   if ! check_peer_pods_cm_exists; then
@@ -115,18 +128,24 @@ function delete_podvm_image() {
     # check if the AZURE_IMAGE_ID value in peer-pods-cm is same as the input IMAGE_ID
     # If yes, then don't delete the image unless force option is provided
     if [ "${AZURE_IMAGE_ID}" == "${IMAGE_ID}" ]; then
-      if [ "$1" != "-f" ]; then
+      if ! ${force}; then
         echo "AZURE_IMAGE_ID in peer-pods-cm is same as the input image to be deleted. Skipping the deletion of Azure image"
         exit 0
       fi
     fi
 
-    echo "Deleting Azure image"
+    echo "Deleting Azure image $IMAGE_ID"
     /scripts/azure-podvm-image-handler.sh -C
 
     # Update the peer-pods-cm configmap and remove the AZURE_IMAGE_ID value
     if [ "${UPDATE_PEERPODS_CM}" == "yes" ]; then
       kubectl patch configmap peer-pods-cm -n openshift-sandboxed-containers-operator --type merge -p "{\"data\":{\"AZURE_IMAGE_ID\":\"\"}}"
+    fi
+
+    # If delete_gallery is set, then delete the image gallery
+    if ${delete_gallery}; then
+      echo "Deleting Azure image gallery (by force) since -g option is set"
+      delete_podvm_image_gallery -f
     fi
 
     ;;
@@ -171,6 +190,8 @@ function delete_podvm_image() {
 }
 
 # Delete the podvm image gallery in Azure
+# It accepts an optional argument
+# -f : force delete the image gallery
 
 function delete_podvm_image_gallery() {
   echo "Deleting Azure image gallery"
@@ -180,7 +201,21 @@ function delete_podvm_image_gallery() {
     return
   fi
 
-  # Check if force option is passed
+  # Check if peer-pods-cm configmap exists
+  if ! check_peer_pods_cm_exists; then
+    echo "peer-pods-cm configmap does not exist. Skipping image gallery deletion"
+    exit 0
+  fi
+
+  # Get the IMAGE_GALLERY_NAME from the IMAGE_GALLERY_NAME annotation key in peer-pods-cm configmap
+  IMAGE_GALLERY_NAME=$(kubectl get configmap peer-pods-cm -n openshift-sandboxed-containers-operator -o jsonpath='{.metadata.annotations.IMAGE_GALLERY_NAME}')
+
+  # If IMAGE_GALLERY_NAME is not set, then exit
+  if [ -z "${IMAGE_GALLERY_NAME}" ]; then
+    echo "IMAGE_GALLERY_NAME is not set in peer-pods-cm. Skipping image gallery deletion"
+    exit 0
+  fi
+
   if [ "$1" == "-f" ]; then
     /scripts/azure-podvm-image-handler.sh -G force
   else
@@ -189,7 +224,7 @@ function delete_podvm_image_gallery() {
 }
 
 function display_usage() {
-  echo "Usage: $0 {create|delete [-f]|delete-gallery [-f]}"
+  echo "Usage: $0 {create|delete [-f] [-g]|delete-gallery [-f]}"
 }
 
 # Check if CLOUD_PROVIDER is set to azure or aws
@@ -214,7 +249,9 @@ create)
   create_podvm_image
   ;;
 delete)
-  delete_podvm_image "$2"
+  # Pass the arguments to delete_podvm_image function except the first argument
+  shift
+  delete_podvm_image "$@"
   ;;
 delete-gallery)
   delete_podvm_image_gallery "$2"
