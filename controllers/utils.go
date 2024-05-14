@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -73,9 +72,11 @@ func parseJobYAML(yamlData []byte) (*batchv1.Job, error) {
 	return job, nil
 }
 
-func readJobYAML(jobFileName string) ([]byte, error) {
-	jobFilePath := filepath.Join(peerpodsImageJobsPathLocation, jobFileName)
-	yamlData, err := os.ReadFile(jobFilePath)
+// Method to read yaml file.
+// The full path of the yaml file is passed as an argument
+// Returns the yaml data and an error
+func readYamlFile(yamlFile string) ([]byte, error) {
+	yamlData, err := os.ReadFile(yamlFile)
 	if err != nil {
 		return nil, err
 	}
@@ -91,15 +92,6 @@ func parseMachineConfigYAML(yamlData []byte) (*mcfgv1.MachineConfig, error) {
 	return machineConfig, nil
 }
 
-func readMachineConfigYAML(mcFileName string) ([]byte, error) {
-	machineConfigFilePath := filepath.Join(peerpodsMachineConfigPathLocation, mcFileName)
-	yamlData, err := os.ReadFile(machineConfigFilePath)
-	if err != nil {
-		return nil, err
-	}
-	return yamlData, nil
-}
-
 func parseCredentialsRequestYAML(yamlData []byte) (*ccov1.CredentialsRequest, error) {
 	credentialsRequest := &ccov1.CredentialsRequest{}
 	err := yaml.Unmarshal(yamlData, credentialsRequest)
@@ -107,26 +99,6 @@ func parseCredentialsRequestYAML(yamlData []byte) (*ccov1.CredentialsRequest, er
 		return nil, err
 	}
 	return credentialsRequest, nil
-}
-
-func readCredentialsRequestYAML(crFileName string) ([]byte, error) {
-	credentialsRequestsFilePath := filepath.Join(peerpodsCredentialsRequestsPathLocation, crFileName)
-	yamlData, err := os.ReadFile(credentialsRequestsFilePath)
-	if err != nil {
-		return nil, err
-	}
-	return yamlData, nil
-}
-
-// Method to read config map yaml
-
-func readConfigMapYAML(cmFileName string) ([]byte, error) {
-	configMapFilePath := filepath.Join(peerpodsImageJobsPathLocation, cmFileName)
-	yamlData, err := os.ReadFile(configMapFilePath)
-	if err != nil {
-		return nil, err
-	}
-	return yamlData, nil
 }
 
 // Method to parse config map yaml
