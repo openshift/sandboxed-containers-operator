@@ -24,6 +24,7 @@ import (
 
 const (
 	peerPodsSecretName = "peer-pods-secret"
+	FeatureGatesCM     = "osc-feature-gates"
 )
 
 // Define a struct to represent event information
@@ -173,4 +174,9 @@ func getCloudProviderFromInfra(c client.Client) (string, error) {
 	}
 
 	return strings.ToLower(string(infrastructure.Status.PlatformStatus.Type)), nil
+}
+
+// Method to check if the configMap is relevant for the operator
+func isConfigMapRelevant(configMapName string) bool {
+	return configMapName == FeatureGatesCM
 }

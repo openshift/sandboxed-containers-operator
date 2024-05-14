@@ -46,12 +46,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -1573,38 +1570,6 @@ func (eh *NodeEventHandler) Delete(ctx context.Context, event event.DeleteEvent,
 func (eh *NodeEventHandler) Generic(ctx context.Context, event event.GenericEvent, queue workqueue.RateLimitingInterface) {
 }
 
-func configMapFilterPredicate(reconciler *KataConfigOpenShiftReconciler) predicate.Predicate {
-	isRelevantConfigMap := func(obj client.Object) bool {
-		if reconciler == nil || reconciler.FeatureGates == nil {
-			return false
-		}
-
-		configMap, ok := obj.(*corev1.ConfigMap)
-		if !ok {
-			return false
-		}
-
-		relevantNamespace := configMap.Namespace == reconciler.FeatureGates.Namespace
-		relevantName := configMap.Name == reconciler.FeatureGates.ConfigMapName
-		return relevantNamespace && relevantName
-	}
-
-	return predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
-			return isRelevantConfigMap(e.Object)
-		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			return isRelevantConfigMap(e.ObjectNew)
-		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
-			return isRelevantConfigMap(e.Object)
-		},
-		GenericFunc: func(e event.GenericEvent) bool {
-			return isRelevantConfigMap(e.Object)
-		},
-	}
-}
-
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
@@ -1616,8 +1581,7 @@ func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error
 			&NodeEventHandler{r}).
 		Watches(
 			&corev1.ConfigMap{},
-			&handler.EnqueueRequestForObject{},
-			builder.WithPredicates(configMapFilterPredicate(r)),
+			&ConfigMapEventHandler{r},
 		).Complete(r)
 }
 
