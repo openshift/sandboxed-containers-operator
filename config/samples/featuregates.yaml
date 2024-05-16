@@ -8,15 +8,3 @@ data:
   # It is useful for scenarios where you want to view historical data or
   # predict future states based on current trends. Default is "false".
   # timeTravel: "false"
-
-  # quantumEntanglementSync enables instant state consistency across clusters
-  # using principles of quantum mechanics. This advanced feature ensures
-  # data is synchronized across different locations without traditional
-  # network latency. Default is "false".
-  # quantumEntanglementSync: "false"
-
-  # autoHealingWithAI employs artificial intelligence to automatically
-  # detect and resolve cluster issues. It leverages machine learning algorithms
-  # to predict potential problems before they occur, ensuring high availability.
-  # Default is "true".
-  # autoHealingWithAI: "true"
