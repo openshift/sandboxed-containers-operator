@@ -2,43 +2,62 @@ package featuregates
 
 import (
 	"context"
+
 	corev1 "k8s.io/api/core/v1"
-	"log"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type FeatureGates struct {
-	Client        client.Client
-	Namespace     string
-	ConfigMapName string
-}
+const (
+	TimeTravelFeatureGate = "timeTravel"
+	FgConfigMapName       = "osc-feature-gates"
+	OperatorNamespace     = "openshift-sandboxed-containers-operator"
+)
 
 var DefaultFeatureGates = map[string]bool{
-	"timeTravel":              false,
-	"quantumEntanglementSync": false,
-	"autoHealingWithAI":       true,
+	"timeTravel": false,
 }
 
-func (fg *FeatureGates) IsEnabled(ctx context.Context, feature string) bool {
-	if fg == nil {
-		return false
-	}
-	cfgMap := &corev1.ConfigMap{}
-	err := fg.Client.Get(ctx,
-		client.ObjectKey{Name: fg.ConfigMapName, Namespace: fg.Namespace},
-		cfgMap)
+type FeatureGateStatus struct {
+	FeatureGates map[string]bool
+}
 
-	if err != nil {
-		log.Printf("Error fetching feature gates: %v", err)
-	} else {
-		if value, exists := cfgMap.Data[feature]; exists {
-			return value == "true"
+// This method returns a new FeatureGateStatus object
+// that contains the status of the feature gates
+// defined in the ConfigMap in the namespace
+// Return default values if the ConfigMap is not found.
+// Return values from the ConfigMap if the ConfigMap is not found. Use default values for missing entries in the ConfigMap.
+// Return an error for any other reason, such as an API error.
+func NewFeatureGateStatus(client client.Client) (*FeatureGateStatus, error) {
+	fgStatus := &FeatureGateStatus{
+		FeatureGates: make(map[string]bool),
+	}
+
+	cfgMap := &corev1.ConfigMap{}
+	err := client.Get(context.TODO(), types.NamespacedName{Name: FgConfigMapName,
+		Namespace: OperatorNamespace}, cfgMap)
+	if err == nil {
+		for feature, value := range cfgMap.Data {
+			fgStatus.FeatureGates[feature] = value == "true"
 		}
 	}
 
-	defaultValue, exists := DefaultFeatureGates[feature]
-	if exists {
-		return defaultValue
+	// Add default values for missing feature gates
+	for feature, defaultValue := range DefaultFeatureGates {
+		if _, exists := fgStatus.FeatureGates[feature]; !exists {
+			fgStatus.FeatureGates[feature] = defaultValue
+		}
 	}
-	return false
+
+	if k8serrors.IsNotFound(err) {
+		return fgStatus, nil
+	} else {
+		return fgStatus, err
+	}
+}
+
+func IsEnabled(fgStatus *FeatureGateStatus, feature string) bool {
+
+	return fgStatus.FeatureGates[feature]
 }
