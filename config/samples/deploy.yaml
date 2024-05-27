@@ -6,7 +6,7 @@ metadata:
 spec:
  DisplayName: My Operator Catalog
  sourceType: grpc
- image:  quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator-catalog:v1.6.0
+ image:  quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator-catalog:v1.7.0
  updateStrategy:
    registryPoll:
       interval: 5m
@@ -36,5 +36,5 @@ spec:
   name: sandboxed-containers-operator
   source: my-operator-catalog
   sourceNamespace: openshift-marketplace
-  startingCSV: sandboxed-containers-operator.v1.6.0
+  startingCSV: sandboxed-containers-operator.v1.7.0
   

@@ -15,7 +15,7 @@ spec:
       # /podvm-binaries.tar.gz /payload/podvm-binaries.tar.gz
       initContainers:
         - name: copy
-          image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.6.0
+          image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.7.0
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -29,7 +29,7 @@ spec:
         - name: create
           # Binaries like kubectl, packer and yq are expected to be under /usr/local/bin
           # podvm binaries are expected to be under /payload/podvm-binaries.tar.gz
-          image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.6.0
+          image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.7.0
           # This image contains the following
           # azure-podvm-image-handler.sh script under /scripts/azure-podvm-image-handler.sh
           # aws-podvm-image-handler.sh script under /scripts/aws-podvm-image-handler.sh
