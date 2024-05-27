@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: delete-gallery
-          image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.6.0
+          image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.7.0
           securityContext:
             runAsUser: 0 # needed for container mode dnf access
           envFrom:
