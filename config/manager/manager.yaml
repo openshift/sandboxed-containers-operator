@@ -77,17 +77,17 @@ spec:
             - name: PEERPODS_NAMESPACE
               value: "openshift-sandboxed-containers-operator"
             - name: RELATED_IMAGE_KATA_MONITOR
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:latest
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.6.0
             - name: SANDBOXED_CONTAINERS_EXTENSION
               value: kata-containers
             - name: RELATED_IMAGE_CAA
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9:latest
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9:1.6.0
             - name: RELATED_IMAGE_PEERPODS_WEBHOOK
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9:latest
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9:1.6.0
             - name: RELATED_IMAGE_PODVM_BUILDER
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:latest
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.6.0
             - name: RELATED_IMAGE_PODVM_PAYLOAD
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:latest
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.6.0
           imagePullPolicy: Always
           resources:
             limits:
