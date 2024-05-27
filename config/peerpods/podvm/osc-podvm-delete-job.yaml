@@ -19,7 +19,7 @@ spec:
           # aws-podvm-image-handler.sh script under /scripts/aws-podvm-image-handler.sh
           # sources for cloud-api-adaptor under /src/cloud-api-adaptor
           # Binaries like kubectl, packer and yq under /usr/local/bin
-          image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:latest
+          image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.6.0
           securityContext:
             runAsUser: 0 # needed for container mode dnf access
           env:
