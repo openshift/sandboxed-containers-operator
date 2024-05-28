@@ -61,6 +61,8 @@ type KataConfigOpenShiftReconciler struct {
 	Scheme *runtime.Scheme
 
 	kataConfig *kataconfigurationv1.KataConfig
+
+	ImgMc *mcfgv1.MachineConfig
 }
 
 const (
@@ -494,6 +496,12 @@ func getExtensionName() string {
 func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
 	r.Log.Info("Creating MachineConfig for Custom Resource")
 
+	if r.ImgMc != nil {
+		r.Log.Info("Image based MachineConfig", "MachineConfig", r.ImgMc)
+		return r.ImgMc, nil
+	}
+
+	// Create extension MachineConfig
 	ic := ignTypes.Config{
 		Ignition: ignTypes.Ignition{
 			Version: "3.2.0",
@@ -527,6 +535,8 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 			},
 		},
 	}
+
+	r.Log.Info("Extension based MachineConfig", "MachineConfig", mc)
 
 	return &mc, nil
 }
@@ -843,6 +853,8 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, mc)
 	if err != nil && k8serrors.IsNotFound(err) {
 		isMcDeleted = true
+		// Reset ImgMc
+		r.ImgMc = nil
 	} else if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1053,7 +1065,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.Log.Info("SCNodeRole is: " + machinePool)
 	}
 
-	wasMcJustCreated, err := r.createExtensionMc(machinePool)
+	wasMcJustCreated, err := r.createMc(machinePool)
 	if err != nil {
 		return ctrl.Result{Requeue: true}, nil
 	}
@@ -1281,7 +1293,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 // If the first return value is 'true' it means that the MC was just created
 // by this call, 'false' means that it's already existed.  As usual, the first
 // return value is only valid if the second one is nil.
-func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (bool, error) {
+func (r *KataConfigOpenShiftReconciler) createMc(machinePool string) (bool, error) {
 
 	// In case we're returning an error we want to make it explicit that
 	// the first return value is "not care".  Unfortunately golang seems
@@ -1289,16 +1301,16 @@ func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (b
 	// hence this work-around.
 	var dummy bool
 
-	/* Create Machine Config object to enable sandboxed containers RHCOS extension */
-	mc := &mcfgv1.MachineConfig{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: extension_mc_name}, mc)
-	if err != nil && (k8serrors.IsNotFound(err) || k8serrors.IsGone(err)) {
+	/* Create Machine Config object to install sandboxed containers */
 
-		r.Log.Info("creating RHCOS extension MachineConfig")
-		mc, err = r.newMCForCR(machinePool)
-		if err != nil {
-			return dummy, err
-		}
+	r.Log.Info("creating RHCOS MachineConfig")
+	mc, err := r.newMCForCR(machinePool)
+	if err != nil {
+		return dummy, err
+	}
+
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, mc)
+	if err != nil && (k8serrors.IsNotFound(err) || k8serrors.IsGone(err)) {
 
 		err = r.Client.Create(context.TODO(), mc)
 		if err != nil {
@@ -1308,12 +1320,13 @@ func (r *KataConfigOpenShiftReconciler) createExtensionMc(machinePool string) (b
 		r.Log.Info("MachineConfig successfully created", "mc.Name", mc.Name)
 		return true, nil
 	} else if err != nil {
-		r.Log.Info("failed to retrieve extension MachineConfig", "err", err)
+		r.Log.Info("failed to retrieve MachineConfig", "err", err)
 		return dummy, err
 	} else {
-		r.Log.Info("extension MachineConfig already exists")
+		r.Log.Info("MachineConfig already exists")
 		return false, nil
 	}
+
 }
 
 func (r *KataConfigOpenShiftReconciler) makeReconcileRequest() reconcile.Request {
