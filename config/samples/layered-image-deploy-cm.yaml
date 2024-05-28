@@ -1,0 +1,9 @@
+apiVersion: v1
+data:
+  osImageURL: "quay.io/openshift_sandboxed_containers/kata-ocp415:tdx"
+  kernelArguments: "kvm_intel.tdx=1"
+
+kind: ConfigMap
+metadata:
+  name: layered-image-deploy-cm
+  namespace: openshift-sandboxed-containers-operator

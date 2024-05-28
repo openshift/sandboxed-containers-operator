@@ -11,10 +11,12 @@ import (
 const (
 	FgConfigMapName         = "osc-feature-gates"
 	ConfidentialFeatureGate = "confidential"
+	LayeredImageDeployment  = "layeredImageDeployment"
 )
 
 var DefaultFeatureGates = map[string]bool{
 	ConfidentialFeatureGate: false,
+	LayeredImageDeployment:  false,
 }
 
 type FeatureGateStatus struct {
@@ -95,6 +97,15 @@ func (r *KataConfigOpenShiftReconciler) processFeatureGates() error {
 		}
 	}
 
-	return err
+	// Check layered Image deployment FG
+	if IsEnabled(fgStatus, LayeredImageDeployment) {
+		r.Log.Info("Feature gate is enabled", "featuregate", LayeredImageDeployment)
+		// Perform the necessary actions
+		return r.handleLayeredImageDeploymentFeature(Enabled)
+	} else {
+		r.Log.Info("Feature gate is disabled", "featuregate", LayeredImageDeployment)
+		// Perform the necessary actions
+		return r.handleLayeredImageDeploymentFeature(Disabled)
+	}
 
 }
