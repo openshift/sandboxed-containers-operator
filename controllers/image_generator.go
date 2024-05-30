@@ -56,6 +56,7 @@ const (
 	AWSProvider                   = "aws"
 	AzureProvider                 = "azure"
 	peerpodsImageJobsPathLocation = "/config/peerpods/podvm"
+	azureImageGalleryPrefix       = "PodVMGallery"
 )
 
 // Return values for ImageCreate and ImageDelete
@@ -100,6 +101,7 @@ type ImageGenerator struct {
 	clientset *kubernetes.Clientset // k8s clientset
 
 	provider     string
+	clusterId    string
 	CMimageIDKey string
 	fips         bool
 }
@@ -235,6 +237,12 @@ func newImageGenerator(client client.Client) (*ImageGenerator, error) {
 		return nil, fmt.Errorf("unsupported cloud provider: %s", ig.provider)
 	}
 
+	clusterID, err := getClusterID(client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cluster ID: %v", err)
+	}
+	ig.clusterId = clusterID
+
 	igLogger.Info("ImageGenerator instance has been initialized successfully for cloud provider", "provider", ig.provider)
 	return ig, nil
 }
@@ -264,12 +272,19 @@ func (r *ImageGenerator) createJobFromFile(jobFileName string) (*batchv1.Job, er
 		igLogger.Info("Setting IMAGE_ID environment variable for delete job", "imageId", imageId)
 
 		// If provider is Azure set IMAGE_ID, if provider is AWS set AMI_ID
+		// Also for Azure, update the command to add a "-g" option to delete the gallery
 		if r.provider == AzureProvider {
 
 			job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
 				Name:  "IMAGE_ID",
 				Value: imageId,
 			})
+
+			// Update command to add a "-g" option to delete the gallery
+			// Current command: ["/podvm-builder.sh", "delete", "-f"]
+			// Updated command: ["/podvm-builder.sh", "delete", "-f", "-g"]
+			job.Spec.Template.Spec.Containers[0].Command = append(job.Spec.Template.Spec.Containers[0].Command, "-g")
+
 		} else if r.provider == AWSProvider {
 			job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
 				Name:  "AMI_ID",
@@ -642,6 +657,17 @@ func (r *ImageGenerator) createImageConfigMapFromFile() error {
 	cm, err := parseConfigMapYAML(yamlData)
 	if err != nil {
 		return err
+	}
+
+	// For Azure provider set the IMAGE_GALLERY_NAME if its empty
+	// The IMAGE_GALLERY_NAME is set to azureImageGalleryPrefix + "_" + clusterID
+	if r.provider == AzureProvider {
+		if cm.Data["IMAGE_GALLERY_NAME"] == "" {
+			image_gallery_name := azureImageGalleryPrefix + "_" + r.clusterId
+			cm.Data["IMAGE_GALLERY_NAME"] = image_gallery_name
+			igLogger.Info("Setting IMAGE_GALLERY_NAME", "image_gallery_name", image_gallery_name)
+		}
+
 	}
 
 	if err := r.client.Create(context.TODO(), cm); err != nil {

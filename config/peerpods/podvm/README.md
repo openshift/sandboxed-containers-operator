@@ -1,46 +1,36 @@
 # Introduction
 
-This is a brief readme explaining the usage of the podvm-builder scripts and related files
+This is a brief readme explaining the usage of the podvm-builder scripts and
+related files.  The scripts and related manifest files are primarily used by
+the operator to generate a pod VM image.
 
-## Create PodVM image generation configuration
+## PodVM image generation configuration
 
 The configuration used for the podvm image generation is available in the following configmaps:
 
 - Azure: `azure-podvm-image-cm`
 - AWS: `aws-podvm-image-cm`
 
-Depending on the cloud provider (eg. aws or azure) create the respective
-configmaps. Please review and modify the settings in the configMap as required.
+If you want to change the default configuration, then depending on the cloud
+provider (eg. aws or azure) you'll need to pre-create the respective
+configmaps.  Please review and modify the settings in the configMap as
+required.  For example, if you need to add NVIDIA GPU drivers in the podvm
+image then set `ENABLE_NVIDIA_GPU: yes`. Likewise if you want to create image
+for confidential containers then set `CONFIDENTIAL_COMPUTE_ENABLED: yes`.
 
-For AWS
+Use the following command to create the configMap for AWS:
 
 ```sh
 kubectl apply -f aws-podvm-image-cm.yaml
 ```
 
-For Azure
+Use the following command to create the configMap for Azure:
 
 ```sh
 kubectl apply -f azure-podvm-image-cm.yaml
 ```
 
-## Create podvm image
-
-The podvm image is created in a Kubernetes job. To create the job run the following command
-
-```sh
-kubectl apply -f osc-podvm-create-job.yaml
-```
-
-On successful image creation, the podvm image details will be updated as an annotation in the `peer-pods-cm`
-under `openshift-sandboxed-containers-operator` namespace.
-
-The annotation key for AWS is `LATEST_AMI_ID` and for Azure it's `LATEST_IMAGE_ID`
-
-## Delete podvm image
-
-Update the IMAGE_ID for Azure or AMI_ID for AWS that you want to delete and then run the following command
-
-```sh
-kubectl delete -f osc-podvm-delete-job.yaml
-```
+Now when you create a KataConfig with `enablePeerPods: true` with empty
+`AZURE_IMAGE_ID` or `AWS_AMI_ID` in `peer-pods-cm`, then depending on the cloud
+provider configured, the operator will create the pod VM image based on the
+provided config.
