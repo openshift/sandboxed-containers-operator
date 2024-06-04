@@ -15,7 +15,6 @@ COPY main.go main.go
 COPY api api/
 COPY config config/
 COPY controllers controllers/
-COPY internal internal/
 
 RUN go mod download
 # needed for docker build but not for local builds
