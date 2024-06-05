@@ -1,7 +1,7 @@
 # Hacking on the sandboxed-containers-operator
 
 ## Prerequisites
-- Golang - 1.19.x
+- Golang - 1.21.x
 - Operator SDK version - 1.28.0
 ```
 export ARCH=$(case $(uname -m) in x86_64) echo -n amd64 ;; aarch64) echo -n arm64 ;; *) echo -n $(uname -m) ;; esac)
@@ -32,8 +32,8 @@ public images during build and test. At the time of writing, the following publi
 does the trick.
 
 ```shell
-export BUILDER_IMAGE=registry.ci.openshift.org/openshift/release:golang-1.19
-export TARGET_IMAGE=registry.ci.openshift.org/origin/4.13:base
+export BUILDER_IMAGE=registry.ci.openshift.org/openshift/release:golang-1.21
+export TARGET_IMAGE=registry.ci.openshift.org/origin/4.16:base
 make docker-build
 ```
 
