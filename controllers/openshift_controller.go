@@ -944,29 +944,50 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		_ = r.disablePeerPods()
 
 		// Handle podvm image deletion
+		// Since we want to declaratively reach the final state, we need to reconcile when there are errors
+		// as we want the system to give a chance of fixing the error.
+		// For cases we don't want to reconcile, ie for ImageDeletedSuccessfully and UnsupportedPodVMImageProvider
+		// we should just log the message and let the code continue without explicitly returning from the method
+
+		// Following are returned statuses:
+		// ImageDeletedSuccessfully
+		// UnsupportedPodVMImageProvider
+		// ImageDeletionFailed
+		// RequeueNeeded
+		// ImageDeletionStatusUnknown
+
+		// Handle podvm image deletion
 		status, err := ImageDelete(r.Client)
-		if status == RequeueNeeded && err == nil {
-			// Set the KataConfig status to PodVM Image Deleting
+		switch status {
+		case ImageDeletedSuccessfully:
+			r.setInProgressConditionToPodVMImageDeleted()
+			r.Log.Info("PodVM Image deleted successfully")
+
+		case UnsupportedPodVMImageProvider:
+			r.setInProgressConditionToPodVMImageUnsupportedProvider()
+			r.Log.Info("unsupported cloud provider, skipping image deletion")
+
+		case RequeueNeeded:
 			r.setInProgressConditionToPodVMImageDeleting()
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, nil
-		} else if status == ImageDeletionFailed {
-			// Set the KataConfig status to PodVM Image Deletion Failed
+			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+
+		case ImageDeletionFailed:
 			r.setInProgressConditionToPodVMImageDeletionFailed()
-			return reconcile.Result{}, err
-		} else if status == ImageDeletionStatusUnknown {
-			// Set the KataConfig status to PodVM Image Deletion Status Unknown
+			if err != nil {
+				// We requeue only if there is an error.
+				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			}
+			// If there's no error, log and continue
+			r.Log.Info("Image deletion failed. Check logs for more details")
+
+		case ImageDeletionStatusUnknown:
 			r.setInProgressConditionToPodVMImageDeletionUnknown()
+			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 
-			// Reconcile with error
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
-
-		} else if err != nil {
-			// Reconcile with error
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
+		default:
+			// For all other statuses, just log and continue
+			r.Log.Info("PodVM Image deletion status and error", "status", status, "error", err)
 		}
-
-		// Set the KataConfig status to PodVM Image Deleted
-		r.setInProgressConditionToPodVMImageDeleted()
 
 	}
 
@@ -1183,28 +1204,51 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		// create Pod VM image PeerPodConfig CRD and runtimeclass for peerpods
 		if r.kataConfig.Spec.EnablePeerPods {
 			// Create the podvm image
+			// Since we want to declaratively reach the final state, we need to reconcile when there are errors
+			// as we want the system to give a chance of fixing the error.
+			// For cases we don't want to reconcile, ie for ImageCreatedSuccessfully and UnsupportedPodVMImageProvider
+			// we should just log the message and let the code continue without explicitly returning from the method
+
+			// Following are the returned statuses:
+			// ImageCreatedSuccessfully
+			// UnsupportedPodVMImageProvider
+			// ImageCreationFailed
+			// RequeueNeeded
+			// ImageCreationStatusUnknown
+
 			status, err := ImageCreate(r.Client)
-			if status == RequeueNeeded && err == nil {
-				// Set the KataConfig status to PodVM Image Creating
+			switch status {
+			case ImageCreatedSuccessfully:
+				r.setInProgressConditionToPodVMImageCreated()
+				r.Log.Info("PodVM Image created successfully")
+
+			case UnsupportedPodVMImageProvider:
+				r.setInProgressConditionToPodVMImageUnsupportedProvider()
+				r.Log.Info("unsupported cloud provider, skipping image creation")
+
+			case RequeueNeeded:
 				r.setInProgressConditionToPodVMImageCreating()
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
-			} else if status == ImageCreationFailed {
-				// Set the KataConfig status to PodVM Image Creation Failed
+				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+
+			case ImageCreationFailed:
 				r.setInProgressConditionToPodVMImageCreationFailed()
-				return ctrl.Result{}, err
-			} else if status == ImageCreationStatusUnknown {
-				// Set the KataConfig status to PodVM Image Creation Status Unknown
+				if err != nil {
+					// We requeue only if there is an error.
+					return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+				}
+				// If there's no error, log and continue
+				r.Log.Info("Image creation failed. Check logs for more details")
+
+			case ImageCreationStatusUnknown:
 				r.setInProgressConditionToPodVMImageCreationUnknown()
 
 				// Reconcile with error
 				return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
-			} else if err != nil {
-				// Reconcile with error
-				return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
-			}
 
-			// Set the KataConfig status to PodVM Image Created
-			r.setInProgressConditionToPodVMImageCreated()
+			default:
+				// For all other statuses, just log and continue
+				r.Log.Info("PodVM Image creation status and error", "status", status, "error", err)
+			}
 
 			err = r.enablePeerPodsMiscConfigs()
 			if err != nil {
@@ -2083,6 +2127,16 @@ func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageDeleti
 	cond.Message = "Pod VM Image deletion status is unknown"
 
 	r.Log.Info("InProgress Condition set to PodVMImageJobStatusUnknown")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM image provider is unsupported
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageUnsupportedProvider() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = PodVMImageUnsupportedProvider
+	cond.Message = "Pod VM image provider is unsupported"
+
+	r.Log.Info("InProgress Condition set to PodVMImageUnsupportedProvider")
 }
 
 func (r *KataConfigOpenShiftReconciler) isInstalling() bool {
