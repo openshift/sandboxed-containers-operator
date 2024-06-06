@@ -117,6 +117,10 @@ func InitializeImageGenerator(client client.Client) error {
 	igOnce.Do(func() {
 		ig, err = newImageGenerator(client)
 	})
+	// Reset the sync.Once if there was an error
+	if err != nil {
+		igOnce = sync.Once{}
+	}
 	return err
 }
 
