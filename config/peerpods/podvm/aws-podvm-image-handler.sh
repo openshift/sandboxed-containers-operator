@@ -153,7 +153,7 @@ function create_ami_using_packer() {
 # Function to get the ami id of the newly created image
 
 function get_ami_id() {
-    echo "Getting the image id"
+    echo "Getting the ami id"
 
     # Get the ami id of the newly created image
     # If any error occurs, exit the script with an error message
@@ -162,7 +162,7 @@ function get_ami_id() {
     AMI_ID=$(aws ec2 describe-images --region "${AWS_REGION}" --filters "Name=name,Values=${AMI_NAME}" --query 'Images[*].ImageId' --output text) ||
         error_exit "Failed to get the ami id"
 
-    # Set the image id as an environment variable
+    # Set the ami id as an environment variable
     export AMI_ID
 
     echo "ID of the newly created ami: ${AMI_ID}"
@@ -181,7 +181,7 @@ function get_all_ami_ids() {
     AMI_ID_LIST=$(aws ec2 describe-images --region "${AWS_REGION}" --filters "Name=name,Values=${AMI_BASE_NAME}-*" --query 'Images[*].ImageId' --output text) ||
         error_exit "Failed to get the ami id list"
 
-    # Set the image id list as an environment variable
+    # Set the ami id list as an environment variable
     export AMI_ID_LIST
 
     # Display the list of amis
@@ -190,7 +190,7 @@ function get_all_ami_ids() {
 }
 
 # Function to create or update podvm-images configmap with all the amis
-# Input AMI_ID_LIST is a list of image ids
+# Input AMI_ID_LIST is a list of ami ids
 
 function create_or_update_image_configmap() {
     echo "Creating or updating podvm-images configmap"
