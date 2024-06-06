@@ -973,20 +973,21 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 
 		case ImageDeletionFailed:
 			r.setInProgressConditionToPodVMImageDeletionFailed()
-			// Reconcile with error
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
+			if err != nil {
+				// We requeue only if there is an error.
+				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			}
+			// If there's no error, log and continue
+			r.Log.Info("Image deletion failed. Check logs for more details")
 
 		case ImageDeletionStatusUnknown:
 			r.setInProgressConditionToPodVMImageDeletionUnknown()
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 
 		default:
-			// Reconcile with error
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
+			// For all other statuses, just log and continue
+			r.Log.Info("PodVM Image deletion status and error", "status", status, "error", err)
 		}
-
-		// Set the KataConfig status to PodVM Image Deleted
-		r.setInProgressConditionToPodVMImageDeleted()
 
 	}
 
@@ -1231,7 +1232,12 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 			case ImageCreationFailed:
 				r.setInProgressConditionToPodVMImageCreationFailed()
-				return ctrl.Result{}, err
+				if err != nil {
+					// We requeue only if there is an error.
+					return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+				}
+				// If there's no error, log and continue
+				r.Log.Info("Image creation failed. Check logs for more details")
 
 			case ImageCreationStatusUnknown:
 				r.setInProgressConditionToPodVMImageCreationUnknown()
@@ -1240,12 +1246,9 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 				return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
 
 			default:
-				// Reconcile with error
-				return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
+				// For all other statuses, just log and continue
+				r.Log.Info("PodVM Image creation status and error", "status", status, "error", err)
 			}
-
-			// Set the KataConfig status to PodVM Image Created
-			r.setInProgressConditionToPodVMImageCreated()
 
 			err = r.enablePeerPodsMiscConfigs()
 			if err != nil {
