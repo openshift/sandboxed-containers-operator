@@ -69,6 +69,7 @@ const (
 	ImageJobFailed
 	ImageCreationInProgress
 	ImageDeletionInProgress
+	UnsupportedPodVMImageProvider
 	ImageCreationFailed        = -1
 	ImageDeletionFailed        = -1
 	CheckingJobStatusFailed    = -1
@@ -90,10 +91,11 @@ var (
 
 // Event Constants for the PodVM Image Job
 const (
-	PodVMImageJobCompleted     = "PodVMImageJobCompleted"
-	PodVMImageJobFailed        = "PodVMImageJobFailed"
-	PodVMImageJobRunning       = "PodVMImageJobRunning"
-	PodVMImageJobStatusUnknown = "PodVMImageJobStatusUnknown"
+	PodVMImageJobCompleted        = "PodVMImageJobCompleted"
+	PodVMImageJobFailed           = "PodVMImageJobFailed"
+	PodVMImageJobRunning          = "PodVMImageJobRunning"
+	PodVMImageJobStatusUnknown    = "PodVMImageJobStatusUnknown"
+	PodVMImageUnsupportedProvider = "PodVMImageUnsupportedProvider"
 )
 
 type ImageGenerator struct {
@@ -117,6 +119,10 @@ func InitializeImageGenerator(client client.Client) error {
 	igOnce.Do(func() {
 		ig, err = newImageGenerator(client)
 	})
+	// Reset the sync.Once if there was an error
+	if err != nil {
+		igOnce = sync.Once{}
+	}
 	return err
 }
 
@@ -135,7 +141,7 @@ func ImageCreate(c client.Client) (int, error) {
 	ig := GetImageGenerator()
 	if ig.provider == unsupportedCloudProvider {
 		igLogger.Info("unsupported cloud provider, skipping image creation")
-		return ImageCreationFailed, ErrUnsupportedCloudProvider
+		return UnsupportedPodVMImageProvider, ErrUnsupportedCloudProvider
 	}
 
 	if err := ig.validatePeerPodsConfigs(); err != nil {
@@ -175,7 +181,7 @@ func ImageDelete(c client.Client) (int, error) {
 	ig := GetImageGenerator()
 	if ig.provider == unsupportedCloudProvider {
 		igLogger.Info("unsupported cloud provider, skipping image deletion")
-		return ImageDeletionFailed, ErrUnsupportedCloudProvider
+		return UnsupportedPodVMImageProvider, ErrUnsupportedCloudProvider
 	}
 
 	if err := ig.validatePeerPodsConfigs(); err != nil {
@@ -232,9 +238,8 @@ func newImageGenerator(client client.Client) (*ImageGenerator, error) {
 		ig.CMimageIDKey = peerpodsCMAzureImageKey
 		ig.provider = provider
 	default:
-		igLogger.Info("unsupported cloud provider, image creation will be disabled", "provider", ig.provider)
+		igLogger.Info("unsupported cloud provider, image creation/deletion will be disabled", "provider", ig.provider)
 		ig.provider = unsupportedCloudProvider
-		return nil, fmt.Errorf("unsupported cloud provider: %s", ig.provider)
 	}
 
 	clusterID, err := getClusterID(client)
