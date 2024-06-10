@@ -404,7 +404,8 @@ function add_image_id_annotation_to_peer_pods_cm() {
     fi
 
     # Add the image id as annotation to peer-pods-cm configmap
-    kubectl annotate configmap peer-pods-cm -n openshift-sandboxed-containers-operator \
+    # Overwrite any existing values
+    kubectl annotate --overwrite configmap peer-pods-cm -n openshift-sandboxed-containers-operator \
         "LATEST_IMAGE_ID=${IMAGE_ID}" ||
         error_exit "Failed to add the image id as annotation to peer-pods-cm configmap"
 
@@ -442,7 +443,8 @@ function add_image_gallery_annotation_to_peer_pods_cm() {
     fi
 
     # Add IMAGE_GALLERY_NAME annotation to peer-pods-cm configmap
-    kubectl annotate configmap peer-pods-cm -n openshift-sandboxed-containers-operator \
+    # Overwrite any existing values
+    kubectl annotate --overwrite configmap peer-pods-cm -n openshift-sandboxed-containers-operator \
         "IMAGE_GALLERY_NAME=${IMAGE_GALLERY_NAME}" ||
         error_exit "Failed to add the IMAGE_GALLERY_NAME annotation to peer-pods-cm configmap"
 
