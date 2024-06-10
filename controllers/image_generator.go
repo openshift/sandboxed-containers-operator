@@ -631,6 +631,10 @@ func checkKeysPresentAndNotEmpty(data interface{}, keys []string) bool {
 	return true
 }
 
+func (r *ImageGenerator) getImageConfigMapName() string {
+	return r.provider + "-podvm-image-cm"
+}
+
 // Function to create ConfigMap from a YAML file based on cloud provider
 // azure-podvm-image-cm.yaml for Azure
 // aws-podvm-image-cm.yaml for AWS
@@ -645,14 +649,14 @@ func (r *ImageGenerator) createImageConfigMapFromFile() error {
 	// If it doesn't exist, create the ConfigMap
 
 	if err := r.client.Get(context.TODO(), types.NamespacedName{
-		Name:      r.provider + "-podvm-image-cm",
+		Name:      r.getImageConfigMapName(),
 		Namespace: OperatorNamespace,
 	}, &corev1.ConfigMap{}); err == nil {
 		igLogger.Info("ConfigMap already exists", "name", r.provider+"-podvm-image-cm")
 		return nil
 	}
 
-	filename := r.provider + "-podvm-image-cm.yaml"
+	filename := r.getImageConfigMapName() + ".yaml"
 	configMapYamlFile := filepath.Join(peerpodsImageJobsPathLocation, filename)
 	yamlData, err := readYamlFile(configMapYamlFile)
 	if err != nil {
@@ -693,7 +697,7 @@ func (r *ImageGenerator) updateImageConfigMap() error {
 	// If it doesn't exist, return an error
 	// If it exists, update the ConfigMap
 
-	cmName := r.provider + "-podvm-image-cm"
+	cmName := r.getImageConfigMapName()
 	cm := &corev1.ConfigMap{}
 	if err := r.client.Get(context.TODO(), types.NamespacedName{
 		Name:      cmName,
