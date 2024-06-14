@@ -9,6 +9,7 @@ import (
 	"time"
 
 	yaml "github.com/ghodss/yaml"
+	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	ccov1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -191,4 +192,35 @@ func getClusterID(c client.Client) (string, error) {
 
 	// Return first 8 characters of the cluster id
 	return string(clusterVersion.Spec.ClusterID[:8]), nil
+}
+
+func updateConfigMap(client client.Client, logger logr.Logger, cmName string, namespace string, newData map[string]string) error {
+	// Get current configMap.
+	configMap := &corev1.ConfigMap{}
+	if err := client.Get(context.TODO(), types.NamespacedName{
+		Name:      cmName,
+		Namespace: namespace,
+	}, configMap); err != nil {
+		return err
+	}
+
+	update := false
+
+	// Loop over each new value
+	// Update the value if it's different.
+	// Log the change.
+	for key, newValue := range newData {
+		if configMap.Data[key] != newValue {
+			logger.Info("updateConfigMap", "namespace", namespace, "name", cmName, "key", key, "value", newValue)
+			configMap.Data[key] = newValue
+			update = true
+		}
+	}
+
+	if update {
+		// Update the configMap on Kubernetes.
+		return client.Update(context.TODO(), configMap)
+	} else {
+		return nil
+	}
 }
