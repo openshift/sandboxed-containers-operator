@@ -9,12 +9,12 @@ import (
 )
 
 const (
-	TimeTravelFeatureGate = "timeTravel"
-	FgConfigMapName       = "osc-feature-gates"
+	FgConfigMapName         = "osc-feature-gates"
+	ConfidentialFeatureGate = "confidential"
 )
 
 var DefaultFeatureGates = map[string]bool{
-	"timeTravel": false,
+	ConfidentialFeatureGate: false,
 }
 
 type FeatureGateStatus struct {
@@ -22,6 +22,7 @@ type FeatureGateStatus struct {
 }
 
 // Create enum to represent the state of the feature gates
+// While today we just have two states, we retain the flexibility in case we want to introduce some additional states.
 type FeatureGateState int
 
 const (
@@ -78,27 +79,22 @@ func (r *KataConfigOpenShiftReconciler) processFeatureGates() error {
 
 	// Check which feature gates are enabled in the FG ConfigMap and
 	// perform the necessary actions
-
-	if IsEnabled(fgStatus, TimeTravelFeatureGate) {
-		r.Log.Info("Feature gate is enabled", "featuregate", TimeTravelFeatureGate)
-		// Perform the necessary actions
-		r.handleTimeTravelFeature(Enabled)
-	} else {
-		r.Log.Info("Feature gate is disabled", "featuregate", TimeTravelFeatureGate)
-		// Perform the necessary actions
-		r.handleTimeTravelFeature(Disabled)
+	if r.kataConfig.Spec.EnablePeerPods {
+		if IsEnabled(fgStatus, ConfidentialFeatureGate) {
+			r.Log.Info("Feature gate is enabled", "featuregate", ConfidentialFeatureGate)
+			// Perform the necessary actions
+			if err := r.handleFeatureConfidential(Enabled); err != nil {
+				return err
+			}
+		} else {
+			r.Log.Info("Feature gate is disabled", "featuregate", ConfidentialFeatureGate)
+			// Perform the necessary actions
+			if err := r.handleFeatureConfidential(Disabled); err != nil {
+				return err
+			}
+		}
 	}
 
 	return err
 
-}
-
-// Function to handle the TimeTravel feature gate
-func (r *KataConfigOpenShiftReconciler) handleTimeTravelFeature(state FeatureGateState) {
-	// Perform the necessary actions for the TimeTravel feature gate
-	if state == Enabled {
-		r.Log.Info("Starting TimeTravel")
-	} else {
-		r.Log.Info("Stopping TimeTravel")
-	}
 }
