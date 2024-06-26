@@ -17,6 +17,13 @@ function install_aws_deps() {
   /scripts/aws-podvm-image-handler.sh -- install_binaries
 }
 
+# Function to install libvirt deps
+function install_libvirt_deps() {
+  echo "Installing libvirt deps"
+  # Install the required packages
+  . /scripts/libvirt-podvm-image-handler.sh -- install_binaries
+}
+
 # Function to check if peer-pods-cm configmap exists
 function check_peer_pods_cm_exists() {
   if kubectl get configmap peer-pods-cm -n openshift-sandboxed-containers-operator >/dev/null 2>&1; then
@@ -76,8 +83,19 @@ function create_podvm_image() {
       kubectl patch configmap peer-pods-cm -n openshift-sandboxed-containers-operator --type merge -p "{\"data\":{\"PODVM_AMI_ID\":\"${AMI_ID}\"}}"
     fi
     ;;
+  libvirt)
+    echo "Creating Libvirt qcow2"
+    /scripts/libvirt-podvm-image-handler.sh -c
+    if [ "${UPDATE_PEERPODS_CM}" == "yes" ]; then
+      # Check if peer-pods-cm configmap exists
+      if ! check_peer_pods_cm_exists; then
+        echo "peer-pods-cm configmap does not exist. Skipping the update of peer-pods-cm"
+        exit 0
+      fi
+    fi
+    ;;
   *)
-    echo "CLOUD_PROVIDER is not set to azure or aws"
+    echo "CLOUD_PROVIDER is not set to azure or aws or libvirt"
     exit 1
     ;;
   esac
@@ -235,6 +253,9 @@ azure)
   ;;
 aws)
   install_aws_deps
+  ;;
+libvirt)
+  install_libvirt_deps
   ;;
 *)
   echo "CLOUD_PROVIDER is not set to azure or aws"

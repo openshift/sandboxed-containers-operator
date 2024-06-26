@@ -11,11 +11,9 @@ LABEL kata_src=https://github.com/kata-containers/kata-containers/tree/CC-0.8.0
 LABEL kata_src_commit=8de1f8e19f858134ba455a7c04edcb21d8bcf6b1
 
 RUN mkdir -p /scripts
-
-ADD lib.sh aws-podvm-image-handler.sh azure-podvm-image-handler.sh  /scripts/
+ADD lib.sh libvirt-podvm-image-handler.sh aws-podvm-image-handler.sh azure-podvm-image-handler.sh /scripts/
 
 RUN /scripts/azure-podvm-image-handler.sh -- install_rpms
-
 ARG CAA_SRC=https://github.com/confidential-containers/cloud-api-adaptor
 ARG CAA_REF=main
 ARG CERT_RPM
@@ -28,6 +26,9 @@ RUN if [[ -n "$CERT_RPM" ]] ; then \
     fi
 
 RUN git clone ${CAA_SRC} -b ${CAA_REF} /src/cloud-api-adaptor
+
+ADD rhel-guest-image-9.2-20230414.17.s390x.qcow2 /src/cloud-api-adaptor/src/cloud-api-adaptor/podvm/rhel-guest-image-9.2-20230414.17.s390x.qcow2
+
 
 ADD podvm-builder.sh /podvm-builder.sh
 

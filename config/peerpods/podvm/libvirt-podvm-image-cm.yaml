@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: libvirt-podvm-image-cm
+  namespace: openshift-sandboxed-containers-operator
+data:
+  CLOUD_PROVIDER: "libvirt"
+  # PodVM image distro
+  PODVM_DISTRO: "rhel"
+
+  # Pod VM sources
+  # If changing the source, then ensure the respective payload binaries are available
+  # for the new source
+  CAA_SRC: "https://github.com/confidential-containers/cloud-api-adaptor"
+  CAA_REF: "v0.8.2"
+
+  # Booleans
+  INSTALL_PACKAGES: "no"
+  DOWNLOAD_SOURCES: "no"
+  CONFIDENTIAL_COMPUTE_ENABLED: "no"
+
+  # Livirt specific
+  ORG_ID: ""
+  ACTIVATION_KEY: ""
+  YQ_VERSION : "v4.35.1"
+  YQ_CHECKSUM: "sha256:4e6324d08630e7df733894a11830412a43703682d65a76f1fc925aac08268a45"
+  ARCH: "s390x"
+  GO_VERSION: "1.21.9"
+  IMAGE_URL: "rhel-guest-image-9.2-20230414.17.s390x.qcow2"
+  IMAGE_CHECKSUM: "c57928279b376f9711c9e4aaa1d79d9225eaeedac679cadbc02bd01ba01a4d75"
+  PROTOC_VERSION: "26.1"
+  PODVM_TAG: "v1.0"
+  PACKER_VERSION: "v1.9.4"
+  RUST_VERSION: "1.72.0"
