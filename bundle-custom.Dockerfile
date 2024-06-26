@@ -1,5 +1,5 @@
 # Use OpenShift golang builder image
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.18-openshift-4.11 AS builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.21-openshift-4.16 AS builder
 
 WORKDIR /workspace
 
@@ -10,7 +10,6 @@ COPY go.sum go.sum
 COPY api api/
 COPY config config/
 COPY controllers controllers/
-COPY internal internal/
 
 RUN go mod download
 # needed for docker build but not for local builds
