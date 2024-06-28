@@ -19,6 +19,15 @@ don't want to trigger the pod VM image creation process, then you can set the
 respective keys to any dummy value (eg. "****"). Or you can set it to a
 pre-created pod VM image.
 
+The image creation process also embeds the `rootfs` of the `pause` container
+image into the pod VM image. By default OpenShift's `pause` image is embedded.
+If you want to embed a different `pause` container image, then set the following
+variables in the job configuration files (eg,`aws-podvm-image-cm` for AWS):
+
+- **PAUSE_IMAGE_REPO**: eg. quay.io/myimage/image
+- **PAUSE_IMAGE_VERSION**: eg. latest
+- **PAUSE_IMAGE_REPO_AUTH_FILE**: (optional) path to json file with the registry authentication details
+
 Note that the OSC operator controller doesn't watch for changes to the
 `peer-pods-cm` configMap.  However if the OSC operator reconcile loop is
 entered due to the changes in `kataConfig` or node label changes, then the
@@ -42,7 +51,7 @@ The job's pod specification has an init container (**copy**) which uses the
 (`/podvm-binaries.tar.gz`) from its own filesystem to a shared volume
 (`/payload`). This shared volume is of `emptyDir` type.
 
-The main container (create), uses the `osc-podvm-builder-rhel9:latest` image.
+The main container (**create**), uses the `osc-podvm-builder-rhel9:latest` image.
 This image contains scripts and sources for handling pod VM image creation and
 deletion in Azure and AWS. The container runs as root (`runAsUser: 0`). It also
 mounts the shared volume (`/payload`) to access the file copied by the init
@@ -89,7 +98,7 @@ the pod fails, K8s will retry the job once before marking it as failed
 The job uses `peer-pods-secret` for cloud-provider credentials, and three
 configMaps - `peer-pods-cm`, `azure-podvm-image-cm`, `aws-podvm-image-cm`.
 
-The job's pod specification includes a single container (delete-gallery), which
+The job's pod specification includes a single container (**delete-gallery**), which
 uses the `osc-podvm-builder-rhel9:latest` image. The container runs as root
 (`runAsUser: 0`).
 

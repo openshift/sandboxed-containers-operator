@@ -77,7 +77,6 @@ function verify_vars() {
     [[ -z "${CONFIDENTIAL_COMPUTE_ENABLED}" ]] && error_exit "CONFIDENTIAL_COMPUTE_ENABLED is empty"
     [[ -z "${DISABLE_CLOUD_CONFIG}" ]] && error_exit "DISABLE_CLOUD_CONFIG is empty"
     [[ -z "${ENABLE_NVIDIA_GPU}" ]] && error_exit "ENABLE_NVIDIA_GPU is empty"
-
 }
 
 # function to download and install aws cli
@@ -287,7 +286,6 @@ function delete_ami_id_annotation_from_peer_pods_cm() {
     echo "Ami id annotation deleted from peer-pods-cm configmap successfully"
 }
 
-
 # Function to create the ami in AWS
 
 function create_ami() {
@@ -316,6 +314,9 @@ function create_ami() {
 
     # Prepare the source code for building the ami
     prepare_source_code
+
+    # Prepare the pause image for embedding into the ami
+    download_and_extract_pause_image "${PAUSE_IMAGE_REPO}" "${PAUSE_IMAGE_VERSION}" "${PAUSE_IMAGE_REPO_AUTH_FILE}"
 
     # Create AWS ami using packer
     create_ami_using_packer
