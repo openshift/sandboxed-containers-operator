@@ -498,6 +498,9 @@ function create_image() {
     # Prepare the source code for building the image
     prepare_source_code
 
+    # Prepare the pause image for embedding into the image
+    download_and_extract_pause_image "${PAUSE_IMAGE_REPO}" "${PAUSE_IMAGE_VERSION}" "${PAUSE_IMAGE_REPO_AUTH_FILE}"
+
     # Create Azure image using packer
     create_image_using_packer
 
