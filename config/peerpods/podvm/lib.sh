@@ -22,6 +22,7 @@ function install_rpm_packages() {
         "git"
         "make"
         "unzip"
+        "skopeo"
     )
 
     # Create a new array to store rpm packages that are not installed
@@ -61,6 +62,7 @@ function install_rpm_packages() {
 #"packer=https://releases.hashicorp.com/packer/1.9.4/packer_1.9.4_linux_amd64.zip"
 #"kubectl=https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.14.9/openshift-client-linux.tar.gz"
 #"yq=https://github.com/mikefarah/yq/releases/download/v4.35.2/yq_linux_amd64.tar.gz"
+#"umoci=https://github.com/opencontainers/umoci/releases/download/v0.4.7/umoci.amd64"
 
 install_binary_packages() {
     # Define the required binary packages
@@ -68,6 +70,7 @@ install_binary_packages() {
         "packer=https://releases.hashicorp.com/packer/1.9.4/packer_1.9.4_linux_amd64.zip"
         "kubectl=https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.14.9/openshift-client-linux.tar.gz"
         "yq=https://github.com/mikefarah/yq/releases/download/v4.35.2/yq_linux_amd64.tar.gz"
+        "umoci=https://github.com/opencontainers/umoci/releases/download/v0.4.7/umoci.amd64"
     )
 
     # Specify the installation directory
@@ -94,8 +97,9 @@ install_binary_packages() {
                 tar -xf "${download_path}" -C "${install_dir}" ||
                     error_exit "Failed to extract ${package_name}"
             else
-                echo "Unsupported archive format for ${package_name}. Skipping."
-                continue
+                echo "Copying ${download_path} to ${install_dir}/${package_name}"
+                cp "${download_path}" "${install_dir}/${package_name}" ||
+                    error_exit "Failed to move ${package_name} to ${install_dir}"
             fi
 
             echo "Marking  ${install_dir}/${package_name} executable"
