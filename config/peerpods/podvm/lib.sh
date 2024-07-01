@@ -133,20 +133,23 @@ function download_source_code() {
     # Download source code from GitHub
     # If any error occurs, exit the script with an error message
 
-    # Delete the source code directory if it exists
-    [[ -d "${CAA_SRC_DIR}" ]] &&
-        rm -rf "${CAA_SRC_DIR}"
+    # CAA_SRC_DIR is set to CAA_SRC_DOWNLOAD_DIR/src/cloud-api-adaptor
+    # The default value of CAA_SRC_DOWNLOAD_DIR is /src/cloud-api-adaptor
+
+    # Delete the source code download directory if it exists
+    [[ -d "${CAA_SRC_DOWNLOAD_DIR}" ]] &&
+        rm -rf "${CAA_SRC_DOWNLOAD_DIR}"
 
     # Create the root directory for source code
-    mkdir -p "${CAA_SRC_DIR}"
+    mkdir -p "${CAA_SRC_DOWNLOAD_DIR}"
 
     # Download the source code from GitHub
-    git clone "${CAA_SRC}" "${CAA_SRC_DIR}" ||
+    git clone "${CAA_SRC}" "${CAA_SRC_DOWNLOAD_DIR}" ||
         error_exit "Failed to download source code from GitHub"
 
     # Checkout the required commit
-    cd "${CAA_SRC_DIR}" ||
-        error_exit "Failed to change directory to ${CAA_SRC_DIR}"
+    cd "${CAA_SRC_DOWNLOAD_DIR}" ||
+        error_exit "Failed to change directory to ${CAA_SRC_DOWNLOAD_DIR}"
 
     git checkout "${CAA_REF}" ||
         error_exit "Failed to checkout the required commit"
@@ -240,4 +243,7 @@ function download_and_extract_pause_image() {
 # Global variables
 
 # Set global variable for the source code directory
-export CAA_SRC_DIR="/src/cloud-api-adaptor"
+# The project layout has changed for the cloud-api-adaptor project
+# https://github.com/confidential-containers/cloud-api-adaptor
+export CAA_SRC_DOWNLOAD_DIR="/src/cloud-api-adaptor"
+export CAA_SRC_DIR="/src/cloud-api-adaptor/src/cloud-api-adaptor"
