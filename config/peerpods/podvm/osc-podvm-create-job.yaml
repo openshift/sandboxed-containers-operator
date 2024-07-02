@@ -53,7 +53,12 @@ spec:
           volumeMounts:
             - name: payload
               mountPath: /payload
+            - name: regauth
+              mountPath: /tmp/regauth
       volumes:
         - name: payload
           emptyDir: {}
+        - name: regauth
+          secret:
+            secretName: auth-json-secret
       restartPolicy: Never
