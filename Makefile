@@ -63,6 +63,8 @@ endif
 # These images needs to be synced with the default values in the Dockerfile.
 BUILDER_IMAGE ?= registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.21-openshift-4.16
 TARGET_IMAGE  ?= registry.ci.openshift.org/ocp/4.16:base
+# Set if token was obtained
+IMAGE_AUTH ?=
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # This is a requirement for 'setup-envtest.sh' in the test target.
@@ -143,7 +145,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
 	docker build \
-		-t ${IMG} \
+		-t ${IMG} $(IMAGE_AUTH) \
 		--build-arg BUILDER_IMAGE=$(BUILDER_IMAGE) \
 		--build-arg TARGET_IMAGE=$(TARGET_IMAGE) \
 		.
@@ -255,7 +257,7 @@ ifeq (,$(shell which opm 2>/dev/null))
 	set -e ;\
 	mkdir -p $(dir $(OPM)) ;\
 	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.23.0/$${OS}-$${ARCH}-opm ;\
+	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.28.0/$${OS}-$${ARCH}-opm ;\
 	chmod +x $(OPM) ;\
 	}
 else
@@ -263,28 +265,36 @@ OPM = $(shell which opm)
 endif
 endif
 
-# A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
-# These images MUST exist in a registry and be pull-able.
-BUNDLE_IMGS ?= $(BUNDLE_IMG)
-
 # The image tag given to the resulting catalog image (e.g. make catalog-build CATALOG_IMG=example.com/operator-catalog:v0.2.0).
 CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:v$(VERSION)
 
-# Set CATALOG_BASE_IMG to an existing catalog image tag to add $BUNDLE_IMGS to that image.
-ifneq ($(origin CATALOG_BASE_IMG), undefined)
-FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG)
-endif
+# Generate/overwrite catalog/index.yaml and catalog.Dockerfile
+# needed IFF IMAGE_TAG_BASE was modified or set in shell
+.PHONY: catalog-init
+catalog-init: opm
+	@[ ! -d catalog ] && mkdir -p catalog || true
+	@[ ! -f catalog.Dockerfile ] && $(OPM) generate dockerfile catalog || true
+	$(OPM) init  sandboxed-containers-operator --default-channel=$(DEFAULT_CHANNEL) --description ./README.md --output yaml > catalog/index.yaml
+	$(OPM) render $(BUNDLE_IMG) --output=yaml >> catalog/index.yaml
+	@printf -- "---\n\
+	schema: olm.channel\n\
+	package: sandboxed-containers-operator\n\
+	name: stable\n\
+	entries:\n\
+	  - name: sandboxed-containers-operator.v$(VERSION)\n\
+	" >> "catalog/index.yaml"
 
-# Build a catalog image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
-# This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
+# Validate & build a file based catalog image using opm.
+# https://docs.openshift.com/container-platform/4.12/operators/admin/olm-managing-custom-catalogs.html
 # https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
+# if IMAGE_TAG_BASE was modified or set in shell, run make catalog-init
 .PHONY: catalog-build
-catalog-build: opm ## Build a catalog image.
-	$(OPM) index add --container-tool docker --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
+catalog-build: opm
+	$(OPM) validate catalog
+	docker build . -f catalog.Dockerfile -t $(CATALOG_IMG)
 
-# Push the catalog image.
 .PHONY: catalog-push
-catalog-push: ## Push a catalog image.
+catalog-push:
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
 
 ##@ Cleanup
@@ -310,7 +320,13 @@ bundle-clean: ## Clean generated bundle files
 
 .PHONY: bin-clean
 bin-clean: ## Clean downloaded binaries
+	@[ -d bin ] && chmod -R u+rwx bin || true
 	$(RM) -r bin
+
+.PHONY: catalog-clean
+catalog-clean: ## Clean catalog files (you will need to run catalog-init)
+	$(RM) -r catalog
+	$(RM) catalog.Dockerfile
 
 .PHONY: clean
 clean: manifests-clean generate-clean test-clean bundle-clean bin-clean ## Clean all generated files

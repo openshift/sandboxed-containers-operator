@@ -1,0 +1,246 @@
+---
+defaultChannel: stable
+description:
+  "<!-- TOC start -->\n- [Introduction to sandboxed containers](#introduction-to-sandboxed-containers)\n
+  \ * [Features & benefits of sandboxed containers](#features-benefits-of-sandboxed-containers)\n-
+  [OpenShift sandboxed containers Operator](#openshift-sandboxed-containers-operator)\n
+  \ * [Operator Architecture](#operator-architecture)\n  * [KataConfig Custom Resource
+  Definition](#kataconfig-custom-resource-definition)\n  * [Getting Started](#getting-started)\n-
+  [Operator Development](#operator-development)\n- [Demos](#demos)\n- [Further Reading](#further-reading)\n<!--
+  TOC end -->\n\n\n## Introduction to sandboxed containers\n\n[OpenShift sandboxed
+  containers](https://www.redhat.com/en/openshift-sandboxed-containers), based on
+  the [Kata Containers](https://katacontainers.io/) open source project, provides
+  an Open Container Initiative (OCI) compliant container runtime using lightweight
+  virtual machines, running your workloads in their own isolated kernel and therefore
+  contributing an additional layer of isolation back to OpenShift’s Defense-in-Depth
+  strategy. \n\n### Features & benefits of sandboxed containers\n\n- **Isolated Developer
+  Environments & Privileges Scoping** \nAs a developer working on debugging an application
+  using state-of-the-art tooling you might need elevated privileges such as `CAP_ADMIN`
+  or `CAP_BPF`. With OpenShift sandboxed containers, any impact will be limited to
+  a separate dedicated kernel.\n\n- **Legacy Containerized Workload Isolation** \nYou
+  are mid-way in converting a containerized monolith into cloud-native microservices.
+  However, the monolith still runs on your cluster unpatched and unmaintained. OpenShift
+  sandboxed containers helps isolate it in its own kernel to reduce risk.\n\n- **Safe
+  Multi-tenancy & Resource Sharing (CI/CD Jobs, CNFs, ..)** \nIf you are providing
+  a service to multiple tenants, it could mean that the service workloads are sharing
+  the same resources (e.g., worker node). By deploying in a dedicated kernel, the
+  impact of these workloads have on one another is greatly reduced.\n\n- **Additional
+  Isolation with Native Kubernetes User Experience**\nOpenShift sandboxed containers
+  is used as a compliant OCI runtime. Therefore, many operational patterns used with
+  normal containers are still preserved including but not limited to image scanning,
+  GitOps, Imagestreams, and so on.\n\nPlease refer to this [blog](https://cloud.redhat.com/blog/the-dawn-of-openshift-sandboxed-containers-overview)
+  for a detailed overview of sandboxed containers use cases and other related details.\n\n##
+  OpenShift sandboxed containers Operator\n\nThe operator manages the lifecycle (`install/configure/update`)
+  of sandboxed containers runtime (`Kata containers`) on OpenShift clusters.\n\n###
+  Operator Architecture\n\nThe following diagram shows how the operator components
+  are connected to the OpenShift overall architecture:\n\n![High Level Overview](./docs/arch.png)\n\n\nHere
+  is a brief summary of the components:\n\n- OpenShift clusters consist of controller
+  and worker nodes organized as  machine config pools. \n- The Machine Config Operator
+  (MCO) manages the operating system and keeps the cluster up to date and configured.\n-
+  The control-plane nodes run all the services that are required to control the cluster
+  such as the API server, etcd, controller-manager, and the scheduler. \n- The OpenShift
+  sandboxed containers operator runs on a control plane node.\n- The cluster worker
+  nodes run all the end-user workloads. \n- The container engine `CRI-O` uses either
+  the default container runtime `runc` or, in sandboxed containers case, the `Kata`
+  containers runtime.\n\n### KataConfig Custom Resource Definition\n\nThe operator
+  owns and control the `KataConfig` Custom Resource Definition (CRD).\nPlease refer
+  to the [code](https://github.com/openshift/sandboxed-containers-operator/blob/main/api/v1/kataconfig_types.go)
+  to find details of the `KataConfig` CRD.\n\n### Getting Started\n\nPlease refer
+  to the OpenShift release specific documentation for getting started with sandboxed
+  containers. \n- For OpenShift latest documentation please follow this [doc](https://docs.openshift.com/container-platform/latest/sandboxed_containers/deploying-sandboxed-container-workloads.html)\n\nFurther
+  note that starting with OpenShift 4.9, the branch naming is tied to the operator
+  version and not the OpenShift version.\nFor example `release-1.1` corresponds to
+  the Operator release verson `1.1.x`.\n\n## Operator Development\n\nPlease take a
+  look at the following [doc](./docs/DEVELOPMENT.md). \nContributions are most welcome!!\n\n##
+  Demos\n\nYou can find various demos in the following [youtube channel](https://www.youtube.com/channel/UC6PCt2zbug9cF4SpnMrE68A).\n\n##
+  Further Reading\n\n- [OpenShift sandboxed containers 101](https://cloud.redhat.com/blog/openshift-sandboxed-containers-101)\n-
+  [Operator overview](https://cloud.redhat.com/blog/openshift-sandboxed-containers-operator-from-zero-to-hero-the-hard-way)\n-
+  [Troubleshooting](https://cloud.redhat.com/blog/sandboxed-containers-operator-from-zero-to-hero-the-hard-way-part-2)\n-
+  [Hybrid Cloud Blog Series](https://www.redhat.com/en/openshift-sandboxed-containers)\n"
+name: sandboxed-containers-operator
+schema: olm.package
+---
+image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator-bundle:v1.7.0
+name: sandboxed-containers-operator.v1.7.0
+package: sandboxed-containers-operator
+properties:
+  - type: olm.gvk
+    value:
+      group: confidentialcontainers.org
+      kind: PeerPod
+      version: v1alpha1
+  - type: olm.gvk
+    value:
+      group: confidentialcontainers.org
+      kind: PeerPodConfig
+      version: v1alpha1
+  - type: olm.gvk
+    value:
+      group: kataconfiguration.openshift.io
+      kind: KataConfig
+      version: v1
+  - type: olm.package
+    value:
+      packageName: sandboxed-containers-operator
+      version: 1.7.0
+  - type: olm.csv.metadata
+    value:
+      annotations:
+        alm-examples: |-
+          [
+            {
+              "apiVersion": "kataconfiguration.openshift.io/v1",
+              "kind": "KataConfig",
+              "metadata": {
+                "name": "example-kataconfig"
+              }
+            }
+          ]
+        capabilities: Seamless Upgrades
+        createdAt: "2024-06-14T16:27:35Z"
+        features.operators.openshift.io/disconnected: "true"
+        features.operators.openshift.io/fips-compliant: "false"
+        features.operators.openshift.io/proxy-aware: "false"
+        features.operators.openshift.io/tls-profiles: "false"
+        features.operators.openshift.io/token-auth-aws: "false"
+        features.operators.openshift.io/token-auth-azure: "false"
+        features.operators.openshift.io/token-auth-gcp: "false"
+        olm.skipRange: ">=1.1.0 <1.7.0"
+        operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
+        operators.openshift.io/valid-subscription:
+          '["OpenShift Container Platform",
+          "OpenShift Platform Plus"]'
+        operators.operatorframework.io/builder: operator-sdk-v1.28.0
+        operators.operatorframework.io/internal-objects: '["peerpods.confidentialcontainers.org","peerpodconfigs.confidentialcontainers.org"]'
+        operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
+        repository: https://github.com/openshift/sandboxed-containers-operator
+      apiServiceDefinitions: {}
+      crdDescriptions:
+        owned:
+          - description:
+              The kataconfig CR represent a installation of Kata in a cluster
+              and its current state.
+            kind: KataConfig
+            name: kataconfigs.kataconfiguration.openshift.io
+            version: v1
+          - kind: PeerPodConfig
+            name: peerpodconfigs.confidentialcontainers.org
+            version: v1alpha1
+          - kind: PeerPod
+            name: peerpods.confidentialcontainers.org
+            version: v1alpha1
+      description: |-
+        OpenShift sandboxed containers, based on the Kata Containers open source
+        project, provides an Open Container Initiative (OCI) compliant container
+        runtime using lightweight virtual machines, running your workloads in their own
+        isolated kernel and therefore contributing an additional layer of isolation
+        back to OpenShift's Defense-in-Depth strategy. Click [this link](https://catalog.redhat.com/software/operators/detail/5ee0d499fdbe7cddc2c91cf5) for
+        more information.
+
+        # Requirements
+        Your cluster must be installed on bare metal infrastructure with Red Hat Enterprise Linux CoreOS workers.
+
+        # Features & benefits
+        - **Isolated Developer Environments & Privileges Scoping**
+          As a developer working on debugging an application using state-of-the-art
+          tooling you might need elevated privileges such as `CAP_ADMIN` or `CAP_BPF`. With
+          OpenShift sandboxed containers, any impact will be limited to a separate
+          dedicated kernel.
+
+        - **Legacy Containerized Workload Isolation**
+          You are mid-way in converting a containerized monolith into cloud-native
+          microservices. However, the monolith still runs on your cluster unpatched and
+          unmaintained. OpenShift sandboxed containers helps isolate it in its own kernel
+          to reduce risk.
+
+        - **Safe Multi-tenancy & Resource Sharing (CI/CD Jobs, CNFs, ..)**
+          If you are providing a service to multiple tenants, it could mean that the
+          service workloads are sharing the same resources (e.g., worker node). By
+          deploying in a dedicated kernel, the impact of these workloads have on one
+          another is greatly reduced.
+
+        - **Additional Isolation with Native Kubernetes User Experience**
+          OpenShift sandboxed containers is used as a compliant OCI runtime.
+          Therefore, many operational patterns used with normal containers are still
+          preserved including but not limited to image scanning, GitOps, Imagestreams,
+          and so on.
+
+        # How to install
+          Read the information about the Operator and click Install.
+
+          On the Install Operator page:
+
+          - Select `candidate` from the list of available Update Channel options.
+          This ensures that you install the latest version of OpenShift sandboxed containers
+          that is compatible with your OpenShift Container Platform version.
+
+          - For Installed Namespace, ensure that the Operator recommended namespace
+            option is selected. This installs the Operator in the mandatory
+            `openshift-sandboxed-containers-operator` namespace, which is automatically
+            created if it does not exist. Attempting to install the OpenShift
+            sandboxed containers Operator in a namespace other than
+            `openshift-sandboxed-containers-operator` causes the installation to fail.
+
+          - For Approval Strategy, ensure that Automatic, which is the default value,
+            is selected. OpenShift sandboxed containers automatically updates when a new
+            z-stream release is available.
+
+          - Click Install to make the Operator available to the OpenShift sandboxed
+            containers namespace.
+
+          - The OpenShift sandboxed containers Operator is now installed on your
+            cluster. You can trigger the Operator by enabling the runtime on your cluster.
+            You can do this by creating a `KataConfig` CustomResourceDefinition(CRD) instance. For this click
+            on "create instance" on the operator overview page.
+
+        # Documentation
+        See the official documentation [here](https://docs.openshift.com/container-platform/latest/sandboxed_containers/understanding-sandboxed-containers.html)
+      displayName: OpenShift sandboxed containers Operator
+      installModes:
+        - supported: true
+          type: OwnNamespace
+        - supported: true
+          type: SingleNamespace
+        - supported: false
+          type: MultiNamespace
+        - supported: false
+          type: AllNamespaces
+      keywords:
+        - sandboxed-containers
+        - kata
+      labels:
+        operatorframework.io/arch.amd64: supported
+        operatorframework.io/os.linux: supported
+      links:
+        - name: Sandboxed Containers Operator
+          url: https://www.github.com/openshift/sandboxed-containers-operator
+      maintainers:
+        - email: support@redhat.com'
+          name: "'Red Hat"
+      maturity: beta
+      provider:
+        name: Red Hat
+relatedImages:
+  - image: gcr.io/kubebuilder/kube-rbac-proxy@sha256:d99a8d144816b951a67648c12c0b988936ccd25cf3754f3cd85ab8c01592248f
+    name: ""
+  - image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator-bundle:v1.7.0
+    name: ""
+  - image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator:latest
+    name: ""
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9:1.7.0
+    name: caa
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9:1.7.0
+    name: peerpods-webhook
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.7.0
+    name: kata-monitor
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.7.0
+    name: podvm-builder
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.7.0
+    name: podvm-payload
+schema: olm.bundle
+---
+schema: olm.channel
+package: sandboxed-containers-operator
+name: stable
+entries:
+  - name: sandboxed-containers-operator.v1.7.0
