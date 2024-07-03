@@ -1202,6 +1202,14 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 		// create Pod VM image PeerPodConfig CRD and runtimeclass for peerpods
 		if r.kataConfig.Spec.EnablePeerPods {
+			//Get pull-secret from openshift-config ns and save it as auth-json-secret in our ns
+			//This will be used by the podvm image provider to pull the pause image for embedding
+			err = r.createAuthJsonSecret()
+			if err != nil {
+				r.Log.Info("Error in creating auth-json-secret", "err", err)
+				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			}
+
 			// Create the podvm image
 			// Since we want to declaratively reach the final state, we need to reconcile when there are errors
 			// as we want the system to give a chance of fixing the error.
@@ -2234,13 +2242,6 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 	err := r.Client.Create(context.TODO(), &peerPodConfig)
 	if err != nil && !k8serrors.IsAlreadyExists(err) {
 		r.Log.Info("Error in creating peerpodconfig", "err", err)
-		return err
-	}
-
-	//Get pull-secret from openshift-config ns and save it as auth-json-secret in our ns
-	err = r.createAuthJsonSecret()
-	if err != nil {
-		r.Log.Info("Error in creating auth-json-secret", "err", err)
 		return err
 	}
 

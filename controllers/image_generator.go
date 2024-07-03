@@ -308,6 +308,15 @@ func (r *ImageGenerator) createJobFromFile(jobFileName string) (*batchv1.Job, er
 		job.Spec.Template.Spec.Containers[0].Image = podvmBuilderImage
 	}
 
+	// If RELATED_PODVM_PAYLOAD_IMAGE environment variable is set, use it
+	// Otherwise, use the default podvm payload image
+	// There is only one initContainer in the job, so we don't need to check the container name
+	podvmPayloadImage := os.Getenv("RELATED_IMAGE_PODVM_PAYLOAD")
+	if podvmPayloadImage != "" {
+		igLogger.Info("Using podvm payload image from environment variable", "image", podvmPayloadImage)
+		job.Spec.Template.Spec.InitContainers[0].Image = podvmPayloadImage
+	}
+
 	return job, nil
 }
 
