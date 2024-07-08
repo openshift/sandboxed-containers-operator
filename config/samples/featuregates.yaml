@@ -4,7 +4,6 @@ metadata:
   name: osc-feature-gates
   namespace: openshift-sandboxed-containers-operator
 data:
-  # timeTravel allows navigating through cluster states across time.
-  # It is useful for scenarios where you want to view historical data or
-  # predict future states based on current trends. Default is "false".
-  # timeTravel: "false"
+  # layeredImageDeployment allows deploying Kata using RHCOS layered image
+  # This feature gate needs a ConfigMap named layered-image-deploy-cm
+  layeredImageDeployment: "false"
