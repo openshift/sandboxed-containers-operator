@@ -85,6 +85,7 @@ If `IMAGE_TAG_BASE` was set for your private registry, `catalog/index.yaml` will
 ```
 DEFAULT_CHANNEL="stable"  # from Makefile
 VERSION=1.7.0             # from Makefile
+PREVIOUS_VERSION=1.6.0
 BUNDLE_IMG=${IMAGE_TAG_BASE}-bundle:v${VERSION}
 make opm                  # to get bin/opm
 rm -rf catalog && mkdir -p catalog
@@ -96,6 +97,7 @@ package: sandboxed-containers-operator\n\
 name: ${DEFAULT_CHANNEL}\n\
 entries:\n\
   - name: sandboxed-containers-operator.v${VERSION}\n\
+    replaces: sandboxed-containers-operator.v${PREVIOUS_VERSION}\n
 " >> "catalog/index.yaml"
 ```
 #### Creating catalog.Dockerfile
