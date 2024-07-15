@@ -125,9 +125,11 @@ test: manifests generate fmt vet envtest ## Run tests.
 ifneq (, $(SKIP_TESTS))
 	@echo Skipping tests. Unset SKIP_TESTS to actually run them.
 else
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(GOFLAGS) ./... -coverprofile cover.out
-	# set write flag on created folder, so that we can clean it up
+	# Just build the test and set write flag on created folder, so that we can clean it up
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(GOFLAGS) ./... -coverprofile cover.out -c
 	chmod +w $(LOCALBIN)/k8s/$(ENVTEST_K8S_VERSION)*
+	# Then run the test
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(GOFLAGS) ./... -coverprofile cover.out
 endif
 
 ##@ Build
