@@ -136,7 +136,7 @@ disable_block_device_use = false
 # Shared file system type:
 #   - virtio-fs (default)
 #   - virtio-9p
-shared_fs = "virtio-fs"
+shared_fs = "none"
 
 # Path to vhost-user-fs daemon.
 virtio_fs_daemon = "/usr/libexec/virtiofsd"
@@ -556,36 +556,11 @@ experimental=[]
 # (default: false)
 # enable_pprof = true
 
-# WARNING: All the options in the following section have not been implemented yet.
-# This section was added as a placeholder. DO NOT USE IT!
-[image]
-# Container image service.
-#
-# Offload the CRI image management service to the Kata agent.
-# (default: false)
-service_offload = true
 
-# Image request timeout in seconds.
-# If specified, indicates the image request timeout in the guest needed for the workload(s)
-# If unspecified then it will be set @DEFIMAGEREQUESTTIMEOUT@ second(s)
-# to reduce image pull failures caused by network problems and quickly obtain request failure information at the same time.
-
-image_request_timeout = 900
-
-# Container image decryption keys provisioning.
-# Applies only if service_offload is true.
-# Keys can be provisioned locally (e.g. through a special command or
-# a local file) or remotely (usually after the guest is remotely attested).
-# The provision setting is a complete URL that lets the Kata agent decide
-# which method to use in order to fetch the keys.
-#
-# Keys can be stored in a local file, in a measured and attested initrd:
-#provision=data:///local/key/file
-#
-# Keys could be fetched through a special command or binary from the
-# initrd (guest) image, e.g. a firmware call:
-#provision=file:///path/to/bin/fetcher/in/guest
-#
-# Keys can be remotely provisioned. The Kata agent fetches them from e.g.
-# a HTTPS URL:
-#provision=https://my-key-broker.foo/tenant/<tenant-id>
+# Indicates the CreateContainer request timeout needed for the workload(s)
+# It using guest_pull this includes the time to pull the image inside the guest
+# Defaults to 60 second(s)  
+# Note: The effective timeout is determined by the lesser of two values: runtime-request-timeout from kubelet config 
+# (https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/#:~:text=runtime%2Drequest%2Dtimeout) and create_container_timeout. 
+# In essence, the timeout used for guest pull=runtime-request-timeout<create_container_timeout?runtime-request-timeout:create_container_timeout.
+create_container_timeout = 900
