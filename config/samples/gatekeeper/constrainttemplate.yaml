@@ -1,0 +1,29 @@
+apiVersion: templates.gatekeeper.sh/v1beta1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequirekata
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequireKata
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequirekata
+
+        violation[{"msg": msg}] {
+          input.review.kind.kind == "Pod"
+          elevated_privileges(input.review.object.spec.containers)
+          not has_kata(input.review.object.spec)
+          msg := "Pods requiring elevated privileges must specify spec.runtimeClassName: kata"
+        }
+
+        elevated_privileges(containers) {
+          some i
+          containers[i].securityContext.privileged == true
+        }
+
+        has_kata(spec) {
+          spec.runtimeClassName == "kata"
+        }
