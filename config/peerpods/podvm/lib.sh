@@ -195,6 +195,12 @@ function prepare_source_code() {
         sed -i '/exit 0/ifips-mode-setup --enable' "${podvm_dir}"/qcow2/misc-settings.sh ||
             error_exit "Failed to enable fips mode"
     fi
+
+    if [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]]; then
+        sed 's/default SetPolicyRequest := true/default SetPolicyRequest := false/; s/default ExecProcessRequest := true/default ExecProcessRequest := false/' \
+            "${podvm_dir}"/files/etc/kata-opa/default-policy.rego > "${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
+        ln -sf "${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego  "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
+    fi
 }
 
 # Download and extract pause container image
