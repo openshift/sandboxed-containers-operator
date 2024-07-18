@@ -12,7 +12,7 @@ spec:
     storage:
       files:
       - contents:
-              source: data:text/plain;charset=utf-8;base64,W2NyaW8ucnVudGltZS5ydW50aW1lcy5rYXRhLXJlbW90ZV0KIHJ1bnRpbWVfcGF0aCA9ICIvdXNyL2Jpbi9jb250YWluZXJkLXNoaW0ta2F0YS12Mi10cCIKIHJ1bnRpbWVfdHlwZSA9ICJ2bSIKIHJ1bnRpbWVfcm9vdCA9ICIvcnVuL3ZjIgogcnVudGltZV9jb25maWdfcGF0aCA9ICIvb3B0L2thdGEvY29uZmlndXJhdGlvbi1yZW1vdGUudG9tbCIKIHByaXZpbGVnZWRfd2l0aG91dF9ob3N0X2RldmljZXMgPSB0cnVlCgogcnVudGltZV9wdWxsX2ltYWdlID0gdHJ1ZQogYWxsb3dlZF9hbm5vdGF0aW9ucyA9IFsKICJpby5rdWJlcm5ldGVzLmNyaS1vLkRldmljZXMiLApdCg==
+              source: data:text/plain;charset=utf-8;base64,W2NyaW8ucnVudGltZS5ydW50aW1lcy5rYXRhLXJlbW90ZV0KICBydW50aW1lX3BhdGggPSAiL3Vzci9iaW4vY29udGFpbmVyZC1zaGltLWthdGEtdjIiCiAgcnVudGltZV90eXBlID0gInZtIgogIHJ1bnRpbWVfcm9vdCA9ICIvcnVuL3ZjIgogIHJ1bnRpbWVfY29uZmlnX3BhdGggPSAiL29wdC9rYXRhL2NvbmZpZ3VyYXRpb24tcmVtb3RlLnRvbWwiCiAgcHJpdmlsZWdlZF93aXRob3V0X2hvc3RfZGV2aWNlcyA9IHRydWUKICBydW50aW1lX3B1bGxfaW1hZ2UgPSB0cnVlCiAgYWxsb3dlZF9hbm5vdGF0aW9ucyA9IFsKCSJpby5rdWJlcm5ldGVzLmNyaS1vLkRldmljZXMiLAogIF0K
         filesystem: root
         mode: 0644
         path: /etc/crio/crio.conf.d/50-kata-remote
