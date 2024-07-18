@@ -208,20 +208,26 @@ function prepare_source_code() {
     # links must be relative
     if [[ "${AGENT_POLICY}" ]]; then
         echo "Custom agent policy is being set through the AGENT_POLICY value"
-        echo ${AGENT_POLICY} | base64 -d > "${podvm_dir}"/files/etc/kata-opa/custom.rego
+        echo ${AGENT_POLICY} | base64 -d >"${podvm_dir}"/files/etc/kata-opa/custom.rego
         if [[ $? == 0 ]] && grep -q "agent_policy" "${podvm_dir}"/files/etc/kata-opa/custom.rego; then # checks policy validity
-            ln -sf custom.rego  "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
+            ln -sf custom.rego "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
         else
             error_exit "Invalid AGENT_POLICY value set, expected base64 encoded valid agent policy, got: \"${AGENT_POLICY}\""
-	fi
+        fi
     elif [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]]; then
         echo "Setting custom agent policy to CoCo's recommended policy"
         sed 's/default ReadStreamRequest := true/default ReadStreamRequest := false/;
             s/default ExecProcessRequest := true/default ExecProcessRequest := false/' \
-            "${podvm_dir}"/files/etc/kata-opa/default-policy.rego > "${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
+            "${podvm_dir}"/files/etc/kata-opa/default-policy.rego >"${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
         ln -sf coco-default-policy.rego "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
     fi
     echo "~~~ Current Agent Policy ~~~" && cat "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
+
+    # Fix disk mounts for CoCo
+    if [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]]; then
+        create_overlay_mount_unit
+    fi
+
 }
 
 # Download and extract pause container image
@@ -264,6 +270,36 @@ function download_and_extract_pause_image() {
     # Extract the pause image using umoci into pause_bundle directory
     umoci unpack --rootless --image "${pause_src}:${pause_image_tag}" "${pause_bundle}" ||
         error_exit "Failed to extract the pause image"
+
+}
+
+# Function to create overlay mount unit in the podvm files
+# this ensures rw (overlay) layer for the container images are in memory (encrypted)
+function create_overlay_mount_unit() {
+    # The actual mount point is /run/kata-containers/image/overlay
+    local unit_name="run-kata\\x2dcontainers-image-overlay.mount"
+    local unit_path="${podvm_dir}/files/etc/systemd/system/${unit_name}"
+
+    cat <<EOF >"${unit_path}"
+[Unit]
+Description=Mount unit for /run/kata-containers/image/overlay
+Before=kata-agent.service
+
+[Mount]
+What=tmpfs
+Where=/run/kata-containers/image/overlay
+Type=tmpfs
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    echo "Mount unit created at ${unit_name}"
+
+    # Enable the mount unit by creating a symlink
+    # This syntax works to create the symlink to the unit file in ${podvm_dir}/files/etc/systemd/system
+    ln -sf ../"${unit_name}" "${podvm_dir}/files/etc/systemd/system/multi-user.target.wants/${unit_name}" ||
+        error_exit "Failed to enable the overlay mount unit"
 
 }
 
