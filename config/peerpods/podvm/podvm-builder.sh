@@ -17,6 +17,13 @@ function install_aws_deps() {
   /scripts/aws-podvm-image-handler.sh -- install_binaries
 }
 
+# Function to install libvirt deps
+function install_libvirt_deps() {
+  echo "Installing libvirt deps"
+  # Install the required packages
+  /scripts/libvirt-podvm-image-handler.sh -- install_binaries
+}
+
 # Function to check if peer-pods-cm configmap exists
 function check_peer_pods_cm_exists() {
   if kubectl get configmap peer-pods-cm -n openshift-sandboxed-containers-operator >/dev/null 2>&1; then
@@ -76,8 +83,19 @@ function create_podvm_image() {
       kubectl patch configmap peer-pods-cm -n openshift-sandboxed-containers-operator --type merge -p "{\"data\":{\"PODVM_AMI_ID\":\"${AMI_ID}\"}}"
     fi
     ;;
+  libvirt)
+    echo "Creating Libvirt qcow2"
+    /scripts/libvirt-podvm-image-handler.sh -c
+    if [ "${UPDATE_PEERPODS_CM}" == "yes" ]; then
+      # Check if peer-pods-cm configmap exists
+      if ! check_peer_pods_cm_exists; then
+        echo "peer-pods-cm configmap does not exist. Skipping the update of peer-pods-cm"
+        exit 1
+      fi
+    fi
+    ;;
   *)
-    echo "CLOUD_PROVIDER is not set to azure or aws"
+    echo "CLOUD_PROVIDER is not set to azure or aws or libvirt"
     exit 1
     ;;
   esac
@@ -182,8 +200,41 @@ function delete_podvm_image() {
     fi
 
     ;;
+    libvirt)
+    # If LIBVIRT_IMAGE_ID is not set, then exit
+    if [ -z "${LIBVIRT_IMAGE_ID}" ]; then
+      echo "LIBVIRT_IMAGE_ID is not set. Skipping the deletion of libvirt image"
+      exit 1
+    fi
+
+    LIBVIRT_IMAGE=$(kubectl get configmap peer-pods-cm -n openshift-sandboxed-containers-operator -o jsonpath='{.data.LIBVIRT_IMAGE_ID}')
+
+    # If LIBVIRT_IMAGE is not set, then exit
+    if [ -z "${LIBVIRT_IMAGE}" ]; then
+      echo "LIBVIRT_IMAGE_ID is not set in peer-pods-cm. Skipping the deletion of Libvirt image"
+      exit 1
+    fi
+
+    # check if the LIBVIRT_IMAGE value in peer-pods-cm is same as the input LIBVIRT_IMAGE_ID
+    # If yes, then don't delete the image unless force option is provided
+    if [ "${LIBVIRT_IMAGE_ID}" == "${LIBVIRT_IMAGE}" ]; then
+      if [ "$1" != "-f" ]; then
+        echo "LIBVIRT_IMAGE_ID in peer-pods-cm is same as the input image to be deleted. Skipping the deletion of Libvirt image"
+        exit 0
+      fi
+    fi
+
+    echo "Deleting Libvirt image id"
+    /scripts/libvirt-podvm-image-handler.sh -C
+
+    # Update the peer-pods-cm configmap and remove the LIBVIRT_IMAGE_ID value
+    if [ "${UPDATE_PEERPODS_CM}" == "yes" ]; then
+      kubectl patch configmap peer-pods-cm -n openshift-sandboxed-containers-operator --type merge -p "{\"data\":{\"LIBVIRT_IMAGE_ID\":\"\"}}"
+    fi
+
+    ;;
   *)
-    echo "CLOUD_PROVIDER is not set to azure or aws"
+    echo "CLOUD_PROVIDER is not set to azure or aws or libvirt"
     exit 1
     ;;
   esac
@@ -227,7 +278,7 @@ function display_usage() {
   echo "Usage: $0 {create|delete [-f] [-g]|delete-gallery [-f]}"
 }
 
-# Check if CLOUD_PROVIDER is set to azure or aws
+# Check if CLOUD_PROVIDER is set to azure or aws or libvirt
 # Install the required dependencies
 case "${CLOUD_PROVIDER}" in
 azure)
@@ -236,8 +287,11 @@ azure)
 aws)
   install_aws_deps
   ;;
+libvirt)
+  install_libvirt_deps
+  ;;
 *)
-  echo "CLOUD_PROVIDER is not set to azure or aws"
+  echo "CLOUD_PROVIDER is not set to azure or aws or libvirt"
   display_usage
   exit 1
   ;;

@@ -27,6 +27,8 @@ spec:
               value: "" # Set this to the aws ami id to delete
             - name: IMAGE_ID
               value: "" # Set this to the azure image id to delete
+            - name: LIBVIRT_IMAGE_ID
+              value: "" # Set this to the libvirt image id to delete
           envFrom:
             - secretRef:
                 name: peer-pods-secret
@@ -39,6 +41,22 @@ spec:
             - configMapRef:
                 name: aws-podvm-image-cm
                 optional: true
+            - configMapRef:
+                name: libvirt-podvm-image-cm
+                optional: true
           command: ["/podvm-builder.sh", "delete", "-f"]
+          volumeMounts:
+            - name: ssh-key-secret
+              mountPath: "/root/.ssh/"
+              readOnly: true
+              optional: true
+      volumes:
+        - name: ssh-key-secret
+          secret:
+            secretName: ssh-key-secret
+            items:
+            - key: id_rsa
+              path: "id_rsa"
+            defaultMode: 0400
 
       restartPolicy: Never
