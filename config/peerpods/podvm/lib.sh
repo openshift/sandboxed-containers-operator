@@ -205,11 +205,14 @@ function prepare_source_code() {
             error_exit "Failed to enable fips mode"
     fi
 
+    # links must be relative
     if [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]]; then
-        sed 's/default SetPolicyRequest := true/default SetPolicyRequest := false/; s/default ExecProcessRequest := true/default ExecProcessRequest := false/' \
+        sed 's/default ReadStreamRequest := true/default ReadStreamRequest := false/;
+            s/default ExecProcessRequest := true/default ExecProcessRequest := false/' \
             "${podvm_dir}"/files/etc/kata-opa/default-policy.rego > "${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
-        ln -sf "${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego  "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
+        ln -sf coco-default-policy.rego "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
     fi
+    printf "\n~~~ Current Agent Policy ~~~\n$(cat "${podvm_dir}"/files/etc/kata-opa/default-policy.rego)\n\n"
 }
 
 # Download and extract pause container image
