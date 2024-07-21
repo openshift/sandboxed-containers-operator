@@ -56,3 +56,6 @@ data:
   # NVIDIA GPU vars
   NVIDIA_DRIVER_VERSION: "535"
   NVIDIA_USERSPACE_VERSION: "1.13.5-1"
+
+  # Custom Agent Policy
+  #AGENT_POLICY: "" # set to base64 encoded agent policy
