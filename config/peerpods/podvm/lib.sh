@@ -29,6 +29,7 @@ function install_rpm_packages() {
         "make"
         "unzip"
         "skopeo"
+        "jq"
     )
 
     # Create a new array to store rpm packages that are not installed
@@ -65,20 +66,28 @@ function install_rpm_packages() {
 # are available in the variable REQUIRED_BINARY_PACKAGES
 # the function will download the packages, extract them and install them in /usr/local/bin
 # Following are the packages that are installed:
-# TBD: add multi-arch support for these binaries
 #"packer=https://releases.hashicorp.com/packer/1.9.4/packer_1.9.4_linux_amd64.zip"
 #"kubectl=https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.14.9/openshift-client-linux.tar.gz"
 #"yq=https://github.com/mikefarah/yq/releases/download/v4.35.2/yq_linux_amd64.tar.gz"
 #"umoci=https://github.com/opencontainers/umoci/releases/download/v0.4.7/umoci.amd64"
 
 install_binary_packages() {
-    # Define the required binary packages
-    REQUIRED_BINARY_PACKAGES=(
-        "packer=https://releases.hashicorp.com/packer/1.9.4/packer_1.9.4_linux_amd64.zip"
-        "kubectl=https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.14.9/openshift-client-linux.tar.gz"
-        "yq=https://github.com/mikefarah/yq/releases/download/v4.35.2/yq_linux_amd64.tar.gz"
-        "umoci=https://github.com/opencontainers/umoci/releases/download/v0.4.7/umoci.amd64"
-    )
+    ARCH=$(uname -m)
+    if [ "${ARCH}" == "s390x" ]; then
+        # Define the required binary packages
+        REQUIRED_BINARY_PACKAGES=(
+            "kubectl=https://mirror.openshift.com/pub/openshift-v4/s390x/clients/ocp/4.14.9/openshift-client-linux.tar.gz"
+            "yq=https://github.com/mikefarah/yq/releases/download/v4.35.1/yq_linux_s390x.tar.gz"
+        )
+    else
+        # Define the required binary packages
+        REQUIRED_BINARY_PACKAGES=(
+            "packer=https://releases.hashicorp.com/packer/1.9.4/packer_1.9.4_linux_amd64.zip"
+            "kubectl=https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.14.9/openshift-client-linux.tar.gz"
+            "yq=https://github.com/mikefarah/yq/releases/download/v4.35.2/yq_linux_amd64.tar.gz"
+            "umoci=https://github.com/opencontainers/umoci/releases/download/v0.4.7/umoci.amd64"
+        )
+    fi
 
     # Specify the installation directory
     local install_dir="/usr/local/bin"
@@ -110,9 +119,9 @@ install_binary_packages() {
             fi
 
             echo "Marking  ${install_dir}/${package_name} executable"
-            # yq extracted file name is yq_linux_amd64. Rename it
+            # yq extracted file name is yq_linux_${ARCH}. Rename it
             [[ "${package_name}" == "yq" ]] &&
-                mv "${install_dir}/yq_linux_amd64" "${install_dir}/yq"
+                mv "${install_dir}"/yq_linux_"${ARCH/x86_64/amd64}" "${install_dir}"/yq
 
             chmod +x "${install_dir}/${package_name}" ||
                 error_exit "Failed to mark ${package_name} executable"
