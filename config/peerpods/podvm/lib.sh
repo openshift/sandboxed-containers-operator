@@ -1,7 +1,7 @@
 #!/bin/bash
 # Contains common functions used by the scripts
 
-set -x
+[[ "$DEBUG" == "true" ]] && set -x
 
 # Defaults for pause image
 # This pause image is multi-arch
@@ -205,11 +205,23 @@ function prepare_source_code() {
             error_exit "Failed to enable fips mode"
     fi
 
-    if [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]]; then
-        sed 's/default SetPolicyRequest := true/default SetPolicyRequest := false/; s/default ExecProcessRequest := true/default ExecProcessRequest := false/' \
+    # links must be relative
+    if [[ "${AGENT_POLICY}" ]]; then
+        echo "Custom agent policy is being set through the AGENT_POLICY value"
+        echo ${AGENT_POLICY} | base64 -d > "${podvm_dir}"/files/etc/kata-opa/custom.rego
+        if [[ $? == 0 ]] && grep -q "agent_policy" "${podvm_dir}"/files/etc/kata-opa/custom.rego; then # checks policy validity
+            ln -sf custom.rego  "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
+        else
+            error_exit "Invalid AGENT_POLICY value set, expected base64 encoded valid agent policy, got: \"${AGENT_POLICY}\""
+	fi
+    elif [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]]; then
+        echo "Setting custom agent policy to CoCo's recommended policy"
+        sed 's/default ReadStreamRequest := true/default ReadStreamRequest := false/;
+            s/default ExecProcessRequest := true/default ExecProcessRequest := false/' \
             "${podvm_dir}"/files/etc/kata-opa/default-policy.rego > "${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
-        ln -sf "${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego  "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
+        ln -sf coco-default-policy.rego "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
     fi
+    echo "~~~ Current Agent Policy ~~~" && cat "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
 }
 
 # Download and extract pause container image
