@@ -1,7 +1,7 @@
 #!/bin/bash
 # Contains common functions used by the scripts
 
-set -x
+[[ "$DEBUG" == "true" ]] && set -x
 
 # Defaults for pause image
 # This pause image is multi-arch

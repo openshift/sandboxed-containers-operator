@@ -19,7 +19,7 @@
 # Create image version (-i)
 # Delete image version (-I)
 
-set -x
+[[ "$DEBUG" == "true" ]] && set -x
 
 # include common functions from lib.sh
 # shellcheck source=/dev/null
