@@ -208,8 +208,9 @@ function prepare_source_code() {
     # links must be relative
     if [[ "${AGENT_POLICY}" ]]; then
         echo "Custom agent policy is being set through the AGENT_POLICY value"
-        echo ${AGENT_POLICY} | base64 -d >"${podvm_dir}"/files/etc/kata-opa/custom.rego
-        if [[ $? == 0 ]] && grep -q "agent_policy" "${podvm_dir}"/files/etc/kata-opa/custom.rego; then # checks policy validity
+        echo "${AGENT_POLICY}" | base64 -d >"${podvm_dir}"/files/etc/kata-opa/custom.rego
+        return_code=$?
+        if [[ "$return_code" == 0 ]] && grep -q "agent_policy" "${podvm_dir}"/files/etc/kata-opa/custom.rego; then # checks policy validity
             ln -sf custom.rego "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
         else
             error_exit "Invalid AGENT_POLICY value set, expected base64 encoded valid agent policy, got: \"${AGENT_POLICY}\""
