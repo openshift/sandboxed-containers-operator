@@ -57,11 +57,10 @@ spec:
             - name: payload
               mountPath: /payload
             - name: regauth
-              mountPath: /tmp/regauth  
+              mountPath: /tmp/regauth
             - name: ssh-key-secret
               mountPath: "/root/.ssh/"
               readOnly: true
-              optional: true             
       volumes:
         - name: payload
           emptyDir: {}
@@ -75,4 +74,5 @@ spec:
             - key: id_rsa
               path: "id_rsa"
             defaultMode: 0400
+            optional: true
       restartPolicy: Never
