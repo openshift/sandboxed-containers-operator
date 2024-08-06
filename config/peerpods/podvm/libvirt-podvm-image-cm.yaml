@@ -21,4 +21,8 @@ data:
   # Libvirt specific
   ORG_ID: ""
   ACTIVATION_KEY: ""
-  BASE_OS_VERSION: "9.2"
+  BASE_OS_VERSION: "9.4"
+
+  # To Enable SE for IBM Z
+  SE_BOOT: "true"
+  

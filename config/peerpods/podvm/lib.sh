@@ -229,6 +229,15 @@ function prepare_source_code() {
         create_overlay_mount_unit
     fi
 
+    # Validate and copy HKD for IBM Z Secure Enablement 
+    if [[ "$SE_BOOT" == "true" ]]; then
+        if [[ -z "$HOST_KEY_CERTS" ]]; then
+            error_exit "Error: HKD is not present."
+        else
+            echo "$HOST_KEY_CERTS" >> "${podvm_dir}/files/HKD.crt"
+        fi
+    fi
+
 }
 
 # Download and extract pause container image
