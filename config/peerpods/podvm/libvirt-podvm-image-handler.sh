@@ -8,7 +8,6 @@
 # Create image (-c)
 # Delete image (-C)
 
-set -x
 # include common functions from lib.sh
 # shellcheck source=/dev/null
 # The directory is where libvirt-podvm-image-handler.sh is located
@@ -73,6 +72,15 @@ function create_libvirt_image() {
 # Function to dowload the rhel base image
 
 function download_rhel_kvm_guest_qcow2() {
+    #Validate RHEL version for IBM Z Secure Enablement
+    if [ "$SE_BOOT" == "true" ]; then
+        version=$(echo $BASE_OS_VERSION | awk -F "." '{ print $1 }')
+        release=$(echo $BASE_OS_VERSION | awk -F "." '{ print $2 }')
+        if [[ "$version" -lt 9 || ("$version" -eq 9 && "$release" -lt 4) ]]; then
+            error_exit "Libvirt Secure Execution supports RHEL OS version 9.4 or above"
+        fi
+    fi
+
     ARCH=$(uname -m)
     export ARCH
 
