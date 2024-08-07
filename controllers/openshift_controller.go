@@ -24,7 +24,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/api/v1alpha1"
+	"github.com/confidential-containers/cloud-api-adaptor/src/peerpodconfig-ctrl/api/v1alpha1"
 
 	appsv1 "k8s.io/api/apps/v1"
 
