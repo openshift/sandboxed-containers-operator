@@ -21,8 +21,8 @@ import (
 	"flag"
 	"os"
 
-	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl/controllers"
-	peerpodconfigcontrollers "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/controllers"
+	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl/controllers"
+	peerpodconfigcontrollers "github.com/confidential-containers/cloud-api-adaptor/src/peerpodconfig-ctrl/controllers"
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	mcfgapi "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io"
@@ -48,8 +48,8 @@ import (
 	_ "sigs.k8s.io/controller-tools/pkg/genall/help/pretty"
 	_ "sigs.k8s.io/controller-tools/pkg/loader"
 
-	peerpod "github.com/confidential-containers/cloud-api-adaptor/peerpod-ctrl/api/v1alpha1"
-	peerpodconfig "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/api/v1alpha1"
+	peerpod "github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl/api/v1alpha1"
+	peerpodconfig "github.com/confidential-containers/cloud-api-adaptor/src/peerpodconfig-ctrl/api/v1alpha1"
 	ccov1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
