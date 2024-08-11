@@ -229,6 +229,11 @@ function prepare_source_code() {
         create_overlay_mount_unit
     fi
 
+    # disable ssh and unsafe cloud-init modules
+    if [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]] || [[ -n "$CUSTOM_CLOUD_INIT_MODULES" ]]; then
+       [[ "$CUSTOM_CLOUD_INIT_MODULES" != "no" ]] && [[ "$CLOUD_PROVIDER" != "libvirt" ]] && set_custom_cloud_init_modules
+    fi
+
     # Validate and copy HKD for IBM Z Secure Enablement 
     if [[ "$SE_BOOT" == "true" ]]; then
         if [[ -z "$HOST_KEY_CERTS" ]]; then
@@ -281,6 +286,35 @@ function download_and_extract_pause_image() {
     umoci unpack --rootless --image "${pause_src}:${pause_image_tag}" "${pause_bundle}" ||
         error_exit "Failed to extract the pause image"
 
+}
+
+# These are cloud-init modules we allow for the CoCo case, it's mostly used to disable ssh
+# and other unsafe modules
+function set_custom_cloud_init_modules() {
+    local cfg_file="${podvm_dir}/files/etc/cloud/cloud.cfg.d/99_coco_only_allow.cfg"
+    mkdir -p $(dirname "${cfg_file}")
+    cat <<EOF >"${cfg_file}"
+cloud_init_modules:
+  - migrator
+  - set_hostname
+  - update_hostname
+
+cloud_config_modules:
+  - locale
+  - rh_subscription
+  - ntp
+  - timezone
+  - disable_ec2_metadata
+
+cloud_final_modules:
+  #- reset_rmc # needed for ibm power?
+  #- install_hotplug ?
+  - phone_home
+  - final_message
+  - power_state_change
+EOF
+    echo "sudo cp -a /tmp/files/etc/cloud/cloud.cfg.d/* /etc/cloud/cloud.cfg.d/" >> "${podvm_dir}"/qcow2/copy-files.sh
+    echo "Inject cloud-init configuration file:" && cat "${cfg_file}"
 }
 
 # Function to create overlay mount unit in the podvm files
