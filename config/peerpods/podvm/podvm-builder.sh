@@ -33,6 +33,23 @@ function check_peer_pods_cm_exists() {
   fi
 }
 
+# Function to check if the image should be built or use the pre-built artifact.
+function set_podvm_image_type() {
+    echo "Checking if PODVM_IMAGE_URI is set"
+
+    # If the value of the PODVM_IMAGE_URI is empty or not set, then build the image from scratch else use the prebuilt artifact.
+    if [[ -z "${PODVM_IMAGE_URI}" ]]; then
+      IMAGE_TYPE="operator-built"
+      echo "Initiating the operator to build the podvm image"
+    else
+      IMAGE_TYPE="pre-built"
+      echo "Initiating the operator to use the pre-built podvm image"
+    fi
+
+    export IMAGE_TYPE
+
+}
+
 # Function to create podvm image
 function create_podvm_image() {
   case "${CLOUD_PROVIDER}" in
@@ -277,6 +294,9 @@ function delete_podvm_image_gallery() {
 function display_usage() {
   echo "Usage: $0 {create|delete [-f] [-g]|delete-gallery [-f]}"
 }
+
+# Set the PodVM image type based on the `PODVM_IMAGE_URI`
+set_podvm_image_type
 
 # Check if CLOUD_PROVIDER is set to azure or aws or libvirt
 # Install the required dependencies
