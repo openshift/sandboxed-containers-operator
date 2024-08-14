@@ -133,3 +133,9 @@ delete the image gallery defined in the `IMAGE_GALLERY_NAME` key in
   configMap is updated with empty value (""). Also the annotations
   LATEST_AMI_ID (for AWS) or LATEST_IMAGE_ID and `IMAGE_GALLERY_NAME` (for
   Azure) are removed from the `peer-pods-cm` configMap
+
+## PodVM Image Upload flow via OSC operator
+
+* The code verifies all the required config parameters
+* Based on the `PODVM_IMAGE_URI` presence on the cloud provider specific configMap (eg: `libvirt-podvm-image-cm`), `IMAGE_TYPE` is set to either `operator-built` or `pre-built`.
+* Based on the `IMAGE_TYPE` it will invoke the create image from scratch for `operator-built` and pull an existing image if it's `pre-built`.

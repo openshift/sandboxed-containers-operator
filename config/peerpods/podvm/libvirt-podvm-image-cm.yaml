@@ -25,4 +25,6 @@ data:
 
   # To Enable SE for IBM Z
   SE_BOOT: "true"
-  
+
+  # For Pre-built PodVM images.
+  PODVM_IMAGE_URI: "" # eg: oci::quay.io/openshift_sandboxed_containers/libvirt-podvm-image:latest::/image/podvm.qcow2
