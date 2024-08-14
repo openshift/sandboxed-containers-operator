@@ -21,23 +21,72 @@ function verify_vars() {
 
     [[ -z "${ORG_ID}" ]] && error_exit "ORG_ID is not set"
     [[ -z "${ACTIVATION_KEY}" ]] && error_exit "ACTIVATION_KEY is not set"
-    [[ -z "${BASE_OS_VERSION}" ]] && error_exit "BASE_OS_VERSION is not set"
 
-    [[ -z "${PODVM_DISTRO}" ]] && error_exit "PODVM_DISTRO is not set"
+    if [[ "${IMAGE_TYPE}" == "operator-built" ]]; then
+        [[ -z "${BASE_OS_VERSION}" ]] && error_exit "BASE_OS_VERSION is not set"
 
-    [[ -z "${CAA_SRC}" ]] && error_exit "CAA_SRC is empty"
-    [[ -z "${CAA_REF}" ]] && error_exit "CAA_REF is empty"
+        [[ -z "${PODVM_DISTRO}" ]] && error_exit "PODVM_DISTRO is not set"
 
-    [[ -z "${REDHAT_OFFLINE_TOKEN}" ]] && error_exit "Redhat token is not set"
+        [[ -z "${CAA_SRC}" ]] && error_exit "CAA_SRC is empty"
+        [[ -z "${CAA_REF}" ]] && error_exit "CAA_REF is empty"
 
-    # Ensure booleans are set
-    [[ -z "${DOWNLOAD_SOURCES}" ]] && error_exit "DOWNLOAD_SOURCES is empty"
+        [[ -z "${REDHAT_OFFLINE_TOKEN}" ]] && error_exit "Redhat token is not set"
+
+        # Ensure booleans are set
+        [[ -z "${DOWNLOAD_SOURCES}" ]] && error_exit "DOWNLOAD_SOURCES is empty"
+    fi
 }
 
-
-
+# Function to create the libvirt image based on the type.
 function create_libvirt_image() {
-    echo "Creating libvirt qcow2 image"
+    # Based on the value of `IMAGE_TYPE` the image is either build from scratch or using the prebuilt artifact.
+    if [[ "${IMAGE_TYPE}" == "operator-built" ]]; then
+        create_libvirt_image_from_scratch
+    elif [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
+        create_libvirt_image_from_prebuilt_artifact
+    fi
+
+}
+
+# Function to create the libvirt image from a prebuilt artifact.
+function create_libvirt_image_from_prebuilt_artifact() {
+    echo "Pulling the podvm image from the provided path"
+    IMAGE_SRC="/tmp/image"
+    EXTRACTION_DESTINATION_PATH="/image"
+    IMAGE_REPO_AUTH_FILE="/tmp/regauth/auth.json"
+
+    get_image_type_url_and_path
+
+    case "${PODVM_IMAGE_TYPE}" in
+    oci)
+        echo "Extracting the Libvirt qcow2 image from the given path."
+
+        mkdir -p "${EXTRACTION_DESTINATION_PATH}" ||
+            error_exit "Failed to create the image directory"
+        
+        extract_container_image "${PODVM_IMAGE_URL}" "${PODVM_IMAGE_TAG}" "${IMAGE_SRC}" "${EXTRACTION_DESTINATION_PATH}" "${IMAGE_REPO_AUTH_FILE}"
+
+        # Form the path of the podvm qcow2 image.
+        PODVM_IMAGE_PATH="${EXTRACTION_DESTINATION_PATH}/rootfs${PODVM_IMAGE_SRC_PATH}"
+
+        # Check whether the podvm image is a valid qcow2 or not.
+        validate_podvm_image "${PODVM_IMAGE_PATH}"
+
+        # Upload the created qcow2 to the volume
+        upload_libvirt_image "${PODVM_IMAGE_PATH}"
+
+        # Add the libvirt_volume_name to peer-pods-cm configmap
+        add_libvirt_vol_to_peer_pods_cm
+        ;;
+    *)
+        error_exit "Currently only OCI image unpacking is supported, exiting."
+        ;;
+    esac
+}
+
+# Function to create the libvirt image from scratch.
+function create_libvirt_image_from_scratch() {
+    echo "Creating qcow2 image for libvirt provider from scratch"
 
     # If any error occurs, exit the script with an error message
 
@@ -59,11 +108,11 @@ function create_libvirt_image() {
 	    error_exit "Failed to change directory to "${CAA_SRC_DIR}"/podvm"
     LIBC=gnu make BINARIES= PAUSE_BUNDLE= image
 
-    export PODVM_IMAGE_PATH=/payload/podvm-libvirt.qcow2
+    PODVM_IMAGE_PATH=/payload/podvm-libvirt.qcow2
     cp -pr "${CAA_SRC_DIR}"/podvm/output/*.qcow2 "${PODVM_IMAGE_PATH}"
 
     # Upload the created qcow2 to the volume
-    upload_libvirt_image
+    upload_libvirt_image "${PODVM_IMAGE_PATH}"
 
     # Add the libvirt_volume_name to peer-pods-cm configmap
     add_libvirt_vol_to_peer_pods_cm
@@ -112,6 +161,8 @@ function download_rhel_kvm_guest_qcow2() {
 # Function to upload the qcow2 image to volume
 
 function upload_libvirt_image() {
+    PODVM_IMAGE_PATH="${1}"
+
     echo "LIBVIRT_VOL_NAME: "${LIBVIRT_VOL_NAME}"" && echo "LIBVIRT_POOL: "${LIBVIRT_POOL}"" && \
 	    echo "LIBVIRT_URI: "${LIBVIRT_URI}"" && echo "PODVM_IMAGE_PATH: "${PODVM_IMAGE_PATH}"" 
     echo "Starting to upload the image."
@@ -199,14 +250,18 @@ function install_packages(){
 
     install_binary_packages
 
-    #Install other libvirt specific binaries packages
+    # Install packages required for libvirt in addition to the binary packages.
     ARCH=$(uname -m)
     export ARCH
     if [[ -n "${ACTIVATION_KEY}" && -n "${ORG_ID}" ]]; then
-        subscription-manager register --org="${ORG_ID}" --activationkey="${ACTIVATION_KEY}"
+        subscription-manager register --org="${ORG_ID}" --activationkey="${ACTIVATION_KEY}" ||
+            error_exit "Failed to subscribe"
     fi
-    subscription-manager repos --enable codeready-builder-for-rhel-9-"${ARCH}"-rpms
-    dnf install -y gcc genisoimage qemu-kvm libvirt-client
+    
+    subscription-manager repos --enable codeready-builder-for-rhel-9-"${ARCH}"-rpms ||
+        error_exit "Failed to enable codeready-builder"
+
+    dnf install -y libvirt-client gcc file
 
     GO_VERSION="1.21.9"
     curl https://dl.google.com/go/go"${GO_VERSION}".linux-"${ARCH/x86_64/amd64}".tar.gz -o go"${GO_VERSION}".linux-"${ARCH/x86_64/amd64}".tar.gz && \
@@ -216,14 +271,6 @@ function install_packages(){
     export GOPATH="/src"
 
     if [ "${ARCH}" == "s390x" ]; then
-        # Build packer from source for s390x as there are no prebuilt binaries for the required packer version
-        PACKER_VERSION="v1.9.4"
-        git clone --depth 1 --single-branch https://github.com/hashicorp/packer.git -b "${PACKER_VERSION}"
-        cd packer
-        sed -i -- "s/ALL_XC_ARCH=.*/ALL_XC_ARCH=\"${ARCH}\"/g" scripts/build.sh
-	    sed -i -- "s/ALL_XC_OS=.*/ALL_XC_OS=\"Linux\"/g" scripts/build.sh
-        make bin && cp bin/packer /usr/local/bin/
-
         # Build umoci from source for s390x as there are no prebuilt binaries
         mkdir -p umoci
         git clone https://github.com/opencontainers/umoci.git
@@ -231,13 +278,28 @@ function install_packages(){
         make
         cp -pr umoci /usr/local/bin/
     fi
+    
+    if [[ "${IMAGE_TYPE}" == "operator-built" ]]; then
+        dnf install -y genisoimage qemu-kvm
 
-    # set a correspond qemu-system-* named link to qemu-kvm
-    ln -s /usr/libexec/qemu-kvm /usr/bin/qemu-system-"${ARCH}"
+        if [ "${ARCH}" == "s390x" ]; then
+            # Build packer from source for s390x as there are no prebuilt binaries for the required packer version
+            PACKER_VERSION="v1.9.4"
+            git clone --depth 1 --single-branch https://github.com/hashicorp/packer.git -b "${PACKER_VERSION}"
+            cd packer
+            sed -i -- "s/ALL_XC_ARCH=.*/ALL_XC_ARCH=\"${ARCH}\"/g" scripts/build.sh
+            sed -i -- "s/ALL_XC_OS=.*/ALL_XC_OS=\"Linux\"/g" scripts/build.sh
+            make bin && cp bin/packer /usr/local/bin/
+        fi
 
-    # Build cloud-utils package from source as prebuilt binary is not available
-    git clone https://github.com/canonical/cloud-utils
-    cd cloud-utils && make install
+        # set a correspond qemu-system-* named link to qemu-kvm
+        ln -s /usr/libexec/qemu-kvm /usr/bin/qemu-system-"${ARCH}"
+
+        # Build cloud-utils package from source as prebuilt binary is not available
+        git clone https://github.com/canonical/cloud-utils
+        cd cloud-utils && make install
+    fi
+    
 
 }
 
