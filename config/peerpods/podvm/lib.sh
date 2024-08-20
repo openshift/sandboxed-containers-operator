@@ -240,11 +240,11 @@ function prepare_source_code() {
 
 }
 
-# Download and extract pause container image
+# Download and extract the pause container image
 # Accepts three arguments:
 # 1. pause_image_repo_url: The registry URL of the OCP pause image.
 # 2. pause_image_tag: The tag of the OCP pause image.
-# 2. auth_json_file (optional): Path to the registry secret file to use for downloading the image
+# 3. auth_json_file (optional): Path to the registry secret file to use for downloading the image
 function download_and_extract_pause_image() {
 
     # Set default values for the OCP pause image
@@ -266,20 +266,43 @@ function download_and_extract_pause_image() {
     mkdir -p "${pause_bundle}" ||
         error_exit "Failed to create the pause_bundle directory"
 
+    extract_container_image "${pause_image_repo_url}" "${pause_image_tag}" "${pause_src}" "${pause_bundle}" "${auth_json_file}"
+}
+
+# Function to download and extract a container image.
+# Accepts six arguments:
+# 1. container_image_repo_url: The registry URL of the source container image.
+# 2. image_tag: The tag of the source container image.
+# 3. dest_image: The destination image name. 
+# 4. destination_path: The destination path where the image is to be extracted.
+# 5. auth_json_file (optional): Path to the registry secret file to use for downloading the image.
+function extract_container_image() {
+
+    # Set the values required for the container image extraction.
+    container_image_repo_url="${1}"
+    image_tag="${2}"
+    dest_image="${3}"
+    destination_path="${4}"
+    auth_json_file="${5}"
+
+    # If arguments are not provided, exit the script with an error message
+    [[ $# -lt 4 ]] &&
+        error_exit "Usage: extract_container_image <container_image_repo_url> <image_tag> <dest_image> <destination_path> [registry_secret]"
+
     # Form the skopeo CLI. Add authfile if provided
-    if [[ -n "${3}" ]]; then
+    if [[ -n "${5}" ]]; then
         SKOPEO_CLI="skopeo copy --authfile ${auth_json_file}"
     else
         SKOPEO_CLI="skopeo copy"
     fi
 
-    # Download the pause image
-    $SKOPEO_CLI "docker://${pause_image_repo_url}:${pause_image_tag}" "oci:${pause_src}:${pause_image_tag}" ||
-        error_exit "Failed to download the pause image"
+    # Download the container image
+    $SKOPEO_CLI "docker://${container_image_repo_url}:${image_tag}" "oci:${dest_image}:${image_tag}" ||
+        error_exit "Failed to download the container image"
 
-    # Extract the pause image using umoci into pause_bundle directory
-    umoci unpack --rootless --image "${pause_src}:${pause_image_tag}" "${pause_bundle}" ||
-        error_exit "Failed to extract the pause image"
+    # Extract the container image using umoci into provided directory
+    umoci unpack --rootless --image "${dest_image}:${image_tag}" "${destination_path}" ||
+        error_exit "Failed to extract the container image"
 
 }
 
@@ -311,6 +334,40 @@ EOF
     ln -sf ../"${unit_name}" "${podvm_dir}/files/etc/systemd/system/multi-user.target.wants/${unit_name}" ||
         error_exit "Failed to enable the overlay mount unit"
 
+}
+
+# Function to split image type, url and path from PODVM_IMAGE_URI for pre-built image scenario.
+function get_image_type_url_and_path() {
+
+    # Use pattern matching to split on '::' and then on ':', and capture output
+    if [[ $PODVM_IMAGE_URI =~ ^([^:]+)::([^:]+)(:([^:]+))?(::(.+))?$ ]]; then
+        PODVM_IMAGE_TYPE="${BASH_REMATCH[1]}"
+        PODVM_IMAGE_URL="${BASH_REMATCH[2]}"
+        PODVM_IMAGE_TAG="${BASH_REMATCH[4]}" # This will be empty if not present
+        PODVM_IMAGE_SRC_PATH="${BASH_REMATCH[6]}" # This will be empty if not present
+    fi
+
+    if [[ -z "${PODVM_IMAGE_TAG}" ]]; then
+        PODVM_IMAGE_TAG="latest"
+    fi
+
+    if [[ -z "${PODVM_IMAGE_SRC_PATH}" ]]; then
+        PODVM_IMAGE_SRC_PATH="/image/podvm.qcow2"
+    fi
+
+    export PODVM_IMAGE_TYPE PODVM_IMAGE_URL PODVM_IMAGE_TAG PODVM_IMAGE_SRC_PATH
+}
+
+# Function to validate the podvm image type.
+function validate_podvm_image() {
+    PODVM_IMAGE_PATH="${1}"
+
+    # Currently only qcow2 based PodVM images are supported for image upload.
+    if [[ "$(file -b $PODVM_IMAGE_PATH)" != *QCOW2* ]]; then
+        error_exit "PodVM image is not a valid qcow2, exiting."
+    fi
+
+    echo "Checksum of the PodVM image: $(sha256sum $PODVM_IMAGE_PATH)"
 }
 
 # Global variables
