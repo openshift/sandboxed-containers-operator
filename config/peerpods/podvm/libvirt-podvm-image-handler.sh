@@ -111,6 +111,9 @@ function create_libvirt_image_from_scratch() {
     PODVM_IMAGE_PATH=/payload/podvm-libvirt.qcow2
     cp -pr "${CAA_SRC_DIR}"/podvm/output/*.qcow2 "${PODVM_IMAGE_PATH}"
 
+    # Get RVPS values from qcow2
+    calculate_rvps_qcow2
+
     # Upload the created qcow2 to the volume
     upload_libvirt_image "${PODVM_IMAGE_PATH}"
 
@@ -156,6 +159,185 @@ function download_rhel_kvm_guest_qcow2() {
     export IMAGE_URL="${CAA_SRC_DIR}"/podvm/rhel-"${BASE_OS_VERSION}"-"${ARCH}"-kvm.qcow2
     export IMAGE_CHECKSUM=$(sha256sum "${IMAGE_URL}" | awk '{ print $1 }')
 
+}
+
+# Function to extract RVPS value from PODVM SE image
+function calculate_rvps_qcow2() {
+    mkdir -p "${CAA_SRC_DIR}"/podvm/rvps_config
+    cp "${CAA_SRC_DIR}"/podvm/output/*.qcow2 "${CAA_SRC_DIR}"/podvm/rvps_config/podvm-libvirt.qcow2
+    export SE_IMG_PATH="${CAA_SRC_DIR}"/podvm/rvps_config/podvm-libvirt.qcow2
+    export RVPS_CONFIG_DIR="${CAA_SRC_DIR}"/podvm/rvps_config
+    rm -rf $RVPS_CONFIG_DIR/se.img
+    rm -rf /mnt/sevm
+    mkdir /mnt/sevm
+    sleep 5
+    modprobe nbd
+
+    if [ $? -eq 0 ]; then
+    echo "modprobe ran successfully"
+    else
+    echo "modprobe command execution Failed!!"
+    fi
+
+    sleep 10
+
+    qemu-nbd -c /dev/nbd3 "${SE_IMG_PATH}" 
+    if [ $? -eq 0 ]; then
+        echo "nbd connection successful.."
+    else
+	    echo "Retrying manual nbd3 creation..."
+	    mknod /dev/nbd3 b 43 96
+	    if [ $? -eq 0 ]; then
+		    echo "device nbd3 created successfully"
+		    qemu-nbd -c /dev/nbd3 "${SE_IMG_PATH}"
+		    if [ $? -eq 0 ]; then
+			    echo "nbd connection successful"
+		    else
+			    echo "nbd connection failed"
+		    fi
+	    else
+		    echo "device nbd3 creation Failed!!"
+	    fi
+    fi
+
+    mknod /dev/nbd3p1 b 43 97
+    if [ $? -eq 0 ]; then
+        echo "nbd3p1 node creation successful.."
+    else
+        echo "nbd3p1 node creation Failed!!"
+    fi
+
+    mount /dev/nbd3p1 /mnt/sevm
+    if [ $? -eq 0 ]; then
+	    echo "mounting for PODVM successful.."
+    else
+	    sleep 20
+	    mount /dev/nbd3p1 /mnt/sevm
+	    if [ $? -eq 0 ]; then
+		    echo "mounting for PODVM successful on attempt 2"
+	    else
+		    echo "mounting for PODVM Failed!!"
+	    fi
+    fi
+
+    cp /mnt/sevm/se.img "${RVPS_CONFIG_DIR}" 
+    if [ $? -eq 0 ]; then
+        echo "copying of se.img successful.."
+    else
+        echo "copying of se.img Failed!!"
+    fi
+
+    umount /mnt/sevm
+    if [ $? -eq 0 ]; then
+        echo "unmounting for PODVM successful.."
+    else
+        echo "unmounting for PODVM Failed!!"
+    fi
+
+    qemu-nbd -d /dev/nbd3
+    rm -rf $RVPS_CONFIG_DIR/hdr.bin
+    git clone https://github.com/ibm-s390-linux/s390-tools.git
+    HKD_FILE_PATH="/tmp/HKD.crt"
+    HKD_UNFORMATTED="/tmp/HKD_unformatted.crt"
+    HKD_FORMATTED="/tmp/HKD_formatted.crt"
+
+    echo $HOST_KEY_CERTS > $HKD_UNFORMATTED
+    if [ $? -eq 0 ]; then
+        echo "creation of HKD_CRT file successful.."
+    else
+        echo "creation of HKD_CRT file Failed!!"
+    fi
+
+    ##formatting for $HKD_FILE_PATH 
+    rm -rf $HKD_FILE_PATH
+    for i in `cat $HKD_UNFORMATTED`; do echo $i; done > $HKD_FORMATTED
+    firstline=`head -n2 $HKD_FORMATTED`
+    lastline=`tail -n2 $HKD_FORMATTED`
+    echo $firstline >> $HKD_FILE_PATH
+    for loop in `cat $HKD_FORMATTED`
+    do
+        if [[ $loop != *"---"* ]]; then
+            echo $loop >> $HKD_FILE_PATH
+        fi
+    done
+    echo $lastline >> $HKD_FILE_PATH
+
+    s390-tools/rust/pvattest/tools/pvextract-hdr -o $RVPS_CONFIG_DIR/hdr.bin $RVPS_CONFIG_DIR/se.img
+    cp "${CAA_SRC_DIR}"/podvm/parse_hdr.py "$RVPS_CONFIG_DIR"
+    python3 $RVPS_CONFIG_DIR/parse_hdr.py $RVPS_CONFIG_DIR/hdr.bin $HKD_FILE_PATH 
+    se_tag=`python3 $RVPS_CONFIG_DIR/parse_hdr.py $RVPS_CONFIG_DIR/hdr.bin $HKD_FILE_PATH | grep se.tag | awk -F ":" '{ print $2 }'`
+    se_attestation_phkh=`python3 $RVPS_CONFIG_DIR/parse_hdr.py $RVPS_CONFIG_DIR/hdr.bin $HKD_FILE_PATH | grep se.attestation_phkh | awk -F ":" '{ print $2 }'`
+    se_image_phkh=`python3 $RVPS_CONFIG_DIR/parse_hdr.py $RVPS_CONFIG_DIR/hdr.bin $HKD_FILE_PATH | grep se.image_phkh | awk -F ":" '{ print $2 }'`
+
+    rm -rf $HKD_FILE_PATH
+    echo "se-tag= "$se_tag
+    echo "se_attestation_phkh= "$se_attestation_phkh
+    echo "se_image_phkh= "$se_image_phkh
+    sleep 10
+    rm -rf $RVPS_CONFIG_DIR/se-sample
+
+    cat << EOF > $RVPS_CONFIG_DIR/se-sample
+    {
+        "se.attestation_phkh": [
+            "xxxxxxxx"
+        ],
+        "se.tag": [
+            "yyyyyyyy"
+        ],
+        "se.image_phkh": [
+            "xxxxxxxx"
+        ],
+        "se.user_data": [
+            "00"
+        ],
+        "se.version": [
+            "256"
+        ]
+    }
+EOF
+
+    rm -rf $RVPS_CONFIG_DIR/ibmse-policy.rego
+    cat << EOF > $RVPS_CONFIG_DIR/ibmse-policy.rego 
+    package policy
+    import rego.v1
+    default allow = false
+    converted_version := sprintf("%v", [input["se.version"]])
+    allow if {
+        input["se.attestation_phkh"] == "xxxxxxxx"
+        input["se.image_phkh"] == "xxxxxxxx"
+        input["se.tag"] == "yyyyyyyy"
+        input["se.user_data"] == "00"
+        converted_version == "256"
+    }
+EOF
+
+    sed -i "s/yyyyyyyy/$se_tag/g" $RVPS_CONFIG_DIR/ibmse-policy.rego
+    sed -i "s/xxxxxxxx/$se_image_phkh/g" $RVPS_CONFIG_DIR/ibmse-policy.rego
+
+    sed -i "s/yyyyyyyy/$se_tag/g" $RVPS_CONFIG_DIR/se-sample
+    sed -i "s/xxxxxxxx/$se_image_phkh/g" $RVPS_CONFIG_DIR/se-sample
+
+    provenance=$(cat $RVPS_CONFIG_DIR/se-sample | base64 --wrap=0)
+    echo "provenance = "$provenance
+    rm -rf $RVPS_CONFIG_DIR/se-message 
+    cat << EOF > $RVPS_CONFIG_DIR/se-message
+    {
+        "version" : "0.1.0",
+        "type": "sample",
+        "payload": "$provenance"
+    }
+EOF
+
+    ls -lrt $RVPS_CONFIG_DIR/se-message $RVPS_CONFIG_DIR/ibmse-policy.rego
+    if [ $? -eq 0 ]; then
+        echo "Removing Intermediate files se.img and se-sample.."
+        rm -rf $RVPS_CONFIG_DIR/se.img $RVPS_CONFIG_DIR/se-sample $RVPS_CONFIG_DIR/podvm-libvirt.qcow2 $RVPS_CONFIG_DIR/parse_hdr.py
+        echo "** Image Parameters are Ready and Saved in " $RVPS_CONFIG_DIR " Folder. Listing the contents..**"
+        ls -lrt $RVPS_CONFIG_DIR/*
+        
+    else
+        echo "** There are issues in generation of RSVP configurations ***"
+    fi
 }
 
 # Function to upload the qcow2 image to volume
@@ -257,7 +439,6 @@ function install_packages(){
         subscription-manager register --org="${ORG_ID}" --activationkey="${ACTIVATION_KEY}" ||
             error_exit "Failed to subscribe"
     fi
-    
     subscription-manager repos --enable codeready-builder-for-rhel-9-"${ARCH}"-rpms ||
         error_exit "Failed to enable codeready-builder"
 
@@ -280,7 +461,7 @@ function install_packages(){
     fi
     
     if [[ "${IMAGE_TYPE}" == "operator-built" ]]; then
-        dnf install -y genisoimage qemu-kvm
+        dnf install -y genisoimage qemu-kvm qemu-img python3 python3-cryptography kernel-$(uname -r) 
 
         if [ "${ARCH}" == "s390x" ]; then
             # Build packer from source for s390x as there are no prebuilt binaries for the required packer version

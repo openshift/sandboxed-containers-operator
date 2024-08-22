@@ -37,6 +37,7 @@ spec:
 
           securityContext:
             runAsUser: 0 # needed for container mode dnf access
+            privileged: true
           envFrom:
             - secretRef:
                 name: peer-pods-secret
