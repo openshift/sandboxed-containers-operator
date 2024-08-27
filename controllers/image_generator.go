@@ -227,9 +227,19 @@ func newImageGenerator(client client.Client) (*ImageGenerator, error) {
 	}
 	ig.fips = fips == 1
 
-	provider, err := getCloudProviderFromInfra(client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cloud provider from infra: %v", err)
+	// Use PROVIDER_OVERRIDE env var if set, otherwise get the cloud provider from the infra
+	// This is needed for the hybrid cloud or cloud-bursting scenario
+	// eg cluster running on baremetal, but creating peer-pod on AWS
+	provider := os.Getenv("PROVIDER_OVERRIDE")
+	if provider != "" {
+		igLogger.Info("Using provider override", "provider", provider)
+		ig.provider = provider
+	} else {
+		igLogger.Info("Getting cloud provider from infra")
+		provider, err = getCloudProviderFromInfra(client)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get cloud provider from infra: %v", err)
+		}
 	}
 
 	switch provider {
