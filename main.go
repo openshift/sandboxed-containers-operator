@@ -39,6 +39,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	// These imports are unused but required in go.mod
 	// for caching during manifest generation by controller-gen
@@ -105,11 +107,15 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), SetTimeEncoderToRfc3339()))
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:             scheme,
-		MetricsBindAddress: metricsAddr,
-		Port:               9443,
-		LeaderElection:     enableLeaderElection,
-		LeaderElectionID:   "290f4947.kataconfiguration.openshift.io",
+		Scheme:  scheme,
+		Metrics: metricsserver.Options{BindAddress: metricsAddr},
+		WebhookServer: &webhook.DefaultServer{
+			Options: webhook.Options{
+				Port: 9443,
+			},
+		},
+		LeaderElection:   enableLeaderElection,
+		LeaderElectionID: "290f4947.kataconfiguration.openshift.io",
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
