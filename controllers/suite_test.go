@@ -38,6 +38,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -104,10 +105,14 @@ var _ = BeforeSuite(func() {
 	// +kubebuilder:scaffold:scheme
 
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
-		Scheme:  scheme.Scheme,
-		Port:    testEnv.WebhookInstallOptions.LocalServingPort,
-		Host:    testEnv.WebhookInstallOptions.LocalServingHost,
-		CertDir: testEnv.WebhookInstallOptions.LocalServingCertDir,
+		Scheme: scheme.Scheme,
+		WebhookServer: &webhook.DefaultServer{
+			Options: webhook.Options{
+				Port:    testEnv.WebhookInstallOptions.LocalServingPort,
+				Host:    testEnv.WebhookInstallOptions.LocalServingHost,
+				CertDir: testEnv.WebhookInstallOptions.LocalServingCertDir,
+			},
+		},
 	})
 	Expect(err).ToNot(HaveOccurred())
 
