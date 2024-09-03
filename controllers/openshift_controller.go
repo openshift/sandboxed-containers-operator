@@ -2387,7 +2387,18 @@ func (r *KataConfigOpenShiftReconciler) createMcFromFile(machineConfigYamlFile s
 
 	if err := r.Client.Create(context.TODO(), machineConfig); err != nil {
 		if k8serrors.IsAlreadyExists(err) {
-			r.Log.Info("machineConfig already exists")
+			currentMachineConfig := &mcfgv1.MachineConfig{}
+			err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machineConfig.ObjectMeta.Name}, currentMachineConfig)
+			if err != nil {
+				r.Log.Info("Error getting machineConfig", "mc", machineConfig.Name, "err", err)
+				return err
+			}
+			machineConfig.ObjectMeta.ResourceVersion = currentMachineConfig.ObjectMeta.ResourceVersion
+			err = r.Client.Update(context.TODO(), machineConfig)
+			if err != nil {
+				r.Log.Info("Error updating machineConfig", "mc", machineConfig.Name, "err", err)
+				return err
+			}
 			return nil
 		} else {
 			return err
