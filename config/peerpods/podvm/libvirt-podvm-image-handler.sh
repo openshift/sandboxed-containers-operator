@@ -112,7 +112,9 @@ function create_libvirt_image_from_scratch() {
     cp -pr "${CAA_SRC_DIR}"/podvm/output/*.qcow2 "${PODVM_IMAGE_PATH}"
 
     # Get RVPS values from qcow2
-    calculate_rvps_qcow2
+    if [ "$SE_BOOT" == "true" ]; then
+    	calculate_rvps_qcow2
+    fi
 
     # Upload the created qcow2 to the volume
     upload_libvirt_image "${PODVM_IMAGE_PATH}"
@@ -174,9 +176,9 @@ function calculate_rvps_qcow2() {
     modprobe nbd
 
     if [ $? -eq 0 ]; then
-    echo "modprobe ran successfully"
+    	echo "modprobe ran successfully"
     else
-    echo "modprobe command execution Failed!!"
+        error_exit "modprobe command execution Failed!!"
     fi
 
     sleep 10
@@ -270,12 +272,9 @@ function calculate_rvps_qcow2() {
     se_image_phkh=`python3 $RVPS_CONFIG_DIR/parse_hdr.py $RVPS_CONFIG_DIR/hdr.bin $HKD_FILE_PATH | grep se.image_phkh | awk -F ":" '{ print $2 }'`
 
     rm -rf $HKD_FILE_PATH
-    echo "se-tag= "$se_tag
-    echo "se_attestation_phkh= "$se_attestation_phkh
-    echo "se_image_phkh= "$se_image_phkh
-    sleep 10
     rm -rf $RVPS_CONFIG_DIR/se-sample
 
+    #Creating a dummy file se-sample and replacing the respective values of se-tag , se_attestation_phkh and se_image_phkh 
     cat << EOF > $RVPS_CONFIG_DIR/se-sample
     {
         "se.attestation_phkh": [
@@ -296,6 +295,7 @@ function calculate_rvps_qcow2() {
     }
 EOF
 
+#Creating ibmse-policy.rego file to set the attestation policy which we need for Remote attestation
     rm -rf $RVPS_CONFIG_DIR/ibmse-policy.rego
     cat << EOF > $RVPS_CONFIG_DIR/ibmse-policy.rego 
     package policy
@@ -439,6 +439,7 @@ function install_packages(){
         subscription-manager register --org="${ORG_ID}" --activationkey="${ACTIVATION_KEY}" ||
             error_exit "Failed to subscribe"
     fi
+
     subscription-manager repos --enable codeready-builder-for-rhel-9-"${ARCH}"-rpms ||
         error_exit "Failed to enable codeready-builder"
 
