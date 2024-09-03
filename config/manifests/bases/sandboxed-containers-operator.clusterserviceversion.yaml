@@ -369,6 +369,7 @@ spec:
   - email: support@redhat.com'
     name: '''Red Hat'
   maturity: beta
+  minKubeVersion: 1.28.0
   provider:
     name: Red Hat
   replaces: sandboxed-containers-operator.v1.6.0
