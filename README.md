@@ -59,7 +59,6 @@ Please refer to the [code](https://github.com/openshift/sandboxed-containers-ope
 ### Getting Started
 
 Please refer to the OpenShift release specific documentation for getting started with sandboxed containers. 
-- For OpenShift latest documentation please follow this [doc](https://docs.openshift.com/container-platform/latest/sandboxed_containers/deploying-sandboxed-container-workloads.html)
 
 Further note that starting with OpenShift 4.9, the branch naming is tied to the operator version and not the OpenShift version.
 For example `release-1.1` corresponds to the Operator release verson `1.1.x`.
