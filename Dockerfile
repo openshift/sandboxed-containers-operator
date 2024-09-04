@@ -12,6 +12,7 @@ COPY PROJECT PROJECT
 COPY go.mod go.mod
 COPY go.sum go.sum
 COPY main.go main.go
+COPY csv.go csv.go
 COPY api api/
 COPY config config/
 COPY controllers controllers/

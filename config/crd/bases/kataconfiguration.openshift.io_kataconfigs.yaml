@@ -1,0 +1,211 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+  name: kataconfigs.kataconfiguration.openshift.io
+spec:
+  group: kataconfiguration.openshift.io
+  names:
+    kind: KataConfig
+    listKind: KataConfigList
+    plural: kataconfigs
+    singular: kataconfig
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - description: Status of Kata runtime installation
+      jsonPath: .status.conditions[?(@.type=='InProgress')].status
+      name: InProgress
+      type: string
+    - description: Number of nodes with Kata runtime installed
+      jsonPath: .status.kataNodes.readyNodeCount
+      name: Completed
+      type: integer
+    - description: Total number of nodes
+      jsonPath: .status.kataNodes.nodeCount
+      name: Total
+      type: integer
+    - description: Age of the KataConfig Custom Resource
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: KataConfig is the Schema for the kataconfigs API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: KataConfigSpec defines the desired state of KataConfig
+            nullable: true
+            properties:
+              checkNodeEligibility:
+                default: false
+                description: |-
+                  CheckNodeEligibility is used to detect the node(s) eligibility to run Kata containers.
+                  This is currently done through the use of the Node Feature Discovery Operator (NFD).
+                  For more information on how the check works, please refer to the sandboxed containers documentation - https://docs.openshift.com/container-platform/latest/sandboxed_containers/deploying-sandboxed-container-workloads.html
+                type: boolean
+              enablePeerPods:
+                default: false
+                description: |-
+                  EnablePeerPods is used to transparently create pods on a remote system.
+                  For more information on how this works, please refer to the sandboxed containers documentation - https://docs.openshift.com/container-platform/latest/sandboxed_containers/deploying-sandboxed-container-workloads.html
+                type: boolean
+              kataConfigPoolSelector:
+                description: |-
+                  KataConfigPoolSelector is used to filter the worker nodes
+                  if not specified, all worker nodes are selected
+                nullable: true
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
+                          type: string
+                        values:
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
+                    type: object
+                type: object
+                x-kubernetes-map-type: atomic
+              logLevel:
+                default: info
+                description: Sets log level on kata-equipped nodes.  Valid values
+                  are the same as for `crio --log-level`.
+                type: string
+            required:
+            - checkNodeEligibility
+            type: object
+          status:
+            description: KataConfigStatus defines the observed state of KataConfig
+            properties:
+              conditions:
+                items:
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              kataNodes:
+                properties:
+                  failedToInstall:
+                    items:
+                      type: string
+                    type: array
+                  failedToUninstall:
+                    items:
+                      type: string
+                    type: array
+                  installed:
+                    items:
+                      type: string
+                    type: array
+                  installing:
+                    items:
+                      type: string
+                    type: array
+                  nodeCount:
+                    description: |-
+                      Number of cluster nodes that have kata installed on them including
+                      those queued for installation and currently installing, though
+                      excluding nodes that have a kata installation but are queued for
+                      uninstallation or currently uninstalling.
+                    type: integer
+                  readyNodeCount:
+                    description: |-
+                      Number of cluster nodes that have kata installed on them and are
+                      currently ready to run kata workloads.
+                    type: integer
+                  uninstalling:
+                    items:
+                      type: string
+                    type: array
+                  waitingToInstall:
+                    items:
+                      type: string
+                    type: array
+                  waitingToUninstall:
+                    items:
+                      type: string
+                    type: array
+                type: object
+              runtimeClasses:
+                description: RuntimeClasses is the names of the RuntimeClasses created
+                  by this controller
+                items:
+                  type: string
+                type: array
+              waitingForMcoToStart:
+                default: false
+                description: Used internally to persist state between reconciliations
+                type: boolean
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
