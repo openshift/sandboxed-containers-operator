@@ -31,7 +31,7 @@ type KataConfigSpec struct {
 
 	// CheckNodeEligibility is used to detect the node(s) eligibility to run Kata containers.
 	// This is currently done through the use of the Node Feature Discovery Operator (NFD).
-	// For more information on how the check works, please refer to the sandboxed containers documentation - https://docs.openshift.com/container-platform/latest/sandboxed_containers/deploying-sandboxed-container-workloads.html
+	// For more information on how the check works, please refer to the sandboxed containers documentation - https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.6/html-single/user_guide/index#about-node-eligibility-checks_about-osc
 	// +kubebuilder:default:=false
 	CheckNodeEligibility bool `json:"checkNodeEligibility"`
 
@@ -40,7 +40,7 @@ type KataConfigSpec struct {
 	LogLevel string `json:"logLevel,omitempty"`
 
 	// EnablePeerPods is used to transparently create pods on a remote system.
-	// For more information on how this works, please refer to the sandboxed containers documentation - https://docs.openshift.com/container-platform/latest/sandboxed_containers/deploying-sandboxed-container-workloads.html
+	// For more information on how this works, please refer to the sandboxed containers documentation - https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.6/html/user_guide/deploying-public-cloud#deploying-public-cloud
 	// +optional
 	// +kubebuilder:default:=false
 	EnablePeerPods bool `json:"enablePeerPods"`
