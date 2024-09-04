@@ -54,6 +54,7 @@ import (
 
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	"github.com/openshift/sandboxed-containers-operator/controllers"
+	csvv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -84,6 +85,8 @@ func init() {
 	utilruntime.Must(configv1.AddToScheme(scheme))
 
 	utilruntime.Must(ccov1.AddToScheme(scheme))
+
+	utilruntime.Must(csvv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -137,6 +140,14 @@ func main() {
 		}
 
 		setupLog.Info("added labels")
+
+		// Patch CSV to use older images for peer-pods if cluster version is less than
+		// 4.15
+		err = patchCsv(context.TODO(), mgr)
+		if err != nil {
+			setupLog.Error(err, "unable to patch CSV")
+			os.Exit(1)
+		}
 
 		if err = (&controllers.KataConfigOpenShiftReconciler{
 			Client: mgr.GetClient(),

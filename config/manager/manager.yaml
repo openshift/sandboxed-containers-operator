@@ -88,6 +88,14 @@ spec:
               value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.7.0
             - name: RELATED_IMAGE_PODVM_PAYLOAD
               value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.7.0
+            - name: RELEASE_VERSION
+              value: 1.7.0
+            - name: RELATED_IMAGE_CAA_PREV
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9:1.6.0
+            - name: RELATED_IMAGE_PODVM_BUILDER_PREV
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.6.0
+            - name: RELATED_IMAGE_PODVM_PAYLOAD_PREV
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.6.0
           imagePullPolicy: Always
           resources:
             limits:
