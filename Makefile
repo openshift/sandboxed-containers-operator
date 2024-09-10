@@ -82,6 +82,11 @@ GOFLAGS := -tags=$(subst $(space),$(comma),$(strip $(BUILTIN_CLOUD_PROVIDERS)))
 # local development.
 SKIP_TESTS =
 
+#
+# The CoreOS extension that ships kata-containers
+#
+SANDBOXED_CONTAINERS_EXTENSION ?= kata-containers
+
 .PHONY: all
 all: build
 
@@ -240,10 +245,12 @@ $(YQ): $(LOCALBIN)
 	test -s $(LOCALBIN)/yq || GOBIN=$(LOCALBIN) go install github.com/mikefarah/yq/v4@latest
 
 .PHONY: bundle
-bundle: manifests kustomize ## Generate bundle manifests and metadata, then validate generated files.
+bundle: manifests kustomize yq ## Generate bundle manifests and metadata, then validate generated files.
 	operator-sdk generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
+	$(YQ) eval '(.spec.install.spec.deployments[].spec.template.spec.containers[].env.[] | select(.name == "SANDBOXED_CONTAINERS_EXTENSION") | .value) |= "$(SANDBOXED_CONTAINERS_EXTENSION)"' \
+		-i bundle/manifests/sandboxed-containers-operator.clusterserviceversion.yaml
 	operator-sdk bundle validate ./bundle
 
 .PHONY: bundle-build
