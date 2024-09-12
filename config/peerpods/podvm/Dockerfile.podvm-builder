@@ -31,6 +31,4 @@ RUN git clone ${CAA_SRC} -b ${CAA_REF} /src/cloud-api-adaptor
 
 ADD podvm-builder.sh /podvm-builder.sh
 
-COPY parse_hdr.py /src/cloud-api-adaptor/src/cloud-api-adaptor/podvm
-
 ENTRYPOINT ["/podvm-builder.sh"]

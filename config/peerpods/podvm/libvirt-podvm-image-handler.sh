@@ -112,7 +112,7 @@ function create_libvirt_image_from_scratch() {
     cp -pr "${CAA_SRC_DIR}"/podvm/output/*.qcow2 "${PODVM_IMAGE_PATH}"
 
     # Get RVPS values from qcow2
-    if [ "$SE_BOOT" == "true" ]; then
+    if [ "$SE_BOOT" == "true" ] && [ "${ARCH}" == "s390x" ]; then
     	calculate_rvps_qcow2
     fi
 
@@ -167,8 +167,8 @@ function download_rhel_kvm_guest_qcow2() {
 function calculate_rvps_qcow2() {
     mkdir -p "${CAA_SRC_DIR}"/podvm/rvps_config
     cp "${CAA_SRC_DIR}"/podvm/output/*.qcow2 "${CAA_SRC_DIR}"/podvm/rvps_config/podvm-libvirt.qcow2
-    export SE_IMG_PATH="${CAA_SRC_DIR}"/podvm/rvps_config/podvm-libvirt.qcow2
-    export RVPS_CONFIG_DIR="${CAA_SRC_DIR}"/podvm/rvps_config
+    SE_IMG_PATH="${CAA_SRC_DIR}"/podvm/rvps_config/podvm-libvirt.qcow2
+    RVPS_CONFIG_DIR="${CAA_SRC_DIR}"/podvm/rvps_config
     rm -rf $RVPS_CONFIG_DIR/se.img
     rm -rf /mnt/sevm
     mkdir /mnt/sevm
@@ -238,7 +238,6 @@ function calculate_rvps_qcow2() {
 
     qemu-nbd -d /dev/nbd3
     rm -rf $RVPS_CONFIG_DIR/hdr.bin
-    git clone https://github.com/ibm-s390-linux/s390-tools.git
     HKD_FILE_PATH="/tmp/HKD.crt"
     HKD_UNFORMATTED="/tmp/HKD_unformatted.crt"
     HKD_FORMATTED="/tmp/HKD_formatted.crt"
@@ -264,12 +263,15 @@ function calculate_rvps_qcow2() {
     done
     echo $lastline >> $HKD_FILE_PATH
 
-    s390-tools/rust/pvattest/tools/pvextract-hdr -o $RVPS_CONFIG_DIR/hdr.bin $RVPS_CONFIG_DIR/se.img
-    cp "${CAA_SRC_DIR}"/podvm/parse_hdr.py "$RVPS_CONFIG_DIR"
-    python3 $RVPS_CONFIG_DIR/parse_hdr.py $RVPS_CONFIG_DIR/hdr.bin $HKD_FILE_PATH 
-    se_tag=`python3 $RVPS_CONFIG_DIR/parse_hdr.py $RVPS_CONFIG_DIR/hdr.bin $HKD_FILE_PATH | grep se.tag | awk -F ":" '{ print $2 }'`
-    se_attestation_phkh=`python3 $RVPS_CONFIG_DIR/parse_hdr.py $RVPS_CONFIG_DIR/hdr.bin $HKD_FILE_PATH | grep se.attestation_phkh | awk -F ":" '{ print $2 }'`
-    se_image_phkh=`python3 $RVPS_CONFIG_DIR/parse_hdr.py $RVPS_CONFIG_DIR/hdr.bin $HKD_FILE_PATH | grep se.image_phkh | awk -F ":" '{ print $2 }'`
+    wget https://github.com/ibm-s390-linux/s390-tools/raw/master/rust/pvattest/tools/pvextract-hdr -O $RVPS_CONFIG_DIR/pvextract-hdr
+    wget https://github.com/openshift/trustee/raw/main/attestation-service/verifier/src/se/se_parse_hdr.py -O $RVPS_CONFIG_DIR/se_parse_hdr.py
+
+    chmod +x $RVPS_CONFIG_DIR/pvextract-hdr
+    $RVPS_CONFIG_DIR/pvextract-hdr -o $RVPS_CONFIG_DIR/hdr.bin $RVPS_CONFIG_DIR/se.img
+    python3 $RVPS_CONFIG_DIR/se_parse_hdr.py $RVPS_CONFIG_DIR/hdr.bin $HKD_FILE_PATH 
+    se_tag=`python3 $RVPS_CONFIG_DIR/se_parse_hdr.py $RVPS_CONFIG_DIR/hdr.bin $HKD_FILE_PATH | grep se.tag | awk -F ":" '{ print $2 }'`
+    se_attestation_phkh=`python3 $RVPS_CONFIG_DIR/se_parse_hdr.py $RVPS_CONFIG_DIR/hdr.bin $HKD_FILE_PATH | grep se.attestation_phkh | awk -F ":" '{ print $2 }'`
+    se_image_phkh=`python3 $RVPS_CONFIG_DIR/se_parse_hdr.py $RVPS_CONFIG_DIR/hdr.bin $HKD_FILE_PATH | grep se.image_phkh | awk -F ":" '{ print $2 }'`
 
     rm -rf $HKD_FILE_PATH
     rm -rf $RVPS_CONFIG_DIR/se-sample
@@ -331,7 +333,7 @@ EOF
     ls -lrt $RVPS_CONFIG_DIR/se-message $RVPS_CONFIG_DIR/ibmse-policy.rego
     if [ $? -eq 0 ]; then
         echo "Removing Intermediate files se.img and se-sample.."
-        rm -rf $RVPS_CONFIG_DIR/se.img $RVPS_CONFIG_DIR/se-sample $RVPS_CONFIG_DIR/podvm-libvirt.qcow2 $RVPS_CONFIG_DIR/parse_hdr.py
+        rm -rf $RVPS_CONFIG_DIR/se.img $RVPS_CONFIG_DIR/se-sample $RVPS_CONFIG_DIR/podvm-libvirt.qcow2 $RVPS_CONFIG_DIR/se_parse_hdr.py
         echo "** Image Parameters are Ready and Saved in " $RVPS_CONFIG_DIR " Folder. Listing the contents..**"
         ls -lrt $RVPS_CONFIG_DIR/*
         
@@ -462,7 +464,7 @@ function install_packages(){
     fi
     
     if [[ "${IMAGE_TYPE}" == "operator-built" ]]; then
-        dnf install -y genisoimage qemu-kvm qemu-img python3 python3-cryptography kernel-$(uname -r) 
+        dnf install -y genisoimage qemu-kvm qemu-img python3 python3-cryptography kmod wget kernel-$(uname -r)  
 
         if [ "${ARCH}" == "s390x" ]; then
             # Build packer from source for s390x as there are no prebuilt binaries for the required packer version
