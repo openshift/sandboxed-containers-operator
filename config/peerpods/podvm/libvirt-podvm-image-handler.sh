@@ -63,7 +63,7 @@ function create_libvirt_image_from_prebuilt_artifact() {
 
         mkdir -p "${EXTRACTION_DESTINATION_PATH}" ||
             error_exit "Failed to create the image directory"
-        
+
         extract_container_image "${PODVM_IMAGE_URL}" "${PODVM_IMAGE_TAG}" "${IMAGE_SRC}" "${EXTRACTION_DESTINATION_PATH}" "${IMAGE_REPO_AUTH_FILE}"
 
         # Form the path of the podvm qcow2 image.
@@ -102,10 +102,10 @@ function create_libvirt_image_from_scratch() {
     download_rhel_kvm_guest_qcow2
 
     # Prepare the pause image for embedding into the libvirt image
-    download_and_extract_pause_image "${PAUSE_IMAGE_REPO}" "${PAUSE_IMAGE_VERSION}" "${PAUSE_IMAGE_REPO_AUTH_FILE}" 
+    download_and_extract_pause_image "${PAUSE_IMAGE_REPO}" "${PAUSE_IMAGE_VERSION}" "${PAUSE_IMAGE_REPO_AUTH_FILE}"
 
-    cd "${CAA_SRC_DIR}"/podvm || \
-	    error_exit "Failed to change directory to "${CAA_SRC_DIR}"/podvm"
+    cd "${CAA_SRC_DIR}"/podvm ||
+        error_exit "Failed to change directory to ${CAA_SRC_DIR}/podvm"
     LIBC=gnu make BINARIES= PAUSE_BUNDLE= image
 
     PODVM_IMAGE_PATH=/payload/podvm-libvirt.qcow2
@@ -123,8 +123,8 @@ function create_libvirt_image_from_scratch() {
 function download_rhel_kvm_guest_qcow2() {
     #Validate RHEL version for IBM Z Secure Enablement
     if [ "$SE_BOOT" == "true" ]; then
-        version=$(echo $BASE_OS_VERSION | awk -F "." '{ print $1 }')
-        release=$(echo $BASE_OS_VERSION | awk -F "." '{ print $2 }')
+        version=$(echo "$BASE_OS_VERSION" | awk -F "." '{ print $1 }')
+        release=$(echo "$BASE_OS_VERSION" | awk -F "." '{ print $2 }')
         if [[ "$version" -lt 9 || ("$version" -eq 9 && "$release" -lt 4) ]]; then
             error_exit "Libvirt Secure Execution supports RHEL OS version 9.4 or above"
         fi
@@ -137,24 +137,25 @@ function download_rhel_kvm_guest_qcow2() {
     TOKEN_GENERATOR_URI=https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token
     IMAGES_URI=https://api.access.redhat.com/management/v1/images/rhel/"${BASE_OS_VERSION}"/"${ARCH}"
 
-    filename="rhel-"${BASE_OS_VERSION}"-"${ARCH}"-kvm.qcow2"
+    filename="rhel-${BASE_OS_VERSION}-${ARCH}-kvm.qcow2"
 
     token=$(curl "${TOKEN_GENERATOR_URI}" \
         -d grant_type=refresh_token -d client_id=rhsm-api -d refresh_token="${REDHAT_OFFLINE_TOKEN}" | jq --raw-output .access_token)
     images=$(curl -X 'GET' "${IMAGES_URI}" \
-        -H 'accept: application/json' -H "Authorization: Bearer "${token}"" | jq )
+        -H 'accept: application/json' -H "Authorization: Bearer ${token}" | jq)
 
     download_href=$(echo "${images}" | jq -r --arg fn "${filename}" '.body[] | select(.filename == $fn) | .downloadHref')
 
     download_url=$(curl -X 'GET' "${download_href}" \
-        -H "Authorization: Bearer "${token}"" -H 'accept: application/json' | jq -r .body.href )
+        -H "Authorization: Bearer ${token}" -H 'accept: application/json' | jq -r .body.href)
 
-    curl -X GET "${download_url}" -H "Authorization: Bearer "${token}"" --output rhel-"${BASE_OS_VERSION}"-"${ARCH}"-kvm.qcow2
+    curl -X GET "${download_url}" -H "Authorization: Bearer ${token}" --output rhel-"${BASE_OS_VERSION}"-"${ARCH}"-kvm.qcow2
 
     cp -pr rhel-"${BASE_OS_VERSION}"-"${ARCH}"-kvm.qcow2 "${CAA_SRC_DIR}"/podvm/rhel-"${BASE_OS_VERSION}"-"${ARCH}"-kvm.qcow2
 
     export IMAGE_URL="${CAA_SRC_DIR}"/podvm/rhel-"${BASE_OS_VERSION}"-"${ARCH}"-kvm.qcow2
-    export IMAGE_CHECKSUM=$(sha256sum "${IMAGE_URL}" | awk '{ print $1 }')
+    IMAGE_CHECKSUM=$(sha256sum "${IMAGE_URL}" | awk '{ print $1 }')
+    export IMAGE_CHECKSUM
 
 }
 
@@ -163,8 +164,8 @@ function download_rhel_kvm_guest_qcow2() {
 function upload_libvirt_image() {
     PODVM_IMAGE_PATH="${1}"
 
-    echo "LIBVIRT_VOL_NAME: "${LIBVIRT_VOL_NAME}"" && echo "LIBVIRT_POOL: "${LIBVIRT_POOL}"" && \
-	    echo "LIBVIRT_URI: "${LIBVIRT_URI}"" && echo "PODVM_IMAGE_PATH: "${PODVM_IMAGE_PATH}"" 
+    echo "LIBVIRT_VOL_NAME: ${LIBVIRT_VOL_NAME}" && echo "LIBVIRT_POOL: ${LIBVIRT_POOL}" &&
+        echo "LIBVIRT_URI: ${LIBVIRT_URI}" && echo "PODVM_IMAGE_PATH: ${PODVM_IMAGE_PATH}"
     echo "Starting to upload the image."
     virsh -d 0 -c "${LIBVIRT_URI}" vol-upload --vol "${LIBVIRT_VOL_NAME}" "${PODVM_IMAGE_PATH}" --pool "${LIBVIRT_POOL}" --sparse
     if [ $? -eq 0 ]; then
@@ -174,7 +175,7 @@ function upload_libvirt_image() {
 
 # Function to add the libvirt_volume_name in the peer-pods-cm configmap
 
-function add_libvirt_vol_to_peer_pods_cm(){
+function add_libvirt_vol_to_peer_pods_cm() {
     if [ "${UPDATE_PEERPODS_CM}" == "yes" ]; then
 
         # Check if the peer-pods-cm configmap exists
@@ -186,7 +187,7 @@ function add_libvirt_vol_to_peer_pods_cm(){
         # Add the libvirt image id to peer-pods-cm configmap
         echo "Updating peer-pods-cm configmap with LIBVIRT_IMAGE_ID=${LIBVIRT_VOL_NAME}"
         kubectl patch configmap peer-pods-cm -n openshift-sandboxed-containers-operator \
-        --type merge -p "{\"data\":{\"LIBVIRT_IMAGE_ID\":\"${LIBVIRT_VOL_NAME}\"}}" ||
+            --type merge -p "{\"data\":{\"LIBVIRT_IMAGE_ID\":\"${LIBVIRT_VOL_NAME}\"}}" ||
             error_exit "Failed to add the libvirt image id to peer-pods-cm configmap"
     fi
 }
@@ -197,7 +198,7 @@ function add_libvirt_vol_to_peer_pods_cm(){
 function delete_libvirt_image() {
     echo "Deleting Libvirt image"
 
-    # Delete the Libvirt pool 
+    # Delete the Libvirt pool
     # If any error occurs, exit the script with an error message
 
     # LIBVIRT_POOL shouldn't be empty
@@ -207,7 +208,7 @@ function delete_libvirt_image() {
     echo "Deleting libvirt pool."
     virsh -d 0 -c "${LIBVIRT_URI}" pool-destroy "${LIBVIRT_POOL}" ||
         error_exit "Failed to destroy the libvirt pool"
-    
+
     virsh -d 0 -c "${LIBVIRT_URI}" pool-undefine "${LIBVIRT_POOL}" ||
         error_exit "Failed to undefine the libvirt pool"
 
@@ -231,7 +232,7 @@ function delete_libvirt_vol_from_peer_pods_cm() {
 
     # Delete the libvirt image id from peer-pods-cm configmap
     kubectl patch configmap peer-pods-cm -n openshift-sandboxed-containers-operator \
-    --type merge -p "{\"data\":{\"LIBVIRT_IMAGE_ID\":\"\"}}" ||
+        --type merge -p "{\"data\":{\"LIBVIRT_IMAGE_ID\":\"\"}}" ||
         error_exit "Failed to delete the libvirt image id from peer-pods-cm configmap"
     echo "libvirt image id deleted from peer-pods-cm configmap successfully"
 }
@@ -246,7 +247,7 @@ function display_help() {
     echo "-C  Delete image"
 }
 
-function install_packages(){
+function install_packages() {
 
     install_binary_packages
 
@@ -257,28 +258,28 @@ function install_packages(){
         subscription-manager register --org="${ORG_ID}" --activationkey="${ACTIVATION_KEY}" ||
             error_exit "Failed to subscribe"
     fi
-    
+
     subscription-manager repos --enable codeready-builder-for-rhel-9-"${ARCH}"-rpms ||
         error_exit "Failed to enable codeready-builder"
 
     dnf install -y libvirt-client gcc file
 
     GO_VERSION="1.21.9"
-    curl https://dl.google.com/go/go"${GO_VERSION}".linux-"${ARCH/x86_64/amd64}".tar.gz -o go"${GO_VERSION}".linux-"${ARCH/x86_64/amd64}".tar.gz && \
-    rm -rf /usr/local/go && tar -C /usr/local -xzf go"${GO_VERSION}".linux-"${ARCH/x86_64/amd64}".tar.gz && \
-    rm -f go"${GO_VERSION}".linux-"${ARCH/x86_64/amd64}".tar.gz
-    export PATH="/usr/local/go/bin:"${PATH}""
+    curl https://dl.google.com/go/go"${GO_VERSION}".linux-"${ARCH/x86_64/amd64}".tar.gz -o go"${GO_VERSION}".linux-"${ARCH/x86_64/amd64}".tar.gz &&
+        rm -rf /usr/local/go && tar -C /usr/local -xzf go"${GO_VERSION}".linux-"${ARCH/x86_64/amd64}".tar.gz &&
+        rm -f go"${GO_VERSION}".linux-"${ARCH/x86_64/amd64}".tar.gz
+    export PATH="/usr/local/go/bin:${PATH}"
     export GOPATH="/src"
 
     if [ "${ARCH}" == "s390x" ]; then
         # Build umoci from source for s390x as there are no prebuilt binaries
         mkdir -p umoci
         git clone https://github.com/opencontainers/umoci.git
-        cd umoci
+        cd umoci || error_exit "Failed to change directory to umoci"
         make
         cp -pr umoci /usr/local/bin/
     fi
-    
+
     if [[ "${IMAGE_TYPE}" == "operator-built" ]]; then
         dnf install -y genisoimage qemu-kvm
 
@@ -286,7 +287,7 @@ function install_packages(){
             # Build packer from source for s390x as there are no prebuilt binaries for the required packer version
             PACKER_VERSION="v1.9.4"
             git clone --depth 1 --single-branch https://github.com/hashicorp/packer.git -b "${PACKER_VERSION}"
-            cd packer
+            cd packer || error_exit "Failed to change directory to packer"
             sed -i -- "s/ALL_XC_ARCH=.*/ALL_XC_ARCH=\"${ARCH}\"/g" scripts/build.sh
             sed -i -- "s/ALL_XC_OS=.*/ALL_XC_OS=\"Linux\"/g" scripts/build.sh
             make bin && cp bin/packer /usr/local/bin/
@@ -299,7 +300,6 @@ function install_packages(){
         git clone https://github.com/canonical/cloud-utils
         cd cloud-utils && make install
     fi
-    
 
 }
 
