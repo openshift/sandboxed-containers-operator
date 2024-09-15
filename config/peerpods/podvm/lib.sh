@@ -231,15 +231,15 @@ function prepare_source_code() {
 
     # disable ssh and unsafe cloud-init modules
     if [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]] || [[ -n "$CUSTOM_CLOUD_INIT_MODULES" ]]; then
-       [[ "$CUSTOM_CLOUD_INIT_MODULES" != "no" ]] && [[ "$CLOUD_PROVIDER" != "libvirt" ]] && set_custom_cloud_init_modules
+        [[ "$CUSTOM_CLOUD_INIT_MODULES" != "no" ]] && [[ "$CLOUD_PROVIDER" != "libvirt" ]] && set_custom_cloud_init_modules
     fi
 
-    # Validate and copy HKD for IBM Z Secure Enablement 
+    # Validate and copy HKD for IBM Z Secure Enablement
     if [[ "$SE_BOOT" == "true" ]]; then
         if [[ -z "$HOST_KEY_CERTS" ]]; then
             error_exit "Error: HKD is not present."
         else
-            echo "$HOST_KEY_CERTS" >> "${podvm_dir}/files/HKD.crt"
+            echo "$HOST_KEY_CERTS" >>"${podvm_dir}/files/HKD.crt"
         fi
     fi
 
@@ -278,7 +278,7 @@ function download_and_extract_pause_image() {
 # Accepts six arguments:
 # 1. container_image_repo_url: The registry URL of the source container image.
 # 2. image_tag: The tag of the source container image.
-# 3. dest_image: The destination image name. 
+# 3. dest_image: The destination image name.
 # 4. destination_path: The destination path where the image is to be extracted.
 # 5. auth_json_file (optional): Path to the registry secret file to use for downloading the image.
 function extract_container_image() {
@@ -336,7 +336,7 @@ cloud_final_modules:
   - final_message
   - power_state_change
 EOF
-    echo "sudo cp -a /tmp/files/etc/cloud/cloud.cfg.d/* /etc/cloud/cloud.cfg.d/" >> "${podvm_dir}"/qcow2/copy-files.sh
+    echo "sudo cp -a /tmp/files/etc/cloud/cloud.cfg.d/* /etc/cloud/cloud.cfg.d/" >>"${podvm_dir}"/qcow2/copy-files.sh
     echo "Inject cloud-init configuration file:" && cat "${cfg_file}"
 }
 
@@ -374,10 +374,13 @@ EOF
 function get_image_type_url_and_path() {
 
     # Use pattern matching to split on '::' and then on ':', and capture output
+    # The PODVM_IMAGE_URI is evaluated in the podvm-builder.sh
+    # It must be set in the {provider}-podvm-image-cm configmap if needed
+    # shellcheck disable=SC2153
     if [[ $PODVM_IMAGE_URI =~ ^([^:]+)::([^:]+)(:([^:]+))?(::(.+))?$ ]]; then
         PODVM_IMAGE_TYPE="${BASH_REMATCH[1]}"
         PODVM_IMAGE_URL="${BASH_REMATCH[2]}"
-        PODVM_IMAGE_TAG="${BASH_REMATCH[4]}" # This will be empty if not present
+        PODVM_IMAGE_TAG="${BASH_REMATCH[4]}"      # This will be empty if not present
         PODVM_IMAGE_SRC_PATH="${BASH_REMATCH[6]}" # This will be empty if not present
     fi
 
@@ -397,11 +400,11 @@ function validate_podvm_image() {
     PODVM_IMAGE_PATH="${1}"
 
     # Currently only qcow2 based PodVM images are supported for image upload.
-    if [[ "$(file -b $PODVM_IMAGE_PATH)" != *QCOW2* ]]; then
+    if [[ "$(file -b "$PODVM_IMAGE_PATH")" != *QCOW2* ]]; then
         error_exit "PodVM image is not a valid qcow2, exiting."
     fi
 
-    echo "Checksum of the PodVM image: $(sha256sum $PODVM_IMAGE_PATH)"
+    echo "Checksum of the PodVM image: $(sha256sum "$PODVM_IMAGE_PATH")"
 }
 
 # Global variables
