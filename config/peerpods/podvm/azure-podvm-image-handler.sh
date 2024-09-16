@@ -98,6 +98,17 @@ function add_azure_repositories() {
     echo "Azure yum repositories added successfully"
 }
 
+function set_image_version_and_name() {
+    # Set the image version
+    # It should follow the Major(int).Minor(int).Patch(int)
+    IMAGE_VERSION="${IMAGE_VERSION_MAJ_MIN}.$(date +'%Y%m%d%S')"
+    export IMAGE_VERSION
+
+    # Set the image name
+    IMAGE_NAME="${IMAGE_BASE_NAME}-${IMAGE_VERSION}"
+    export IMAGE_NAME
+}
+
 # function to install azure CLI
 
 function install_azure_cli() {
@@ -234,15 +245,8 @@ function create_image_using_packer() {
     # If any error occurs, exit the script with an error message
     # The variables are set before calling the function
 
-    # Set the image version
-    # It should follow the Major(int).Minor(int).Patch(int)
-    IMAGE_VERSION="${IMAGE_VERSION_MAJ_MIN}.$(date +'%Y%m%d%S')"
-    export IMAGE_VERSION
-
-    # Set the image name
-    IMAGE_NAME="${IMAGE_BASE_NAME}-${IMAGE_VERSION}"
-    export IMAGE_NAME
-
+    # Set the image version and name
+    set_image_version_and_name
     # Set the base image details
 
     if [[ "${PODVM_DISTRO}" == "rhel" ]]; then
@@ -490,6 +494,28 @@ function create_image() {
         install_binary_packages
     fi
 
+    # Based on the value of `IMAGE_TYPE` the image is either build from scratch or using the prebuilt artifact.
+    if [[ "${IMAGE_TYPE}" == "operator-built" ]]; then
+        create_azure_image_from_scratch
+    elif [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
+        create_azure_image_from_prebuilt_artifact
+    fi
+
+    # Get the image id of the newly created image.
+    # This will set the IMAGE_ID variable
+    get_image_id
+
+    # Add the image id as annotation to peer-pods-cm configmap
+    add_image_id_annotation_to_peer_pods_cm
+
+    echo "Azure image created successfully"
+
+}
+
+# Function to create the azure image from scratch using packer
+function create_azure_image_from_scratch() {
+    echo "Creating Azure image from scratch"
+
     if [[ "${DOWNLOAD_SOURCES}" == "yes" ]]; then
         # Download source code from GitHub
         download_source_code
@@ -504,15 +530,133 @@ function create_image() {
     # Create Azure image using packer
     create_image_using_packer
 
-    # Get the image id of the newly created image.
-    # This will set the IMAGE_ID variable
-    get_image_id
+    echo "Azure image created successfully from scratch"
+}
 
-    # Add the image id as annotation to peer-pods-cm configmap
-    add_image_id_annotation_to_peer_pods_cm
+# Function to create the azure image from prebuilt artifact
+# The prebuilt artifact is expected to be a vhd image
 
-    echo "Azure image created successfully"
+function create_azure_image_from_prebuilt_artifact() {
+    echo "Creating Azure image from prebuilt artifact"
 
+    # Set the IMAGE_VERSION and IMAGE_NAME
+    set_image_version_and_name
+
+    echo "Pulling the podvm image from the provided path"
+    image_src="/tmp/image"
+    extraction_destination_path="/image"
+    image_repo_auth_file="/tmp/regauth/auth.json"
+
+    # Get the PODVM_IMAGE_TYPE, PODVM_IMAGE_TAG and PODVM_IMAGE_SRC_PATH
+    get_image_type_url_and_path
+
+    case "${PODVM_IMAGE_TYPE}" in
+    oci)
+        echo "Extracting the Azure image from the given path."
+
+        mkdir -p "${extraction_destination_path}" ||
+            error_exit "Failed to create the image directory"
+
+        extract_container_image "${PODVM_IMAGE_URL}" \
+            "${PODVM_IMAGE_TAG}" \
+            "${image_src}" \
+            "${extraction_destination_path}" \
+            "${image_repo_auth_file}"
+
+        # Form the path of the podvm vhd image.
+        podvm_image_path="${extraction_destination_path}/rootfs/${PODVM_IMAGE_SRC_PATH}"
+
+        # Convert the podvm image to vhd if it's not a vhd image
+        # This will set the VHD_IMAGE_PATH global variable
+        convert_podvm_image_to_vhd "${podvm_image_path}"
+
+        # Upload the vhd to the storage container
+        # This will set the VHD_URL global variable
+        upload_vhd_image "${VHD_IMAGE_PATH}" "${IMAGE_NAME}"
+
+        # Create the image version from the VHD
+        az sig image-version create \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --gallery-name "${IMAGE_GALLERY_NAME}" \
+            --gallery-image-definition "${IMAGE_DEFINITION_NAME}" \
+            --gallery-image-version "${IMAGE_VERSION}" \
+            --os-vhd-uri "${VHD_URL}" \
+            --os-vhd-storage-account "${STORAGE_ACCOUNT_NAME}" \
+            --target-regions "${AZURE_REGION}" ||
+            error_exit "Failed to create the image version"
+
+        # Clean up
+        rm "${podvm_image_path}"
+        az storage account delete \
+            --name "${STORAGE_ACCOUNT_NAME}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --yes ||
+            error_exit "Failed to delete the storage account"
+
+        ;;
+    *)
+        error_exit "Currently only OCI image unpacking is supported, exiting."
+        ;;
+    esac
+
+    echo "Azure image created successfully from prebuilt artifact"
+}
+
+# Function to upload the vhd to the volume
+
+function upload_vhd_image() {
+    echo "Uploading the vhd to the storage container"
+
+    local vhd_path="${1}"
+    local image_name="${2}"
+
+    [[ -z "${vhd_path}" ]] && error_exit "VHD path is empty"
+
+    # Create a storage account if it doesn't exist
+    STORAGE_ACCOUNT_NAME="podvmartifacts$(date +%s)"
+    az storage account create \
+        --name "${STORAGE_ACCOUNT_NAME}" \
+        --resource-group "${AZURE_RESOURCE_GROUP}" \
+        --location "${AZURE_REGION}" \
+        --sku Standard_LRS \
+        --encryption-services blob ||
+        error_exit "Failed to create the storage account"
+
+    # Get storage account key
+    STORAGE_ACCOUNT_KEY=$(az storage account keys list \
+        --resource-group "${AZURE_RESOURCE_GROUP}" \
+        --account-name "${STORAGE_ACCOUNT_NAME}" \
+        --query '[0].value' \
+        -o tsv) ||
+        error_exit "Failed to get the storage account key"
+
+    # Create a container in the storage account
+    CONTAINER_NAME="podvm-artifacts"
+    az storage container create \
+        --name "${CONTAINER_NAME}" \
+        --account-name "${STORAGE_ACCOUNT_NAME}" \
+        --account-key "${STORAGE_ACCOUNT_KEY}" ||
+        error_exit "Failed to create the storage container"
+
+    # Upload the VHD to the storage container
+    az storage blob upload --account-name "${STORAGE_ACCOUNT_NAME}" \
+        --account-key "${STORAGE_ACCOUNT_KEY}" \
+        --container-name "${CONTAINER_NAME}" \
+        --file "${vhd_path}" \
+        --name "${image_name}" ||
+        error_exit "Failed to upload the VHD to the storage container"
+
+    # Get the URL of the uploaded VHD
+    VHD_URL=$(az storage blob url \
+        --account-name "${STORAGE_ACCOUNT_NAME}" \
+        --account-key "${STORAGE_ACCOUNT_KEY}" \
+        --container-name "${CONTAINER_NAME}" \
+        --name "${image_name}" -o tsv) ||
+        error_exit "Failed to get the URL of the uploaded VHD"
+
+    export VHD_URL
+
+    echo "VHD uploaded successfully"
 }
 
 # Function to delete a specific image version from Azure
