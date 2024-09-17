@@ -1,6 +1,7 @@
 #!/bin/bash
 
 ENV_FILE=/tmp/cm.env
+IS_ARO=false
 
 echo "##### OSC ConfigMap Configurator #####"
 
@@ -113,14 +114,20 @@ function getLocalDefaults() {
     #PODVM_AMI_ID=${PODVM_AMI_ID}
 
     # azure
-    [[ ! ${AZURE_SUBNET_ID} ]] && [[ ${AZURE_SUBSCRIPTION_ID} ]] && [[ ${AZURE_RESOURCE_GROUP} ]] && \
-        AZURE_SUBNET_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${AZURE_RESOURCE_GROUP}/providers/Microsoft.Network/virtualNetworks/${AZURE_RESOURCE_GROUP%-rg}-vnet/subnets/${AZURE_RESOURCE_GROUP%-rg}-worker-subnet"
-    [[ ! ${AZURE_NSG_ID} ]] && [[ ${AZURE_SUBSCRIPTION_ID} ]] && [[ ${AZURE_RESOURCE_GROUP} ]] && \
-        AZURE_NSG_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${AZURE_RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/${AZURE_RESOURCE_GROUP%-rg}-nsg"
+    if [[ "${IS_ARO}" == "yes" ]]; then
+        [[ ! ${AZURE_SUBNET_ID} ]] && [[ ${AZURE_SUBSCRIPTION_ID} ]] && net_rg=$(oc get infrastructure/cluster -o jsonpath='{.status.platformStatus.azure.networkResourceGroupName}') && [[ ${net_rg} ]] && \
+            AZURE_SUBNET_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${net_rg}/providers/Microsoft.Network/virtualNetworks/aro-vnet/subnets/worker-subnet"
+        [[ ! ${AZURE_NSG_ID} ]] && [[ ${AZURE_SUBSCRIPTION_ID} ]] && [[ ${AZURE_RESOURCE_GROUP} ]] && infra_name=$(oc get infrastructure/cluster -o jsonpath='{.status.infrastructureName}') && [[ ${infra_name} ]] && \
+            AZURE_NSG_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${AZURE_RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/${infra_name}-nsg"
+    else # self managed azure
+        [[ ! ${AZURE_SUBNET_ID} ]] && [[ ${AZURE_SUBSCRIPTION_ID} ]] && [[ ${AZURE_RESOURCE_GROUP} ]] && \
+            AZURE_SUBNET_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${AZURE_RESOURCE_GROUP}/providers/Microsoft.Network/virtualNetworks/${AZURE_RESOURCE_GROUP%-rg}-vnet/subnets/${AZURE_RESOURCE_GROUP%-rg}-worker-subnet"
+        [[ ! ${AZURE_NSG_ID} ]] && [[ ${AZURE_SUBSCRIPTION_ID} ]] && [[ ${AZURE_RESOURCE_GROUP} ]] && \
+            AZURE_NSG_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${AZURE_RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/${AZURE_RESOURCE_GROUP%-rg}-nsg"
+    fi
     AZURE_INSTANCE_SIZE=${AZURE_INSTANCE_SIZE:-Standard_B2als_v2}
     AZURE_INSTANCE_SIZES=${AZURE_INSTANCE_SIZES:-Standard_B2als_v2,Standard_D2as_v5,Standard_D4as_v5,Standard_D2ads_v5}
     #AZURE_IMAGE_ID=${AZURE_IMAGE_ID}
-
 }
 
 function userVerification() {
@@ -165,6 +172,8 @@ function initialization() {
 
     # TODO: allow also k8s clusters
     cld=$(${CLI} get infrastructure -n cluster -o jsonpath='{.items[*].status.platformStatus.type}' | awk '{print tolower($0)}' | tr -d '"' ) && cld=${cld//none/libvirt}
+    oc get clusters.aro.openshift.io cluster &> /dev/null && IS_ARO=yes # mark as aro
+    echo "Cloud Provider is ${cld}" && [[ "${IS_ARO}" == "yes" ]] && echo "(ARO cluster)"
 
     rm -f ${ENV_FILE}
 }
