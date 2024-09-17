@@ -333,9 +333,10 @@ EOF
     ls -lrt $RVPS_CONFIG_DIR/se-message $RVPS_CONFIG_DIR/ibmse-policy.rego
     if [ $? -eq 0 ]; then
         echo "Removing Intermediate files se.img and se-sample.."
-        rm -rf $RVPS_CONFIG_DIR/se.img $RVPS_CONFIG_DIR/se-sample $RVPS_CONFIG_DIR/podvm-libvirt.qcow2 $RVPS_CONFIG_DIR/se_parse_hdr.py
+        rm -rf $RVPS_CONFIG_DIR/se.img $RVPS_CONFIG_DIR/se-sample $RVPS_CONFIG_DIR/podvm-libvirt.qcow2 $RVPS_CONFIG_DIR/se_parse_hdr.py $RVPS_CONFIG_DIR/pvextract-hdr
         echo "** Image Parameters are Ready and Saved in " $RVPS_CONFIG_DIR " Folder. Listing the contents..**"
         ls -lrt $RVPS_CONFIG_DIR/*
+        upload_rvps_params $RVPS_CONFIG_DIR
         
     else
         echo "** There are issues in generation of RSVP configurations ***"
@@ -353,6 +354,20 @@ function upload_libvirt_image() {
     virsh -d 0 -c "${LIBVIRT_URI}" vol-upload --vol "${LIBVIRT_VOL_NAME}" "${PODVM_IMAGE_PATH}" --pool "${LIBVIRT_POOL}" --sparse
     if [ $? -eq 0 ]; then
         echo "Uploaded the image successfully"
+    fi
+}
+
+function upload_rvps_params() {
+    PODVM_RVPS_PARAMS_PATH="${1}"
+
+    echo "LIBVIRT_VOL_NAME: "${LIBVIRT_VOL_NAME}"" && echo "LIBVIRT_POOL: "${LIBVIRT_POOL}"" && \
+	    echo "LIBVIRT_URI: "${LIBVIRT_URI}"" && echo "PODVM_RVPS_PARAMS_PATH: "${PODVM_RVPS_PARAMS_PATH}"" 
+    echo "Starting to upload the RVPS parameters."
+    virsh -d 0 -c "${LIBVIRT_URI}" vol-upload --vol "${LIBVIRT_VOL_NAME}" "${PODVM_RVPS_PARAMS_PATH}" --pool "${LIBVIRT_POOL}" --sparse
+    if [ $? -eq 0 ]; then
+        echo "Uploaded the RVPS parameters successfully"
+    else 
+        echo "Uploading the RVPS parameters failed.."
     fi
 }
 
