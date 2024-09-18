@@ -6,10 +6,11 @@ IS_ARO=false
 echo "##### OSC ConfigMap Configurator #####"
 
 # Loop through all the arguments
-while getopts ":yc:" opt; do
+while getopts ":yc:C" opt; do
     case ${opt} in
         y ) export YES=true;;
         c ) custom_vars=(${OPTARG});;
+        C ) DISABLECVM=false;;
         \? ) echo "Invalid option: -$OPTARG" >&2 && exit 1;;
     esac
 done
@@ -125,8 +126,8 @@ function getLocalDefaults() {
         [[ ! ${AZURE_NSG_ID} ]] && [[ ${AZURE_SUBSCRIPTION_ID} ]] && [[ ${AZURE_RESOURCE_GROUP} ]] && \
             AZURE_NSG_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${AZURE_RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/${AZURE_RESOURCE_GROUP%-rg}-nsg"
     fi
-    AZURE_INSTANCE_SIZE=${AZURE_INSTANCE_SIZE:-Standard_B2als_v2}
-    AZURE_INSTANCE_SIZES=${AZURE_INSTANCE_SIZES:-Standard_B2als_v2,Standard_D2as_v5,Standard_D4as_v5,Standard_D2ads_v5}
+    [[ "${DISABLECVM}" == true ]] && AZURE_INSTANCE_SIZE=${AZURE_INSTANCE_SIZE:-Standard_B2als_v2} || AZURE_INSTANCE_SIZE=${AZURE_INSTANCE_SIZE:-Standard_DC2as_v5}
+    [[ "${DISABLECVM}" == true ]] && AZURE_INSTANCE_SIZES=${AZURE_INSTANCE_SIZES:-Standard_B2als_v2,Standard_D2as_v5,Standard_D4as_v5,Standard_D2ads_v5}
     #AZURE_IMAGE_ID=${AZURE_IMAGE_ID}
 }
 
