@@ -158,8 +158,12 @@ function applyCM() {
        echo "Waiting for ConfigMap to be created..."
        sleep 1
     done
-    echo && echo "###### Done"
     ${CLI} get cm peer-pods-cm -n openshift-sandboxed-containers-operator -o jsonpath='{.data}' | jq
+    if ${CLI} get ds/peerpodconfig-ctrl-caa-daemon -n openshift-sandboxed-containers-operator > /dev/null 2>&1; then
+        [[ -n $YES ]] || (read -r -p "Restart DeamonSet so that CM will be taken into account? [y/N] " && [[ "$REPLY" =~ ^[Yy]$ ]]) || exit 0
+        ${CLI} set env ds/peerpodconfig-ctrl-caa-daemon -n openshift-sandboxed-containers-operator REBOOT="$(date)"
+    fi
+    echo && echo "###### Done"
 }
 
 function initialization() {
