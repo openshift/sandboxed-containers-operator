@@ -30,6 +30,7 @@ function install_rpm_packages() {
         "unzip"
         "skopeo"
         "jq"
+        "qemu-img" # for handling pre-built images. Note that this rpm requires subscription
     )
 
     # Create a new array to store rpm packages that are not installed
@@ -231,15 +232,15 @@ function prepare_source_code() {
 
     # disable ssh and unsafe cloud-init modules
     if [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]] || [[ -n "$CUSTOM_CLOUD_INIT_MODULES" ]]; then
-       [[ "$CUSTOM_CLOUD_INIT_MODULES" != "no" ]] && [[ "$CLOUD_PROVIDER" != "libvirt" ]] && set_custom_cloud_init_modules
+        [[ "$CUSTOM_CLOUD_INIT_MODULES" != "no" ]] && [[ "$CLOUD_PROVIDER" != "libvirt" ]] && set_custom_cloud_init_modules
     fi
 
-    # Validate and copy HKD for IBM Z Secure Enablement 
+    # Validate and copy HKD for IBM Z Secure Enablement
     if [[ "$SE_BOOT" == "true" ]]; then
         if [[ -z "$HOST_KEY_CERTS" ]]; then
             error_exit "Error: HKD is not present."
         else
-            echo "$HOST_KEY_CERTS" >> "${podvm_dir}/files/HKD.crt"
+            echo "$HOST_KEY_CERTS" >>"${podvm_dir}/files/HKD.crt"
         fi
     fi
 
@@ -278,7 +279,7 @@ function download_and_extract_pause_image() {
 # Accepts six arguments:
 # 1. container_image_repo_url: The registry URL of the source container image.
 # 2. image_tag: The tag of the source container image.
-# 3. dest_image: The destination image name. 
+# 3. dest_image: The destination image name.
 # 4. destination_path: The destination path where the image is to be extracted.
 # 5. auth_json_file (optional): Path to the registry secret file to use for downloading the image.
 function extract_container_image() {
@@ -309,6 +310,10 @@ function extract_container_image() {
     umoci unpack --rootless --image "${dest_image}:${image_tag}" "${destination_path}" ||
         error_exit "Failed to extract the container image"
 
+    # Display the content of the destination_path
+    echo "Extracted container image content:"
+    ls -l "${destination_path}"
+
 }
 
 # These are cloud-init modules we allow for the CoCo case, it's mostly used to disable ssh
@@ -336,7 +341,7 @@ cloud_final_modules:
   - final_message
   - power_state_change
 EOF
-    echo "sudo cp -a /tmp/files/etc/cloud/cloud.cfg.d/* /etc/cloud/cloud.cfg.d/" >> "${podvm_dir}"/qcow2/copy-files.sh
+    echo "sudo cp -a /tmp/files/etc/cloud/cloud.cfg.d/* /etc/cloud/cloud.cfg.d/" >>"${podvm_dir}"/qcow2/copy-files.sh
     echo "Inject cloud-init configuration file:" && cat "${cfg_file}"
 }
 
@@ -374,10 +379,13 @@ EOF
 function get_image_type_url_and_path() {
 
     # Use pattern matching to split on '::' and then on ':', and capture output
+    # The PODVM_IMAGE_URI is evaluated in the podvm-builder.sh
+    # It must be set in the {provider}-podvm-image-cm configmap if needed
+    # shellcheck disable=SC2153
     if [[ $PODVM_IMAGE_URI =~ ^([^:]+)::([^:]+)(:([^:]+))?(::(.+))?$ ]]; then
         PODVM_IMAGE_TYPE="${BASH_REMATCH[1]}"
         PODVM_IMAGE_URL="${BASH_REMATCH[2]}"
-        PODVM_IMAGE_TAG="${BASH_REMATCH[4]}" # This will be empty if not present
+        PODVM_IMAGE_TAG="${BASH_REMATCH[4]}"      # This will be empty if not present
         PODVM_IMAGE_SRC_PATH="${BASH_REMATCH[6]}" # This will be empty if not present
     fi
 
@@ -392,16 +400,134 @@ function get_image_type_url_and_path() {
     export PODVM_IMAGE_TYPE PODVM_IMAGE_URL PODVM_IMAGE_TAG PODVM_IMAGE_SRC_PATH
 }
 
-# Function to validate the podvm image type.
-function validate_podvm_image() {
-    PODVM_IMAGE_PATH="${1}"
+# Function to get format of the podvm image
+# Input: podvm image path
+# Use qemu-img info to get the image info
+# export the image format as PODVM_IMAGE_FORMAT
+function get_podvm_image_format() {
+    image_path="${1}"
+    echo "Getting format of the PodVM image: ${image_path}"
 
-    # Currently only qcow2 based PodVM images are supported for image upload.
-    if [[ "$(file -b $PODVM_IMAGE_PATH)" != *QCOW2* ]]; then
-        error_exit "PodVM image is not a valid qcow2, exiting."
+    # jq -r when you want to output plain strings without quotes. Otherwise the string will be quoted
+    PODVM_IMAGE_FORMAT=$(qemu-img info -f raw --output json "${image_path}" | jq -r '.format') ||
+        error_exit "Failed to get podvm image info"
+
+    # vhd images are also raw format. So check the file extension. It's crude but for
+    # now it's good enough hopefully
+    if [[ "${image_path}" == *.vhd ]] && [[ "${PODVM_IMAGE_FORMAT}" == "raw" ]]; then
+        PODVM_IMAGE_FORMAT="vhd"
     fi
 
-    echo "Checksum of the PodVM image: $(sha256sum $PODVM_IMAGE_PATH)"
+    echo "PodVM image format for ${image_path}: ${PODVM_IMAGE_FORMAT}"
+    export PODVM_IMAGE_FORMAT
+}
+
+# Function to validate the podvm image type.
+# Input: podvm image path
+function validate_podvm_image() {
+    image_path="${1}"
+
+    echo "Validating PodVM image: ${image_path}"
+
+    # Get the podvm image format. This sets the PODVM_IMAGE_FORMAT global variable
+    get_podvm_image_format "${image_path}"
+
+    # Check if the format is qcow2, raw or vhd
+    if [[ "${PODVM_IMAGE_FORMAT}" != "qcow2" &&
+        "${PODVM_IMAGE_FORMAT}" != "raw" &&
+        "${PODVM_IMAGE_FORMAT}" != "vhd" ]]; then
+        error_exit "PodVM image is neither a valid qcow2, raw or vhd, exiting."
+    fi
+
+    echo "Checksum of the PodVM image: $(sha256sum "$image_path")"
+}
+
+# Function to convert qcow2 image to vhd image
+# Input: qcow2 image
+# Output: vhddisk image
+function convert_qcow2_to_vhd() {
+    qcow2disk=${1}
+    rawdisk="$(basename -s qcow2 "${1}")raw"
+    vhddisk="$(basename -s qcow2 "${1}")vhd"
+    echo "Qcow2 disk name: ${qcow2disk}"
+    echo "Raw disk name: ${rawdisk}"
+    echo "VHD disk name: ${vhddisk}"
+
+    # Convert qcow2 to raw
+    qemu-img convert -f qcow2 -O raw "${qcow2disk}" "${rawdisk}" ||
+        error_exit "Failed to convert qcow2 to raw"
+
+    # Convert raw to vhd
+    resize_and_convert_raw_to_vhd_image "${rawdisk}"
+
+    # Clean up the raw disk
+    rm -f "${rawdisk}"
+
+    echo "Successfully converted qcow2 to vhd image name: ${vhddisk}"
+    export VHD_IMAGE_PATH="${vhddisk}"
+}
+
+# Function to resize and convert raw image to 1MB aligned vhd image for Azure
+# Input: raw disk image
+# Output: vhddisk image
+function resize_and_convert_raw_to_vhd_image() {
+    rawdisk=${1}
+    vhddisk="$(basename -s raw "${1}")vhd"
+
+    echo "Raw disk name: ${rawdisk}"
+    echo "VHD disk name: ${vhddisk}"
+
+    MB=$((1024 * 1024))
+    size=$(qemu-img info -f raw --output json "$rawdisk" | jq '."virtual-size"') ||
+        error_exit "Failed to get raw disk size"
+
+    echo "Raw disk size: ${size}"
+
+    rounded_size=$(((size + MB - 1) / MB * MB))
+
+    echo "Rounded Size = ${rounded_size}"
+
+    echo "Rounding up raw disk to 1MB"
+    qemu-img resize -f raw "$rawdisk" "$rounded_size" ||
+        error_exit "Failed to resize raw disk"
+
+    echo "Converting raw to vhd"
+    qemu-img convert -f raw -o subformat=fixed,force_size -O vpc "$rawdisk" "$vhddisk" ||
+        error_exit "Failed to convert raw to vhd"
+
+    echo "Successfully converted raw to vhd image name: ${vhddisk}"
+    export VHD_IMAGE_PATH="${vhddisk}"
+}
+
+# Function to check image and convert to vhd if needed
+# Input: image
+# Output: vhddisk image
+function convert_podvm_image_to_vhd() {
+    image_path=${1}
+
+    # Get the podvm image type. This sets the PODVM_IMAGE_FORMAT global variable
+    get_podvm_image_format "${image_path}"
+
+    case "${PODVM_IMAGE_FORMAT}" in
+    "qcow2")
+        # Convert the qcow2 image to vhd
+        convert_qcow2_to_vhd "${image_path}"
+        ;;
+    "raw")
+        # Convert the raw image to vhd
+        resize_and_convert_raw_to_vhd_image "${image_path}"
+        ;;
+    "vhd")
+        echo "PodVM image is already a vhd image"
+        export VHD_IMAGE_PATH="${image_path}"
+        ;;
+    *)
+        error_exit "Invalid podvm image format: ${PODVM_IMAGE_FORMAT}"
+        ;;
+    esac
+
+    echo "Successfully converted podvm image to vhd image name: ${VHD_IMAGE_PATH}"
+
 }
 
 # Global variables

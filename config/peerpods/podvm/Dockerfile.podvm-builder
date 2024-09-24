@@ -8,7 +8,18 @@ FROM registry.access.redhat.com/ubi9/ubi:9.4
 
 
 LABEL kata_src=https://github.com/kata-containers/kata-containers
-LABEL kata_src_commit=stable-3.6
+LABEL kata_src_commit=stable-3.7
+
+ARG ORG_ID
+ARG ACTIVATION_KEY
+
+# This registering RHEL when building on an unsubscribed system
+# If you are running a UBI container on a registered and subscribed RHEL host, 
+# the main RHEL Server repository is enabled inside the standard UBI container
+RUN if [[ -n "${ACTIVATION_KEY}" && -n "${ORG_ID}" ]]; then \
+    rm -f /etc/rhsm-host && rm -f /etc/pki/entitlement-host; \
+    subscription-manager register --org=${ORG_ID} --activationkey=${ACTIVATION_KEY}; \
+    fi
 
 RUN mkdir -p /scripts
 
@@ -19,6 +30,8 @@ RUN /scripts/azure-podvm-image-handler.sh -- install_rpms
 ARG CAA_SRC=https://github.com/confidential-containers/cloud-api-adaptor
 ARG CAA_REF=main
 ARG CERT_RPM
+
+
 ENV CAA_SRC=$CAA_SRC
 ENV CAA_REF=$CAA_REF
 ENV CERT_RPM=$CERT_RPM
@@ -26,6 +39,7 @@ ENV CERT_RPM=$CERT_RPM
 RUN if [[ -n "$CERT_RPM" ]] ; then \
     dnf install -y $CERT_RPM ; \
     fi
+
 
 RUN git clone ${CAA_SRC} -b ${CAA_REF} /src/cloud-api-adaptor
 
