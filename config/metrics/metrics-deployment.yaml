@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: operator-metrics-server
+  namespace: openshift-sandboxed-containers-operator
+  labels:
+    app: operator-metrics-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: operator-metrics-server
+  template:
+    metadata:
+      labels:
+        app: operator-metrics-server
+    spec:
+      containers:
+        - name: metrics-server
+          image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.7.0
+          command: ["/metrics-server"]
+          ports:
+            - containerPort: 8091
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"

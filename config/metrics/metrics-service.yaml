@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: operator-metrics-service
+  namespace: openshift-sandboxed-containers-operator
+  labels:
+    app: operator-metrics-server
+spec:
+  selector:
+    app: operator-metrics-server
+  ports:
+    - protocol: TCP
+      port: 8091
+      targetPort: 8091
