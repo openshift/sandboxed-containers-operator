@@ -15,14 +15,6 @@ RUN go mod download
 # needed for docker build but not for local builds
 RUN go mod vendor
 
-# Install operator-sdk
-RUN export ARCH=$(case $(uname -m) in x86_64) echo -n amd64 ;; aarch64) echo -n arm64 ;; *) echo -n $(uname -m) ;; esac) \
-OS=$(uname | awk '{print tolower($0)}') \
-OPERATOR_SDK_DL_URL=https://github.com/operator-framework/operator-sdk/releases/download/v1.25.3; \
-curl -LO ${OPERATOR_SDK_DL_URL}/operator-sdk_${OS}_${ARCH}; \
-mv operator-sdk_${OS}_${ARCH} operator-sdk; \
-chmod +x operator-sdk
-
 # Set path to include local dir so standard make target can be used
 ENV PATH=$PATH:.
 
@@ -38,9 +30,9 @@ LABEL operators.operatorframework.io.bundle.metadata.v1=metadata/
 LABEL operators.operatorframework.io.bundle.package.v1=sandboxed-containers-operator
 LABEL operators.operatorframework.io.bundle.channels.v1=stable
 LABEL operators.operatorframework.io.bundle.channel.default.v1=stable
-LABEL operators.operatorframework.io.metrics.builder=operator-sdk-v1.19.0+git
+LABEL operators.operatorframework.io.metrics.builder=operator-sdk-v1.36.1
 LABEL operators.operatorframework.io.metrics.mediatype.v1=metrics+v1
-LABEL operators.operatorframework.io.metrics.project_layout=go.kubebuilder.io/v3
+LABEL operators.operatorframework.io.metrics.project_layout=go.kubebuilder.io/v4
 
 # Labels for testing.
 LABEL operators.operatorframework.io.test.mediatype.v1=scorecard+v1
