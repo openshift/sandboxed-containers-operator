@@ -80,10 +80,3 @@ testbin*
 bin/*
 # make generate files
 api/v1/zz_generated.deepcopy.go
-# make manifest files
-config/crd/bases/kataconfiguration.openshift.io_kataconfigs.yaml
-config/rbac/role.yaml
-config/webhook/manifests.yaml
-# make bundle files
-bundle/
-bundle.Dockerfile

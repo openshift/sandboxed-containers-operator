@@ -1,0 +1,10 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: prometheus-sandboxed-containers-rules
+spec:
+  groups:
+  - name: kata_monitor_rules
+    rules:
+    - expr: sum(kata_monitor_running_shim_count)
+      record: cluster:kata_monitor_running_shim_count:sum

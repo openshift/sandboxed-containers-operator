@@ -1,0 +1,13 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: openshift-sandboxed-containers-monitor
+spec:
+  endpoints:
+  - port: metrics
+  namespaceSelector:
+    matchNames:
+    - openshift-sandboxed-containers-operator
+  selector:
+    matchLabels:
+      name: openshift-sandboxed-containers-monitor

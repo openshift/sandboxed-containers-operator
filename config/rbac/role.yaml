@@ -1,0 +1,235 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - nodes/status
+  verbs:
+  - patch
+- apiGroups:
+  - ""
+  - machineconfiguration.openshift.io
+  resources:
+  - configmaps
+  - containerruntimeconfigs
+  - endpoints
+  - events
+  - machineconfigpools
+  - machineconfigs
+  - nodes
+  - persistentvolumeclaims
+  - pods
+  - secrets
+  - services
+  - services/finalizers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - mutatingwebhookconfigurations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  - deployments
+  - replicasets
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resourceNames:
+  - manager-role
+  resources:
+  - daemonsets/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cloudcredential.openshift.io
+  resources:
+  - credentialsrequests
+  verbs:
+  - create
+  - delete
+- apiGroups:
+  - confidentialcontainers.org
+  resources:
+  - peerpodconfigs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - confidentialcontainers.org
+  resources:
+  - peerpodconfigs/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - confidentialcontainers.org
+  resources:
+  - peerpodconfigs/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - confidentialcontainers.org
+  resources:
+  - peerpods
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - confidentialcontainers.org
+  resources:
+  - peerpods/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - confidentialcontainers.org
+  resources:
+  - peerpods/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - config.openshift.io
+  resources:
+  - clusterversions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - config.openshift.io
+  resources:
+  - infrastructures
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - secrets/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - kataconfiguration.openshift.io
+  resources:
+  - kataconfigs
+  - kataconfigs/finalizers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - kataconfiguration.openshift.io
+  resources:
+  - kataconfigs/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - node.k8s.io
+  resources:
+  - runtimeclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - security.openshift.io
+  resources:
+  - securitycontextconstraints
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - use
+  - watch
