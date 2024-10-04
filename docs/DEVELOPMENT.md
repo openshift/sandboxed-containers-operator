@@ -80,7 +80,7 @@ make catalog-build
 make catalog-push
 ```
 
-## Installing the Operator using OpenShift Web console 
+## Installing the Operator using OpenShift Web console
 
 ### Create Custom Operator Catalog
 
@@ -115,10 +115,10 @@ The new operator should be now available for installation from the OpenShift web
 ## Installing the Operator using CLI
 
 When deploying the Operator using CLI, cert-manager needs to be installed otherwise
-webhook will not start. `cert-manager` is not required when deploying via the web console as OLM 
+webhook will not start. `cert-manager` is not required when deploying via the web console as OLM
 takes care of webhook certificate management. You can read more on this [here]( https://olm.operatorframework.io/docs/advanced-tasks/adding-admission-and-conversion-webhooks/#deploying-an-operator-with-webhooks-using-olm)
 
-### Install cert-manager 
+### Install cert-manager
 ```
  oc apply -f https://github.com/jetstack/cert-manager/releases/download/v1.5.3/cert-manager.yaml
 ```
@@ -131,5 +131,20 @@ Uncomment all entries marked with `[CERTMANAGER]` in manifest files under `confi
 make install && make deploy
 ```
 
+### Updating versions
 
+When starting a new version, the locations tagged with `OSC_VERSION` should be updated with the new version number. A few places are also tagged with `OSC_VERSION_BEFORE`, referring to the version being replaced.
 
+On the  `main` branch `1.5.2`, the following locations were identified, but looking for the version pattern would give too many false positives on `devel` with `1.7.0`, and even more false positives were found with `1.8.0`. Most hits were in `go.mod` or `go.sum` and should be ignored, since they refer to dependencies with unrelated version numbering.
+
+```
+Makefile:6:VERSION ?= 1.5.2
+config/manager/kustomization.yaml:16:  newTag: 1.5.2
+config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml:16:    olm.skipRange: '>=1.1.0 <1.5.2'
+config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml:28:  name: sandboxed-containers-operator.v1.5.2
+config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml:368:  version: 1.5.2
+config/samples/deploy.yaml:9: image:  quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator-catalog:v1.5.2
+config/samples/deploy.yaml:39:  startingCSV: sandboxed-containers-operator.v1.5.2
+hack/aws-image-job.yaml:24:        image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.5.2
+hack/azure-image-job.yaml:23:        image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.5.2
+```
