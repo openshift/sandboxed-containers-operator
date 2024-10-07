@@ -1,0 +1,4 @@
+resources:
+  - metrics-deployment.yaml
+  - metrics-service.yaml
+  - metrics-servicemonitor.yaml

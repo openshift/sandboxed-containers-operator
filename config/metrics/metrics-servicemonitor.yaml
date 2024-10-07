@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: operator-metrics-monitor
+  namespace: openshift-sandboxed-containers-operator
+  labels:
+    release: prometheus-operator
+spec:
+  selector:
+    matchLabels:
+      app: operator-metrics-server
+  endpoints:
+    - port: "8091"
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
