@@ -1151,7 +1151,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	//     The MCO isn't updating nor do we think it should be.  This is
 	//     the case e.g. when we're reconciliating a KataConfig change
 	//     that doesn't affect kata installation on cluster.
-	if !isMcoUpdating && r.kataConfig.Status.WaitingForMcoToStart == true {
+	if !isMcoUpdating && r.kataConfig.Status.WaitingForMcoToStart {
 		r.Log.Info("Waiting for MCO to start updating.")
 		// We don't requeue, an MCP going Updated->Updating will
 		// trigger reconciliation by itself thanks to our watching MCPs.
@@ -2176,7 +2176,7 @@ func (r *KataConfigOpenShiftReconciler) isUpdating() bool {
 }
 
 func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
-	var err error = nil
+	var err error
 
 	pullSecret := &corev1.Secret{}
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: "pull-secret", Namespace: "openshift-config"}, pullSecret)
