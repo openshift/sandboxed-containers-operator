@@ -31,6 +31,16 @@ func (r *KataConfigOpenShiftReconciler) handleFeatureConfidential(state FeatureG
 		if ig.isImageIDSet() {
 			r.Log.Info("Image ID is already set, skipping confidential image configuration")
 		} else {
+			if ig.IsConfigsExist() {
+				r.Log.Info("Configurations are already set, so skipping configuration")
+			} else {
+				r.Log.Info("Setup the Libvirt ConfigMaps, Secrets, Libvirt Pool and Volume")
+				err := r.preConfigSetup()
+				if err != nil {
+					r.Log.Info("Error in setting up Libvirt ConfigMaps, Secrets, and Libvirt Pool and Volume")
+					return err
+				}
+			}
 			if state == Enabled {
 				// Create ImageConfigMap, if it doesn't exist already.
 				if err := ig.createImageConfigMapFromFile(); err != nil {

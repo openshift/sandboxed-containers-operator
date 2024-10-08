@@ -1000,6 +1000,13 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 			r.Log.Info("PodVM Image deletion status and error", "status", status, "error", err)
 		}
 
+		// Handle the cleanup of Libvirt provider ConfigMaps, Secrets and Libvirt Pool/Volume
+		err = r.postUnconfigSetup()
+		if err != nil {
+			r.Log.Info("Post Unconfig failed. Check logs for more details")
+			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
+
 	}
 
 	scc := GetScc()
@@ -1222,6 +1229,18 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 			}
 
+			// Validate the existance of Libvirt Provider ConfigMaps, Secrets and Libvirt pool/volume
+			if ig.IsConfigsExist() {
+				r.Log.Info("Configuration of Libvirt Provider ConfigMaps, Secrets and Libvirt pool/volume exists")
+			} else {
+				r.Log.Info("Setup the Libvirt ConfigMaps, Secrets, Libvirt Pool and Volume")
+				err = r.preConfigSetup()
+				if err != nil {
+					r.Log.Info("Error in setting up Libvirt ConfigMaps, Secrets, and Libvirt Pool and Volume")
+					return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+				}
+			}
+
 			// Create the podvm image
 			// Since we want to declaratively reach the final state, we need to reconcile when there are errors
 			// as we want the system to give a chance of fixing the error.
@@ -1229,7 +1248,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 			// we should just log the message and let the code continue without explicitly returning from the method
 
 			// Following are the returned statuses:
-			// ImageCreatedSuccessfully
+			// PreConfiguredSuccessfully
 			// UnsupportedPodVMImageProvider
 			// ImageCreationFailed
 			// RequeueNeeded
@@ -2403,6 +2422,165 @@ func (r *KataConfigOpenShiftReconciler) createMcFromFile(machineConfigYamlFile s
 		} else {
 			return err
 		}
+	}
+	return nil
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Image Pre-Configuring
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMPreConfiguring() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = PodVMConfigJobRunning
+	cond.Message = "PodVM Image PreConfiguring"
+
+	r.Log.Info("InProgress Condition set to PodVMPreJobRunning")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Image Pre-Configuration is completed
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImagePreConfigured() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = PodVMConfigJobCompleted
+	cond.Message = "PodVM Image Pre-Configuration Completed"
+
+	r.Log.Info("InProgress Condition set to PodVMConfigJobCompleted")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Image creation has failed
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMPreConfigFailed() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = PodVMConfigJobFailed
+	cond.Message = "Failed to Pre-Config"
+
+	r.Log.Info("InProgress Condition set to PodVMConfigJobFailed")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM configuration status is unknown
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMPreconfigurationUnknown() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionUnknown
+	cond.Reason = PodVMConfigJobStatusUnknown
+	cond.Message = "Pod VM Image creation status is unknown"
+
+	r.Log.Info("InProgress Condition set to PodVMConfigJobStatusUnknown")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Image is being deleted
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMPostUnconfiguring() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = PodVMConfigJobRunning
+	cond.Message = "Post unconfiguring"
+
+	r.Log.Info("InProgress Condition set to PodVMConfigJobRunning")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Unconfigured
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMUnconfigured() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = PodVMConfigJobCompleted
+	cond.Message = " Pod VM Post Unconfigured"
+
+	r.Log.Info("InProgress Condition set to PodVMConfigJobCompleted")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Unconfiguration failed
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMUnconfigurationFailed() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = PodVMConfigJobFailed
+	cond.Message = "Failed to delete Pod VM Image"
+
+	r.Log.Info("InProgress Condition set to PodVMConfigJobFailed")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM Post unconfiguration status is unknown
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMUnconfigurationUnknown() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionUnknown
+	cond.Reason = PodVMConfigJobStatusUnknown
+	cond.Message = "Pod VM Post Unconfiguration status is unknown"
+
+	r.Log.Info("InProgress Condition set to PodVMConfigJobStatusUnknown")
+}
+
+// Method to set the InProgress condition to indicate that the Pod VM image provider is unsupported
+func (r *KataConfigOpenShiftReconciler) setInProgressConditionToPodVMImageConfigUnsupportedProvider() {
+	cond := r.retrieveInProgressConditionForChange()
+	cond.Status = corev1.ConditionTrue
+	cond.Reason = PodVMConfigUnsupportedProvider
+	cond.Message = "Pod VM image provider is unsupported"
+
+	r.Log.Info("InProgress Condition set to PodVMImageConfigUnsupportedProvider")
+}
+
+// Method to perform the Pre Configuration
+func (r *KataConfigOpenShiftReconciler) preConfigSetup() error {
+	status, err := Preconfig(r.Client)
+	switch status {
+	case PreConfiguredSuccessfully:
+		r.setInProgressConditionToPodVMImagePreConfigured()
+		r.Log.Info("PodVM configuration created  successfully")
+	case UnsupportedProvider:
+		r.setInProgressConditionToPodVMImageConfigUnsupportedProvider()
+		r.Log.Info("unsupported cloud provider, skipping unconfiguration")
+	case ConfigRequeueNeeded:
+		r.setInProgressConditionToPodVMPreConfiguring()
+		return err
+	case PreConfigurationFailed:
+		r.setInProgressConditionToPodVMPreConfigFailed()
+		if err != nil {
+			// We requeue only if there is an error.
+			//return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			return err
+		}
+	case PreConfigurationStatusUnknown:
+		r.setInProgressConditionToPodVMPreconfigurationUnknown()
+
+		// Reconcile with error
+		return err
+
+	default:
+		r.Log.Info("PodVM configMaps creation status and error", "status", status, "error", err)
+		// For all other statuses, just log and continue
+	}
+	return nil
+}
+
+// Method to perform the Post UnConfiguration
+func (r *KataConfigOpenShiftReconciler) postUnconfigSetup() error {
+	status, err := PostUnconfig(r.Client)
+	switch status {
+	case PostUnconfiguredSuccessfully:
+		r.setInProgressConditionToPodVMUnconfigured()
+		r.Log.Info("PodVM configuration deleted successfully")
+
+	case UnsupportedProvider:
+		r.setInProgressConditionToPodVMImageConfigUnsupportedProvider()
+		r.Log.Info("unsupported cloud provider, skipping unconfiguration")
+
+	case ConfigRequeueNeeded:
+		r.setInProgressConditionToPodVMPostUnconfiguring()
+		return err
+
+	case PostUnconfigurationFailed:
+		r.setInProgressConditionToPodVMUnconfigurationFailed()
+		if err != nil {
+			// We requeue only if there is an error.
+			return err
+		}
+		// If there's no error, log and continue
+		r.Log.Info("Post Unconfiguration failed. Check logs for more details")
+
+	case PostUnconfigurationStatusUnknown:
+		r.setInProgressConditionToPodVMUnconfigurationUnknown()
+		return err
+
+	default:
+		// For all other statuses, just log and continue
+		r.Log.Info("PodVM configMaps deletion status and error", "status", status, "error", err)
 	}
 	return nil
 }
