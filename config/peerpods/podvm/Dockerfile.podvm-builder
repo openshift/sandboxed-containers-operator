@@ -23,7 +23,7 @@ RUN if [[ -n "${ACTIVATION_KEY}" && -n "${ORG_ID}" ]]; then \
 
 RUN mkdir -p /scripts
 
-ADD lib.sh libvirt-podvm-image-handler.sh aws-podvm-image-handler.sh azure-podvm-image-handler.sh /scripts/
+ADD lib.sh libvirt-config-manager.sh libvirt-podvm-image-handler.sh aws-podvm-image-handler.sh azure-podvm-image-handler.sh /scripts/
 
 RUN /scripts/azure-podvm-image-handler.sh -- install_rpms
 
