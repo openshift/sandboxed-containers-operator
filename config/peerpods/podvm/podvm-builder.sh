@@ -21,8 +21,13 @@ function install_aws_deps() {
 function install_libvirt_deps() {
   echo "Installing libvirt deps"
   # Install the required packages
-  /scripts/libvirt-podvm-image-handler.sh -- install_binaries
+  if [[ "$1" == "pre-config" ]] || [[ "$1" == "config-cleanup" ]]; then
+    /scripts/libvirt-podvm-image-handler.sh -- install_pre_config
+  else
+    /scripts/libvirt-podvm-image-handler.sh -- install_binaries
+  fi
 }
+
 
 # Function to check if peer-pods-cm configmap exists
 function check_peer_pods_cm_exists() {
@@ -45,9 +50,32 @@ function set_podvm_image_type() {
       IMAGE_TYPE="pre-built"
       echo "Initiating the operator to use the pre-built podvm image"
     fi
-
     export IMAGE_TYPE
+}
 
+function pre_config_func() {
+  case "${CLOUD_PROVIDER}" in
+  libvirt)
+    /scripts/libvirt-config-manager.sh create
+    ;;
+  *)
+    echo "CLOUD_PROVIDER is not set to libvirt"
+    exit 1
+    ;;
+  esac
+}
+
+function config_cleanup_func() {
+  # Destory Libvirt pool, volume and neccesary pre-requisites and other resourcses created.
+  case "${CLOUD_PROVIDER}" in
+  libvirt)
+    /scripts/libvirt-config-manager.sh clean
+    ;;
+  *)
+    echo "CLOUD_PROVIDER is not set to libvirt"
+    exit 1
+    ;;
+  esac
 }
 
 # Function to create podvm image
@@ -329,6 +357,12 @@ delete)
   ;;
 delete-gallery)
   delete_podvm_image_gallery "$2"
+  ;;
+pre-config)
+  pre_config_func
+  ;;
+config-cleanup)
+  config_cleanup_func
   ;;
 *)
   display_usage

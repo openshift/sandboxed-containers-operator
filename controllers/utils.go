@@ -24,8 +24,11 @@ import (
 )
 
 const (
-	peerPodsSecretName = "peer-pods-secret"
-	FeatureGatesCM     = "osc-feature-gates"
+	peerPodsSecretName      = "peer-pods-secret"
+	FeatureGatesCM          = "osc-feature-gates"
+	libvirtPodVMImageCMName = "libvirt-podvm-image-cm"
+	sshKeySecretName        = "ssh-key-secret"
+	ocpLibvirtSecretName    = "ocp-libvirt-secret"
 )
 
 // Define a struct to represent event information
@@ -226,4 +229,49 @@ func updateConfigMap(client client.Client, logger logr.Logger, cmName string, na
 	} else {
 		return nil
 	}
+}
+
+// Method to get ssh-key-secret object
+func getSshKeySecret(c client.Client) (*corev1.Secret, error) {
+	sshKeySecret := &corev1.Secret{}
+
+	err := c.Get(context.TODO(), types.NamespacedName{
+		Name:      sshKeySecretName,
+		Namespace: "openshift-sandboxed-containers-operator",
+	}, sshKeySecret)
+
+	if err != nil {
+		return nil, err
+	}
+	return sshKeySecret, nil
+}
+
+// Method to get ocp-libvirt-secret object
+func getOCPLibvirtSecret(c client.Client) (*corev1.Secret, error) {
+	ocpLibvirtSecret := &corev1.Secret{}
+
+	err := c.Get(context.TODO(), types.NamespacedName{
+		Name:      ocpLibvirtSecretName,
+		Namespace: "openshift-sandboxed-containers-operator",
+	}, ocpLibvirtSecret)
+
+	if err != nil {
+		return nil, err
+	}
+	return ocpLibvirtSecret, nil
+}
+
+// Method to get libvirt-podvm-image-cm object
+func getLibvirtPodVMImageCM(c client.Client) (*corev1.ConfigMap, error) {
+	libvirtPodVMImageCM := &corev1.ConfigMap{}
+
+	err := c.Get(context.TODO(), types.NamespacedName{
+		Name:      libvirtPodVMImageCMName,
+		Namespace: OperatorNamespace,
+	}, libvirtPodVMImageCM)
+
+	if err != nil {
+		return nil, err
+	}
+	return libvirtPodVMImageCM, nil
 }

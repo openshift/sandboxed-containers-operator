@@ -241,10 +241,26 @@ function delete_libvirt_vol_from_peer_pods_cm() {
 
 function display_help() {
     echo "This script is used to create libvirt qcow2 for podvm"
-    echo "Usage: $0 [-c|-C] [-- install_binaries]"
+    echo "Usage: $0 [-c|-C] [-- <command>]"
     echo "Options:"
-    echo "-c  Create image"
-    echo "-C  Delete image"
+    echo "  -c                     Create image"
+    echo "  -C                     Delete image"
+    echo "  install_binaries    Install required binary packages"
+    echo "  install_pre_config  Install pre-configuration steps"
+}
+
+function install_pre_config(){
+    install_binary_packages
+
+    #Install other libvirt specific binaries packages
+
+    ARCH=$(uname -m)
+    export ARCH
+    if [[ -n "${ACTIVATION_KEY}" && -n "${ORG_ID}" ]]; then
+        subscription-manager register --org="${ORG_ID}" --activationkey="${ACTIVATION_KEY}"
+    fi
+    subscription-manager repos --enable codeready-builder-for-rhel-9-"${ARCH}"-rpms
+    dnf install -y gcc genisoimage qemu-kvm libvirt-client
 }
 
 function install_packages() {
@@ -317,6 +333,9 @@ if [ "$1" = "--" ]; then
 
     install_binaries)
         install_packages
+        ;;
+    install_pre_config)
+        install_pre_config
         ;;
     *)
         echo "Unknown argument: $1"

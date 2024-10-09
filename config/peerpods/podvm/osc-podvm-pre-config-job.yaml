@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: osc-podvm-pre-configuration
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 1
+  template:
+    metadata:
+      name: osc-podvm-pre-configuration
+    spec:
+      containers:
+        - name: create
+          image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.7.0
+          imagePullPolicy: Always
+          securityContext:
+            runAsUser: 0 # needed for container mode dnf access
+          envFrom:
+            - secretRef:
+                name: ocp-libvirt-secret 
+          command: ["/podvm-builder.sh", "pre-config"]
+      restartPolicy: Never
