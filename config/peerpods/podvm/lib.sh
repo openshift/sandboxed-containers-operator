@@ -244,6 +244,18 @@ function prepare_source_code() {
         fi
     fi
 
+    # Enable image signature check
+    if [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]]; then
+	cat<<EOF>"${podvm_dir}"/files/etc/agent-config.toml
+server_addr = "unix:///run/kata-containers/agent.sock"
+guest_components_procs = "none"
+image_registry_auth = "file:///run/peerpod/auth.json"
+enable_signature_verification = true
+image_policy_file = "kbs:///default/security-policy/osc"
+EOF
+	sed -i 's,/run/peerpod/agent-config.toml,/etc/agent-config.toml,' \
+	    "${podvm_dir}"/files/etc/systemd/system/kata-agent.service
+    fi
 }
 
 # Download and extract the pause container image
