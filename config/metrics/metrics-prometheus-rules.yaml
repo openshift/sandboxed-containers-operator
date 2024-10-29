@@ -1,0 +1,25 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: osc-alerts
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  groups:
+  - name: osc_alerts
+    rules:
+    - alert: KataRemoteWorkloadFailureHigh
+      expr: kata_remote_workload_failure_ratio > 25
+      for: 30m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High Kata Remote Workload Failure Ratio"
+        description: "The failure ratio of kata-remote workloads is above 25% for more than 30 minutes. This may indicate issues with the runtime or configuration."
+
+    - alert: kata_active_instance
+      expr: vector(1)
+      labels:
+        severity: info
+        purpose: "alive_signal"
+      annotations:
+        summary: "Kata instance alive signal"
