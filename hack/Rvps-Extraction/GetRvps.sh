@@ -3,7 +3,7 @@
 
 function install_packages() {
     echo "***Installing necessary packages for RVPS values extraction ***"
-    dnf install -y python3 python3-cryptography kmod kernel-$(uname -r)
+    dnf install -y python3 python3-cryptography kmod 
     echo "***Installation Finished ***"
 }
 
@@ -33,14 +33,12 @@ function mount_and_extract_image() {
     if [ $? -ne 0 ]; then
          echo "Error: Failed to mount the image. Retrying..."
          sleep 2
-         qemu-nbd -d /dev/nbd3
-         sleep 2
-         qemu-nbd -c /dev/nbd3 $img_path	
-         sleep 2
          mount /dev/nbd3p1 /mnt/myvm
          if [ $? -ne 0 ]; then
-     		echo "Retrial for mounting failed"
+     		echo "Retrial for mounting failed. Please rerun the script"
      		exit 1
+	 else
+		echo "Mounting on second attempt passed"
          fi
      fi
     # Extract and process image
@@ -63,13 +61,13 @@ function generate_policy_files() {
     cat <<EOF > $PWD/output-files/se-sample
 {
     "se.attestation_phkh": [
-        "xxxxxxx"
+        "$se_image_phkh"
     ],
     "se.tag": [
-        "yyyyyyy"
+        "$se_tag"
     ],
     "se.image_phkh": [
-        "xxxxxxx"
+        "$se_image_phkh"
     ],
     "se.user_data": [
         "00"
@@ -87,19 +85,14 @@ import rego.v1
 default allow = false
 converted_version := sprintf("%v", [input["se.version"]])
 allow if {
-    input["se.attestation_phkh"] == "xxxxxxx"
-    input["se.image_phkh"] == "xxxxxxx"
-    input["se.tag"] == "yyyyyyy"
+    input["se.attestation_phkh"] == "$se_image_phkh"
+    input["se.image_phkh"] == "$se_image_phkh"
+    input["se.tag"] == "$se_tag"
     input["se.user_data"] == "00"
     converted_version == "256"
 }
 EOF
 
-    # Replace placeholders with actual values
-    sed -i "s/yyyyyyy/$se_tag/g" $PWD/output-files/ibmse-policy.rego
-    sed -i "s/xxxxxxx/$se_image_phkh/g" $PWD/output-files/ibmse-policy.rego
-    sed -i "s/yyyyyyy/$se_tag/g" $PWD/output-files/se-sample
-    sed -i "s/xxxxxxx/$se_image_phkh/g" $PWD/output-files/se-sample
 }
 
 # Main function
