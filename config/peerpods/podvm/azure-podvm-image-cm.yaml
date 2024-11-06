@@ -26,8 +26,10 @@ data:
   IMAGE_DEFINITION_VM_GENERATION: "V2"
   IMAGE_DEFINITION_ARCHITECTURE: "x64"
 
-  # Base image
-  BASE_IMAGE_SKU: "93_gen2" # this is default for V2 image generation
+  # base image - should be coordinated with IMAGE_DEFINITION_VM_GENERATION
+  BASE_IMAGE_PUBLISHER: "redhat"
+  BASE_IMAGE_OFFER: "RHEL"
+  BASE_IMAGE_SKU: "94_gen2"
 
   # Image
   IMAGE_BASE_NAME: "podvm-image"
@@ -46,8 +48,6 @@ data:
   INSTALL_PACKAGES: "no"
   DOWNLOAD_SOURCES: "no"
   CONFIDENTIAL_COMPUTE_ENABLED: "no"
-  # snp/tdx
-  CONFIDENTIAL_COMPUTE_TYPE: "snp"
   DISABLE_CLOUD_CONFIG: "true"
   ENABLE_NVIDIA_GPU: "no"
   UPDATE_PEERPODS_CM: "yes"

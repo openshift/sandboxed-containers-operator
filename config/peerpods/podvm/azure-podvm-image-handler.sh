@@ -249,30 +249,7 @@ function create_image_using_packer() {
     set_image_version_and_name
     # Set the base image details
 
-    if [[ "${PODVM_DISTRO}" == "rhel" ]]; then
-        export BASE_IMAGE_PUBLISHER="redhat"
-        export BASE_IMAGE_OFFER="rhel-raw"
-
-        # If CONFIDENTIAL_COMPUTE_ENABLED is set to yes, then force IMAGE_DEFINITION_VM_GENERATION to V2
-        [[ "${CONFIDENTIAL_COMPUTE_ENABLED}" == "yes" ]] &&
-            export IMAGE_DEFINITION_VM_GENERATION="V2"
-
-        # If CONFIDENTIAL_COMPUTE_ENABLED is set to yes, CONFIDENTIAL_COMPUTE_TYPE is snp and BASE_IMAGE_SKU is not set,
-        # then set BASE_IMAGE_SKU to 9_3_cvm_sev_snp
-        [[ "${CONFIDENTIAL_COMPUTE_ENABLED}" == "yes" && "${CONFIDENTIAL_COMPUTE_TYPE}" == "snp" && -z "${BASE_IMAGE_SKU}" ]] &&
-            export BASE_IMAGE_OFFER="rhel-cvm" && export BASE_IMAGE_SKU="9_3_cvm_sev_snp"
-
-        # If CONFIDENTIAL_COMPUTE_ENABLED is set to yes, CONFIDENTIAL_COMPUTE_TYPE is tdx and BASE_IMAGE_SKU is not set,
-        # then set BASE_IMAGE_SKU to rhel93_tdxpreview
-        [[ "${CONFIDENTIAL_COMPUTE_ENABLED}" == "yes" && "${CONFIDENTIAL_COMPUTE_TYPE}" == "tdx" && -z "${BASE_IMAGE_SKU}" ]] &&
-            export BASE_IMAGE_OFFER="rhel_test_offers" && export BASE_IMAGE_SKU="rhel93_tdxpreview"
-
-        # If VM_GENERATION is V1 and BASE_IMAGE_SKU is not set, then set BASE_IMAGE_SKU to 9_3
-        [[ "${IMAGE_DEFINITION_VM_GENERATION}" == "V1" && -z "${BASE_IMAGE_SKU}" ]] &&
-            export BASE_IMAGE_SKU="9_3"
-    else
-        # TBD Add support for other distros
-        # Error out if the distro is not supported
+    if [[ "${PODVM_DISTRO}" != "rhel" ]]; then
         error_exit "Unsupported distro"
     fi
 
