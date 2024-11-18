@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2024-10-04T09:21:08Z"
+    createdAt: "2024-11-19T13:55:17Z"
     features.operators.openshift.io/disconnected: "true"
     features.operators.openshift.io/fips-compliant: "false"
     features.operators.openshift.io/proxy-aware: "false"
@@ -21,7 +21,7 @@ metadata:
     features.operators.openshift.io/token-auth-aws: "false"
     features.operators.openshift.io/token-auth-azure: "false"
     features.operators.openshift.io/token-auth-gcp: "false"
-    olm.skipRange: '>=1.1.0 <1.8.0'  ## OSC_VERSION
+    olm.skipRange: '>=1.1.0 <1.8.0'
     operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
     operators.openshift.io/valid-subscription: '["OpenShift Container Platform", "OpenShift
       Platform Plus"]'
@@ -32,7 +32,7 @@ metadata:
   labels:
     operatorframework.io/arch.amd64: supported
     operatorframework.io/os.linux: supported
-  name: sandboxed-containers-operator.v1.8.0  ## OSC_VERSION
+  name: sandboxed-containers-operator.v1.8.0
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
@@ -411,17 +411,17 @@ spec:
                 - name: PEERPODS_NAMESPACE
                   value: openshift-sandboxed-containers-operator
                 - name: RELATED_IMAGE_KATA_MONITOR
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.8.0  ## OSC_VERSION
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.8.0
                 - name: SANDBOXED_CONTAINERS_EXTENSION
                   value: kata-containers
                 - name: RELATED_IMAGE_CAA
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9:1.8.0  ## OSC_VERSION
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9:1.8.0
                 - name: RELATED_IMAGE_PEERPODS_WEBHOOK
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9:1.8.0  ## OSC_VERSION
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9:1.8.0
                 - name: RELATED_IMAGE_PODVM_BUILDER
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.8.0  ## OSC_VERSION
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.8.0
                 - name: RELATED_IMAGE_PODVM_PAYLOAD
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.8.0  ## OSC_VERSION
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.8.0
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -429,7 +429,7 @@ spec:
                 - configMapRef:
                     name: peer-pods-cm
                     optional: true
-                image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator:v1.8.0  ## OSC_VERSION
+                image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator:v1.8.0
                 imagePullPolicy: Always
                 name: manager
                 ports:
@@ -508,6 +508,31 @@ spec:
                   defaultMode: 384
                   optional: true
                   secretName: ssh-key-secret
+      - label:
+          app: operator-metrics-server
+        name: operator-metrics-server
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: operator-metrics-server
+          strategy: {}
+          template:
+            metadata:
+              labels:
+                app: operator-metrics-server
+            spec:
+              containers:
+              - command:
+                - /metrics-server
+                image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.8.0
+                name: metrics-server
+                ports:
+                - containerPort: 8091
+                resources:
+                  requests:
+                    cpu: 50m
+                    memory: 64Mi
       permissions:
       - rules:
         - apiGroups:
@@ -566,18 +591,18 @@ spec:
   provider:
     name: Red Hat
   relatedImages:
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.8.0  ## OSC_VERSION
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.8.0
     name: kata-monitor
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9:1.8.0  ## OSC_VERSION
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9:1.8.0
     name: caa
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9:1.8.0  ## OSC_VERSION
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9:1.8.0
     name: peerpods-webhook
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.8.0  ## OSC_VERSION
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.8.0
     name: podvm-builder
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.8.0  ## OSC_VERSION
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.8.0
     name: podvm-payload
-  replaces: sandboxed-containers-operator.v1.7.0  ## OSC_VERSION_BEFORE
-  version: 1.8.0  ## VERSION
+  replaces: sandboxed-containers-operator.v1.7.0
+  version: 1.8.0
   webhookdefinitions:
   - admissionReviewVersions:
     - v1
