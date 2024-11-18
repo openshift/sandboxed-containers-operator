@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: metrics-server
-          image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.7.0
+          image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.8.0
           command: ["/metrics-server"]
           ports:
             - containerPort: 8091
