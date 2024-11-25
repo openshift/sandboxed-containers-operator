@@ -165,7 +165,7 @@ function getLocalDefaults() {
 function userVerification() {
     echo && echo "###### Setting Values (press Enter for the [suggested] value, \"drop\" to remove key)"
     verifyAndSetVars "${common_vars[@]}"
-    case $cld in
+    case ${CLOUD_PROVIDER} in
         "aws")
             verifyAndSetVars "${aws_vars[@]}"
             verifyAndSetVars "${aws_optional[@]}"
@@ -177,6 +177,7 @@ function userVerification() {
         *)
             error_exit "Invalid provider";;
     esac
+    echo "Cloud Provider is ${CLOUD_PROVIDER}"
     verifyAndSetVars "${custom_vars[@]}"
 }
 
@@ -215,7 +216,7 @@ function initialization() {
 
     # TODO: allow also k8s clusters
     cld=$(${CLI} get infrastructure -n cluster -o jsonpath='{.items[*].status.platformStatus.type}' | awk '{print tolower($0)}' | tr -d '"' ) && cld=${cld//none/libvirt}
-    echo "Cloud Provider is ${cld}"
+    echo "Cluster infrastructure is ${cld}"
 
     aroCheck
 
