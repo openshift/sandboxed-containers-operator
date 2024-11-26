@@ -791,7 +791,8 @@ function delete_image_using_id() {
 
     # Delete the source image
     az image delete --ids "${SOURCE_ID}" ||
-        error_exit "Failed to delete the source image"
+        error_exit "Failed to delete the source image ${SOURCE_ID}"
+
 
     # Remove the image id annotation from peer-pods-cm configmap
     delete_image_id_annotation_from_peer_pods_cm
