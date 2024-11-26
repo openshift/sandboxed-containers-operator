@@ -787,7 +787,7 @@ function delete_image_using_id() {
 
     # Delete the image version
     az sig image-version delete --ids "${IMAGE_ID}" ||
-        error_exit "Failed to delete the image version"
+        error_exit "Failed to delete image version ${IMAGE_ID}"
 
     # Delete the source image
     az image delete --ids "${SOURCE_ID}" ||
