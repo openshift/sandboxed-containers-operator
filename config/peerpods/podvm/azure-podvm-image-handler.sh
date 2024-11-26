@@ -783,7 +783,7 @@ function delete_image_using_id() {
         --gallery-image-definition "${IMAGE_DEFINITION_NAME}" \
         --gallery-image-version "${IMAGE_VERSION}" \
         --query "storageProfile.source.id" --output tsv) ||
-        error_exit "Failed to get the source id"
+        error_exit "Failed to get the source id for image ${IMAGE_GALLERY_NAME} version ${IMAGE_VERSION} with definition ${IMAGE_DEFINITION_NAME}"
 
     # Delete the image version
     az sig image-version delete --ids "${IMAGE_ID}" ||
