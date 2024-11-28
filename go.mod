@@ -1,11 +1,11 @@
 module github.com/openshift/sandboxed-containers-operator
 
-go 1.21
+go 1.22.7
 
 require (
 	github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl v0.9.0
 	github.com/confidential-containers/cloud-api-adaptor/src/peerpodconfig-ctrl v0.9.0
-	github.com/coreos/ignition/v2 v2.9.0
+	github.com/coreos/ignition/v2 v2.14.0
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v1.4.1
 	github.com/onsi/ginkgo/v2 v2.14.0
@@ -13,6 +13,7 @@ require (
 	github.com/openshift/api v0.0.0-20231204192004-bfea29e5e6c4
 	github.com/openshift/cloud-credential-operator v0.0.0-20240207183603-c9fd580aca5d
 	github.com/openshift/machine-config-operator v0.0.1-0.20211015230756-5353b8ec1122
+	github.com/prometheus/client_golang v1.18.0
 	github.com/spf13/cobra v1.8.0
 	go.uber.org/zap v1.26.0
 	k8s.io/api v0.29.3
@@ -50,7 +51,7 @@ require (
 	github.com/confidential-containers/cloud-api-adaptor/src/cloud-providers v0.9.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
-	github.com/coreos/vcontext v0.0.0-20201120045928-b0e13dab675c // indirect
+	github.com/coreos/vcontext v0.0.0-20211021162308-f1dbbca7bef4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/evanphx/json-patch/v5 v5.8.0 // indirect
@@ -97,12 +98,11 @@ require (
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/prometheus/client_golang v1.18.0 // indirect
 	github.com/prometheus/client_model v0.5.0 // indirect
 	github.com/prometheus/common v0.45.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/vincent-petithory/dataurl v0.0.0-20191104211930-d1553a71de50 // indirect
+	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace // indirect
+	github.com/vincent-petithory/dataurl v1.0.0 // indirect
 	github.com/vmware/govmomi v0.33.1 // indirect
 	go.mongodb.org/mongo-driver v1.11.3 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
