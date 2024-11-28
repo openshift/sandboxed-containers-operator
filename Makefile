@@ -64,8 +64,8 @@ GOBIN=$(shell go env GOBIN)
 endif
 
 # These images needs to be synced with the default values in the Dockerfile.
-BUILDER_IMAGE ?= registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.21-openshift-4.16
-TARGET_IMAGE  ?= registry.ci.openshift.org/ocp/4.16:base
+BUILDER_IMAGE ?= registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17
+TARGET_IMAGE  ?= registry.ci.openshift.org/ocp/4.17:base
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
