@@ -12,7 +12,7 @@ require (
 	github.com/onsi/gomega v1.30.0
 	github.com/openshift/api v0.0.0-20231204192004-bfea29e5e6c4
 	github.com/openshift/cloud-credential-operator v0.0.0-20240207183603-c9fd580aca5d
-	github.com/openshift/machine-config-operator v0.0.1-0.20211015230756-5353b8ec1122
+	github.com/openshift/machine-config-operator v0.0.1-0.20220823105933-c65f84719c61
 	github.com/prometheus/client_golang v1.18.0
 	github.com/spf13/cobra v1.8.0
 	go.uber.org/zap v1.26.0
