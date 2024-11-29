@@ -131,20 +131,33 @@ Uncomment all entries marked with `[CERTMANAGER]` in manifest files under `confi
 make install && make deploy
 ```
 
+### Adding new containers to OSC
+
+When adding a new container definition in some pod yaml, make sure to tag the `image`
+field with `OSC_VERSION`, e.g.
+
+```
+image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.8.0  ## OSC_VERSION
+```
+
+Do the same when adding new `RELATED_IMAGE` entries in the environment of the controller
+in `config/manager/manager.yaml`, e.g.
+
+```
+            - name: RELATED_IMAGE_KATA_MONITOR
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.8.0  ## OSC_VERSION
+```
+
+This is a best effort to track locations where OSC version bumps should happen.
+
 ### Updating versions
 
-When starting a new version, the locations tagged with `OSC_VERSION` should be updated with the new version number. A few places are also tagged with `OSC_VERSION_BEFORE`, referring to the version being replaced.
+When starting a new version, several locations should be updated with the new version number :
+- all the locations tagged with `OSC_VERSION`
+- the `spec.version` field in `config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml`
+- the `olm.skipRange` annotation in the `spec.metadata` field in `config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml`
 
-On the  `main` branch `1.5.2`, the following locations were identified, but looking for the version pattern would give too many false positives on `devel` with `1.7.0`, and even more false positives were found with `1.8.0`. Most hits were in `go.mod` or `go.sum` and should be ignored, since they refer to dependencies with unrelated version numbering.
+The `spec.replaces` field in `config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml` should be updated with the number
+of the latest officialy released version.
 
-```
-Makefile:6:VERSION ?= 1.5.2
-config/manager/kustomization.yaml:16:  newTag: 1.5.2
-config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml:16:    olm.skipRange: '>=1.1.0 <1.5.2'
-config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml:28:  name: sandboxed-containers-operator.v1.5.2
-config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml:368:  version: 1.5.2
-config/samples/deploy.yaml:9: image:  quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator-catalog:v1.5.2
-config/samples/deploy.yaml:39:  startingCSV: sandboxed-containers-operator.v1.5.2
-hack/aws-image-job.yaml:24:        image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.5.2
-hack/azure-image-job.yaml:23:        image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.5.2
-```
+Finally, run `make bundle` : this should propagate the version bump to the rest of the tree.
