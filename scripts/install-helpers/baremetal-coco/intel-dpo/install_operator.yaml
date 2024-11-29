@@ -1,0 +1,23 @@
+# Copyright (c) 2023 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: operators.coreos.com/v1alpha2
+kind: OperatorGroup
+metadata:
+  name: global-operators
+  namespace: openshift-operators
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  labels:
+    operators.coreos.com/intel-device-plugins-operator.openshiftoperators: ""
+  name: intel-device-plugins-operator
+  namespace: openshift-operators
+spec:
+  channel: alpha
+  installPlanApproval: Automatic
+  name: intel-device-plugins-operator
+  source: certified-operators
+  sourceNamespace: openshift-marketplace
+  startingCSV: intel-device-plugins-operator.v0.29.1

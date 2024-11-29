@@ -1,0 +1,8 @@
+apiVersion: v1
+data:
+  osImageURL: "quay.io/openshift_sandboxed_containers/rhcos-layer/ocp-4.16:tdx-latest"
+  kernelArguments: "kvm_intel.tdx=1"
+kind: ConfigMap
+metadata:
+  name: layered-image-deploy-cm
+  namespace: openshift-sandboxed-containers-operator

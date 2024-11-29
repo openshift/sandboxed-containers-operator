@@ -1,0 +1,16 @@
+apiVersion: nfd.openshift.io/v1alpha1
+kind: NodeFeatureRule
+metadata:
+  name: amd-sev-snp
+  namespace: openshift-nfd
+spec:
+  rules:
+    - name: "amd.sev-snp"
+      labels:
+        "amd.feature.node.kubernetes.io/snp": "true"
+      extendedResources:
+        sev-snp.amd.com/esids: "@cpu.security.sev.encrypted_state_ids"
+      matchFeatures:
+        - feature: cpu.security
+          matchExpressions:
+            sev.snp.enabled: { op: Exists }

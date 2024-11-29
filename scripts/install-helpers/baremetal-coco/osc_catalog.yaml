@@ -1,0 +1,12 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: osc-upstream-catalog
+  namespace: openshift-marketplace
+spec:
+  displayName: OSC Upstream Operator Catalog
+  sourceType: grpc
+  image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator-catalog:1.8.1-3
+  updateStrategy:
+    registryPoll:
+      interval: 5m

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: osc-feature-gates
+  namespace: openshift-sandboxed-containers-operator
+data:
+  # layeredImageDeployment allows deploying Kata using RHCOS layered image
+  # This feature gate needs a ConfigMap named layered-image-deploy-cm
+  layeredImageDeployment: "true"
