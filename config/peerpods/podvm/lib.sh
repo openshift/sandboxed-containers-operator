@@ -424,7 +424,7 @@ function get_podvm_image_format() {
     echo "Getting format of the PodVM image: ${image_path}"
 
     # jq -r when you want to output plain strings without quotes. Otherwise the string will be quoted
-    PODVM_IMAGE_FORMAT=$(qemu-img info -f raw --output json "${image_path}" | jq -r '.format') ||
+    PODVM_IMAGE_FORMAT=$(qemu-img info --output json "${image_path}" | jq -r '.format') ||
         error_exit "Failed to get podvm image info"
 
     # vhd images are also raw format. So check the file extension. It's crude but for
