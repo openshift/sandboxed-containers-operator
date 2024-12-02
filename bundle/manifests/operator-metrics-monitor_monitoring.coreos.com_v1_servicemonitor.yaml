@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    release: prometheus-operator
+  name: operator-metrics-monitor
+spec:
+  endpoints:
+  - interval: 30s
+    path: /metrics
+    port: "8091"
+    scrapeTimeout: 10s
+  selector:
+    matchLabels:
+      app: operator-metrics-server

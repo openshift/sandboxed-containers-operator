@@ -774,9 +774,25 @@ function delete_image_using_id() {
     # IMAGE_ID shouldn't be empty
     [[ -z "${IMAGE_ID}" ]] && error_exit "IMAGE_ID is empty"
 
-    # Delete the image
+    # Rightmost element of the input is <image-version>
+    IMAGE_VERSION=${IMAGE_ID##*/}
+
+    # Get the id of the source image
+    SOURCE_ID=$(az sig image-version show --resource-group "${AZURE_RESOURCE_GROUP}" \
+        --gallery-name "${IMAGE_GALLERY_NAME}" \
+        --gallery-image-definition "${IMAGE_DEFINITION_NAME}" \
+        --gallery-image-version "${IMAGE_VERSION}" \
+        --query "storageProfile.source.id" --output tsv) ||
+        error_exit "Failed to get the source id for image ${IMAGE_GALLERY_NAME} version ${IMAGE_VERSION} with definition ${IMAGE_DEFINITION_NAME}"
+
+    # Delete the image version
     az sig image-version delete --ids "${IMAGE_ID}" ||
-        error_exit "Failed to delete the image"
+        error_exit "Failed to delete image version ${IMAGE_ID}"
+
+    # Delete the source image
+    az image delete --ids "${SOURCE_ID}" ||
+        error_exit "Failed to delete the source image ${SOURCE_ID}"
+
 
     # Remove the image id annotation from peer-pods-cm configmap
     delete_image_id_annotation_from_peer_pods_cm
