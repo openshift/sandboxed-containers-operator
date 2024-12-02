@@ -317,7 +317,7 @@ function create_ami() {
     prepare_source_code
 
     # Prepare the pause image for embedding into the ami
-    download_and_extract_pause_image "${PAUSE_IMAGE_REPO}" "${PAUSE_IMAGE_VERSION}" "${PAUSE_IMAGE_REPO_AUTH_FILE}"
+    download_and_extract_pause_image "${PAUSE_IMAGE_REPO}" "${PAUSE_IMAGE_VERSION}" "${CLUSTER_PULL_SECRET_AUTH_FILE}"
 
     # Create AWS ami using packer
     create_ami_using_packer

@@ -502,7 +502,7 @@ function create_azure_image_from_scratch() {
     prepare_source_code
 
     # Prepare the pause image for embedding into the image
-    download_and_extract_pause_image "${PAUSE_IMAGE_REPO}" "${PAUSE_IMAGE_VERSION}" "${PAUSE_IMAGE_REPO_AUTH_FILE}"
+    download_and_extract_pause_image "${PAUSE_IMAGE_REPO}" "${PAUSE_IMAGE_VERSION}" "${CLUSTER_PULL_SECRET_AUTH_FILE}"
 
     # Create Azure image using packer
     create_image_using_packer

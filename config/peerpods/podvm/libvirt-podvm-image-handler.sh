@@ -181,7 +181,7 @@ function create_libvirt_image_from_scratch() {
     download_rhel_kvm_guest_qcow2
 
     # Prepare the pause image for embedding into the libvirt image
-    download_and_extract_pause_image "${PAUSE_IMAGE_REPO}" "${PAUSE_IMAGE_VERSION}" "${PAUSE_IMAGE_REPO_AUTH_FILE}"
+    download_and_extract_pause_image "${PAUSE_IMAGE_REPO}" "${PAUSE_IMAGE_VERSION}" "${CLUSTER_PULL_SECRET_AUTH_FILE}"
 
     cd "${CAA_SRC_DIR}"/podvm ||
         error_exit "Failed to change directory to ${CAA_SRC_DIR}/podvm"

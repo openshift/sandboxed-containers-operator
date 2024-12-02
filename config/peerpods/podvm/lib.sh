@@ -7,7 +7,7 @@
 # This pause image is multi-arch
 PAUSE_IMAGE_REPO_DEFAULT="quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256"
 PAUSE_IMAGE_VERSION_DEFAULT="7f3cb6f9d265291b47a7491c2ba4f4dd0752a18b661eee40584f9a5dbcbe13bb"
-PAUSE_IMAGE_REPO_AUTH_FILE="/tmp/regauth/auth.json"
+CLUSTER_PULL_SECRET_AUTH_FILE="/tmp/regauth/auth.json"
 
 # function to trap errors and exit
 function error_exit() {
@@ -271,7 +271,7 @@ function download_and_extract_pause_image() {
     # Set default values for the OCP pause image
     pause_image_repo_url="${1:-${PAUSE_IMAGE_REPO_DEFAULT}}"
     pause_image_tag="${2:-${PAUSE_IMAGE_VERSION_DEFAULT}}"
-    auth_json_file="${3:-${PAUSE_IMAGE_REPO_AUTH_FILE}}"
+    auth_json_file="${3:-${CLUSTER_PULL_SECRET_AUTH_FILE}}"
 
     # If arguments are not provided, exit the script with an error message
     [[ $# -lt 2 ]] &&

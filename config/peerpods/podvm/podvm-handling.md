@@ -26,7 +26,7 @@ variables in the job configuration files (eg,`aws-podvm-image-cm` for AWS):
 
 - **PAUSE_IMAGE_REPO**: eg. quay.io/myimage/image
 - **PAUSE_IMAGE_VERSION**: eg. latest
-- **PAUSE_IMAGE_REPO_AUTH_FILE**: (optional) path to json file with the registry authentication details
+- **CLUSTER_PULL_SECRET_AUTH_FILE**: (optional) path to json file with the registry authentication details
 
 Note that the OSC operator controller doesn't watch for changes to the
 `peer-pods-cm` configMap.  However if the OSC operator reconcile loop is
