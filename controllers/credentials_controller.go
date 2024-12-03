@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // SecretReconciler reconciles a Secret object
@@ -194,12 +195,12 @@ type KataConfigHandler struct {
 	reconciler *SecretReconciler
 }
 
-func (kh *KataConfigHandler) Generic(context.Context, event.GenericEvent, workqueue.RateLimitingInterface) {
+func (kh *KataConfigHandler) Generic(context.Context, event.GenericEvent, workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	kh.reconciler.Log.Info("KataConfig Generic event")
 }
 
 // kataConfig created, create credentialRequest if peerPods enabled
-func (kh *KataConfigHandler) Create(ctx context.Context, event event.CreateEvent, queue workqueue.RateLimitingInterface) {
+func (kh *KataConfigHandler) Create(ctx context.Context, event event.CreateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	kh.reconciler.Log.Info("KataConfig Create event")
 	if !event.Object.(*kataconfigurationv1.KataConfig).Spec.EnablePeerPods {
 		return
@@ -213,7 +214,7 @@ func (kh *KataConfigHandler) Create(ctx context.Context, event event.CreateEvent
 }
 
 // kataConfig updated, create/delete credentialRequest if peerPods enabled/disabled
-func (kh *KataConfigHandler) Update(ctx context.Context, event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
+func (kh *KataConfigHandler) Update(ctx context.Context, event event.UpdateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	kh.reconciler.Log.Info("KataConfig Update event")
 	if event.ObjectNew.(*kataconfigurationv1.KataConfig).Spec.EnablePeerPods {
 		if err := kh.createCredentialsRequests(); err != nil {
@@ -227,7 +228,7 @@ func (kh *KataConfigHandler) Update(ctx context.Context, event event.UpdateEvent
 }
 
 // kataConfig deleted, delete credentialRequest if peerPods enabled
-func (kh *KataConfigHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
+func (kh *KataConfigHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	kh.reconciler.Log.Info("KataConfig Delete event")
 	if !event.Object.(*kataconfigurationv1.KataConfig).Spec.EnablePeerPods {
 		return // try anyway?

@@ -7,13 +7,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 type ConfigMapEventHandler struct {
 	reconciler *KataConfigOpenShiftReconciler
 }
 
-func (ch *ConfigMapEventHandler) Create(ctx context.Context, event event.CreateEvent, queue workqueue.RateLimitingInterface) {
+func (ch *ConfigMapEventHandler) Create(ctx context.Context, event event.CreateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 
 	if ch.reconciler.kataConfig == nil {
 		return
@@ -31,7 +32,7 @@ func (ch *ConfigMapEventHandler) Create(ctx context.Context, event event.CreateE
 	queue.Add(ch.reconciler.makeReconcileRequest())
 }
 
-func (ch *ConfigMapEventHandler) Update(ctx context.Context, event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
+func (ch *ConfigMapEventHandler) Update(ctx context.Context, event event.UpdateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 
 	if ch.reconciler.kataConfig == nil {
 		return
@@ -61,7 +62,7 @@ func (ch *ConfigMapEventHandler) Update(ctx context.Context, event event.UpdateE
 
 }
 
-func (ch *ConfigMapEventHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
+func (ch *ConfigMapEventHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	if ch.reconciler.kataConfig == nil {
 		return
 	}
@@ -78,5 +79,5 @@ func (ch *ConfigMapEventHandler) Delete(ctx context.Context, event event.DeleteE
 	queue.Add(ch.reconciler.makeReconcileRequest())
 }
 
-func (ch *ConfigMapEventHandler) Generic(ctx context.Context, event event.GenericEvent, queue workqueue.RateLimitingInterface) {
+func (ch *ConfigMapEventHandler) Generic(ctx context.Context, event event.GenericEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }

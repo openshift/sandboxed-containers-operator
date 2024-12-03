@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2024-11-29T15:05:07Z"
+    createdAt: "2024-12-13T13:12:54Z"
     features.operators.openshift.io/disconnected: "true"
     features.operators.openshift.io/fips-compliant: "false"
     features.operators.openshift.io/proxy-aware: "false"
@@ -156,6 +156,32 @@ spec:
           - patch
         - apiGroups:
           - ""
+          resources:
+          - secrets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - secrets/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - ""
+          resources:
+          - secrets/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - ""
           - machineconfiguration.openshift.io
           resources:
           - configmaps
@@ -233,31 +259,6 @@ spec:
           - confidentialcontainers.org
           resources:
           - peerpodconfigs
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watch
-        - apiGroups:
-          - confidentialcontainers.org
-          resources:
-          - peerpodconfigs/finalizers
-          verbs:
-          - update
-        - apiGroups:
-          - confidentialcontainers.org
-          resources:
-          - peerpodconfigs/status
-          verbs:
-          - get
-          - patch
-          - update
-        - apiGroups:
-          - confidentialcontainers.org
-          resources:
           - peerpods
           verbs:
           - create
@@ -270,12 +271,14 @@ spec:
         - apiGroups:
           - confidentialcontainers.org
           resources:
+          - peerpodconfigs/finalizers
           - peerpods/finalizers
           verbs:
           - update
         - apiGroups:
           - confidentialcontainers.org
           resources:
+          - peerpodconfigs/status
           - peerpods/status
           verbs:
           - get
@@ -285,44 +288,11 @@ spec:
           - config.openshift.io
           resources:
           - clusterversions
-          verbs:
-          - get
-          - list
-          - watch
-        - apiGroups:
-          - config.openshift.io
-          resources:
           - infrastructures
           verbs:
           - get
           - list
           - watch
-        - apiGroups:
-          - ""
-          resources:
-          - secrets
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watch
-        - apiGroups:
-          - ""
-          resources:
-          - secrets/finalizers
-          verbs:
-          - update
-        - apiGroups:
-          - ""
-          resources:
-          - secrets/status
-          verbs:
-          - get
-          - patch
-          - update
         - apiGroups:
           - kataconfiguration.openshift.io
           resources:
