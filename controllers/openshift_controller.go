@@ -78,9 +78,15 @@ const (
 	peerpodsCrioMachineConfigYaml       = "mc-50-crio-config.yaml"
 	peerpodsKataRemoteMachineConfig     = "40-worker-kata-remote-config"
 	peerpodsKataRemoteMachineConfigYaml = "mc-40-kata-remote-config.yaml"
+	kataRuntimeClassName                = "kata"
+	kataRuntimeClassCpuOverhead         = "0.25"
+	kataRuntimeClassMemOverhead         = "160Mi"
 	peerpodsRuntimeClassName            = "kata-remote"
 	peerpodsRuntimeClassCpuOverhead     = "0.25"
-	peerpodsRuntimeClassMemOverhead     = "350Mi"
+	peerpodsRuntimeClassMemOverhead     = "120Mi"
+	// Use same Pod Overhead as upstream kata-deploy using, see
+	// https://github.com/kata-containers/kata-containers/blob/main/tools/packaging/kata-deploy/runtimeclasses/kata-qemu.yaml#L7
+	// https://github.com/kata-containers/kata-containers/blob/main/tools/packaging/kata-deploy/runtimeclasses/kata-remote.yaml#L7
 )
 
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs;kataconfigs/finalizers,verbs=get;list;watch;create;update;patch;delete
@@ -696,8 +702,7 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName stri
 				Name: runtimeClassName,
 			},
 			Handler: runtimeClassName,
-			// Use same values for Pod Overhead as upstream kata-deploy using, see
-			// https://github.com/kata-containers/packaging/blob/f17450317563b6e4d6b1a71f0559360b37783e19/kata-deploy/k8s-1.18/kata-runtimeClasses.yaml#L7
+
 			Overhead: &nodeapi.Overhead{
 				PodFixed: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse(cpuOverhead),
@@ -1169,7 +1174,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	if !isMcoUpdating {
 		r.Log.Info("create runtime class")
 		r.resetInProgressCondition()
-		err := r.createRuntimeClass("kata", "0.25", "350Mi")
+		err := r.createRuntimeClass(kataRuntimeClassName, kataRuntimeClassCpuOverhead, kataRuntimeClassMemOverhead)
 		if err != nil {
 			// Give sometime for the error to go away before reconciling again
 			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
