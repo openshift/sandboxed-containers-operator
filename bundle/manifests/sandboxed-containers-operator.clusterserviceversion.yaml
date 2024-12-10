@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2024-12-13T13:12:54Z"
+    createdAt: "2024-12-16T08:07:37Z"
     features.operators.openshift.io/disconnected: "true"
     features.operators.openshift.io/fips-compliant: "false"
     features.operators.openshift.io/proxy-aware: "false"
@@ -493,7 +493,7 @@ spec:
               containers:
               - command:
                 - /metrics-server
-                image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.8.1
+                image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator:v1.8.1
                 name: metrics-server
                 ports:
                 - containerPort: 8091

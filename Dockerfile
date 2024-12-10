@@ -12,6 +12,7 @@ COPY PROJECT PROJECT
 COPY go.mod go.mod
 COPY go.sum go.sum
 COPY main.go main.go
+COPY cmd/metrics cmd/metrics/
 COPY api api/
 COPY config config/
 COPY controllers controllers/
@@ -26,6 +27,7 @@ RUN make build
 FROM ${TARGET_IMAGE}
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
+COPY --from=builder /workspace/bin/metrics-server .
 COPY --from=builder /workspace/config/peerpods /config/peerpods
 
 RUN useradd  -r -u 499 nonroot
