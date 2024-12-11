@@ -1,16 +1,18 @@
-reviewers:	
+reviewers:
   - jensfr	
   - pmores
   - bpradipt
   - gkurz
-  - cpmeadors
   - littlejawa
   - snir911
-approvers:	
+  - vvoronko
+  - tbuskey
+approvers:
   - jensfr	
   - pmores
   - bpradipt
   - gkurz
-  - cpmeadors
   - littlejawa
   - snir911
+  - vvoronko
+  - tbuskey
