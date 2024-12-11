@@ -20,7 +20,7 @@ metadata:
     features.operators.openshift.io/token-auth-aws: "false"
     features.operators.openshift.io/token-auth-azure: "false"
     features.operators.openshift.io/token-auth-gcp: "false"
-    olm.skipRange: '>=1.1.0 <1.8.1'
+    olm.skipRange: '>=1.1.0 <1.9.0'
     operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
     operators.openshift.io/valid-subscription: '["OpenShift Container Platform", "OpenShift
       Platform Plus"]'
@@ -372,8 +372,8 @@ spec:
   minKubeVersion: 1.28.0
   provider:
     name: Red Hat
-  replaces: sandboxed-containers-operator.v1.8.0
-  version: 1.8.1
+  replaces: sandboxed-containers-operator.v1.8.1
+  version: 1.9.0
   webhookdefinitions:
   - admissionReviewVersions:
     - v1
