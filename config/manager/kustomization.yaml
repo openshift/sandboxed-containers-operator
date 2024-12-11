@@ -13,4 +13,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator
-  newTag: v1.8.1
+  newTag: v1.9.0
