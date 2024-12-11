@@ -617,7 +617,7 @@ while getopts "t:hmsbu" opt; do
 
         ADD_IMAGE_PULL_SECRET=false
         # Ensure TEE_TYPE is set
-        verify_params
+        verify_params || exit 1
         echo "Uninstalling"
         uninstall || exit 1
         exit 0
