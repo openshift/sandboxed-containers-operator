@@ -129,7 +129,7 @@ make install && make deploy
 ### Adding new containers to OSC
 
 When adding a new container definition in some pod yaml, make sure to tag the `image`
-field with `OSC_VERSION`, e.g.
+field with `  ## OSC_VERSION`, e.g.
 
 ```
 image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.8.1  ## OSC_VERSION
@@ -148,7 +148,10 @@ This is a best effort to track locations where OSC version bumps should happen.
 ### Updating versions
 
 When starting a new version, several locations should be updated with the new version number :
-- all the locations tagged with `OSC_VERSION`
+- all the locations tagged with `  ## OSC_VERSION`, e.g.
+```
+sed -Ei 's/[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+  ## OSC_VERSION/1.9.0  ## OSC_VERSION/g' $(git grep -El '[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+[[:blank:]]+## OSC_VERSION')
+```
 - the `spec.version` field in `config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml`
 - the `olm.skipRange` annotation in the `spec.metadata` field in `config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml`
 
