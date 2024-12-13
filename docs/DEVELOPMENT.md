@@ -33,7 +33,7 @@ does the trick.
 
 ```shell
 export BUILDER_IMAGE=registry.ci.openshift.org/openshift/release:golang-1.22
-export TARGET_IMAGE=registry.ci.openshift.org/origin/4.17:base
+export TARGET_IMAGE=registry.ci.openshift.org/origin/4.17:base-rhel9
 make docker-build
 ```
 
