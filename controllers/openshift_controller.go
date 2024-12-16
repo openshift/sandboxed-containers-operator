@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/confidential-containers/cloud-api-adaptor/src/peerpodconfig-ctrl/api/v1alpha1"
@@ -32,6 +33,7 @@ import (
 
 	ignTypes "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
@@ -487,18 +489,21 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool 
 	return mcp
 }
 
-func getExtensionName() string {
+func (r *KataConfigOpenShiftReconciler) getExtensionName()  string {
 	// RHCOS uses "sandboxed-containers" as thats resolved/translated in the machine-config-operator to "kata-containers"
 	// FCOS however does not get any translation in the machine-config-operator so we need to
 	// send in "kata-containers".
 	// Both are later send to rpm-ostree for installation.
 	//
-	// As RHCOS is rather special variant, use "kata-containers" by default, which also applies to FCOS
-	extension := os.Getenv("SANDBOXED_CONTAINERS_EXTENSION")
-	if len(extension) == 0 {
-		extension = "kata-containers"
+	clusterVersion := &configv1.ClusterVersion{}
+	r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
+
+	if strings.HasPrefix(clusterVersion.Status.Desired.Image, "quay.io/openshift-release-dev/ocp-release"){
+		return "sandboxed-containers" // RHCOS
 	}
-	return extension
+
+	// As RHCOS is rather special variant, use "kata-containers" by default, which also applies to FCOS
+	return "kata-containers"
 }
 
 func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
@@ -521,7 +526,7 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 		return nil, err
 	}
 
-	extension := getExtensionName()
+	extension := r.getExtensionName()
 
 	mc := mcfgv1.MachineConfig{
 		TypeMeta: metav1.TypeMeta{
@@ -1925,7 +1930,7 @@ func (r *KataConfigOpenShiftReconciler) putNodeOnStatusList(node *corev1.Node) e
 		}
 
 		isKataEnabledOnNode = func() bool {
-			extensionName := getExtensionName()
+			extensionName := r.getExtensionName()
 			for _, extName := range targetMc.Spec.Extensions {
 				if extName == extensionName {
 					return true
