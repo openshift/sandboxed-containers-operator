@@ -62,11 +62,6 @@ make docker-push
 
 ## Building Operator bundle image
 
-If you are deploying in an OpenShift cluster then modify the
-value of the env variable `SANDBOXED_CONTAINERS_EXTENSION` to `sandboxed-containers`
-in the file `config/manager/manager.yaml` before running the below mentioned
-commands.
-
 ```
 make bundle CHANNELS=candidate
 make bundle-build
