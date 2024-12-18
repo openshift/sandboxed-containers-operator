@@ -473,6 +473,17 @@ function verify_params() {
 
 }
 
+function uninstall_intel_device_plugins() {
+    echo "Intel Device Plugins operator | starting the uninstall"
+
+    pushd intel-dpo || return 1
+    oc delete -f sgx_device_plugin.yaml || return 1
+    oc delete -f install_operator.yaml || return 1
+    popd || return 1
+
+    echo "Intel Device Plugins operator | deployment uninstalled successfully"
+}
+
 function uninstall_node_feature_discovery() {
     tee_type="${1:-}"
 
@@ -501,6 +512,10 @@ function uninstall_node_feature_discovery() {
 # It won't delete the cluster
 function uninstall() {
     echo "Uninstalling all the artifacts"
+
+    if [ "$TEE_TYPE" = "tdx" ]; then
+        uninstall_intel_device_plugins || exit 1
+    fi
 
     # Uninstall NFD
     uninstall_node_feature_discovery "$TEE_TYPE" || return 1
