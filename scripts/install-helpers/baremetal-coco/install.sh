@@ -9,6 +9,14 @@ SKIP_NFD="${SKIP_NFD:-false}"
 TRUSTEE_URL="${TRUSTEE_URL:-"http://kbs-service.trustee-operator-system:8080"}"
 CMD_TIMEOUT="${CMD_TIMEOUT:-900}"
 
+export PCCS_API_KEY="${PCCS_API_KEY:-}"
+export PCCS_DB_NAME="${PCCS_DB_NAME:-database}"
+export PCCS_DB_USERNAME="${PCCS_DB_USERNAME:-username}"
+export PCCS_DB_PASSWORD="${PCCS_DB_PASSWORD:-password}"
+export PCCS_USER_TOKEN="${PCCS_USER_TOKEN:-}"
+PCCS_ADMIN_TOKEN="${PCCS_ADMIN_TOKEN:-}"
+PCCS_PEM_CERT_PATH="${PCCS_PEM_CERT_PATH:-}"
+
 # Function to check if a command is available
 function check_command() {
     local cmd="$1"
@@ -37,6 +45,29 @@ function wait_for_deployment() {
         elapsed=$((elapsed + interval))
     done
     echo "Operator $deployment is not ready after $timeout seconds"
+    return 1
+}
+
+# Function to wait for a daemonset deployment to be ready
+function wait_for_daemonset() {
+    local daemonset=$1
+    local namespace=$2
+    local timeout=$CMD_TIMEOUT
+    local interval=5
+    local elapsed=0
+    local ready=0
+
+    local total_pods=$(oc get daemonset -n "$namespace" "$daemonset" -o=jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null)
+    while [ $elapsed -lt "$timeout" ]; do
+        pods_ready=$(oc get daemonset -n "$namespace" "$daemonset" -o=jsonpath='{.status.numberReady}' 2>/dev/null)
+        if [ "$total_pods" -eq "$pods_ready" ]; then
+            echo "Daemonset $daemonset is ready"
+            return 0
+        fi
+        sleep $interval
+        elapsed=$((elapsed + interval))
+    done
+    echo "Daemonset $deployment is not ready after $timeout seconds"
     return 1
 }
 
@@ -247,6 +278,40 @@ function deploy_intel_device_plugins() {
     echo "Intel Device Plugins operator | deployment finished successfully"
 }
 
+function deploy_intel_dcap() {
+    echo "Intel DCAP | starting the deployment"
+
+    pushd intel-dcap || return 1
+    oc apply -f ns.yaml || return 1
+
+    oc project intel-dcap
+    oc adm policy add-scc-to-user privileged -z default
+    oc project default
+
+    local PCCS_NODE=$(oc get nodes -l 'node-role.kubernetes.io/control-plane=,node-role.kubernetes.io/master=' -o jsonpath='{.items[0].metadata.name}')
+    export PCCS_NODE
+    export CLUSTER_HTTPS_PROXY
+    envsubst < pccs.yaml.in > pccs.yaml
+    oc apply -f pccs.yaml || return 1
+    wait_for_deployment pccs intel-dcap || return 1
+
+    local PCCS_URL=$(echo -n "https://pccs-service:8042" | base64 -w 0)
+    local SECURE_CERT=$(echo -n "false" | base64 -w 0)
+    local USER_TOKEN=$(echo -n $PCCS_USER_TOKEN | base64 -w 0)
+    export PCCS_URL
+    export SECURE_CERT
+    export USER_TOKEN
+    envsubst < registration-ds.yaml.in > registration-ds.yaml
+    oc apply -f registration-ds.yaml || return 1
+    wait_for_daemonset intel-dcap-registration-flow intel-dcap || return 1
+
+    oc apply -f qgs.yaml || return 1
+    wait_for_daemonset tdx-qgs intel-dcap || return 1
+    popd || return 1
+
+    echo "Intel DCAP | deployment finished successfully"
+}
+
 function create_amd_node_feature_rules() {
     echo "Node Feature Discovery operator | creating amd node feature rules"
 
@@ -415,6 +480,15 @@ function display_help() {
     echo "SKIP_NFD: Skip NFD operator installation and CR creation (default: false)"
     echo "TRUSTEE_URL: Trustee URL to be used in the kernel config (default: http://kbs-service.trustee-operator-system:8080)"
     echo "CMD_TIMEOUT: Timeout for the commands (default: 900)"
+    echo " "
+    echo "Some environment variables required for TDX deployment:"
+    echo "PCCS_API_KEY: The API key from https://api.portal.trustedservices.intel.com/ (THIS MUST BE PROVIDED)"
+    echo "PCCS_DB_NAME: The name of the pccs database (if none is set, \"database\" will be used)"
+    echo "PCCS_DB_USERNAME: The name of the pccs database user (if none is set, \"username\" will be used)"
+    echo "PCCS_DB_PASSWORD: The password of the pccs database user (if none is set, \"password\" will be used)"
+    echo "PCCS_USER_TOKEN: the user token for the PCCS client user to register a platform (if none is set, \"mytoken\" will be used)"
+    echo "PCCS_ADMIN_TOKEN: the admin token for the PCCS client user to register a platform (if none is set, \"mytoken\" will be used)"
+    echo "PCCS_PEM_CERT_PATH: The path where PCK (private.pem) and PCK Cert (certificate.pem) can be found (if none is passed, a pccs_tls folder will be created in your \$HOME directory, where PKC and PKC Cert will be created and used)"
     # Add some example usage options
     echo " "
     echo "Example usage:"
@@ -465,12 +539,72 @@ function verify_params() {
         return 1
     fi
 
+    if [ "$TEE_TYPE" = "tdx" ]; then
+        if [ -z "$PCCS_API_KEY" ]; then
+            echo "PCCS_API_KEY is a required environment variable for TDX deployment"
+            display_help
+            return 1
+        fi
+
+        check_command "sha512sum" || return 1
+        check_command "base64" || return 1
+        check_command "tr" || return 1
+
+        if [ -z "$PCCS_USER_TOKEN" ]; then
+            PCCS_USER_TOKEN="mytoken"
+        fi
+        export PCCS_USER_TOKEN_HASH=$(echo -n "$PCCS_USER_TOKEN" | sha512sum | tr -d '[:space:]-')
+
+        if [ -z "$PCCS_ADMIN_TOKEN" ]; then
+            PCCS_ADMIN_TOKEN="mytoken"
+        fi
+        export PCCS_ADMIN_TOKEN_HASH=$(echo -n "$PCCS_ADMIN_TOKEN" | sha512sum | tr -d '[:space:]-')
+
+        if [ -z "$PCCS_PEM_CERT_PATH" ]; then
+            check_command "openssl" || return 1
+
+            PCCS_PEM_CERT_PATH="$HOME/pccs-tls"
+            mkdir -p "$PCCS_PEM_CERT_PATH"
+            pushd "$PCCS_PEM_CERT_PATH"
+            openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:2048 -keyout private.pem -out certificate.pem -subj "/C=US/ST=Denial/L=Springfield/O=Dis/CN=www.example.com"
+            popd
+        fi
+
+        if [ ! -f $PCCS_PEM_CERT_PATH/private.pem ]; then
+            echo "PCCS_PEM_CERT_PATH does NOT contain a private.pem file, required for TDX deployment"
+            display_help
+            return 1
+        fi
+
+        if [ ! -f $PCCS_PEM_CERT_PATH/certificate.pem ]; then
+            echo "PCCS_PEM_CERT_PATH does NOT contain a certificate.pem file, required for TDX deployment"
+            display_help
+            return 1
+        fi
+
+        export PCCS_PEM=$(cat $PCCS_PEM_CERT_PATH/private.pem | base64 | tr -d '\n')
+        export PCCS_CERT=$(cat $PCCS_PEM_CERT_PATH/certificate.pem | base64 | tr -d '\n')
+    fi
+
     # If ADD_IMAGE_PULL_SECRET is true,  then check if PULL_SECRET_JSON is set
     if [ "$ADD_IMAGE_PULL_SECRET" = true ] && [ -z "$PULL_SECRET_JSON" ]; then
         echo "ADD_IMAGE_PULL_SECRET is set but required environment variable: PULL_SECRET_JSON is not set"
         return 1
     fi
 
+}
+
+function uninstall_intel_dcap() {
+    echo "Intel DCAP | starting the uninstall"
+
+    pushd intel-dcap || return 1
+    oc delete -f qgs.yaml || return 1
+    oc delete -f registration-ds.yaml || return 1
+    oc delete -f pccs.yaml || return 1
+    oc delete -f ns.yaml || return 1
+    popd || return 1
+
+    echo "Intel DCAP | deployment uninstalled successfully"
 }
 
 function uninstall_intel_device_plugins() {
@@ -514,6 +648,18 @@ function uninstall() {
     echo "Uninstalling all the artifacts"
 
     if [ "$TEE_TYPE" = "tdx" ]; then
+	oc delete -f mc-vsock-loopback-module.yaml || exit 1
+        echo "Waiting for MCP to be READY"
+        # If single node OpenShift, then wait for the master MCP to be ready
+        # Else wait for kata-oc MCP to be ready
+        if is_single_node_ocp; then
+            echo "SNO"
+            wait_for_mcp master || return 1
+        else
+            wait_for_mcp kata-oc || return 1
+        fi
+
+        uninstall_intel_dcap || exit 1
         uninstall_intel_device_plugins || exit 1
     fi
 
@@ -668,6 +814,8 @@ if [ "$MIRRORING" = true ]; then
     wait_for_mcp worker || exit 1
 fi
 
+CLUSTER_HTTPS_PROXY="$(oc get proxy/cluster -o jsonpath={.spec.httpsProxy})"
+
 # If ADD_IMAGE_PULL_SECRET is true, then add additional cluster-wide image pull secret
 if [ "$ADD_IMAGE_PULL_SECRET" = true ]; then
     echo "Adding additional cluster-wide image pull secret"
@@ -690,6 +838,7 @@ if [ "$SKIP_NFD" = false ]; then
     tdx)
         create_intel_node_feature_rules || exit 1
         deploy_intel_device_plugins || exit 1
+        deploy_intel_dcap || exit 1
         ;;
     snp)
         create_amd_node_feature_rules || exit 1

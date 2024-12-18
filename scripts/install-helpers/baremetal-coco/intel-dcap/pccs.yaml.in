@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pccs-config
+  namespace: intel-dcap
+data:
+  default.json: |
+    {
+      "HTTPS_PORT" : 8042,
+      "hosts" : "0.0.0.0",
+      "uri": "https://api.trustedservices.intel.com/sgx/certification/v4/",
+      "ApiKey" : "${PCCS_API_KEY}",
+      "proxy" : "${CLUSTER_HTTPS_PROXY}",
+      "RefreshSchedule": "0 0 1 * * *",
+      "UserTokenHash" : "${PCCS_USER_TOKEN_HASH}",
+      "AdminTokenHash" : "${PCCS_ADMIN_TOKEN_HASH}",
+      "CachingFillMode" : "LAZY",
+      "OPENSSL_FIPS_MODE" : false,
+      "LogLevel" : "info",
+      "DB_CONFIG" : "sqlite",
+      "sqlite" : {
+        "database" : "${PCCS_DB_NAME}",
+        "username" : "${PCCS_DB_USERNAME}",
+        "password" : "${PCCS_DB_PASSWORD}",
+        "options" : {
+          "host": "localhost",
+          "dialect": "sqlite",
+          "pool": {
+            "max": 5,
+            "min": 0,
+            "acquire": 30000,
+            "idle": 10000
+          },
+          "define": {
+            "freezeTableName": true
+          },
+          "logging" : true,
+          "storage": "/var/cache/pccs/pckcache.db"
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pccs-tls
+  namespace: intel-dcap
+type: Opaque
+data:
+  private.pem: ${PCCS_PEM}
+  file.crt: ${PCCS_CERT}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pccs-service
+  namespace: intel-dcap
+spec:
+  selector:
+    trustedservices.intel.com/cache: pccs
+  ports:
+  - name: pccs
+    protocol: TCP
+    port: 8042
+    targetPort: pccs-port
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pccs
+  namespace: intel-dcap
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pccs
+  template:
+    metadata:
+      labels:
+        app: pccs
+        trustedservices.intel.com/cache: pccs
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: ${PCCS_NODE}
+      initContainers:
+       - name: init-seclabel
+         image: quay.io/openshift_sandboxed_containers/init-seclabel:latest
+         command: ["sh", "-c", "chcon -Rt container_file_t /var/cache/pccs"]
+         volumeMounts:
+         - name: host-database
+           mountPath: /var/cache/pccs
+         securityContext:
+           runAsUser: 0
+           runAsGroup: 0
+           privileged: true  # Required for chcon to work on host files
+      containers:
+        - name: pccs
+          image: quay.io/openshift_sandboxed_containers/dcap/pccs:1.21
+          ports:
+            - containerPort: 8042
+              name: pccs-port
+          volumeMounts:
+            - name: pccs-tls
+              mountPath: /opt/intel/pccs/ssl_key
+              readOnly: true
+            - name: pccs-config
+              mountPath: /opt/intel/pccs/config
+              readOnly: true
+            - name: host-database
+              mountPath: /var/cache/pccs/
+          securityContext:
+            runAsUser: 0
+      volumes:
+        - name: pccs-tls
+          secret:
+            secretName: pccs-tls
+        - name: pccs-config
+          configMap:
+            name: pccs-config
+        - name: host-database
+          hostPath:
+            path: /var/cache/pccs/
+            type: DirectoryOrCreate

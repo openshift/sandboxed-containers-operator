@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qgs-config
+  namespace: intel-dcap
+data:
+  qgs.conf: |
+    port = 4050
+    number_threads = 4
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sgx-default-qcnl-conf
+  namespace: intel-dcap
+data:
+  sgx_default_qcnl.conf: |
+    {
+      "pccs_url": "https://pccs-service:8042/sgx/certification/v4/",
+      "use_secure_cert": false,
+      "retry_times": 6,
+      "retry_delay": 10,
+      "pck_cache_expire_hours": 168,
+      "verify_collateral_cache_expire_hours": 168,
+      "local_cache_only": false
+    }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: tdx-qgs
+  namespace: intel-dcap
+spec:
+  nodeSelector:
+    intel.feature.node.kubernetes.io/tdx: true
+  selector:
+    matchLabels:
+      app: tdx-qgs
+  template:
+    metadata:
+      labels:
+        app: tdx-qgs
+      annotations:
+        sgx.intel.com/quote-provider: tdx-qgs
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: tdx-qgs
+          image: quay.io/openshift_sandboxed_containers/dcap/tdx-qgs:1.21
+          workingDir: /opt/intel/tdx-qgs
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          resources:
+            limits:
+              sgx.intel.com/epc: "512Ki"
+              sgx.intel.com/enclave: 1
+              sgx.intel.com/provision: 1
+          volumeMounts:
+            - name: qgs-config
+              mountPath: /etc/qgs.conf
+              subPath: qgs.conf
+            - name: sgx-default-qcnl-conf
+              mountPath: /etc/sgx_default_qcnl.conf
+              subPath: sgx_default_qcnl.conf
+      volumes:
+        - name: qgs-config
+          configMap:
+            name: qgs-config
+        - name: sgx-default-qcnl-conf
+          configMap:
+            name: sgx-default-qcnl-conf

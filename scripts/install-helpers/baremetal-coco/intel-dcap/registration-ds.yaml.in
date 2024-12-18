@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pccs-registration
+  namespace: intel-dcap
+type: Opaque
+data:
+  USER_TOKEN: ${USER_TOKEN}
+  PCCS_URL: ${PCCS_URL}
+  SECURE_CERT: ${SECURE_CERT}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: intel-dcap-registration-flow
+  namespace: intel-dcap
+spec:
+  selector:
+    matchLabels:
+      name: intel-dcap-registration-flow
+  template:
+    metadata:
+      labels:
+        name: intel-dcap-registration-flow
+    spec:
+      nodeSelector:
+        intel.feature.node.kubernetes.io/sgx: 'true'
+      automountServiceAccountToken: false
+      containers:
+      - name: intel-dcap-registration-flow
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: true
+          privileged: true # Required to access host efivarfs
+        volumeMounts:
+          - name: efivars
+            mountPath: /sys/firmware/efi/efivars
+        workingDir: "/opt/intel/sgx-pck-id-retrieval-tool/"
+        image: quay.io/openshift_sandboxed_containers/dcap/dcap-registration-flow:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - secretRef:
+            name: pccs-registration
+      volumes:
+        - name: efivars
+          hostPath:
+            path: /sys/firmware/efi/efivars/
