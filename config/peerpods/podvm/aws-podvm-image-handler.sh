@@ -298,9 +298,6 @@ function create_ami() {
     # Install packages if INSTALL_PACKAGES is set to yes
 
     if [[ "${INSTALL_PACKAGES}" == "yes" ]]; then
-        # Add Azure yum repositories
-        add_azure_repositories
-
         # Install required rpm packages
         install_rpm_packages
 
