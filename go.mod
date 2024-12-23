@@ -4,7 +4,6 @@ go 1.22.7
 
 require (
 	github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl v0.9.0
-	github.com/confidential-containers/cloud-api-adaptor/src/peerpodconfig-ctrl v0.9.0
 	github.com/coreos/ignition/v2 v2.15.0
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
 	github.com/go-logr/logr v1.4.2

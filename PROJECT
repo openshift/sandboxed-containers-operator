@@ -11,10 +11,6 @@ plugins:
 projectName: sandboxed-containers-operator
 repo: github.com/openshift/sandboxed-containers-operator
 resources:
-- group: confidentialcontainers
-  kind: PeerPodConfig
-  path: github.com/confidential-containers/cloud-api-adaptor/src/peerpodconfig-ctrl/api/v1alpha1
-  version: v1alpha1
 - controller: true
   domain: kataconfiguration.openshift.io
   group: kataconfiguration

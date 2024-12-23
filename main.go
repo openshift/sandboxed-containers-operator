@@ -22,7 +22,6 @@ import (
 	"os"
 
 	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl/controllers"
-	peerpodconfigcontrollers "github.com/confidential-containers/cloud-api-adaptor/src/peerpodconfig-ctrl/controllers"
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgapi "github.com/openshift/api/machineconfiguration/v1"
 	secv1 "github.com/openshift/api/security/v1"
@@ -51,7 +50,6 @@ import (
 	_ "sigs.k8s.io/controller-tools/pkg/loader"
 
 	peerpod "github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl/api/v1alpha1"
-	peerpodconfig "github.com/confidential-containers/cloud-api-adaptor/src/peerpodconfig-ctrl/api/v1alpha1"
 	ccov1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
@@ -78,8 +76,6 @@ func init() {
 	utilruntime.Must(mcfgapi.Install(scheme))
 
 	utilruntime.Must(kataconfigurationv1.AddToScheme(scheme))
-
-	utilruntime.Must(peerpodconfig.AddToScheme(scheme))
 
 	utilruntime.Must(peerpod.AddToScheme(scheme))
 
@@ -150,15 +146,6 @@ func main() {
 			Scheme: mgr.GetScheme(),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create KataConfig controller for OpenShift cluster", "controller", "KataConfig")
-			os.Exit(1)
-		}
-
-		if err = (&peerpodconfigcontrollers.PeerPodConfigReconciler{
-			Client: mgr.GetClient(),
-			Log:    ctrl.Log.WithName("controllers").WithName("RemotePodConfig"),
-			Scheme: mgr.GetScheme(),
-		}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create RemotePodConfig controller for OpenShift cluster", "controller", "RemotePodConfig")
 			os.Exit(1)
 		}
 
