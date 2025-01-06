@@ -6,7 +6,7 @@ ADD_IMAGE_PULL_SECRET=false
 GA_RELEASE=true
 KERNEL_CONFIG_MC_FILE="./96-kata-kernel-config-mc.yaml"
 SKIP_NFD="${SKIP_NFD:-false}"
-TRUSTEE_URL="${TRUSTEE_URL:-"http://kbs-service:8080"}"
+TRUSTEE_URL="${TRUSTEE_URL:-"http://kbs-service.trustee-operator-system:8080"}"
 CMD_TIMEOUT="${CMD_TIMEOUT:-900}"
 
 # Function to check if a command is available
@@ -413,7 +413,7 @@ function display_help() {
     echo " "
     echo "Some environment variables that can be set:"
     echo "SKIP_NFD: Skip NFD operator installation and CR creation (default: false)"
-    echo "TRUSTEE_URL: Trustee URL to be used in the kernel config (default: http://kbs-service:8080)"
+    echo "TRUSTEE_URL: Trustee URL to be used in the kernel config (default: http://kbs-service.trustee-operator-system:8080)"
     echo "CMD_TIMEOUT: Timeout for the commands (default: 900)"
     # Add some example usage options
     echo " "
