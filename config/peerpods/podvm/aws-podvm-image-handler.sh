@@ -343,9 +343,26 @@ function delete_ami_using_id() {
     # AMI_ID shouldn't be empty
     [[ -z "${AMI_ID}" ]] && error_exit "AMI_ID is empty"
 
+    # Retrieve the associated snapshots
+    SNAPSHOT_IDS_JSON_PATH='Images[].BlockDeviceMappings[].Ebs.SnapshotId'
+    SNAPSHOT_IDS=$(
+        aws ec2 describe-images \
+        --region "${AWS_REGION}" \
+        --image-ids "${AMI_ID}" \
+        --query "${SNAPSHOT_IDS_JSON_PATH}" \
+        --output text
+    ) || error_exit "Failed to get the ami's snapshot ids"
+
     # Delete the ami
     aws ec2 deregister-image --region "${AWS_REGION}" --image-id "${AMI_ID}" ||
         error_exit "Failed to delete the ami"
+
+    # Delete the associated snapshots
+    SNAPSHOT_IDS_LIST=($SNAPSHOT_IDS)
+    for SNAPSHOT_ID in "${SNAPSHOT_IDS_LIST[@]}"; do
+        aws ec2 delete-snapshot --region "${AWS_REGION}" --snapshot-id "${SNAPSHOT_ID}" ||
+            error_exit "Failed to delete snapshot '${SNAPSHOT_ID}'"
+    done
 
     # Remove the ami id annotation from peer-pods-cm configmap
     delete_ami_id_annotation_from_peer_pods_cm
