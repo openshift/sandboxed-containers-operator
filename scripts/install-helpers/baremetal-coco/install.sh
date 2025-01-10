@@ -361,13 +361,28 @@ EOF
 function set_kernel_params_for_kata_agent() {
     local tee_type=${1}
     local trustee_url=${2}
+    local cluster_https_proxy=${3}
+    local cluster_no_proxy=${4}
     local source=""
     local filepath=""
+    local kernel_params=""
+
+    # Input kernel_params="agent.aa_kbc_params=cc_kbc::$trustee_url"
+    kernel_params="agent.aa_kbc_params=cc_kbc::$trustee_url"
+
+    # Add agent.https_proxy for cases where the cluster is running behind proxies
+    if [ -n "$cluster_https_proxy" ]; then
+        kernel_params+=" agent.https_proxy=$cluster_https_proxy"
+    fi
+
+    # Add agent.no_proxy for cases where the cluster is running behind proxies
+    if [ -n "$cluster_no_proxy" ]; then
+        kernel_params+=" agent.no_proxy=$cluster_no_proxy"
+    fi
 
     # Create kata configuration toml override for the kernel_params
-    # Input kernel_params="agent.aa_kbc_params=cc_kbc::$trustee_url"
     kata_override="[hypervisor.qemu]
-kernel_params= \"agent.aa_kbc_params=cc_kbc::$trustee_url\""
+kernel_params=\"$kernel_params\""
 
     # Create base64 encoding of the drop-in to be used as source
     source=$(echo "$kata_override" | base64 -w0) || return 1
@@ -815,6 +830,7 @@ if [ "$MIRRORING" = true ]; then
 fi
 
 CLUSTER_HTTPS_PROXY="$(oc get proxy/cluster -o jsonpath={.spec.httpsProxy})"
+CLUSTER_NO_PROXY="$(oc get proxy/cluster -o jsonpath={.spec.noProxy})"
 
 # If ADD_IMAGE_PULL_SECRET is true, then add additional cluster-wide image pull secret
 if [ "$ADD_IMAGE_PULL_SECRET" = true ]; then
@@ -880,7 +896,7 @@ wait_for_runtimeclass kata || exit 1
 create_runtimeclasses "$TEE_TYPE" || exit 1
 
 # set the aa_kbc_params config for the kata agent to be used CoCo attestation
-set_kernel_params_for_kata_agent "$TEE_TYPE" "$TRUSTEE_URL" || exit 1
+set_kernel_params_for_kata_agent "$TEE_TYPE" "$TRUSTEE_URL" "$CLUSTER_HTTPS_PROXY" "$CLUSTER_NO_PROXY" || exit 1
 
 # If single node OpenShift, then wait for the master MCP to be ready
 # Else wait for kata-oc MCP to be ready
