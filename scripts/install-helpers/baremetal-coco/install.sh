@@ -287,13 +287,13 @@ EOF
     echo "KataConfig object successfully created"
 }
 
-# Function to set aa_kbc_params for teh Kata agent to be used for
+# Function to set kernel_params for teh Kata agent to be used for
 # attestation
 # Use drop-in configuration via MachineConfig
 # This function accepts the TEE type as an argument
 # It also accepts the Trustee URL as an argument
 # Trustee URL should be complete URL with the form http(s)://<trustee_ip>:<port>
-function set_aa_kbc_params_for_kata_agent() {
+function set_kernel_params_for_kata_agent() {
     local tee_type=${1}
     local trustee_url=${2}
     local source=""
@@ -731,7 +731,7 @@ wait_for_runtimeclass kata || exit 1
 create_runtimeclasses "$TEE_TYPE" || exit 1
 
 # set the aa_kbc_params config for the kata agent to be used CoCo attestation
-set_aa_kbc_params_for_kata_agent "$TEE_TYPE" "$TRUSTEE_URL" || exit 1
+set_kernel_params_for_kata_agent "$TEE_TYPE" "$TRUSTEE_URL" || exit 1
 
 # If single node OpenShift, then wait for the master MCP to be ready
 # Else wait for kata-oc MCP to be ready
