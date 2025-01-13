@@ -652,6 +652,9 @@ verify_params || exit 1
 # Check if oc command is available
 check_command "oc" || exit 1
 
+# Check if jq command is available
+check_command "jq" || exit 1
+
 # Display the cluster information
 oc cluster-info || exit 1
 
@@ -668,8 +671,6 @@ fi
 # If ADD_IMAGE_PULL_SECRET is true, then add additional cluster-wide image pull secret
 if [ "$ADD_IMAGE_PULL_SECRET" = true ]; then
     echo "Adding additional cluster-wide image pull secret"
-    # Check if jq command is available
-    check_command "jq" || exit 1
     add_image_pull_secret || exit 1
 
     echo "Waiting for MCP to be ready"
