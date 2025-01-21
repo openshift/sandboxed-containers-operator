@@ -97,7 +97,7 @@ function install_aws_cli() {
         error_exit "Failed to download aws cli"
 
     # Install aws cli v2
-    unzip -o "/tmp/awscliv2.zip" -d "/tmp" ||
+    unzip -q -o "/tmp/awscliv2.zip" -d "/tmp" ||
         error_exit "Failed to unzip aws cli"
     /tmp/aws/install ||
         error_exit "Failed to install aws cli"
