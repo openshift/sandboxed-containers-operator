@@ -8,4 +8,4 @@ data:
   #LIBVIRT_NET: "default
   #LIBVIRT_POOL: "default"
   #LIBVIRT_VOL_NAME: "default"
-  #LIBVIRT_DIR_NAME: "/var/lib/libvirt/images/"
+  #LIBVIRT_DIR_NAME: "/var/lib/libvirt/images/default"
