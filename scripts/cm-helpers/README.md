@@ -8,6 +8,7 @@ cloud provider, recommended best practices, and user-provided input.
 ### Supported Cloud Providers
 * AWS
 * Azure
+* Libvirt
 
 ### Prerequisites
 * jq, kubectl or oc installed

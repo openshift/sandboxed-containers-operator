@@ -47,6 +47,8 @@ aws_optional=("PODVM_AMI_ID")
 azure_vars=("AZURE_INSTANCE_SIZE" "AZURE_INSTANCE_SIZES" "AZURE_SUBNET_ID" "AZURE_NSG_ID" "AZURE_REGION" "AZURE_RESOURCE_GROUP")
 azure_optional=("AZURE_IMAGE_ID")
 
+libvirt_vars=("LIBVIRT_POOL" "LIBVIRT_VOL_NAME" "LIBVIRT_DIR_NAME")
+libvirt_optional=("LIBVIRT_IMAGE_ID")
 
 #### Functions
 
@@ -160,6 +162,11 @@ function getLocalDefaults() {
     AZURE_INSTANCE_SIZE=${AZURE_INSTANCE_SIZE:-${AZURE_INSTANCE_SIZE_default}}
     [[ "${DISABLECVM}" == true ]] && AZURE_INSTANCE_SIZES=${AZURE_INSTANCE_SIZES:-Standard_B2als_v2,Standard_D2as_v5,Standard_D4as_v5,Standard_D2ads_v5}
     #AZURE_IMAGE_ID=${AZURE_IMAGE_ID}
+
+    # libvirt
+    LIBVIRT_POOL=${LIBVIRT_POOL:-default}
+    LIBVIRT_VOL_NAME=${LIBVIRT_VOL_NAME:-default}
+    LIBVIRT_DIR_NAME=${LIBVIRT_DIR_NAME:-default}
 }
 
 function userVerification() {
@@ -173,6 +180,10 @@ function userVerification() {
         "azure")
             verifyAndSetVars "${azure_vars[@]}"
             verifyAndSetVars "${azure_optional[@]}"
+            ;;
+        "libvirt")
+            verifyAndSetVars "${libvirt_vars[@]}"
+            verifyAndSetVars "${libvirt_optional[@]}"
             ;;
         *)
             error_exit "Invalid provider";;
@@ -227,7 +238,11 @@ function initialization() {
 
 initialization
 
-getIMDSDefaults
+if [ "$cld" != "libvirt" ]; then
+    getIMDSDefaults
+else
+    echo "Provider is libvirt, skipping getIMDSDefaults."
+fi
 
 getLocalDefaults
 
