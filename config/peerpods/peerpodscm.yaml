@@ -5,3 +5,7 @@ metadata:
   namespace: openshift-sandboxed-containers-operator
 data:
   #CLOUD_PROVIDER: "libvirt"
+  #LIBVIRT_NET: "default
+  #LIBVIRT_POOL: "default"
+  #LIBVIRT_VOL_NAME: "default"
+  #LIBVIRT_DIR_NAME: "/var/lib/libvirt/images/"

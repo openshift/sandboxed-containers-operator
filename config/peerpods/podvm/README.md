@@ -37,7 +37,7 @@ provided config.
 
 ## PodVM Image Upload Configuration
 
-The PodVM image can be embedded into a container image. This container image can then be unwrapped and uploaded to the libvirt volume specified in the `peer-pods-secret`. Please note that this feature is currently supported only for the libvirt provider.
+The PodVM image can be embedded into a container image. This container image can then be unwrapped and uploaded to the libvirt volume specified in the `peer-pods-cm`. Please note that this feature is currently supported only for the libvirt provider.
 
 To create an OCI image with the PodVM image, you can use the `Dockerfile.podvm-oci` as follows:
 

@@ -599,9 +599,9 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 	// azure ConfigMap Keys
 	azureConfigMapKeys := []string{"AZURE_RESOURCE_GROUP", "AZURE_REGION", "CLOUD_PROVIDER"}
 	// libvirt Secret Keys
-	libvirtSecretKeys := []string{"CLOUD_PROVIDER", "LIBVIRT_URI", "LIBVIRT_POOL", "LIBVIRT_VOL_NAME"}
+	libvirtSecretKeys := []string{"CLOUD_PROVIDER", "LIBVIRT_URI"}
 	// libvirt ConfigMap Keys
-	libvirtConfigMapKeys := []string{"CLOUD_PROVIDER"}
+	libvirtConfigMapKeys := []string{"CLOUD_PROVIDER", "LIBVIRT_POOL", "LIBVIRT_VOL_NAME", "LIBVIRT_DIR_NAME"}
 
 	// Check for each cloud provider if respective ConfigMap keys are present in the peerPodsConfigMap
 	switch r.provider {
