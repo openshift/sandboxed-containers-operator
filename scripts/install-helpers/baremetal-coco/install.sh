@@ -663,7 +663,6 @@ function uninstall() {
     echo "Uninstalling all the artifacts"
 
     if [ "$TEE_TYPE" = "tdx" ]; then
-	oc delete -f mc-vsock-loopback-module.yaml || exit 1
         echo "Waiting for MCP to be READY"
         # If single node OpenShift, then wait for the master MCP to be ready
         # Else wait for kata-oc MCP to be ready
