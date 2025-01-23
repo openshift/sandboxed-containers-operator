@@ -489,7 +489,7 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool 
 	return mcp
 }
 
-func (r *KataConfigOpenShiftReconciler) getExtensionName()  string {
+func (r *KataConfigOpenShiftReconciler) getExtensionName() string {
 	// RHCOS uses "sandboxed-containers" as thats resolved/translated in the machine-config-operator to "kata-containers"
 	// FCOS however does not get any translation in the machine-config-operator so we need to
 	// send in "kata-containers".
@@ -498,7 +498,7 @@ func (r *KataConfigOpenShiftReconciler) getExtensionName()  string {
 	clusterVersion := &configv1.ClusterVersion{}
 	r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
 
-	if strings.HasPrefix(clusterVersion.Status.Desired.Image, "quay.io/openshift-release-dev/ocp-release"){
+	if strings.HasPrefix(clusterVersion.Status.Desired.Image, "quay.io/openshift-release-dev/ocp-release") {
 		return "sandboxed-containers" // RHCOS
 	}
 
