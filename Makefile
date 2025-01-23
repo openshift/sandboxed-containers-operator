@@ -63,9 +63,6 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-# These images needs to be synced with the default values in the Dockerfile.
-BUILDER_IMAGE ?= registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17
-TARGET_IMAGE  ?= registry.ci.openshift.org/ocp/4.17:base-rhel9
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
@@ -156,8 +153,6 @@ run: manifests generate fmt vet ## Run a controller from your host.
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build \
 		-t ${IMG} \
-		--build-arg BUILDER_IMAGE=$(BUILDER_IMAGE) \
-		--build-arg TARGET_IMAGE=$(TARGET_IMAGE) \
 		.
 
 .PHONY: docker-push
@@ -180,8 +175,6 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	- $(CONTAINER_TOOL) buildx build --push \
 		--platform=$(PLATFORMS) \
 		--tag ${IMG} \
-		--build-arg BUILDER_IMAGE=$(BUILDER_IMAGE) \
-		--build-arg TARGET_IMAGE=$(TARGET_IMAGE) \
 		-f Dockerfile.cross \
 		.
 	- $(CONTAINER_TOOL) buildx rm project-v3-builder
