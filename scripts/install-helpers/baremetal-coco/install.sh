@@ -482,6 +482,38 @@ EOF
     echo "kata-$tee_type RuntimeClass object successfully created"
 }
 
+# Function to check if there are nodes with specific labels
+# Argument specifies the label to check
+# Returns 0 if there is at least a single node with the specified label
+function is_node_available_with_label() {
+    local label=${1}
+    local timeout=$CMD_TIMEOUT
+    local interval=5
+    local elapsed=0
+
+    # Convert the label to key=value if given as key:value
+    # Remove any quotes from the label
+    # Trim any leading/trailing spaces
+    label=$(echo "$label" | sed 's/\"//g' | sed 's/ //g' | sed 's/:/=/')
+
+    while [ $elapsed -lt $timeout ]; do
+        nodes=$(oc get nodes -l "$label" -o name 2>/dev/null | wc -l)
+
+        if [ "$nodes" -gt 0 ]; then
+            echo "Node with label $label is available"
+            return 0
+        else
+            echo "Node with label $label is NOT available. Waiting..."
+            sleep "$interval"
+            elapsed=$((elapsed + interval))
+        fi
+    done
+
+    echo "Wait time expired. Node with label $label is still NOT available."
+    return 1
+
+}
+
 function display_help() {
     echo "Usage: install.sh -t <tee_type> [-h] [-m] [-s] [-b] [-u]"
     echo "Options:"
@@ -868,6 +900,17 @@ if [ "$SKIP_NFD" = false ]; then
         ;;
     esac
 fi
+
+# If TEE_TYPE is set then check if the required node labels are set. Otherwise bail out
+# early
+case $TEE_TYPE in
+tdx)
+    is_node_available_with_label "$TDX_NODE_LABEL" || exit 1
+    ;;
+snp)
+    is_node_available_with_label "$SNP_NODE_LABEL" || exit 1
+    ;;
+esac
 
 deploy_osc_operator || exit 1
 
