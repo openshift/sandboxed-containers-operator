@@ -31,8 +31,6 @@ metadata:
   name: tdx-qgs
   namespace: intel-dcap
 spec:
-  nodeSelector:
-    intel.feature.node.kubernetes.io/tdx: 'true'
   selector:
     matchLabels:
       app: tdx-qgs
@@ -43,6 +41,8 @@ spec:
       annotations:
         sgx.intel.com/quote-provider: tdx-qgs
     spec:
+      nodeSelector:
+        intel.feature.node.kubernetes.io/tdx: 'true'
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       containers:
