@@ -80,6 +80,10 @@ spec:
         app: pccs
         trustedservices.intel.com/cache: pccs
     spec:
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
       nodeSelector:
         kubernetes.io/hostname: ${PCCS_NODE}
       initContainers:
