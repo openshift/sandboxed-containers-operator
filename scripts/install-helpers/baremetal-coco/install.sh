@@ -893,8 +893,6 @@ if [ "$SKIP_NFD" = false ]; then
     case $TEE_TYPE in
     tdx)
         create_intel_node_feature_rules || exit 1
-        deploy_intel_device_plugins || exit 1
-        deploy_intel_dcap || exit 1
         ;;
     snp)
         create_amd_node_feature_rules || exit 1
@@ -907,6 +905,9 @@ fi
 case $TEE_TYPE in
 tdx)
     is_node_available_with_label "$TDX_NODE_LABEL" || exit 1
+    # Install required TDX prerequisites
+    deploy_intel_device_plugins || exit 1
+    deploy_intel_dcap || exit 1
     ;;
 snp)
     is_node_available_with_label "$SNP_NODE_LABEL" || exit 1
