@@ -291,6 +291,7 @@ function deploy_intel_dcap() {
     oc adm policy add-scc-to-user privileged -z default
     oc project default
 
+    # PCCS service is deployed on the master node by design.
     PCCS_NODE=$(oc get nodes -l 'node-role.kubernetes.io/control-plane=,node-role.kubernetes.io/master=' -o jsonpath='{.items[0].metadata.name}')
     export PCCS_NODE
     export CLUSTER_HTTPS_PROXY

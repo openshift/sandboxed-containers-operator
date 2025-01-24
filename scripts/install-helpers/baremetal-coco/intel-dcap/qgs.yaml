@@ -32,7 +32,7 @@ metadata:
   namespace: intel-dcap
 spec:
   nodeSelector:
-    intel.feature.node.kubernetes.io/tdx: true
+    intel.feature.node.kubernetes.io/tdx: 'true'
   selector:
     matchLabels:
       app: tdx-qgs
