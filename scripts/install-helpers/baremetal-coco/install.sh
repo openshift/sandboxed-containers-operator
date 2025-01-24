@@ -8,6 +8,8 @@ KERNEL_CONFIG_MC_FILE="./96-kata-kernel-config-mc.yaml"
 SKIP_NFD="${SKIP_NFD:-false}"
 TRUSTEE_URL="${TRUSTEE_URL:-"http://kbs-service.trustee-operator-system:8080"}"
 CMD_TIMEOUT="${CMD_TIMEOUT:-900}"
+TDX_NODE_LABEL='intel.feature.node.kubernetes.io/tdx: "true"'
+SNP_NODE_LABEL='amd.feature.node.kubernetes.io/snp: "true"'
 
 export PCCS_API_KEY="${PCCS_API_KEY:-}"
 export PCCS_DB_NAME="${PCCS_DB_NAME:-database}"
@@ -291,7 +293,7 @@ function deploy_intel_dcap() {
     local PCCS_NODE=$(oc get nodes -l 'node-role.kubernetes.io/control-plane=,node-role.kubernetes.io/master=' -o jsonpath='{.items[0].metadata.name}')
     export PCCS_NODE
     export CLUSTER_HTTPS_PROXY
-    envsubst < pccs.yaml.in > pccs.yaml
+    envsubst <pccs.yaml.in >pccs.yaml
     oc apply -f pccs.yaml || return 1
     wait_for_deployment pccs intel-dcap || return 1
 
@@ -301,7 +303,7 @@ function deploy_intel_dcap() {
     export PCCS_URL
     export SECURE_CERT
     export USER_TOKEN
-    envsubst < registration-ds.yaml.in > registration-ds.yaml
+    envsubst <registration-ds.yaml.in >registration-ds.yaml
     oc apply -f registration-ds.yaml || return 1
     wait_for_daemonset intel-dcap-registration-flow intel-dcap || return 1
 
@@ -329,10 +331,10 @@ function create_kataconfig() {
 
     case $tee_type in
     tdx)
-        label='intel.feature.node.kubernetes.io/tdx: "true"'
+        label="$TDX_NODE_LABEL"
         ;;
     snp)
-        label='amd.feature.node.kubernetes.io/snp: "true"'
+        label="$SNP_NODE_LABEL"
         ;;
     esac
 
