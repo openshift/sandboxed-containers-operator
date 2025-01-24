@@ -495,6 +495,11 @@ func (r *KataConfigOpenShiftReconciler) getExtensionName() string {
 	// send in "kata-containers".
 	// Both are later send to rpm-ostree for installation.
 	//
+	extension := os.Getenv("SANDBOXED_CONTAINERS_EXTENSION")
+	if len(extension) != 0 {
+		return extension
+	}
+
 	clusterVersion := &configv1.ClusterVersion{}
 	r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
 
