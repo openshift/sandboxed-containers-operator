@@ -58,8 +58,9 @@ function wait_for_daemonset() {
     local interval=5
     local elapsed=0
     local ready=0
+    local total_pods=0
 
-    local total_pods=$(oc get daemonset -n "$namespace" "$daemonset" -o=jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null)
+    total_pods=$(oc get daemonset -n "$namespace" "$daemonset" -o=jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null)
     while [ $elapsed -lt "$timeout" ]; do
         pods_ready=$(oc get daemonset -n "$namespace" "$daemonset" -o=jsonpath='{.status.numberReady}' 2>/dev/null)
         if [ "$total_pods" -eq "$pods_ready" ]; then
@@ -290,16 +291,16 @@ function deploy_intel_dcap() {
     oc adm policy add-scc-to-user privileged -z default
     oc project default
 
-    local PCCS_NODE=$(oc get nodes -l 'node-role.kubernetes.io/control-plane=,node-role.kubernetes.io/master=' -o jsonpath='{.items[0].metadata.name}')
+    PCCS_NODE=$(oc get nodes -l 'node-role.kubernetes.io/control-plane=,node-role.kubernetes.io/master=' -o jsonpath='{.items[0].metadata.name}')
     export PCCS_NODE
     export CLUSTER_HTTPS_PROXY
     envsubst <pccs.yaml.in >pccs.yaml
     oc apply -f pccs.yaml || return 1
     wait_for_deployment pccs intel-dcap || return 1
 
-    local PCCS_URL=$(echo -n "https://pccs-service:8042" | base64 -w 0)
-    local SECURE_CERT=$(echo -n "false" | base64 -w 0)
-    local USER_TOKEN=$(echo -n $PCCS_USER_TOKEN | base64 -w 0)
+    PCCS_URL=$(echo -n "https://pccs-service:8042" | base64 -w 0)
+    SECURE_CERT=$(echo -n "false" | base64 -w 0)
+    USER_TOKEN=$(echo -n "$PCCS_USER_TOKEN" | base64 -w 0)
     export PCCS_URL
     export SECURE_CERT
     export USER_TOKEN
@@ -570,37 +571,42 @@ function verify_params() {
         if [ -z "$PCCS_USER_TOKEN" ]; then
             PCCS_USER_TOKEN="mytoken"
         fi
-        export PCCS_USER_TOKEN_HASH=$(echo -n "$PCCS_USER_TOKEN" | sha512sum | tr -d '[:space:]-')
+        PCCS_USER_TOKEN_HASH=$(echo -n "$PCCS_USER_TOKEN" | sha512sum | tr -d '[:space:]-')
+        export PCCS_USER_TOKEN_HASH
 
         if [ -z "$PCCS_ADMIN_TOKEN" ]; then
             PCCS_ADMIN_TOKEN="mytoken"
         fi
-        export PCCS_ADMIN_TOKEN_HASH=$(echo -n "$PCCS_ADMIN_TOKEN" | sha512sum | tr -d '[:space:]-')
+        PCCS_ADMIN_TOKEN_HASH=$(echo -n "$PCCS_ADMIN_TOKEN" | sha512sum | tr -d '[:space:]-')
+        export PCCS_ADMIN_TOKEN_HASH
 
         if [ -z "$PCCS_PEM_CERT_PATH" ]; then
             check_command "openssl" || return 1
 
             PCCS_PEM_CERT_PATH="$HOME/pccs-tls"
             mkdir -p "$PCCS_PEM_CERT_PATH"
-            pushd "$PCCS_PEM_CERT_PATH"
+            pushd "$PCCS_PEM_CERT_PATH" || return 1
             openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:2048 -keyout private.pem -out certificate.pem -subj "/C=US/ST=Denial/L=Springfield/O=Dis/CN=www.example.com"
-            popd
+            popd || return 1
         fi
 
-        if [ ! -f $PCCS_PEM_CERT_PATH/private.pem ]; then
+        if [ ! -f "$PCCS_PEM_CERT_PATH"/private.pem ]; then
             echo "PCCS_PEM_CERT_PATH does NOT contain a private.pem file, required for TDX deployment"
             display_help
             return 1
         fi
 
-        if [ ! -f $PCCS_PEM_CERT_PATH/certificate.pem ]; then
+        if [ ! -f "$PCCS_PEM_CERT_PATH"/certificate.pem ]; then
             echo "PCCS_PEM_CERT_PATH does NOT contain a certificate.pem file, required for TDX deployment"
             display_help
             return 1
         fi
 
-        export PCCS_PEM=$(cat $PCCS_PEM_CERT_PATH/private.pem | base64 | tr -d '\n')
-        export PCCS_CERT=$(cat $PCCS_PEM_CERT_PATH/certificate.pem | base64 | tr -d '\n')
+        PCCS_PEM=$(cat "$PCCS_PEM_CERT_PATH"/private.pem | base64 | tr -d '\n')
+        PCCS_CERT=$(cat "$PCCS_PEM_CERT_PATH"/certificate.pem | base64 | tr -d '\n')
+        export PCCS_PEM
+        export PCCS_CERT
+
     fi
 
     # If ADD_IMAGE_PULL_SECRET is true,  then check if PULL_SECRET_JSON is set
