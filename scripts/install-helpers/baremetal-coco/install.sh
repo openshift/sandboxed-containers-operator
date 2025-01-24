@@ -326,19 +326,35 @@ function create_amd_node_feature_rules() {
     echo "Node Feature Discovery operator | node feature rules successfully created"
 }
 
-# Function to create KataConfig based on TEE type
+# Function to create KataConfig based on either TEE type
+# or explicit label.
 function create_kataconfig() {
-    local tee_type=${1}
-    local label='coco: "true"'
+    local input=${1}
+    local label
 
-    case $tee_type in
+    # Check if the label is empty; if so, exit with an error message
+    if [[ -z "$input" ]]; then
+        echo "Error: No label or TEE type provided."
+        return 1
+    fi
+
+    case "$input" in
     tdx)
         label="$TDX_NODE_LABEL"
         ;;
     snp)
         label="$SNP_NODE_LABEL"
         ;;
+    *)
+        # Convert the label from key=value to "key": "value"
+        # Ensure value is quoted to handle boolean
+        key="${input%%=*}"
+        value="${input#*=}"
+        label="$key: \"$value\""
+        ;;
     esac
+
+    echo "Creating KataConfig object with label: $label"
 
     # Create KataConfig object
     oc apply -f - <<EOF || return 1
@@ -527,6 +543,8 @@ function display_help() {
     echo "  -b Use pre-ga operator bundles"
     echo "  -u Uninstall the installed artifacts"
     echo " "
+    echo "BM_NODE_LABEL: Node label to select the target nodes for installation (THIS MUST BE PROVIDED)"
+    echo " "
     echo "Some environment variables that can be set:"
     echo "SKIP_NFD: Skip NFD operator installation and CR creation (default: false)"
     echo "TRUSTEE_URL: Trustee URL to be used in the kernel config (default: http://kbs-service.trustee-operator-system:8080)"
@@ -588,6 +606,15 @@ function verify_params() {
         echo "Error: Invalid TEE type. It must be 'tdx' or 'snp'"
         display_help
         return 1
+    fi
+
+    # If TEE type is set then check if BM_NODE_LABEL is set
+    if [ -n "$TEE_TYPE" ]; then
+        if [ -z "$BM_NODE_LABEL" ]; then
+            echo "BM_NODE_LABEL is a required environment variable for TDX/SNP deployment"
+            display_help
+            return 1
+        fi
     fi
 
     if [ "$TEE_TYPE" = "tdx" ]; then
@@ -883,6 +910,45 @@ if [ "$ADD_IMAGE_PULL_SECRET" = true ]; then
 
 fi
 
+deploy_osc_operator || exit 1
+
+# Create CoCo feature gate ConfigMap
+oc apply -f osc-fg-cm.yaml || exit 1
+
+# Create Layered Image FG ConfigMap
+case $TEE_TYPE in
+tdx)
+    oc apply -f layeredimage-cm-tdx.yaml || exit 1
+    ;;
+snp)
+    oc apply -f layeredimage-cm-snp.yaml || exit 1
+    ;;
+esac
+
+# Create KataConfig.
+# We are using explicit node label here to install the layered
+# image in target worker nodes
+# For SNO or converged cluster this label is of no use as OSC operator
+# will use master nodes by default
+is_node_available_with_label "$BM_NODE_LABEL" || exit 1
+create_kataconfig "$BM_NODE_LABEL" || exit 1
+
+# If single node OpenShift, then wait for the master MCP to be ready
+# Else wait for kata-oc MCP to be ready
+if is_single_node_ocp; then
+    echo "SNO"
+    wait_for_mcp master || exit 1
+else
+    wait_for_mcp kata-oc || exit 1
+fi
+
+# Wait for runtimeclass kata to be ready
+wait_for_runtimeclass kata || exit 1
+
+# FIXME: For TEEs we are installing NFD post creation of KataConfig
+# as we need the kernel with the required TDX and SNP support
+# and that is installed via OSC
+
 # Deploy NFD operator and create NFD CR if SKIP_NFD is false
 if [ "$SKIP_NFD" = false ]; then
     deploy_nfd_operator || exit 1
@@ -913,36 +979,6 @@ snp)
     is_node_available_with_label "$SNP_NODE_LABEL" || exit 1
     ;;
 esac
-
-deploy_osc_operator || exit 1
-
-# Create CoCo feature gate ConfigMap
-oc apply -f osc-fg-cm.yaml || exit 1
-
-# Create Layered Image FG ConfigMap
-case $TEE_TYPE in
-tdx)
-    oc apply -f layeredimage-cm-tdx.yaml || exit 1
-    ;;
-snp)
-    oc apply -f layeredimage-cm-snp.yaml || exit 1
-    ;;
-esac
-
-# Create KataConfig
-create_kataconfig "$TEE_TYPE" || exit 1
-
-# If single node OpenShift, then wait for the master MCP to be ready
-# Else wait for kata-oc MCP to be ready
-if is_single_node_ocp; then
-    echo "SNO"
-    wait_for_mcp master || exit 1
-else
-    wait_for_mcp kata-oc || exit 1
-fi
-
-# Wait for runtimeclass kata to be ready
-wait_for_runtimeclass kata || exit 1
 
 # Create runtimeClass kata-tdx or kata-snp based on TEE_TYPE
 create_runtimeclasses "$TEE_TYPE" || exit 1

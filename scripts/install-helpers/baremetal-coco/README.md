@@ -3,12 +3,29 @@
 These are helper scripts to setup CoCo on a bare-metal OpenShift worker nodes
 using OpenShift sandboxed containers (OSC) operator.
 
-NodeFeatureDiscovery (NFD) operator is used to label the TDX and SNP nodes.
-`intel.feature.node.kubernetes.io/tdx: "true"` is used for TDX nodes and
-`amd.feature.node.kubernetes.io/snp: "true"` is used for SNP nodes.
+It's expected to label the target nodes with a suitable label before starting the
+install. For example, you can set "coco_bm=true" on the target nodes.
 
-Kata runtime is configured on the nodes with the above labels.
-Note that currently the script only supports installing a single TEE environment.
+The deployment sequence is described below:
+
+```text
+1. Label target nodes and set BM_NODE_LABEL env variable (eg. BM_NODE_LABEL="coco_bm=true")
+2. Deploy OSC operator
+3. Create Kataconfig to install the RHCOS image layer on the nodes with BM_NODE_LABEL. 
+   If using SNO or converged OpenShift then the RHCOS image layer will be installed
+   on all the nodes.
+4. Deploy NFD operator
+5. Verify if the target nodes have SNP or TDX capabilities
+6. Deploy other prerequisites (eg DCAP for TDX)
+7. Set TEE specific Kata configuration
+8. Create TEE specific runtime class
+```
+
+>**Note**
+> >
+> - CoCo on baremetal requires custom kernel which is not available in standard RHCOS image layer. Hence we create the Kataconfig to install the RHCOS image layer into the target nodes and then use NFD to add required TEE specific labels as exposed by the kernel `amd.feature.node.kubernetes.io/snp: "true"` is set for the SNP nodes and `intel.feature.node.kubernetes.io/tdx: "true"` is set for the TDX nodes.
+> >
+> - Currently the script only supports installing a single TEE environment.
 
 ## Prerequisites
 
