@@ -198,14 +198,37 @@ function apply_operator_manifests() {
 }
 
 # Function to check if single node OpenShift
-function is_single_node_ocp() {
-    local node_count
-    node_count=$(oc get nodes --no-headers | wc -l)
-    if [ "$node_count" -eq 1 ]; then
+# or converged OpenShift
+# For both these topologies there is only master MCP
+# worker MCP will have MACHINECOUNT 0
+function is_single_node_or_converged_ocp() {
+    local node_count=0
+    local master_mcp="master"
+    local master_node_count=0
+    local other_node_count=0
+
+    # Find all MCPs
+    mcp_list=$(oc get mcp -o jsonpath='{.items[*].metadata.name}')
+
+    for mcp in $mcp_list; do
+        node_count=$(oc get mcp "$mcp" -o jsonpath='{.status.machineCount}')
+
+        if [ "$mcp" = "$master_mcp" ]; then
+            master_node_count=$node_count
+        else
+            other_node_count=$((other_node_count + node_count))
+        fi
+    done
+
+    # Check conditions and return appropriate exit code
+    if [ "$master_node_count" -gt 0 ] && [ "$other_node_count" -eq 0 ]; then
+        echo "Single node or converged OpenShift cluster detected."
         return 0
     else
+        echo "Regular OpenShift cluster with separate worker node pool"
         return 1
     fi
+
 }
 
 # Function to set additional cluster-wide image pull secret
@@ -326,33 +349,28 @@ function create_amd_node_feature_rules() {
     echo "Node Feature Discovery operator | node feature rules successfully created"
 }
 
-# Function to create KataConfig based on either TEE type
-# or explicit label.
+# Function to create KataConfig
+# Label is must for regular OpenShift cluster
 function create_kataconfig() {
     local input=${1}
     local label
 
-    # Check if the label is empty; if so, exit with an error message
+    # Check if the label is empty;
+    #
     if [[ -z "$input" ]]; then
-        echo "Error: No label or TEE type provided."
-        return 1
-    fi
-
-    case "$input" in
-    tdx)
-        label="$TDX_NODE_LABEL"
-        ;;
-    snp)
-        label="$SNP_NODE_LABEL"
-        ;;
-    *)
+        if is_single_node_or_converged_ocp; then
+            label='node-role.kubernetes.io/master: ""'
+        else
+            echo "Error: Node label is mandatory for regular OpenShift cluster"
+            return 1
+        fi
+    else
         # Convert the label from key=value to "key": "value"
         # Ensure value is quoted to handle boolean
         key="${input%%=*}"
         value="${input#*=}"
         label="$key: \"$value\""
-        ;;
-    esac
+    fi
 
     echo "Creating KataConfig object with label: $label"
 
@@ -411,7 +429,7 @@ kernel_params=\"$kernel_params\""
     # for worker nodes
     local mc_label="machineconfiguration.openshift.io/role: kata-oc"
 
-    if is_single_node_ocp; then
+    if is_single_node_or_converged_ocp; then
         mc_label="machineconfiguration.openshift.io/role: master"
     fi
 
@@ -465,7 +483,7 @@ function create_runtimeclasses() {
     local label='node-role.kubernetes.io/kata-oc: ""'
     local ext_resources=''
 
-    if is_single_node_ocp; then
+    if is_single_node_or_converged_ocp; then
         label='node-role.kubernetes.io/master: ""'
     fi
 
@@ -543,9 +561,8 @@ function display_help() {
     echo "  -b Use pre-ga operator bundles"
     echo "  -u Uninstall the installed artifacts"
     echo " "
-    echo "BM_NODE_LABEL: Node label to select the target nodes for installation (THIS MUST BE PROVIDED)"
-    echo " "
     echo "Some environment variables that can be set:"
+    echo "BM_NODE_LABEL: Node label to select the target worker nodes in regular OpenShift cluster"
     echo "SKIP_NFD: Skip NFD operator installation and CR creation (default: false)"
     echo "TRUSTEE_URL: Trustee URL to be used in the kernel config (default: http://kbs-service.trustee-operator-system:8080)"
     echo "CMD_TIMEOUT: Timeout for the commands (default: 900)"
@@ -606,15 +623,6 @@ function verify_params() {
         echo "Error: Invalid TEE type. It must be 'tdx' or 'snp'"
         display_help
         return 1
-    fi
-
-    # If TEE type is set then check if BM_NODE_LABEL is set
-    if [ -n "$TEE_TYPE" ]; then
-        if [ -z "$BM_NODE_LABEL" ]; then
-            echo "BM_NODE_LABEL is a required environment variable for TDX/SNP deployment"
-            display_help
-            return 1
-        fi
     fi
 
     if [ "$TEE_TYPE" = "tdx" ]; then
@@ -734,8 +742,8 @@ function uninstall() {
         echo "Waiting for MCP to be READY"
         # If single node OpenShift, then wait for the master MCP to be ready
         # Else wait for kata-oc MCP to be ready
-        if is_single_node_ocp; then
-            echo "SNO"
+        if is_single_node_or_converged_ocp; then
+            echo "SNO or Converged OpenShift"
             wait_for_mcp master || return 1
         else
             wait_for_mcp kata-oc || return 1
@@ -759,8 +767,8 @@ function uninstall() {
         echo "Waiting for MCP to be READY"
         # If single node OpenShift, then wait for the master MCP to be ready
         # Else wait for kata-oc MCP to be ready
-        if is_single_node_ocp; then
-            echo "SNO"
+        if is_single_node_or_converged_ocp; then
+            echo "SNO or Converged OpenShift"
             wait_for_mcp master || return 1
         else
             wait_for_mcp kata-oc || return 1
@@ -910,6 +918,19 @@ if [ "$ADD_IMAGE_PULL_SECRET" = true ]; then
 
 fi
 
+# If it's not a single node OpenShift or converged OpenShift, then
+# BM_NODE_LABEL is required
+if ! is_single_node_or_converged_ocp; then
+    if [ -z "$BM_NODE_LABEL" ]; then
+        echo "BM_NODE_LABEL is a required environment variable for regular OpenShift deployment"
+        display_help
+        exit 1
+    fi
+
+    # Check if the node with the specified label is available
+    is_node_available_with_label "$BM_NODE_LABEL" || exit 1
+fi
+
 deploy_osc_operator || exit 1
 
 # Create CoCo feature gate ConfigMap
@@ -927,16 +948,15 @@ esac
 
 # Create KataConfig.
 # We are using explicit node label here to install the layered
-# image in target worker nodes
+# image in target worker nodes for regular OpenShift cluster
 # For SNO or converged cluster this label is of no use as OSC operator
 # will use master nodes by default
-is_node_available_with_label "$BM_NODE_LABEL" || exit 1
 create_kataconfig "$BM_NODE_LABEL" || exit 1
 
 # If single node OpenShift, then wait for the master MCP to be ready
 # Else wait for kata-oc MCP to be ready
-if is_single_node_ocp; then
-    echo "SNO"
+if is_single_node_or_converged_ocp; then
+    echo "SNO or Converged OpenShift"
     wait_for_mcp master || exit 1
 else
     wait_for_mcp kata-oc || exit 1
@@ -988,8 +1008,8 @@ set_kernel_params_for_kata_agent "$TEE_TYPE" "$TRUSTEE_URL" "$CLUSTER_HTTPS_PROX
 
 # If single node OpenShift, then wait for the master MCP to be ready
 # Else wait for kata-oc MCP to be ready
-if is_single_node_ocp; then
-    echo "SNO"
+if is_single_node_or_converged_ocp; then
+    echo "SNO or Converged OpenShift"
     wait_for_mcp master || exit 1
 else
     wait_for_mcp kata-oc || exit 1
