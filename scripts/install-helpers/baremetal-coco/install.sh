@@ -7,7 +7,7 @@ GA_RELEASE=true
 KERNEL_CONFIG_MC_FILE="./96-kata-kernel-config-mc.yaml"
 SKIP_NFD="${SKIP_NFD:-false}"
 TRUSTEE_URL="${TRUSTEE_URL:-"http://kbs-service.trustee-operator-system:8080"}"
-CMD_TIMEOUT="${CMD_TIMEOUT:-900}"
+CMD_TIMEOUT="${CMD_TIMEOUT:-2700}"
 TDX_NODE_LABEL='intel.feature.node.kubernetes.io/tdx: "true"'
 SNP_NODE_LABEL='amd.feature.node.kubernetes.io/snp: "true"'
 
