@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -491,7 +492,7 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool 
 
 func (r *KataConfigOpenShiftReconciler) getExtensionName() string {
 	// RHCOS uses "sandboxed-containers" as thats resolved/translated in the machine-config-operator to "kata-containers"
-	// FCOS however does not get any translation in the machine-config-operator so we need to
+	// FCOS/SCOS however does not get any translation in the machine-config-operator so we need to
 	// send in "kata-containers".
 	// Both are later send to rpm-ostree for installation.
 	//
@@ -507,7 +508,16 @@ func (r *KataConfigOpenShiftReconciler) getExtensionName() string {
 		return "sandboxed-containers" // RHCOS
 	}
 
-	// As RHCOS is rather special variant, use "kata-containers" by default, which also applies to FCOS
+	if strings.HasPrefix(clusterVersion.Status.Desired.Image, "quay.io/okd/scos-release") {
+		return "kata-containers" // SCOS
+	}
+
+	cmdline, err := ioutil.ReadFile("/proc/cmdline")
+	if err == nil && strings.Contains(string(cmdline), "ostree/rhcos") {
+		return "sandboxed-containers" // RHCOS
+	}
+
+	// As RHCOS is rather special variant, use "kata-containers" by default, which also applies to FCOS/SCOS
 	return "kata-containers"
 }
 
