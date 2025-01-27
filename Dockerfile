@@ -1,7 +1,6 @@
-# Use OpenShift golang builder image
-# These images needs to be synced with the images in the Makefile.
 FROM registry.access.redhat.com/ubi9/go-toolset:1.22.7 AS builder
 
+USER root
 WORKDIR /workspace
 
 COPY Makefile Makefile
