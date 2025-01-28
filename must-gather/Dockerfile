@@ -1,9 +1,9 @@
 FROM quay.io/openshift/origin-must-gather:latest as builder
 
-FROM centos:7
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5
 
- # For gathering data from nodes
-RUN yum update -y && yum install iproute tcpdump pciutils util-linux nftables rsync -y && yum clean all
+# For gathering data from nodes
+RUN microdnf update -y && microdnf install tar rsync -y && microdnf clean all
 
 COPY --from=builder /usr/bin/oc /usr/bin/oc
 
