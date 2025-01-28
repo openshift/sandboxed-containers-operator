@@ -328,7 +328,39 @@ function create_ami() {
 
 }
 
-# function to delete the ami
+# Function to delete the ami's snapshots
+# SNAPSHOT_IDS must be set as an environment variable
+
+function delete_ami_snapshots() {
+    echo "Deleting AWS AMIs snapshots"
+
+    # SNAPSHOT_IDS shouldn't be empty
+    [[ -z "${SNAPSHOT_IDS}" ]] && error_exit "SNAPSHOT_IDS is empty"
+
+    SNAPSHOT_IDS_LIST=($SNAPSHOT_IDS)
+    for SNAPSHOT_ID in "${SNAPSHOT_IDS_LIST[@]}"; do
+
+        # Delete the associated snapshot
+        aws ec2 delete-snapshot --region "${AWS_REGION}" --snapshot-id "${SNAPSHOT_ID}" ||
+            error_exit "Failed to delete snapshot '${SNAPSHOT_ID}'"
+
+        # Validate the snapshot was deleted
+        snapshot_description=$(
+            aws ec2 describe-snapshots \
+            --region "${AWS_REGION}" \
+            --filters "Name=snapshot-id,Values='${SNAPSHOT_ID}'" \
+            --query "Snapshots" \
+            --output text
+        ) || error_exit "Failed to get the ami's snapshot description"
+        if [[ -n "$snapshot_description" ]]; then
+            error_exit "Snapshot '${SNAPSHOT_ID}' still exists after deletion attempt"
+        else
+            echo "Snapshot '${SNAPSHOT_ID}' successfully deleted"
+        fi
+    done
+}
+
+# Function to delete the ami
 # AMI_ID must be set as an environment variable
 
 function delete_ami_using_id() {
@@ -340,7 +372,7 @@ function delete_ami_using_id() {
     # AMI_ID shouldn't be empty
     [[ -z "${AMI_ID}" ]] && error_exit "AMI_ID is empty"
 
-    # Retrieve the associated snapshots
+    # Retrieve the associated snapshots before deleting the ami
     SNAPSHOT_IDS_JSON_PATH='Images[].BlockDeviceMappings[].Ebs.SnapshotId'
     SNAPSHOT_IDS=$(
         aws ec2 describe-images \
@@ -349,17 +381,14 @@ function delete_ami_using_id() {
         --query "${SNAPSHOT_IDS_JSON_PATH}" \
         --output text
     ) || error_exit "Failed to get the ami's snapshot ids"
+    export SNAPSHOT_IDS
 
     # Delete the ami
     aws ec2 deregister-image --region "${AWS_REGION}" --image-id "${AMI_ID}" ||
         error_exit "Failed to delete the ami"
 
-    # Delete the associated snapshots
-    SNAPSHOT_IDS_LIST=($SNAPSHOT_IDS)
-    for SNAPSHOT_ID in "${SNAPSHOT_IDS_LIST[@]}"; do
-        aws ec2 delete-snapshot --region "${AWS_REGION}" --snapshot-id "${SNAPSHOT_ID}" ||
-            error_exit "Failed to delete snapshot '${SNAPSHOT_ID}'"
-    done
+    # Delete the amis snapshots
+    delete_ami_snapshots
 
     # Remove the ami id annotation from peer-pods-cm configmap
     delete_ami_id_annotation_from_peer_pods_cm
