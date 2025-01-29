@@ -27,6 +27,8 @@ spec:
     value: Dockerfile.podvm-builder
   - name: path-context
     value: config/peerpods/podvm
+  - name: build-args-file
+    value: '.tekton/build-args.env'
   pipelineSpec:
     description: |
       This pipeline is ideal for building container images from a Containerfile while reducing network traffic.
