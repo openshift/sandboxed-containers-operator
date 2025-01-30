@@ -15,11 +15,12 @@ ARG ACTIVATION_KEY
 
 # This registering RHEL when building on an unsubscribed system
 # If you are running a UBI container on a registered and subscribed RHEL host, 
-# the main RHEL Server repository is enabled inside the standard UBI container
-RUN if [[ -n "${ACTIVATION_KEY}" && -n "${ORG_ID}" ]]; then \
-    rm -f /etc/rhsm-host && rm -f /etc/pki/entitlement-host; \
-    subscription-manager register --org=${ORG_ID} --activationkey=${ACTIVATION_KEY}; \
-    fi
+# the main RHEL Server repository is enabled inside the standard UBI container.
+# Uncomment this and provide the associated ARG variables to register.
+#RUN if [[ -n "${ACTIVATION_KEY}" && -n "${ORG_ID}" ]]; then \
+#    rm -f /etc/rhsm-host && rm -f /etc/pki/entitlement-host; \
+#    subscription-manager register --org=${ORG_ID} --activationkey=${ACTIVATION_KEY}; \
+#    fi
 
 RUN mkdir -p /scripts
 
