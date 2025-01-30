@@ -7,8 +7,8 @@ FROM registry.access.redhat.com/ubi9/ubi:9.5-1736404036
 # Binaries like kubectl, packer and yq under /usr/local/bin will be installed by the scripts
 
 
-LABEL kata_src=https://github.com/kata-containers/kata-containers
-LABEL kata_src_commit=stable-3.7
+LABEL kata_src=https://github.com/openshift/kata-containers
+LABEL kata_src_commit=osc-release
 
 ARG ORG_ID
 ARG ACTIVATION_KEY
@@ -19,8 +19,8 @@ ADD lib.sh libvirt-podvm-image-handler.sh aws-podvm-image-handler.sh azure-podvm
 
 RUN /scripts/azure-podvm-image-handler.sh -- install_rpms
 
-ARG CAA_SRC=https://github.com/confidential-containers/cloud-api-adaptor
-ARG CAA_REF=main
+ARG CAA_SRC=https://github.com/openshift/cloud-api-adaptor
+ARG CAA_REF=osc-release
 ARG CERT_RPM
 
 
