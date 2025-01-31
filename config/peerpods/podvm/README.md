@@ -10,9 +10,10 @@ The configuration used for the podvm image generation is available in the follow
 
 - Azure: `azure-podvm-image-cm`
 - AWS: `aws-podvm-image-cm`
+- GCP: `gcp-podvm-image-cm`
 
 If you want to change the default configuration, then depending on the cloud
-provider (eg. aws or azure) you'll need to pre-create the respective
+provider (eg. aws, azure or gcp) you'll need to pre-create the respective
 configmaps.  Please review and modify the settings in the configMap as
 required.  For example, if you need to add NVIDIA GPU drivers in the podvm
 image then set `ENABLE_NVIDIA_GPU: yes`. Likewise if you want to create image

@@ -51,11 +51,13 @@ const (
 	peerpodsCMName                = "peer-pods-cm"
 	peerpodsCMAWSImageKey         = "PODVM_AMI_ID"
 	peerpodsCMAzureImageKey       = "AZURE_IMAGE_ID"
+	peerpodsCMGCPImageKey         = "PODVM_IMAGE_NAME"
 	peerpodsLibvirtImageKey       = "LIBVIRT_IMAGE_ID"
 	fipsCMKey                     = "BOOT_FIPS"
 	procFIPS                      = "/proc/sys/crypto/fips_enabled"
 	AWSProvider                   = "aws"
 	AzureProvider                 = "azure"
+	GCPProvider                   = "gcp"
 	LibvirtProvider               = "libvirt"
 	peerpodsImageJobsPathLocation = "/config/peerpods/podvm"
 	azureImageGalleryPrefix       = "PodVMGallery"
@@ -249,6 +251,9 @@ func newImageGenerator(client client.Client) (*ImageGenerator, error) {
 	case AzureProvider:
 		ig.CMimageIDKey = peerpodsCMAzureImageKey
 		ig.provider = provider
+	case GCPProvider:
+		ig.CMimageIDKey = peerpodsCMGCPImageKey
+		ig.provider = provider
 	case LibvirtProvider:
 		igLogger.Info("libvirt is our provider", "provider", provider)
 		ig.CMimageIDKey = peerpodsLibvirtImageKey
@@ -309,6 +314,11 @@ func (r *ImageGenerator) createJobFromFile(jobFileName string) (*batchv1.Job, er
 		} else if r.provider == AWSProvider {
 			job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
 				Name:  "AMI_ID",
+				Value: imageId,
+			})
+		} else if r.provider == GCPProvider {
+			job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
+				Name:  "IMAGE_ID",
 				Value: imageId,
 			})
 		} else if r.provider == LibvirtProvider {
@@ -598,6 +608,10 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 	azureSecretKeys := []string{"AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_SUBSCRIPTION_ID"}
 	// azure ConfigMap Keys
 	azureConfigMapKeys := []string{"AZURE_RESOURCE_GROUP", "AZURE_REGION", "CLOUD_PROVIDER"}
+	// gcp Secret Keys
+	gcpSecretKeys := []string{"GCP_CREDENTIALS"}
+	// gcp ConfigMap Keys
+	gcpConfigMapKeys := []string{"GCP_PROJECT_ID", "GCP_ZONE", "CLOUD_PROVIDER"}
 	// libvirt Secret Keys
 	libvirtSecretKeys := []string{"CLOUD_PROVIDER", "LIBVIRT_URI"}
 	// libvirt ConfigMap Keys
@@ -624,6 +638,17 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 
 		// Check if azure ConfigMap Keys are present in the peerPodsConfigMap
 		if !checkKeysPresentAndNotEmpty(peerPodsCM.Data, azureConfigMapKeys) {
+			return fmt.Errorf("validatePeerPodsConfigs: cannot find the required keys in peer-pods-cm ConfigMap")
+		}
+
+	case "gcp":
+		// Check if gcp Secret Keys are present in the peerPodsSecret
+		if !checkKeysPresentAndNotEmpty(peerPodsSecret.Data, gcpSecretKeys) {
+			return fmt.Errorf("validatePeerPodsConfigs: cannot find the required keys in peer-pods-secret Secret")
+		}
+
+		// Check if gcp ConfigMap Keys are present in the peerPodsConfigMap
+		if !checkKeysPresentAndNotEmpty(peerPodsCM.Data, gcpConfigMapKeys) {
 			return fmt.Errorf("validatePeerPodsConfigs: cannot find the required keys in peer-pods-cm ConfigMap")
 		}
 

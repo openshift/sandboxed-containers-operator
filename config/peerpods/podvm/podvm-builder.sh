@@ -24,6 +24,15 @@ function install_libvirt_deps() {
   /scripts/libvirt-podvm-image-handler.sh -- install_binaries
 }
 
+# Function to install GCP deps
+function install_gcp_deps() {
+  echo "Installing GCP deps"
+  # Install the required packages
+  /scripts/gcp-podvm-image-handler.sh -- install_cli
+  /scripts/gcp-podvm-image-handler.sh -- install_binaries
+}
+
+
 # Function to check if peer-pods-cm configmap exists
 function check_peer_pods_cm_exists() {
   if kubectl get configmap peer-pods-cm -n openshift-sandboxed-containers-operator >/dev/null 2>&1; then
@@ -100,6 +109,35 @@ function create_podvm_image() {
       kubectl patch configmap peer-pods-cm -n openshift-sandboxed-containers-operator --type merge -p "{\"data\":{\"PODVM_AMI_ID\":\"${AMI_ID}\"}}"
     fi
     ;;
+  gcp)
+    echo "Creating GCP Image"
+    /scripts/gcp-podvm-image-handler.sh -c
+    if [ $? -ne 0 ]; then
+      echo "Could not create podvm image. Aborting..."
+      exit 1
+    fi
+
+    if [ "${UPDATE_PEERPODS_CM}" == "yes" ]; then
+      # Check if peer-pods-cm configmap exists
+      if ! check_peer_pods_cm_exists; then
+        echo "peer-pods-cm configmap does not exist. Skipping the update of peer-pods-cm"
+        exit 0
+      fi
+      # Get the IMAGE_ID from the LATEST_IMAGE_ID annotation key in peer-pods-cm configmap
+      IMAGE_ID=$(kubectl get configmap peer-pods-cm -n openshift-sandboxed-containers-operator -o jsonpath='{.metadata.annotations.LATEST_IMAGE_ID}')
+
+      # if IMAGE_ID is not set, then exit
+      if [ -z "${IMAGE_ID}" ]; then
+        echo "IMAGE_ID is not set in peer-pods-cm. Skipping the update of peer-pods-cm"
+        exit 1
+      fi
+
+      # Update peer-pods-cm configmap with the IMAGE_ID value
+      echo "Updating peer-pods-cm configmap with IMAGE_ID=${IMAGE_ID}"
+      kubectl patch configmap peer-pods-cm -n openshift-sandboxed-containers-operator --type merge -p "{\"data\":{\"PODVM_IMAGE_ID\":\"${IMAGE_ID}\"}}"
+    fi
+    ;;
+
   libvirt)
     echo "Creating Libvirt qcow2"
     /scripts/libvirt-podvm-image-handler.sh -c
@@ -183,6 +221,35 @@ function delete_podvm_image() {
       delete_podvm_image_gallery -f
     fi
 
+    ;;
+  gcp)
+    # If IMAGE_NAME is not set, then exit
+    if [ -z "${IMAGE_NAME}" ]; then
+      echo "IMAGE_NAME is not set. Skipping the deletion of GCP image"
+      exit 1
+    fi
+
+    PODVM_IMAGE_NAME=$(kubectl get configmap peer-pods-cm -n openshift-sandboxed-containers-operator -o jsonpath='{.data.PODVM_IMAGE_NAME}')
+
+    # If PODVM_IMAGE_NAME is not set, then exit
+    if [ -z "${PODVM_IMAGE_NAME}" ]; then
+      echo "PODVM_IMAGE_NAME is not set in peer-pods-cm. Skipping the deletion of GCP image"
+      exit 1
+    fi
+
+    if [ "${PODVM_IMAGE_NAME}" == "${IMAGE_NAME}" ]; then
+      if ! ${force}; then
+        echo "PODVM_IMAGE_NAME in peer-pods-cm is same as the input image to be deleted. Skipping the deletion of GCP image"
+        exit 0
+      fi
+    fi
+
+    echo "Deleting GCP image $IMAGE_NAME"
+    /scripts/gcp-podvm-image-handler.sh -C
+
+    if [ "${UPDATE_PEERPODS_CM}" == "yes" ]; then
+      kubectl patch configmap peer-pods-cm -n openshift-sandboxed-containers-operator --type merge -p "{\"data\":{\"PODVM_IMAGE_NAME\":\"\"}}"
+    fi
     ;;
   aws)
     # If AMI_ID is not set, then exit
@@ -309,6 +376,9 @@ aws)
   ;;
 libvirt)
   install_libvirt_deps
+  ;;
+gcp)
+  install_gcp_deps
   ;;
 *)
   echo "CLOUD_PROVIDER is not set to azure or aws or libvirt"

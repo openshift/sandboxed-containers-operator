@@ -33,8 +33,8 @@ spec:
           # This image contains the following
           # azure-podvm-image-handler.sh script under /scripts/azure-podvm-image-handler.sh
           # aws-podvm-image-handler.sh script under /scripts/aws-podvm-image-handler.sh
+          # gcp-podvm-image-handler.sh script under /scripts/gcp-podvm-image-handler.sh
           # sources for cloud-api-adaptor under /src/cloud-api-adaptor
-
           securityContext: # TODO: evaluate if these are actually needed
             privileged: true
             allowPrivilegeEscalation: true
@@ -44,7 +44,6 @@ spec:
             capabilities:
              allow:
                - ALL
-
             runAsUser: 0 # needed for container mode dnf access
           envFrom:
             - secretRef:
@@ -60,6 +59,9 @@ spec:
                 optional: true
             - configMapRef:
                 name: aws-podvm-image-cm
+                optional: true
+            - configMapRef:
+                name: gcp-podvm-image-cm
                 optional: true
             - configMapRef:
                 name: libvirt-podvm-image-cm

@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gcp-podvm-image-cm
+  namespace: openshift-sandboxed-containers-operator
+data:
+  # Pod VM sources
+  # If changing the source, then ensure the respective payload binaries are available
+  # for the new source
+  CAA_SRC: "https://github.com/confidential-containers/cloud-api-adaptor"
+  CAA_REF: "main"
+
+  IMAGE_BASE_NAME: "podvm-image"
+  IMAGE_VERSION_MAJ_MIN: "0.0"
+
+  # Booleans
+  INSTALL_PACKAGES: "no"
+  DISABLE_CLOUD_CONFIG: "true"
+  UPDATE_PEERPODS_CM: "yes"
+  BOOT_FIPS: "no"
+
+  # Custom Agent Policy
+  #AGENT_POLICY: "" # set to base64 encoded agent policy
+
+  # precreated artifacts
+  #PODVM_IMAGE_URI: bootc::image-registry.openshift-image-registry.svc:5000/openshift-sandboxed-containers-operator/podvm-bootc

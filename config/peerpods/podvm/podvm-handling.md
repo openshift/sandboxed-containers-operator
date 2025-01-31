@@ -6,18 +6,22 @@ provider. It uses K8s jobs to perform these tasks.
 For Azure, an image gallery is required to host the pod VM image. This is not
 the case for AWS.
 
-The configuration for the K8s jobs are provided via either `aws-podvm-image-cm`
-configMap for AWS or `azure-podvm-image-cm` configMap for Azure respectively.
+The configuration for the K8s jobs are provided via one of the config maps:
+
+ * AWS: `aws-podvm-image-cm`
+ * Azure: `azure-podvm-image-cm`
+ * GCP: `gcp-podvm-image-cm`
+
 These configMaps can be created before `kataConfig` creation to enable custom
 pod VM image creation. Otherwise the default configuration will be used when
 generating the image.
 
-If the `PODVM_AMI_ID` key for AWS provider or the  `AZURE_IMAGE_ID` key for
-Azure provider is empty in the `peer-pods-cm` configMap then the pod VM
-image creation process is triggered during `kataConfig` creation.  So if you
-don't want to trigger the pod VM image creation process, then you can set the
-respective keys to any dummy value (eg. "****"). Or you can set it to a
-pre-created pod VM image.
+If the image key for the enabled cloud provider (`PODVM_AMI_ID` for AWS,
+`AZURE_IMAGE_ID` for Azure, or `PODVM_IMAGE_NAME` for GCP) is empty in the
+peer-pods-cm ConfigMap, the pod VM image creation process is triggered during
+kataConfig creation. So if you don't want to trigger the pod VM image creation
+process, then you can set the respective keys to any dummy value (eg. "****").
+Or you can set it to a pre-created pod VM image.
 
 The image creation process also embeds the `rootfs` of the `pause` container
 image into the pod VM image. By default OpenShift's `pause` image is embedded.
@@ -43,19 +47,20 @@ considered complete when one pod finishes successfully (`completions: 1`). If
 the pod fails, K8s will retry the job once before marking it as failed
 (`backoffLimit: 1`).
 
-The job uses `peer-pods-secret` for cloud-provider credentials, and three
-configMaps - `peer-pods-cm`, `azure-podvm-image-cm`, `aws-podvm-image-cm`.
+The job uses `peer-pods-secret` for cloud-provider credentials, and four
+configMaps - `peer-pods-cm`, `azure-podvm-image-cm`, `aws-podvm-image-cm`,
+`gcp-podvm-image-cm`.
 
 The job's pod specification has an init container (**copy**) which uses the
 `osc-podvm-payload-rhel9:latest` image. It runs a shell command to copy a file
 (`/podvm-binaries.tar.gz`) from its own filesystem to a shared volume
 (`/payload`). This shared volume is of `emptyDir` type.
 
-The main container (**create**), uses the `osc-podvm-builder-rhel9:latest` image.
-This image contains scripts and sources for handling pod VM image creation and
-deletion in Azure and AWS. The container runs as root (`runAsUser: 0`). It also
-mounts the shared volume (`/payload`) to access the file copied by the init
-container.
+The main container (**create**), uses the `osc-podvm-builder-rhel9:latest`
+image. This image contains scripts and sources for handling pod VM image
+creation and deletion in Azure, AWS and GCP. The container runs as root
+(`runAsUser: 0`). It also mounts the shared volume (`/payload`) to access the
+file copied by the init container.
 
 The job is created by the OSC operator as part of the pod VM image creation
 process. Note that OSC operator doesn't delete a failed or completed job pod
@@ -73,14 +78,16 @@ considered complete when one pod finishes successfully (`completions: 1`). If
 the pod fails, K8s will retry the job once before marking it as failed
 (`backoffLimit: 1`).
 
-The job uses `peer-pods-secret` for cloud-provider credentials, and three
-configMaps - `peer-pods-cm`, `azure-podvm-image-cm`, `aws-podvm-image-cm`.
+The job uses `peer-pods-secret` for cloud-provider credentials, and four
+configMaps - `peer-pods-cm`, `azure-podvm-image-cm`, `aws-podvm-image-cm`,
+`gcp-podvm-image-cm`.
 
 The job's pod specification includes a single container (**delete**), which
 uses the `osc-podvm-builder-rhel9:latest` image. The container runs as root
-(`runAsUser: 0`) and has two environment variables, `AMI_ID` and `IMAGE_ID`,
-which are used to specify the AWS AMI ID and Azure Image ID to delete,
-respectively depending on the provider.
+(`runAsUser: 0`) and has two environment variables:
+
+- `AMI_ID`, used to specify the AWS AMI ID to delete.
+- `IMAGE_ID`, used to specify the Azure or GCP Image ID to delete.
 
 For Azure, when the job is executed by the OSC operator, the job deletes the
 pod VM gallery hosting the image as well. This is to ensure that if the pod VM

@@ -24,11 +24,13 @@ ARG ACTIVATION_KEY
 
 RUN mkdir -p /scripts
 
-ADD lib.sh libvirt-podvm-image-handler.sh aws-podvm-image-handler.sh azure-podvm-image-handler.sh /scripts/
+ADD lib.sh libvirt-podvm-image-handler.sh aws-podvm-image-handler.sh azure-podvm-image-handler.sh gcp-podvm-image-handler.sh /scripts/
 
 RUN mkdir -p /scripts/bootc
 ADD bootc/config.toml /scripts/bootc/
 
+# TODO: Since this installation applies to all providers, consider renaming the
+# script or moving the generic RPMS installation elsewhere for better clarity.
 RUN /scripts/azure-podvm-image-handler.sh -- install_rpms
 
 ARG CAA_SRC=https://github.com/confidential-containers/cloud-api-adaptor
