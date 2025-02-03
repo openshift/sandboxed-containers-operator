@@ -8,7 +8,7 @@ You need v1.46.0 or greater.
 
 Download the binary from [Github releases](https://github.com/operator-framework/operator-registry/releases).
 
-## Add previously released catalogs
+## Add a previously released catalog
 
 Set the version of OpenShift you're targeting:
 ```
@@ -48,6 +48,12 @@ Generate a Dockerfile:
 opm generate dockerfile . \
     --base-image "brew.registry.redhat.io/rh-osbs/openshift-ose-operator-registry-rhel9:${OCP_VERSION}" \
     --builder-image "brew.registry.redhat.io/rh-osbs/openshift-ose-operator-registry-rhel9:${OCP_VERSION}"
+```
+
+Patch the Dockerfile to avoid copying in unwanted files:
+```diff
+-ADD . /configs
++ADD catalog/ /configs
 ```
 
 ## Further reading
