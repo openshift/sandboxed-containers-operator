@@ -28,6 +28,8 @@ spec:
   - name: build-platforms
     value:
     - linux/x86_64
+  - name: path-context
+    value: fbc/4.17
   - name: dockerfile
     value: fbc/4.17/Dockerfile
   pipelineRef:
