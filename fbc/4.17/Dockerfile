@@ -3,7 +3,7 @@
 FROM brew.registry.redhat.io/rh-osbs/openshift-ose-operator-registry-rhel9:v4.17 as builder
 
 # Copy FBC root into image at /configs and pre-populate serve cache
-ADD . /configs
+ADD catalog/ /configs
 RUN ["/bin/opm", "serve", "/configs", "--cache-dir=/tmp/cache", "--cache-only"]
 
 FROM brew.registry.redhat.io/rh-osbs/openshift-ose-operator-registry-rhel9:v4.17
