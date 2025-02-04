@@ -273,45 +273,6 @@ function recreate_image_configmap() {
     echo "podvm-images configmap recreated successfully"
 }
 
-# Function to add the ami id as annotation in the peer-pods-cm configmap
-
-function add_ami_id_annotation_to_peer_pods_cm() {
-    echo "Adding ami id to peer-pods-cm configmap"
-
-    # Check if the peer-pods-cm configmap exists
-    if ! kubectl get configmap peer-pods-cm -n openshift-sandboxed-containers-operator >/dev/null 2>&1; then
-        echo "peer-pods-cm configmap does not exist. Skipping adding the ami id"
-        return
-    fi
-
-    # Add the ami id as annotation to peer-pods-cm configmap
-    # Overwrite any existing values
-    kubectl annotate --overwrite configmap peer-pods-cm -n openshift-sandboxed-containers-operator \
-        "LATEST_AMI_ID=${AMI_ID}" ||
-        error_exit "Failed to add the ami id as annotation to peer-pods-cm configmap"
-
-    echo "AMI id added as annotation to peer-pods-cm configmap successfully"
-}
-
-# Function to delete the LATEST_AMI_ID annotation from the peer-pods-cm configmap
-
-function delete_ami_id_annotation_from_peer_pods_cm() {
-    echo "Deleting ami id annotation from peer-pods-cm configmap"
-
-    # Check if the peer-pods-cm configmap exists
-    if ! kubectl get configmap peer-pods-cm -n openshift-sandboxed-containers-operator >/dev/null 2>&1; then
-        echo "peer-pods-cm configmap does not exist. Skipping deleting the ami id"
-        return
-    fi
-
-    # Delete the ami id annotation from peer-pods-cm configmap
-    kubectl annotate configmap peer-pods-cm -n openshift-sandboxed-containers-operator \
-        "LATEST_AMI_ID-" ||
-        error_exit "Failed to delete the ami id annotation from peer-pods-cm configmap"
-
-    echo "Ami id annotation deleted from peer-pods-cm configmap successfully"
-}
-
 function create_ami_from_prebuilt_artifact() {
     echo "Creating AWS AMI image from prebuilt artifact"
 
@@ -503,7 +464,7 @@ function create_ami() {
     get_ami_id
 
     # Add the ami id as annotation to peer-pods-cm configmap
-    add_ami_id_annotation_to_peer_pods_cm
+    update_cm_annotation "LATEST_AMI_ID" "${AMI_ID}"
 
 }
 
@@ -570,7 +531,7 @@ function delete_ami_using_id() {
     delete_ami_snapshots
 
     # Remove the ami id annotation from peer-pods-cm configmap
-    delete_ami_id_annotation_from_peer_pods_cm
+    delete_cm_annotation "LATEST_AMI_ID"
 
 }
 

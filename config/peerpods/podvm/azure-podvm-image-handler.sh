@@ -373,45 +373,6 @@ function recreate_image_configmap() {
     echo "podvm-images configmap recreated successfully"
 }
 
-# Function to add the image id as annotation in the peer-pods-cm configmap
-
-function add_image_id_annotation_to_peer_pods_cm() {
-    echo "Adding image id annotation to peer-pods-cm configmap"
-
-    # Check if the peer-pods-cm configmap exists
-    if ! kubectl get configmap peer-pods-cm -n openshift-sandboxed-containers-operator >/dev/null 2>&1; then
-        echo "peer-pods-cm configmap does not exist. Skipping adding the image id"
-        return
-    fi
-
-    # Add the image id as annotation to peer-pods-cm configmap
-    # Overwrite any existing values
-    kubectl annotate --overwrite configmap peer-pods-cm -n openshift-sandboxed-containers-operator \
-        "LATEST_IMAGE_ID=${IMAGE_ID}" ||
-        error_exit "Failed to add the image id as annotation to peer-pods-cm configmap"
-
-    echo "Image id added as annotation to peer-pods-cm configmap successfully"
-}
-
-# Function to delete the LATEST_IMAGE_ID annotation from the peer-pods-cm configmap
-
-function delete_image_id_annotation_from_peer_pods_cm() {
-    echo "Deleting image id annotation from peer-pods-cm configmap"
-
-    # Check if the peer-pods-cm configmap exists
-    if ! kubectl get configmap peer-pods-cm -n openshift-sandboxed-containers-operator >/dev/null 2>&1; then
-        echo "peer-pods-cm configmap does not exist. Skipping deleting the image id"
-        return
-    fi
-
-    # Delete the image id annotation from peer-pods-cm configmap
-    kubectl annotate configmap peer-pods-cm -n openshift-sandboxed-containers-operator \
-        "LATEST_IMAGE_ID-" ||
-        error_exit "Failed to delete the image id annotation from peer-pods-cm configmap"
-
-    echo "Image id annotation deleted from peer-pods-cm configmap successfully"
-}
-
 # Function to add image gallery annotation to peer-pods-cm configmap
 
 function add_image_gallery_annotation_to_peer_pods_cm() {
@@ -483,7 +444,7 @@ function create_image() {
     get_image_id
 
     # Add the image id as annotation to peer-pods-cm configmap
-    add_image_id_annotation_to_peer_pods_cm
+    update_cm_annotation "LATEST_IMAGE_ID" "${IMAGE_ID}"
 
     echo "Azure image created successfully"
 
@@ -804,7 +765,7 @@ function delete_image_using_id() {
 
 
     # Remove the image id annotation from peer-pods-cm configmap
-    delete_image_id_annotation_from_peer_pods_cm
+    delete_cm_annotation LATEST_IMAGE_ID
 
     echo "Azure image deleted successfully"
 }

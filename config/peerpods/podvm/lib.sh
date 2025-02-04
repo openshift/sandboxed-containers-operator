@@ -644,6 +644,43 @@ function convert_podvm_image_to_vhd() {
 
 }
 
+update_cm_annotation() {
+    local key="$1"
+    local value="$2"
+    local cm="${3:-peer-pods-cm}"
+    local ns="${4:-openshift-sandboxed-containers-operator}"
+
+    echo "Adding annotation ${key}=${value} to configmap ${cm} in namespace ${ns}"
+
+    if ! kubectl get configmap "${cm}" -n "${ns}" >/dev/null 2>&1; then
+        echo "ConfigMap ${cm} does not exist in namespace ${ns}. Skipping."
+        return
+    fi
+
+    kubectl annotate --overwrite configmap "${cm}" -n "${ns}" "${key}=${value}" ||
+        error_exit "Failed to add annotation ${key} to ${cm}"
+
+    echo "Annotation ${key}=${value} added successfully to ${cm}"
+}
+
+delete_cm_annotation() {
+    local key="$1"
+    local cm="${2:-peer-pods-cm}"
+    local ns="${3:-openshift-sandboxed-containers-operator}"
+
+    echo "Deleting annotation ${key} from configmap ${cm} in namespace ${ns}"
+
+    if ! kubectl get configmap "${cm}" -n "${ns}" >/dev/null 2>&1; then
+        echo "ConfigMap ${cm} does not exist in namespace ${ns}. Skipping."
+        return
+    fi
+
+    kubectl annotate configmap "${cm}" -n "${ns}" "${key}-" ||
+        error_exit "Failed to delete annotation ${key} from ${cm}"
+
+    echo "Annotation ${key} deleted successfully from ${cm}"
+}
+
 # Global variables
 
 # Set global variable for the source code directory
