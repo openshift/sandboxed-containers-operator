@@ -42,9 +42,6 @@ spec:
       kind: KataConfig
       name: kataconfigs.kataconfiguration.openshift.io
       version: v1
-    - kind: PeerPodConfig
-      name: peerpodconfigs.confidentialcontainers.org
-      version: v1alpha1
     - kind: PeerPod
       name: peerpods.confidentialcontainers.org
       version: v1alpha1
