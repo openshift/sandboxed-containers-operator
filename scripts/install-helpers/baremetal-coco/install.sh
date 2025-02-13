@@ -496,14 +496,14 @@ function create_runtimeclasses() {
         ;;
     esac
 
-    echo "Creating kata-$tee_type RuntimeClass object"
+    echo "Creating kata-cc RuntimeClass object for the kata-$tee_type handler"
 
     #Create runtimeClass object
     oc apply -f - <<EOF || return 1
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
 metadata:
-  name: kata-$tee_type
+  name: kata-cc
 handler: kata-$tee_type
 overhead:
   podFixed:
@@ -514,7 +514,7 @@ scheduling:
   nodeSelector:
      $label
 EOF
-    echo "kata-$tee_type RuntimeClass object successfully created"
+    echo "kata-cc RuntimeClass object for the kata-$tee_type handler successfully created"
 }
 
 # Function to check if there are nodes with specific labels
