@@ -29,6 +29,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	ignTypes "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
@@ -90,6 +91,8 @@ const (
 	peerpodsRuntimeClassName        = "kata-remote"
 	peerpodsRuntimeClassCpuOverhead = "0.25"
 	peerpodsRuntimeClassMemOverhead = "120Mi"
+	// cloud-api-adaptor (CAA) daemonset name
+	caaDsName = "osc-caa-ds"
 )
 
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs;kataconfigs/finalizers,verbs=get;list;watch;create;update;patch;delete
@@ -322,6 +325,151 @@ func (r *KataConfigOpenShiftReconciler) removeLogLevel() error {
 	}
 	r.Log.Info("logLevel ContainerRuntimeConfig deleted successfully")
 	return nil
+}
+
+func MountProgagationRef(mode corev1.MountPropagationMode) *corev1.MountPropagationMode {
+	return &mode
+}
+
+func (r *KataConfigOpenShiftReconciler) processDaemonsetForCAA() *appsv1.DaemonSet {
+	var (
+		runPrivileged                = true
+		runAsUser              int64 = 0
+		defaultMode            int32 = 0600
+		sshSecretOptional            = true
+		authJsonSecretOptional       = true
+		nodeSelector                 = r.getNodeSelectorAsMap()
+	)
+
+	dsLabelSelectors := map[string]string{
+		"name": caaDsName,
+	}
+
+	imageString := os.Getenv("RELATED_IMAGE_CAA")
+	if imageString == "" {
+		r.Log.Info("RELATED_IMAGE_CAA env var is unset or empty, cloud-api-adaptor pods will not run")
+	}
+
+	return &appsv1.DaemonSet{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "apps/v1",
+			Kind:       "DaemonSet",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      caaDsName,
+			Namespace: os.Getenv("PEERPODS_NAMESPACE"),
+		},
+		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: dsLabelSelectors,
+			},
+			UpdateStrategy: appsv1.DaemonSetUpdateStrategy{
+				Type: "RollingUpdate",
+				RollingUpdate: &appsv1.RollingUpdateDaemonSet{
+					MaxUnavailable: &intstr.IntOrString{
+						Type:   intstr.Int,
+						IntVal: 1,
+					},
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: dsLabelSelectors,
+				},
+				Spec: corev1.PodSpec{
+					ServiceAccountName: "default",
+					NodeSelector:       nodeSelector,
+					HostNetwork:        true,
+					Containers: []corev1.Container{
+						{
+							Name:            "caa-pod",
+							Image:           imageString,
+							ImagePullPolicy: "Always",
+							SecurityContext: &corev1.SecurityContext{
+								// TODO - do we really need to run as root?
+								Privileged: &runPrivileged,
+								RunAsUser:  &runAsUser,
+							},
+							Command: []string{"/usr/local/bin/entrypoint.sh"},
+							EnvFrom: []corev1.EnvFromSource{
+								{
+									SecretRef: &corev1.SecretEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: "peer-pods-secret",
+										},
+									},
+								},
+								{
+									ConfigMapRef: &corev1.ConfigMapEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: "peer-pods-cm",
+										},
+									},
+								},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "auth-json-volume",
+									MountPath: "/root/containers/",
+									ReadOnly:  true,
+								}, {
+									Name:      "ssh",
+									MountPath: "/root/.ssh",
+									ReadOnly:  true,
+								},
+								{
+									MountPath: "/run/peerpod",
+									Name:      "pods-dir",
+								},
+								{
+									MountPath:        "/run/netns",
+									MountPropagation: MountProgagationRef(corev1.MountPropagationHostToContainer),
+									Name:             "netns",
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "auth-json-volume",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName:  "auth-json-secret",
+									DefaultMode: &defaultMode,
+									Optional:    &authJsonSecretOptional,
+								},
+							},
+						}, {
+							Name: "ssh",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName:  "ssh-key-secret",
+									DefaultMode: &defaultMode,
+									Optional:    &sshSecretOptional,
+								},
+							},
+						},
+						{
+							Name: "pods-dir",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/run/peerpod",
+								},
+							},
+						},
+						{
+							Name: "netns",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/run/netns",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.DaemonSet {
@@ -2262,8 +2410,25 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMc() error {
 
 // Create the PeerPodConfig CRDs and misc configs required for peer-pods
 func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
+	// Create the CAA daemonset
+	ds := r.processDaemonsetForCAA()
+	if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
+		r.Log.Error(err, "Failed setting ControllerReference for cloud-api-adaptor DS")
+		return err
+	}
+
+	err := r.Client.Update(context.TODO(), ds)
+	if err != nil && k8serrors.IsNotFound(err) {
+		r.Log.Error(err, "cloud-api-adaptor daemonset doesn't exist. Creating")
+		err = r.Client.Create(context.TODO(), ds)
+		if err != nil {
+			r.Log.Error(err, "failed to create cloud-api-adaptor daemonset")
+			return err
+		}
+	}
+
 	// Create the mutating webhook deployment
-	err := r.createMutatingWebhookDeployment()
+	err = r.createMutatingWebhookDeployment()
 	if err != nil {
 		r.Log.Info("Error in creating mutating webhook deployment for peerpods", "err", err)
 		return err
@@ -2293,6 +2458,17 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 }
 
 func (r *KataConfigOpenShiftReconciler) disablePeerPods() error {
+	ds := r.processDaemonsetForCAA()
+	err := r.Client.Delete(context.TODO(), ds)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("cloud-api-adaptor daemonset was already deleted")
+		} else {
+			r.Log.Error(err, "error when deleting cloud-api-adaptor Daemonset, try again")
+			return err
+		}
+	}
+
 	mc := mcfgv1.MachineConfig{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "machineconfiguration.openshift.io/v1",
@@ -2303,7 +2479,7 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPods() error {
 		},
 	}
 
-	err := r.Client.Delete(context.TODO(), &mc)
+	err = r.Client.Delete(context.TODO(), &mc)
 	if err != nil {
 		// error during removing mc. Just log the error and move on.
 		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
