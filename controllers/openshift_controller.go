@@ -134,6 +134,12 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
+	err = r.migratePeerPodsLimit()
+	if err != nil {
+		r.Log.Info("Failed to migrate PeerPodConfig limit", "err", err)
+		return ctrl.Result{}, err
+	}
+
 	err = r.processFeatureGates()
 	if err != nil {
 		r.Log.Info("Unable to process feature gates", "err", err)
