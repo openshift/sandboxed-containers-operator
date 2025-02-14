@@ -391,6 +391,16 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForCAA() *appsv1.DaemonS
 								RunAsUser:  &runAsUser,
 							},
 							Command: []string{"/usr/local/bin/entrypoint.sh"},
+							Env: []corev1.EnvVar{
+								{
+									Name: "NODE_NAME",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "spec.nodeName",
+										},
+									},
+								},
+							},
 							EnvFrom: []corev1.EnvFromSource{
 								{
 									SecretRef: &corev1.SecretEnvSource{
