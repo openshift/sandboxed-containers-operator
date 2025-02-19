@@ -2,7 +2,7 @@
 
 ## Prerequisites
 - Golang - 1.22.x
-- Operator SDK version - 1.36.1
+- Operator SDK version - 1.39.1
 - podman, podman-docker or docker
 - Access to OpenShift cluster (4.12+)
 - Container registry to storage images
