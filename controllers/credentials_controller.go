@@ -150,6 +150,7 @@ func (r *SecretReconciler) secretMapping(peerPodsSecret *corev1.Secret, ccoSecre
 		"azure_client_id":       "AZURE_CLIENT_ID",
 		"azure_client_secret":   "AZURE_CLIENT_SECRET",
 		"azure_tenant_id":       "AZURE_TENANT_ID",
+		"service_account.json":  "GCP_CREDENTIALS",
 		// the following are usually set in them CM, ignore them for now
 		//"azure_region":          "AZURE_REGION",
 		//"azure_resourcegroup":   "AZURE_RESOURCE_GROUP",
