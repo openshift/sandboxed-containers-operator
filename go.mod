@@ -12,7 +12,7 @@ require (
 	github.com/openshift/api v0.0.0-20241106222702-2429e35d6633
 	github.com/openshift/cloud-credential-operator v0.0.0-20240207183603-c9fd580aca5d
 	github.com/openshift/machine-config-operator v0.0.1-0.20241126072907-0ccd787ec951
-	github.com/prometheus/client_golang v1.20.4
+	github.com/prometheus/client_golang v1.21.0
 	github.com/spf13/cobra v1.8.1
 	go.uber.org/zap v1.26.0
 	k8s.io/api v0.31.1
@@ -85,7 +85,7 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kdomanski/iso9660 v0.4.0 // indirect
-	github.com/klauspost/compress v1.17.10 // indirect
+	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/leodido/go-urn v1.2.4 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -99,7 +99,7 @@ require (
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
-	github.com/prometheus/common v0.60.0 // indirect
+	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace // indirect
 	github.com/vincent-petithory/dataurl v1.0.0 // indirect
@@ -111,7 +111,7 @@ require (
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
 	golang.org/x/mod v0.22.0 // indirect
 	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/oauth2 v0.23.0 // indirect
+	golang.org/x/oauth2 v0.24.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/term v0.27.0 // indirect
