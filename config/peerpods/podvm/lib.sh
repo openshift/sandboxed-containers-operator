@@ -208,22 +208,24 @@ function prepare_source_code() {
 
     # links must be relative
     if [[ "${AGENT_POLICY}" ]]; then
-        echo "Custom agent policy is being set through the AGENT_POLICY value"
+        echo "Custom agent policy is being set through the AGENT_POLICY value (this can be overridden if initData policy is set)"
         echo "${AGENT_POLICY}" | base64 -d >"${podvm_dir}"/files/etc/kata-opa/custom.rego
         return_code=$?
         if [[ "$return_code" == 0 ]] && grep -q "agent_policy" "${podvm_dir}"/files/etc/kata-opa/custom.rego; then # checks policy validity
-            ln -sf custom.rego "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
+            sed -i 's/allow-all.rego/custom.rego/g' "${podvm_dir}"/files/etc/tmpfiles.d/policy.conf || error_exit "Failed 
+to edit policy.conf"
         else
             error_exit "Invalid AGENT_POLICY value set, expected base64 encoded valid agent policy, got: \"${AGENT_POLICY}\""
         fi
+	echo "~~~ Fallback default policy is set to: ~~~" && cat "${podvm_dir}"/files/etc/kata-opa/custom.rego
     elif [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]]; then
         echo "Setting custom agent policy to CoCo's recommended policy"
         sed 's/default ReadStreamRequest := true/default ReadStreamRequest := false/;
             s/default ExecProcessRequest := true/default ExecProcessRequest := false/' \
             "${podvm_dir}"/files/etc/kata-opa/default-policy.rego >"${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
-        ln -sf coco-default-policy.rego "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
+        sed -i 's/allow-all.rego/coco-default-policy.rego/g' "${podvm_dir}"/files/etc/tmpfiles.d/policy.conf || error_exit "Failed to edit policy.conf"
+	echo "~~~ Fallback default policy is set to: ~~~" && cat "${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
     fi
-    echo "~~~ Current Agent Policy ~~~" && cat "${podvm_dir}"/files/etc/kata-opa/default-policy.rego
 
     # Fix disk mounts for CoCo
     if [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]]; then
