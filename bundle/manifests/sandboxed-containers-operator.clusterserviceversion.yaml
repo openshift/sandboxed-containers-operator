@@ -378,15 +378,15 @@ spec:
                 - name: PEERPODS_NAMESPACE
                   value: openshift-sandboxed-containers-operator
                 - name: RELATED_IMAGE_KATA_MONITOR
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.9.0
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-monitor@sha256:1e19738be039443b1086a22c446897216e791a6cd72da5aeeb6e538f1c9aa447
                 - name: RELATED_IMAGE_CAA
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9:1.9.0
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa@sha256:0123d325c48ad6ed051a06d97a183083ca9a5132884a055f852e7a863867400d
                 - name: RELATED_IMAGE_PEERPODS_WEBHOOK
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9:1.9.0
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa-webhook@sha256:52c2686822cf6d1072786683357332e337184e8f0f9ae2af155ef68f5081dbbf
                 - name: RELATED_IMAGE_PODVM_BUILDER
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.9.0
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-builder@sha256:a35214a970ce7ff2729adbdad5aa7caf202bf131fafa702dd1b006f102779f07
                 - name: RELATED_IMAGE_PODVM_PAYLOAD
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.9.0
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-payload@sha256:c282c01cb7b7d9984c5b5a4a2b434a9dff4b5b63c125bc2ae129d818696c0e29
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -394,7 +394,7 @@ spec:
                 - configMapRef:
                     name: peer-pods-cm
                     optional: true
-                image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator:v1.9.0
+                image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator@sha256:7aecfb575e553ec53ccb1880e2f77bb66f48190c49372723882a3ca7d6ba315c
                 imagePullPolicy: Always
                 name: manager
                 ports:
@@ -467,7 +467,7 @@ spec:
               containers:
               - command:
                 - /metrics-server
-                image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator:v1.9.0
+                image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator@sha256:7aecfb575e553ec53ccb1880e2f77bb66f48190c49372723882a3ca7d6ba315c
                 name: metrics-server
                 ports:
                 - containerPort: 8091
@@ -533,15 +533,15 @@ spec:
   provider:
     name: Red Hat
   relatedImages:
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.9.0
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-monitor@sha256:1e19738be039443b1086a22c446897216e791a6cd72da5aeeb6e538f1c9aa447
     name: kata-monitor
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9:1.9.0
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa@sha256:0123d325c48ad6ed051a06d97a183083ca9a5132884a055f852e7a863867400d
     name: caa
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9:1.9.0
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa-webhook@sha256:52c2686822cf6d1072786683357332e337184e8f0f9ae2af155ef68f5081dbbf
     name: peerpods-webhook
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9:1.9.0
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-builder@sha256:a35214a970ce7ff2729adbdad5aa7caf202bf131fafa702dd1b006f102779f07
     name: podvm-builder
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.9.0
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-payload@sha256:c282c01cb7b7d9984c5b5a4a2b434a9dff4b5b63c125bc2ae129d818696c0e29
     name: podvm-payload
   replaces: sandboxed-containers-operator.v1.8.1
   version: 1.9.0
