@@ -13,7 +13,7 @@ pod VM image creation. Otherwise the default configuration will be used when
 generating the image.
 
 If the `PODVM_AMI_ID` key for AWS provider or the  `AZURE_IMAGE_ID` key for
-Azure provider is non-empty in the `peer-pods-cm` configMap then the pod VM
+Azure provider is empty in the `peer-pods-cm` configMap then the pod VM
 image creation process is triggered during `kataConfig` creation.  So if you
 don't want to trigger the pod VM image creation process, then you can set the
 respective keys to any dummy value (eg. "****"). Or you can set it to a
