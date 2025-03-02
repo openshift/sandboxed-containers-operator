@@ -13,7 +13,7 @@ require (
 	github.com/openshift/cloud-credential-operator v0.0.0-20240207183603-c9fd580aca5d
 	github.com/openshift/machine-config-operator v0.0.1-0.20241126072907-0ccd787ec951
 	github.com/prometheus/client_golang v1.21.0
-	github.com/spf13/cobra v1.8.1
+	github.com/spf13/cobra v1.9.1
 	go.uber.org/zap v1.27.0
 	k8s.io/api v0.31.1
 	k8s.io/apimachinery v0.31.1
@@ -101,7 +101,7 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
-	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace // indirect
+	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/vincent-petithory/dataurl v1.0.0 // indirect
 	github.com/vmware/govmomi v0.33.1 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
