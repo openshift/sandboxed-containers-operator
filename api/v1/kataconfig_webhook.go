@@ -48,17 +48,22 @@ func (r *KataConfig) SetupWebhookWithManager(mgr ctrl.Manager) error {
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
 //+kubebuilder:webhook:verbs=create,path=/validate-kataconfiguration-openshift-io-v1-kataconfig,mutating=false,failurePolicy=fail,groups=kataconfiguration.openshift.io,resources=kataconfigs,versions=v1,name=vkataconfig.kb.io,sideEffects=none,admissionReviewVersions={v1}
 
-var _ webhook.Validator = &KataConfig{}
+var _ webhook.CustomValidator = &KataConfig{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *KataConfig) ValidateCreate() (admission.Warnings, error) {
-	kataconfiglog.Info("validate create", "name", r.Name)
+func (r *KataConfig) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	kataconfig, ok := obj.(*KataConfig)
+	if !ok {
+		return nil, fmt.Errorf("expected a KataConfig object but got %T", obj)
+	}
+
+	kataconfiglog.Info("validate create", "name", kataconfig.Name)
 
 	kataConfigList := &KataConfigList{}
 	listOpts := []client.ListOption{
 		client.InNamespace(corev1.NamespaceAll),
 	}
-	if err := clientInst.List(context.TODO(), kataConfigList, listOpts...); err != nil {
+	if err := clientInst.List(ctx, kataConfigList, listOpts...); err != nil {
 		return nil, fmt.Errorf("Failed to list KataConfig custom resources: %v", err)
 	}
 
@@ -70,16 +75,26 @@ func (r *KataConfig) ValidateCreate() (admission.Warnings, error) {
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *KataConfig) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
-	kataconfiglog.Info("validate update", "name", r.Name)
+func (r *KataConfig) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+	kataconfig, ok := newObj.(*KataConfig)
+	if !ok {
+		return nil, fmt.Errorf("expected a KataConfig object but got %T", newObj)
+	}
+
+	kataconfiglog.Info("validate update", "name", kataconfig.Name)
 
 	// TODO(user): fill in your validation logic upon object update.
 	return nil, nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *KataConfig) ValidateDelete() (admission.Warnings, error) {
-	kataconfiglog.Info("validate delete", "name", r.Name)
+func (r *KataConfig) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	kataconfig, ok := obj.(*KataConfig)
+	if !ok {
+		return nil, fmt.Errorf("expected a KataConfig object but got %T", obj)
+	}
+
+	kataconfiglog.Info("validate delete", "name", kataconfig.Name)
 
 	// TODO(user): fill in your validation logic upon object deletion.
 	return nil, nil
