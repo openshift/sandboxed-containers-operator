@@ -1,16 +1,18 @@
 # Kata Agent Policy
 
-Agent Policy is a Kata Containers feature that enables the Guest VM to perform additional validation
-for each agent API request. A custom agent policy can be set either by a policy file provided at
-image creation time or through pod annotations.
+The Agent Policy feature in Kata Containers allows the Guest VM to perform additional validation on
+each agent API request. You can change the default policies to a custom agent policy you provide
+or to specify policy as a k8s annotation at runtime (if configured to be allowed).
 
-## Set Policy At Image Creation
+## Specify Custom Policy To Be Used As Default
 
-By default Openshift Sandboxed Container sets preconfigured policy, Peer-Pods images will be set with an
-allow-all policy while CoCo images will be set with an allow-all exept for the `ReadStreamRequest` and
+By default Openshift Sandboxed Containers set a preconfigured policy, Peer-Pods images will be set with an
+allow-all policy, whereas CoCo images will be set with an allow-all exept for the `ReadStreamRequest` and
 `ExecProcessRequest` calls.
 
-To set custom policy at image creation time, make sure to encode the policy file (e.g.,
+### Set Custom Policy As Default At Image Creation Time
+
+To set a default custom policy at image creation time, make sure to encode the policy file (e.g.,
 [allow-all-except-exec-process.rego](allow-all-except-exec-process.rego)) in base64 format and set it as
 the value for the AGENT_POLICY key in your `<azure/aws-podvm>-image-cm` ConfigMap.
 
@@ -19,9 +21,15 @@ ENCODED_POLICY=$(cat allow-all-except-exec-process.rego | base64 -w 0)
 kubectl patch cm aws-podvm-image-cm -p "{\"data\":{\"AGENT_POLICY\":\"${ENCODED_POLICY}\"}}" -n openshift-sandboxed-containers-operator
 ```
 
-## Set Policy Via Pod Annotation
+**note:** InitData custom default policy will override policy that was set at image creation.
 
-As long as the `SetPolicyRequest` call was not disabled at image creation time, users set custom
+### Set Custom Policy As Default Using InitData
+
+See [InitData documention](https://github.com/confidential-containers/cloud-api-adaptor/blob/main/src/cloud-api-adaptor/docs/initdata.md)
+
+## Specify Policy At Runtime Through Pod Annotation
+
+As long as the `SetPolicyRequest` call was not disabled by the default policy, users specify custom
 policy through annotation at pod creation time. To set policy through annotation, encode your policy
 file (e.g., [allow-all-except-exec-process.rego](allow-all-except-exec-process.rego)) in base64 format
 and set it to the `io.katacontainers.config.agent.policy` annotation.
