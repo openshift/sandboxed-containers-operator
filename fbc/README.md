@@ -8,52 +8,40 @@ You need v1.46.0 or greater.
 
 Download the binary from [Github releases](https://github.com/operator-framework/operator-registry/releases).
 
+## Update the FBC
+
+1. Update the digests in the template.
+1. Run `./render.sh` to update the actual catalog.
+1. Open a pull request with your changes.
+
+## Add a new OpenShift version
+
+In examples that follow, the latest release is `v4.17` and you want to release for `v4.18` too.
+
+### New Konflux application
+
+1. In the web UI, add a new application and a new component.
+1. Ignore the pull request from the Konflux bot.
+1. Add the new application to the ReleasePlanAdmission.
+1. Create a new ReleasePlan.
+
+### New files
+
+1. Run the duplicate script:
+    ```
+    ./duplicate.sh v4.17 v4.18
+    ```
+
+1. Run the render script to update the actual catalog. Note that this command will not make any changes, if they are not needed.
+    ```
+    ./render.sh
+    ```
+
 ## Add a previously released catalog
 
-Set the version of OpenShift you're targeting:
+Run the migrate script. For example:
 ```
-OCP_VERSION=v4.17
-mkdir ${OCP_VERSION}
-cd ${OCP_VERSION}
-```
-
-Download the current index from the release registry:
-```
-opm render registry.redhat.io/redhat/redhat-operator-index:${OCP_VERSION} > index.json
-```
-
-Filter and keep just the "sandboxed-containers" part:
-```
-grep -A 30 -B 30 "sandboxed-containers" index.json > catalog.json
-```
-
-Inspect the head and the tail of the file to remove unwanted parts:
-```
-$EDITOR catalog.json
-```
-
-Move the catalog to the usual path:
-```
-mkdir -p catalog/sandboxed-containers-operator/
-mv catalog.json catalog/sandboxed-containers-operator/
-```
-
-Generate a catalog template:
-```
-opm alpha convert-template basic catalog/sandboxed-containers-operator/catalog.json > catalog-template.json
-```
-
-Generate a Dockerfile:
-```
-opm generate dockerfile . \
-    --base-image "brew.registry.redhat.io/rh-osbs/openshift-ose-operator-registry-rhel9:${OCP_VERSION}" \
-    --builder-image "brew.registry.redhat.io/rh-osbs/openshift-ose-operator-registry-rhel9:${OCP_VERSION}"
-```
-
-Patch the Dockerfile to avoid copying in unwanted files:
-```diff
--ADD . /configs
-+ADD catalog/ /configs
+./migrate.sh v4.16
 ```
 
 ## Further reading
