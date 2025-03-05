@@ -1,0 +1,39 @@
+# build pause
+FROM registry.k8s.io/pause:3.9 as pause-bin
+
+FROM registry.redhat.io/ubi9/ubi-minimal:9.5 as pause
+RUN curl -L https://github.com/opencontainers/umoci/releases/download/v0.4.7/umoci.amd64 -o /usr/bin/umoci && chmod +x /usr/bin/umoci
+RUN umoci init --layout pause && umoci new --image pause:k8s
+RUN umoci config --image pause:k8s --config.entrypoint=/pause --author="OSC"
+RUN umoci unpack --rootless --image pause:k8s /pause
+COPY --from=pause-bin /pause /pause/rootfs/pause
+
+# Get payload
+FROM registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.8.0-6 as payload
+
+# Build bootc rhel podvm
+FROM registry.redhat.io/rhel9/rhel-bootc:9.5-1738698007 as podvm-bootc
+
+ARG ORG_ID
+ARG ACTIVATION_KEY
+
+# register
+RUN if [[ -n "${ACTIVATION_KEY}" && -n "${ORG_ID}" ]]; then \
+    #rm -f /etc/rhsm-host && rm -f /etc/pki/entitlement-host; \
+    subscription-manager register --org=${ORG_ID} --activationkey=${ACTIVATION_KEY}; \
+    fi
+
+COPY etc /etc
+COPY usr /usr
+
+# Copy pause bundle
+COPY --from=pause /pause /pause_bundle
+
+# Extract podvm binaries
+COPY --from=payload /podvm-binaries.tar.gz /podvm-binaries.tar.gz
+RUN tar -xzvf podvm-binaries.tar.gz -C /
+RUN sed -i 's#What=/kata-containers#What=/var/kata-containers#g' /etc/systemd/system/run-kata\\x2dcontainers.mount
+
+# a workaround to set podvm-bootc as default target
+FROM podvm-bootc as default-target
+RUN bootc container lint

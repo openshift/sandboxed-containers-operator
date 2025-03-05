@@ -26,6 +26,9 @@ RUN mkdir -p /scripts
 
 ADD lib.sh libvirt-podvm-image-handler.sh aws-podvm-image-handler.sh azure-podvm-image-handler.sh /scripts/
 
+RUN mkdir -p /scripts/bootc
+ADD bootc/config.toml /scripts/bootc/
+
 RUN /scripts/azure-podvm-image-handler.sh -- install_rpms
 
 ARG CAA_SRC=https://github.com/confidential-containers/cloud-api-adaptor

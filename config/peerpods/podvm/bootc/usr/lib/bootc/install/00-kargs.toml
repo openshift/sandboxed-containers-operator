@@ -1,0 +1,5 @@
+[install.filesystem.root]
+type = "xfs"
+[install]
+kargs = ["console=ttyS0"]
+match-architectures = ["x86_64"]

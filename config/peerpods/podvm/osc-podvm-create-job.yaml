@@ -35,11 +35,23 @@ spec:
           # aws-podvm-image-handler.sh script under /scripts/aws-podvm-image-handler.sh
           # sources for cloud-api-adaptor under /src/cloud-api-adaptor
 
-          securityContext:
+          securityContext: # TODO: evaluate if these are actually needed
+            privileged: true
+            allowPrivilegeEscalation: true
+            runAsNonRoot: false
+            seLinuxOptions:
+              type: unconfined_t
+            capabilities:
+             allow:
+               - ALL
+
             runAsUser: 0 # needed for container mode dnf access
           envFrom:
             - secretRef:
                 name: peer-pods-secret
+            - secretRef:
+                name: peer-pods-image-creation-secret # must come after peer-pods-secret to override the values
+                optional: true
             - configMapRef:
                 name: peer-pods-cm
                 optional: true
@@ -61,6 +73,9 @@ spec:
             - name: ssh-key-secret
               mountPath: "/root/.ssh/"
               readOnly: true
+            - name: store-volume
+              mountPath: /store
+
       volumes:
         - name: payload
           emptyDir: {}
@@ -75,4 +90,6 @@ spec:
               path: "id_rsa"
             defaultMode: 0400
             optional: true
+        - name: store-volume
+          emptyDir: {}
       restartPolicy: Never

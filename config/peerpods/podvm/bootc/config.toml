@@ -1,0 +1,7 @@
+[[customizations.filesystem]]
+mountpoint = "/"
+minsize = "5 GiB"
+
+[[customizations.filesystem]]
+mountpoint = "/var/kata-containers"
+minsize = "15 GiB"
