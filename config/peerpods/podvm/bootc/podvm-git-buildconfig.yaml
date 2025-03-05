@@ -1,0 +1,33 @@
+# This will build according to git source and push to the local cluster's registry:
+# image-registry.openshift-image-registry.svc:5000/openshift-sandboxed-containers-operator/podvm-bootc
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: podvm-bootc
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  lookupPolicy:
+    local: false
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: bootc-image-build
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: podvm-bootc:latest
+  source:
+    contextDir: "config/peerpods/podvm/bootc"
+    git:
+      uri: 'https://github.com/openshift/sandboxed-containers-operator.git'
+      # TODO-RELEASE: switch to release branch
+      ref: devel
+  strategy:
+    dockerStrategy:
+      dockerfilePath: "Containerfile.rhel"
+    type: Docker
+  triggers:
+    - type: ConfigChange
