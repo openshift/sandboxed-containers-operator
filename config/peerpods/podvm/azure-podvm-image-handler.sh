@@ -542,39 +542,48 @@ function create_azure_image_from_prebuilt_artifact() {
 
         # Form the path of the podvm vhd image.
         podvm_image_path="${extraction_destination_path}/rootfs/${PODVM_IMAGE_SRC_PATH}"
+        ;;
+    bootc)
+        bootc_to_qcow2 "${PODVM_IMAGE_URL}" \
+            "${PODVM_IMAGE_TAG}"
 
-        # Convert the podvm image to vhd if it's not a vhd image
-        # This will set the VHD_IMAGE_PATH global variable
-        convert_podvm_image_to_vhd "${podvm_image_path}"
-
-        # Upload the vhd to the storage container
-        # This will set the VHD_URL global variable
-        upload_vhd_image "${VHD_IMAGE_PATH}" "${IMAGE_NAME}"
-
-        # Create the image version from the VHD
-        az sig image-version create \
-            --resource-group "${AZURE_RESOURCE_GROUP}" \
-            --gallery-name "${IMAGE_GALLERY_NAME}" \
-            --gallery-image-definition "${IMAGE_DEFINITION_NAME}" \
-            --gallery-image-version "${IMAGE_VERSION}" \
-            --os-vhd-uri "${VHD_URL}" \
-            --os-vhd-storage-account "${STORAGE_ACCOUNT_NAME}" \
-            --target-regions "${AZURE_REGION}" ||
-            error_exit "Failed to create the image version"
-
-        # Clean up
-        rm "${podvm_image_path}"
-        az storage account delete \
-            --name "${STORAGE_ACCOUNT_NAME}" \
-            --resource-group "${AZURE_RESOURCE_GROUP}" \
-            --yes ||
-            error_exit "Failed to delete the storage account"
-
+        podvm_image_path="$(pwd)/output/qcow2/disk.qcow2"
         ;;
     *)
         error_exit "Currently only OCI image unpacking is supported, exiting."
         ;;
     esac
+
+    # Validate file existence
+    [[ -f ${podvm_image_path} ]] || error_exit "No disk file has been found in: ${podvm_image_path}"
+
+    # Convert the podvm image to vhd if it's not a vhd image
+    # This will set the VHD_IMAGE_PATH global variable
+    convert_podvm_image_to_vhd "${podvm_image_path}"
+
+    # Upload the vhd to the storage container
+    # This will set the VHD_URL global variable
+    upload_vhd_image "${VHD_IMAGE_PATH}" "${IMAGE_NAME}"
+
+    # Create the image version from the VHD
+    az sig image-version create \
+        --resource-group "${AZURE_RESOURCE_GROUP}" \
+        --gallery-name "${IMAGE_GALLERY_NAME}" \
+        --gallery-image-definition "${IMAGE_DEFINITION_NAME}" \
+        --gallery-image-version "${IMAGE_VERSION}" \
+        --os-vhd-uri "${VHD_URL}" \
+        --os-vhd-storage-account "${STORAGE_ACCOUNT_NAME}" \
+        --target-regions "${AZURE_REGION}" ||
+        error_exit "Failed to create the image version"
+
+    # Clean up
+    rm "${podvm_image_path}"
+    az storage account delete \
+        --name "${STORAGE_ACCOUNT_NAME}" \
+        --resource-group "${AZURE_RESOURCE_GROUP}" \
+        --yes ||
+        error_exit "Failed to delete the storage account"
+
 
     echo "Azure image created successfully from prebuilt artifact"
 }
