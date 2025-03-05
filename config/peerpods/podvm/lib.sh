@@ -539,6 +539,23 @@ function bootc_to_qcow2() {
     bootc_image_builder_conversion "${container_image_repo_url}" "${image_tag}" "${auth_json_file}" "${run_args}" "${bib_args}"
 }
 
+# Function to convert qcow2 image to raw image
+# Input: qcow2 image
+# Output: raw image
+function convert_qcow2_to_raw() {
+    qcow2disk=${1}
+    rawdisk="$(basename -s qcow2 "${1}")raw"
+    echo "Qcow2 disk name: ${qcow2disk}"
+    echo "Raw disk name: ${rawdisk}"
+
+    # Convert qcow2 to raw
+    qemu-img convert -f qcow2 -O raw "${qcow2disk}" "${rawdisk}" ||
+        error_exit "Failed to convert qcow2 to raw"
+
+    echo "Successfully converted qcow2 to raw image name: ${rawdisk}"
+    export RAW_IMAGE_PATH="${rawdisk}"
+}
+
 # Function to convert qcow2 image to vhd image
 # Input: qcow2 image
 # Output: vhddisk image

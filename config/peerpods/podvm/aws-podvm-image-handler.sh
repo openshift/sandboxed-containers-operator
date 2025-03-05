@@ -115,15 +115,6 @@ function create_ami_using_packer() {
     # If any error occurs, exit the script with an error message
     # The variables are set before calling the function
 
-    # Set the AMI version
-    # It should follow the Major(int).Minor(int).Patch(int)
-    AMI_VERSION="${AMI_VERSION_MAJ_MIN}.$(date +'%Y%m%d%S')"
-    export AMI_VERSION
-
-    # Set the image name
-    AMI_NAME="${AMI_BASE_NAME}-${AMI_VERSION}"
-    export AMI_NAME
-
     # If PODVM_DISTRO is not set to rhel then exit
     [[ "${PODVM_DISTRO}" != "rhel" ]] && error_exit "unsupport distro"
 
@@ -148,6 +139,17 @@ function create_ami_using_packer() {
 
     # Wait for the ami to be created
 
+}
+
+function set_ami_name() {
+    # Set the AMI version
+    # It should follow the Major(int).Minor(int).Patch(int)
+    AMI_VERSION="${AMI_VERSION_MAJ_MIN}.$(date +'%Y%m%d%S')"
+    export AMI_VERSION
+
+    # Set the image name
+    AMI_NAME="${AMI_BASE_NAME}-${AMI_VERSION}"
+    export AMI_NAME
 }
 
 # Function to get the ami id of the newly created image
@@ -187,6 +189,29 @@ function get_all_ami_ids() {
     # Display the list of amis
     echo "${AMI_ID_LIST}"
 
+}
+
+# Function to convert bootc container image to cloud image
+# Input:
+# 1. container_image_repo_url: The registry URL of the source container image.
+# 2. image_tag: The tag of the source container image.
+# 3. auth_json_file (can be empty): Path to the registry secret file to use for downloading the image.
+# 4. aws_ami_name: Name for the AMI in AWS
+# 5. aws_bucket: Target S3 bucket name for intermediate storage when creating AMI (bucket must exist)
+# Output: ami
+
+function bootc_to_ami() {
+    container_image_repo_url="${1}"
+    image_tag="${2}"
+    auth_json_file="${3}"
+    aws_ami_name="${4}"
+    aws_bucket="${5}" # bucket must exist
+
+    [[ -n "$AWS_ACCESS_KEY_ID" ]] && [[ -n "$AWS_SECRET_ACCESS_KEY" ]] && [[ -n "$AWS_REGION" ]] || error_exit "bootc_to_ami failed: AWS_* keys or AWS_REGION are missing"
+    # TODO: check permissions
+    run_args="--env AWS_ACCESS_KEY_ID --env AWS_SECRET_ACCESS_KEY"
+    bib_args="--type ami --aws-ami-name ${aws_ami_name} --aws-bucket ${aws_bucket} --aws-region ${AWS_REGION}"
+    bootc_image_builder_conversion "${container_image_repo_url}" "${image_tag}" "${auth_json_file}" "${run_args}" "${bib_args}"
 }
 
 # Function to create or update podvm-images configmap with all the amis
@@ -287,23 +312,150 @@ function delete_ami_id_annotation_from_peer_pods_cm() {
     echo "Ami id annotation deleted from peer-pods-cm configmap successfully"
 }
 
-# Function to create the ami in AWS
+function create_ami_from_prebuilt_artifact() {
+    echo "Creating AWS AMI image from prebuilt artifact"
 
-function create_ami() {
-    echo "Creating AWS AMI"
+    echo "Pulling the podvm image from the provided path"
+    image_src="/tmp/image"
+    extraction_destination_path="/image"
+    image_repo_auth_file="/tmp/regauth/auth.json"
+
+    [[ ! ${BUCKET_NAME} ]] && error_exit "BUCKET_NAME is not defined"
+
+    # Get the PODVM_IMAGE_TYPE, PODVM_IMAGE_TAG and PODVM_IMAGE_SRC_PATH
+    get_image_type_url_and_path
+
+    case "${PODVM_IMAGE_TYPE}" in
+    oci) # TODO: test
+        echo "Extracting the raw image from the given path."
+
+        mkdir -p "${extraction_destination_path}" ||
+            error_exit "Failed to create the image directory"
+
+        extract_container_image "${PODVM_IMAGE_URL}" \
+            "${PODVM_IMAGE_TAG}" \
+            "${image_src}" \
+            "${extraction_destination_path}" \
+            "${image_repo_auth_file}"
+
+        # Form the path of the podvm vhd image.
+        podvm_image_path="${extraction_destination_path}/rootfs/${PODVM_IMAGE_SRC_PATH}"
+
+        upload_image_to_s3
+
+        import_snapshot_n_wait
+
+        register_ami
+        ;;
+    bootc)
+        echo "Converting the bootc image to AMI"
+
+        bootc_to_ami "${PODVM_IMAGE_URL}" "${PODVM_IMAGE_TAG}" "${image_repo_auth_file}" "${AMI_NAME}" "${BUCKET_NAME}"
+        ;;
+    *)
+        error_exit "Currently only OCI image unpacking is supported, exiting."
+        ;;
+    esac
+}
+
+function upload_image_to_s3() {
+    echo "Uploading the image to S3"
+
+    # Check if the image exists
+    [[ ! -f "${podvm_image_path}" ]] && error_exit "Image does not exist"
+
+    get_podvm_image_format ${podvm_image_path}
+
+    if [[ "${PODVM_IMAGE_FORMAT}" == "qcow2" ]]; then
+        convert_qcow2_to_raw ${podvm_image_path}
+	raw_to_upload=${RAW_IMAGE_PATH}
+    elif [[ "${PODVM_IMAGE_FORMAT}" == "raw" ]]; then
+	raw_to_upload=${podvm_image_path}
+    else
+        error_exit "Unsupported format"
+    fi
+
+    FILENAME="$(basename -- ${raw_to_upload})"
+    # Upload the image to S3
+    aws s3 cp "${raw_to_upload}" "s3://${BUCKET_NAME}" --region ${AWS_REGION} ||
+        error_exit "Failed to upload the image to S3"
+
+    echo "Image uploaded to S3 successfully"
+}
+
+import_snapshot_n_wait() {
+    echo "Importing image file into snapshot"
+
+    local image_import_json_file=$(mktemp)
+    cat <<EOF > "image_import_json_file"
+{
+    "Description": "Peer Pod VM image",
+    "Format": "RAW",
+    "UserBucket": {
+        "S3Bucket": "${BUCKET_NAME}",
+        "S3Key": "${FILENAME}"
+    }
+}
+EOF
+
+    local import_task_id=$(aws ec2 import-snapshot --disk-container "file://${image_import_json_file}" --output json --region ${AWS_REGION} | jq -r '.ImportTaskId')
+
+    local import_status=$(aws ec2 describe-import-snapshot-tasks --import-task-ids ${import_task_id} --output json --region ${AWS_REGION} | jq -r '.ImportSnapshotTasks[].SnapshotTaskDetail.Status')
+    local x=0
+    while [ "${import_status}" = "active" ] && [ $x -lt 120 ]
+    do
+        import_status=$(aws ec2 describe-import-snapshot-tasks --import-task-ids ${import_task_id} --output json --region ${AWS_REGION} | jq -r '.ImportSnapshotTasks[].SnapshotTaskDetail.Status')
+        import_status_msg=$(aws ec2 describe-import-snapshot-tasks --import-task-ids ${import_task_id} --output json --region ${AWS_REGION} | jq -r '.ImportSnapshotTasks[].SnapshotTaskDetail.StatusMessage')
+        echo "Import Status: ${import_status} / ${import_status_msg}"
+        x=$(( $x + 1 ))
+        sleep 15
+    done
+    if [ $x -eq 120 ]; then
+        echo "ERROR: Import task taking too long, exiting..."; exit 1;
+    elif [ "${import_status}" = "completed" ]; then
+         echo "Import completed Successfully"
+    else
+         echo "Import Failed, exiting"; exit 2;
+    fi
+
+    export SNAPSHOT_ID=$(aws ec2 describe-import-snapshot-tasks --import-task-ids ${import_task_id} --output json --region ${AWS_REGION} | jq -r '.ImportSnapshotTasks[].SnapshotTaskDetail.SnapshotId')
+
+    aws ec2 wait snapshot-completed --snapshot-ids ${SNAPSHOT_ID} --region ${AWS_REGION} || exit $?
+}
+
+
+register_ami() {
+    echo "Registering AMI with Snapshot $SNAPSHOT_ID"
+    local register_json_file=$(mktemp)
+    cat <<EOF > "${register_json_file}"
+{
+    "Architecture": "x86_64",
+    "BlockDeviceMappings": [
+        {
+            "DeviceName": "/dev/xvda",
+            "Ebs": {
+                "DeleteOnTermination": true,
+                "SnapshotId": "${SNAPSHOT_ID}"
+            }
+        }
+    ],
+    "Description": "Peer-pod image",
+    "RootDeviceName": "/dev/xvda",
+    "VirtualizationType": "hvm",
+    "EnaSupport": true,
+    "BootMode": "uefi"
+}
+EOF
+    AMI_ID=$(aws ec2 register-image --name ${AMI_NAME} --cli-input-json="file://${register_json_file}" --tpm-support v2.0 --output json --region ${REGION} | jq -r '.ImageId')
+    echo "AMI name: ${AMI_NAME}"
+    echo "AMI ID: ${AMI_ID}"
+}
+
+function create_ami_from_scratch() {
+    echo "Creating AWS AMI from scratch"
 
     # Create the AWS image
     # If any error occurs, exit the script with an error message
-
-    # Install packages if INSTALL_PACKAGES is set to yes
-
-    if [[ "${INSTALL_PACKAGES}" == "yes" ]]; then
-        # Install required rpm packages
-        install_rpm_packages
-
-        # Install required binary packages
-        install_binary_packages
-    fi
 
     if [[ "${DOWNLOAD_SOURCES}" == "yes" ]]; then
         # Download source code from GitHub
@@ -318,6 +470,33 @@ function create_ami() {
 
     # Create AWS ami using packer
     create_ami_using_packer
+}
+
+# Function to create the ami in AWS
+
+function create_ami() {
+    echo "Creating AWS AMI"
+
+    # Create the AWS image
+    # If any error occurs, exit the script with an error message
+
+    # Install packages if INSTALL_PACKAGES is set to yes
+    if [[ "${INSTALL_PACKAGES}" == "yes" ]]; then
+        # Install required rpm packages
+        install_rpm_packages
+
+        # Install required binary packages
+        install_binary_packages
+    fi
+
+    # generate & set the ami name
+    set_ami_name
+
+    if [[ "${IMAGE_TYPE}" == "operator-built" ]]; then
+        create_ami_from_scratch
+    elif [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
+        create_ami_from_prebuilt_artifact
+    fi
 
     # Get the ami id of the newly created image
     # This will set the AMI_ID environment variable

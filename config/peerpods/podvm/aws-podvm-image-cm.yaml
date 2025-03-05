@@ -36,3 +36,7 @@ data:
 
   # Custom Agent Policy
   #AGENT_POLICY: "" # set to base64 encoded agent policy
+
+  # precreated artifacts
+  #BUCKET_NAME: existing-bucket-name
+  #PODVM_IMAGE_URI: bootc::image-registry.openshift-image-registry.svc:5000/openshift-sandboxed-containers-operator/podvm-bootc
