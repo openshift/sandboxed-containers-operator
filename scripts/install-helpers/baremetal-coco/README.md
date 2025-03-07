@@ -65,7 +65,7 @@ The deployment sequence is described below:
   
   ```sh
   export NODENAME=<node>
-  oc label $NODE_NAME coco_bm=true
+  oc label node $NODENAME coco_bm=true
   export BM_NODE_LABEL="coco_bm=true"
   ```
 
