@@ -21,6 +21,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	peerpodConfigCrdName = "peerpodconfig-openshift"
+)
+
 // migratePeerPodsLimit moves the PeerPodConfig "Limit" value to peer-pods-cm
 func (r *KataConfigOpenShiftReconciler) migratePeerPodsLimit() error {
 	peerPodConfig := &unstructured.Unstructured{}

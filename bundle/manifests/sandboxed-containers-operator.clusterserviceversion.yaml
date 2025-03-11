@@ -26,7 +26,7 @@ metadata:
     operators.openshift.io/valid-subscription: '["OpenShift Container Platform", "OpenShift
       Platform Plus"]'
     operators.operatorframework.io/builder: operator-sdk-v1.39.1
-    operators.operatorframework.io/internal-objects: '["peerpods.confidentialcontainers.org","peerpodconfigs.confidentialcontainers.org"]'
+    operators.operatorframework.io/internal-objects: '["peerpods.confidentialcontainers.org"]'
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/openshift/sandboxed-containers-operator
   labels:
@@ -255,7 +255,6 @@ spec:
         - apiGroups:
           - confidentialcontainers.org
           resources:
-          - peerpodconfigs
           - peerpods
           verbs:
           - create
@@ -268,14 +267,12 @@ spec:
         - apiGroups:
           - confidentialcontainers.org
           resources:
-          - peerpodconfigs/finalizers
           - peerpods/finalizers
           verbs:
           - update
         - apiGroups:
           - confidentialcontainers.org
           resources:
-          - peerpodconfigs/status
           - peerpods/status
           verbs:
           - get

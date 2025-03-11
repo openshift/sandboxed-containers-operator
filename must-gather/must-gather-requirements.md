@@ -36,7 +36,7 @@ See also the [Official 1.5 documentation](https://access.redhat.com/documentatio
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/controller-manager-**_*_**\_logs
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/install-**_*_**\_logs
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/openshift-sandboxed-containers-monitor-**_*_**\_logs
-  - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/peerpodconfig-ctrl-caa-daemon-**_*_**\_logs
+  - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/osc-caa-ds-**_*_**\_logs
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/peer-pods-webhook-**_*_**\_logs
 -  OSC CRDs
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/**_*_**\_description

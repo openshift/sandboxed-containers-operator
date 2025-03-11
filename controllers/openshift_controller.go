@@ -75,7 +75,6 @@ const (
 	container_runtime_config_name       = "kata-crio-config"
 	extension_mc_name                   = "50-enable-sandboxed-containers-extension"
 	DEFAULT_PEER_PODS                   = "10"
-	peerpodConfigCrdName                = "peerpodconfig-openshift"
 	peerpodsMachineConfigPathLocation   = "/config/peerpods"
 	peerpodsCrioMachineConfig           = "50-kata-remote"
 	peerpodsCrioMachineConfigYaml       = "mc-50-crio-config.yaml"
@@ -105,9 +104,6 @@ const (
 // +kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=use;get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;update
 // +kubebuilder:rbac:groups="",resources=nodes/status,verbs=patch
-// +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpodconfigs,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpodconfigs/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpodconfigs/finalizers,verbs=update
 // +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods/finalizers,verbs=update
@@ -1137,7 +1133,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	}
 
 	if r.kataConfig.Spec.EnablePeerPods {
-		// We are explicitly ignoring any errors in peerpodconfig and related machineconfigs removal as
+		// We are explicitly ignoring any errors in machineconfigs removal as
 		// these can be removed manually if needed and this is not in the critical path
 		// of operator functionality
 		_ = r.disablePeerPods()
@@ -1459,7 +1455,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 			err = r.enablePeerPodsMiscConfigs()
 			if err != nil {
-				r.Log.Info("Enabling peerpodconfig CR, runtimeclass etc", "err", err)
+				r.Log.Info("Enabling runtimeclass etc", "err", err)
 				// Give sometime for the error to go away before reconciling again
 				return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 
@@ -2424,7 +2420,7 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMc() error {
 	return nil
 }
 
-// Create the PeerPodConfig CRDs and misc configs required for peer-pods
+// Create the misc configs required for peer-pods
 func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 	// Create the CAA daemonset
 	ds := r.processDaemonsetForCAA()
