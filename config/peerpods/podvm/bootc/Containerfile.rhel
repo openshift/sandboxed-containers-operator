@@ -1,5 +1,5 @@
 # build pause
-FROM registry.k8s.io/pause:3.9 as pause-bin
+FROM registry.k8s.io/pause:3.10 as pause-bin
 
 FROM registry.redhat.io/ubi9/ubi-minimal:9.5 as pause
 RUN curl -L https://github.com/opencontainers/umoci/releases/download/v0.4.7/umoci.amd64 -o /usr/bin/umoci && chmod +x /usr/bin/umoci
