@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -674,7 +673,7 @@ func (r *KataConfigOpenShiftReconciler) getExtensionName() string {
 		return "kata-containers" // SCOS
 	}
 
-	cmdline, err := ioutil.ReadFile("/proc/cmdline")
+	cmdline, err := os.ReadFile("/proc/cmdline")
 	if err == nil && strings.Contains(string(cmdline), "ostree/rhcos") {
 		return "sandboxed-containers" // RHCOS
 	}
