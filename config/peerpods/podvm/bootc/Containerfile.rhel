@@ -34,6 +34,11 @@ RUN if [[ "${CLOUD_PROVIDER}" == "azure" ]]; then \
     ln -s ../afterburn-checkin.service /etc/systemd/system/multi-user.target.wants/afterburn-checkin.service; \
     fi
 
+# Cloud-init is required for Libvirt
+RUN if [[ "${CLOUD_PROVIDER}" == "libvirt" ]]; then \
+    dnf install -y cloud-init && dnf clean all; \
+fi
+
 # Copy pause bundle
 COPY --from=pause /pause /pause_bundle
 
