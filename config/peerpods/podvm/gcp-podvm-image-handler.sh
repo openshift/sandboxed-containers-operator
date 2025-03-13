@@ -32,6 +32,9 @@ function verify_vars() {
     "INSTALL_PACKAGES"
     "DISABLE_CLOUD_CONFIG"
 
+    # From peer-pods-secret:
+    "GCP_CREDENTIALS"
+
     # From lib.sh:
     "CAA_SRC_DIR"
   )
@@ -214,6 +217,20 @@ delete_image_using_id() {
   echo "GCP image deleted successfully"
 }
 
+function login_to_gcp() {
+    echo "Logging in to GCP"
+
+    creds_file="/tmp/gcp-credentials.json"
+    echo "${GCP_CREDENTIALS}" > ${creds_file}
+
+    gcloud auth activate-service-account --key-file=${creds_file} ||
+        error_exit "Failed to login to GCP"
+
+    rm -Rf ${creds_file}
+
+    echo "Logged in to GCP successfully"
+}
+
 # Display help message
 function display_help() {
   echo "This script is used to create GCP image for podvm"
@@ -253,14 +270,17 @@ if [ "$1" = "--" ]; then
   esac
 else
   while getopts "cCRh" opt; do
-    verify_vars
     case ${opt} in
     c)
       # Create the image
+      verify_vars
+      login_to_gcp
       create_image
       ;;
     C)
       # Delete the image
+      verify_vars
+      login_to_gcp
       delete_image_using_id
 
       ;;
