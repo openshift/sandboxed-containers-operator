@@ -651,7 +651,7 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool 
 	return mcp
 }
 
-func (r *KataConfigOpenShiftReconciler) getExtensionName() string {
+func (r *KataConfigOpenShiftReconciler) getExtensionName() (string, error) {
 	// RHCOS uses "sandboxed-containers" as thats resolved/translated in the machine-config-operator to "kata-containers"
 	// FCOS/SCOS however does not get any translation in the machine-config-operator so we need to
 	// send in "kata-containers".
@@ -659,27 +659,30 @@ func (r *KataConfigOpenShiftReconciler) getExtensionName() string {
 	//
 	extension := os.Getenv("SANDBOXED_CONTAINERS_EXTENSION")
 	if len(extension) != 0 {
-		return extension
+		return extension, nil
 	}
 
 	clusterVersion := &configv1.ClusterVersion{}
-	r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
+	if err != nil {
+		return "", err
+	}
 
 	if strings.HasPrefix(clusterVersion.Status.Desired.Image, "quay.io/openshift-release-dev/ocp-release") {
-		return "sandboxed-containers" // RHCOS
+		return "sandboxed-containers", nil // RHCOS
 	}
 
 	if strings.HasPrefix(clusterVersion.Status.Desired.Image, "quay.io/okd/scos-release") {
-		return "kata-containers" // SCOS
+		return "kata-containers", nil // SCOS
 	}
 
 	cmdline, err := os.ReadFile("/proc/cmdline")
 	if err == nil && strings.Contains(string(cmdline), "ostree/rhcos") {
-		return "sandboxed-containers" // RHCOS
+		return "sandboxed-containers", nil // RHCOS
 	}
 
 	// As RHCOS is rather special variant, use "kata-containers" by default, which also applies to FCOS/SCOS
-	return "kata-containers"
+	return "kata-containers", nil
 }
 
 func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
@@ -702,7 +705,10 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 		return nil, err
 	}
 
-	extension := r.getExtensionName()
+	extension, err := r.getExtensionName()
+	if err != nil {
+		return nil, err
+	}
 
 	mc := mcfgv1.MachineConfig{
 		TypeMeta: metav1.TypeMeta{
@@ -2105,15 +2111,21 @@ func (r *KataConfigOpenShiftReconciler) putNodeOnStatusList(node *corev1.Node) e
 			return err
 		}
 
-		isKataEnabledOnNode = func() bool {
-			extensionName := r.getExtensionName()
+		isKataEnabledOnNode, err = func() (bool, error) {
+			extensionName, err := r.getExtensionName()
+			if err != nil {
+				return false, err
+			}
 			for _, extName := range targetMc.Spec.Extensions {
 				if extName == extensionName {
-					return true
+					return true, nil
 				}
 			}
-			return false
+			return false, nil
 		}()
+		if err != nil {
+			return err
+		}
 	} else {
 		isKataEnabledOnNode = targetMcpName == "kata-oc"
 	}
