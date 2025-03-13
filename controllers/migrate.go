@@ -17,6 +17,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	meta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -33,6 +34,10 @@ func (r *KataConfigOpenShiftReconciler) migratePeerPodsLimit() error {
 	}, peerPodConfig)
 
 	if err != nil {
+		if meta.IsNoMatchError(err) {
+			r.Log.Info("PeerPodConfig CRD is unknown, skipping migration")
+			return nil
+		}
 		if k8serrors.IsNotFound(err) {
 			r.Log.Info("No PeerPodConfig found, skipping migration")
 			return nil
