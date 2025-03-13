@@ -21,7 +21,7 @@ RUN go mod vendor
 RUN make build
 
 # Use OpenShift base image
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5-1739420147
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5-1741850109
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
 COPY --from=builder /workspace/bin/metrics-server .
