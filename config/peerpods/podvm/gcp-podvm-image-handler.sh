@@ -172,10 +172,10 @@ function create_image_from_prebuilt_artifact() {
     error_exit "Failed to create tarball for GCP"
 
   # Create bucket if doesn't exist
-  export GCP_BUCKET_NAME="peerpods-bucket"
+  export GCP_BUCKET_NAME="peerpods-bucket-${GCP_PROJECT_ID}"
   export GCP_REGION="${GCP_ZONE%-*}"
 
-  if ! gsutil ls -b "gs://${GCP_BUCKET_NAME}/" &>/dev/null; then
+  if ! gsutil ls -p $GCP_PROJECT_ID | grep "/${GCP_BUCKET_NAME}/" &>/dev/null; then
     gsutil mb -p ${GCP_PROJECT_ID} -l ${GCP_REGION} gs://${GCP_BUCKET_NAME}/
   fi
 
