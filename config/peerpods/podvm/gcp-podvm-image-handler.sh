@@ -172,6 +172,8 @@ function create_image_from_prebuilt_artifact() {
   export GCP_BUCKET_NAME="peerpods-bucket-${GCP_PROJECT_ID}"
   export GCP_REGION="${GCP_ZONE%-*}"
 
+  gcloud config set project "${GCP_PROJECT_ID}"
+
   echo "Creating the bucket ${GCP_BUCKET_NAME}"
   if ! gsutil ls -p $GCP_PROJECT_ID | grep "/${GCP_BUCKET_NAME}/" &>/dev/null; then
     gsutil mb -p ${GCP_PROJECT_ID} -l ${GCP_REGION} gs://${GCP_BUCKET_NAME}/
