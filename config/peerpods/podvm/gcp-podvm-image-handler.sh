@@ -162,7 +162,7 @@ function create_image_from_prebuilt_artifact() {
 
   [[ -f "${RAW_IMAGE_PATH}" ]] || error_exit "RAW image not found at ${RAW_IMAGE_PATH}"
 
-  echo "Uploading the RAW image to GCS"
+  echo "Compacting ${RAW_IMAGE_PATH} into /tmp/${IMAGE_NAME}.tar.gz"
 
   # TAR the raw image (GCP expects a compressed archive)
   tar -cvzf "/tmp/${IMAGE_NAME}.tar.gz" -C "$(dirname "${RAW_IMAGE_PATH}")" "$(basename "${RAW_IMAGE_PATH}")" ||
@@ -172,17 +172,19 @@ function create_image_from_prebuilt_artifact() {
   export GCP_BUCKET_NAME="peerpods-bucket-${GCP_PROJECT_ID}"
   export GCP_REGION="${GCP_ZONE%-*}"
 
+  echo "Creating the bucket ${GCP_BUCKET_NAME}"
   if ! gsutil ls -p $GCP_PROJECT_ID | grep "/${GCP_BUCKET_NAME}/" &>/dev/null; then
     gsutil mb -p ${GCP_PROJECT_ID} -l ${GCP_REGION} gs://${GCP_BUCKET_NAME}/
   fi
 
-
+  echo "Uploading the RAW image to GCS"
   gsutil cp "/tmp/${IMAGE_NAME}.tar.gz" "gs://${GCP_BUCKET_NAME}/${IMAGE_NAME}.tar.gz" ||
     error_exit "Failed to upload the image to GCS"
 
   RAW_URL="gs://${GCP_BUCKET_NAME}/${IMAGE_NAME}.tar.gz"
   echo "Successfully uploaded RAW image to ${RAW_URL}"
 
+  echo "Creating the image ${IMAGE_NAME} from ${RAW_URL}"
   # Create the image from the uploaded tarball
   gcloud compute images create "${IMAGE_NAME}" \
     --source-uri="${RAW_URL}" \
