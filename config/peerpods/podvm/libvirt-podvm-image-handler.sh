@@ -27,13 +27,14 @@ function verify_vars() {
 
         [[ -z "${PODVM_DISTRO}" ]] && error_exit "PODVM_DISTRO is not set"
 
-        [[ -z "${CAA_SRC}" ]] && error_exit "CAA_SRC is empty"
-        [[ -z "${CAA_REF}" ]] && error_exit "CAA_REF is empty"
+        [[ -z "${DOWNLOAD_SOURCES}" ]] && error_exit "DOWNLOAD_SOURCES is empty"
+        if [[ "${DOWNLOAD_SOURCES}" == "yes" ]]; then
+            # if DOWNLOAD_SOURCES is set, we need the CAA_SRC and CAA_REF variables
+            [[ -z "${CAA_SRC}" ]] && error_exit "CAA_SRC is empty"
+            [[ -z "${CAA_REF}" ]] && error_exit "CAA_REF is empty"
+        fi
 
         [[ -z "${REDHAT_OFFLINE_TOKEN}" ]] && error_exit "Redhat token is not set"
-
-        # Ensure booleans are set
-        [[ -z "${DOWNLOAD_SOURCES}" ]] && error_exit "DOWNLOAD_SOURCES is empty"
     fi
 }
 

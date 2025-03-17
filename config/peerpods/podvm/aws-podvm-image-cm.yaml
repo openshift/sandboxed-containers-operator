@@ -18,12 +18,12 @@ data:
   # Pod VM sources
   # If changing the source, then ensure the respective payload binaries are available
   # for the new source
-  CAA_SRC: "https://gitlab.cee.redhat.com/osc/midstream/cloud-api-adaptor"
-  CAA_REF: "v0.8.0-1.6"
+  #CAA_SRC: "" ## set to cloud-api-adaptor sources URL for custom podvm builds
+  #CAA_REF: "" ## set to tag/branch for the cloud-api-adaptor code to use
 
   # Booleans
   INSTALL_PACKAGES: "no"
-  DOWNLOAD_SOURCES: "no"
+  DOWNLOAD_SOURCES: "no" ## set to "yes" for custom podvm builds. Need to set CAA_SRC and CAA_REF accordingly
   CONFIDENTIAL_COMPUTE_ENABLED: "no"
   DISABLE_CLOUD_CONFIG: "true"
   ENABLE_NVIDIA_GPU: "no"

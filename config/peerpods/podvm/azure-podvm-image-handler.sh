@@ -65,12 +65,15 @@ function verify_vars() {
     [[ -z "${IMAGE_BASE_NAME}" ]] && error_exit "IMAGE_BASE_NAME is empty"
     [[ -z "${IMAGE_VERSION_MAJ_MIN}" ]] && error_exit "IMAGE_VERSION_MAJ_MIN is empty"
 
-    [[ -z "${CAA_SRC}" ]] && error_exit "CAA_SRC is empty"
-    [[ -z "${CAA_REF}" ]] && error_exit "CAA_REF is empty"
+    [[ -z "${DOWNLOAD_SOURCES}" ]] && error_exit "DOWNLOAD_SOURCES is empty"
+    if [[ "${DOWNLOAD_SOURCES}" == "yes" ]]; then
+        # if DOWNLOAD_SOURCES is set, we need the CAA_SRC and CAA_REF variables
+        [[ -z "${CAA_SRC}" ]] && error_exit "CAA_SRC is empty"
+        [[ -z "${CAA_REF}" ]] && error_exit "CAA_REF is empty"
+    fi
 
     # Ensure booleans are set
     [[ -z "${INSTALL_PACKAGES}" ]] && error_exit "INSTALL_PACKAGES is empty"
-    [[ -z "${DOWNLOAD_SOURCES}" ]] && error_exit "DOWNLOAD_SOURCES is empty"
     [[ -z "${CONFIDENTIAL_COMPUTE_ENABLED}" ]] && error_exit "CONFIDENTIAL_COMPUTE_ENABLED is empty"
     [[ -z "${DISABLE_CLOUD_CONFIG}" ]] && error_exit "DISABLE_CLOUD_CONFIG is empty"
     [[ -z "${ENABLE_NVIDIA_GPU}" ]] && error_exit "ENABLE_NVIDIA_GPU is empty"

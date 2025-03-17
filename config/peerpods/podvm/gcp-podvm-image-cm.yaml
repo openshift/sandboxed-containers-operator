@@ -7,8 +7,8 @@ data:
   # Pod VM sources
   # If changing the source, then ensure the respective payload binaries are available
   # for the new source
-  CAA_SRC: "https://github.com/confidential-containers/cloud-api-adaptor"
-  CAA_REF: "main"
+  #CAA_SRC: "" ## set to cloud-api-adaptor sources URL for custom podvm builds
+  #CAA_REF: "" ## set to tag/branch for the cloud-api-adaptor code to use
 
   IMAGE_BASE_NAME: "podvm-image"
   IMAGE_VERSION_MAJ_MIN: "0.0"
