@@ -28,7 +28,6 @@ function verify_vars() {
 
     # From gcp-podvm-image-cm:
     "IMAGE_BASE_NAME"
-    "IMAGE_VERSION_MAJ_MIN"
     "INSTALL_PACKAGES"
     "DISABLE_CLOUD_CONFIG"
 
@@ -109,9 +108,7 @@ function create_image() {
 }
 
 function set_image_version_and_name() {
-  # Set the image version
-  # It should follow the Major(int).Minor(int).Patch(int)
-  IMAGE_VERSION="${IMAGE_VERSION_MAJ_MIN}.$(date +'%Y%m%d%S')"
+  IMAGE_VERSION="$(date +'%Y%m%d%S')"
   export IMAGE_VERSION
 
   # Set the image name
