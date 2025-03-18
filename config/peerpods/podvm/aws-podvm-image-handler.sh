@@ -214,65 +214,6 @@ function bootc_to_ami() {
     bootc_image_builder_conversion "${container_image_repo_url}" "${image_tag}" "${auth_json_file}" "${run_args}" "${bib_args}"
 }
 
-# Function to create or update podvm-images configmap with all the amis
-# Input AMI_ID_LIST is a list of ami ids
-
-function create_or_update_image_configmap() {
-    echo "Creating or updating podvm-images configmap"
-
-    # Check if the podvm-images configmap already exists
-    # If exists get the current value of the aws key and append the new ami id to it
-    # If not exists, create the podvm-images configmap with the new ami id
-
-    # Check if the podvm-images configmap exists
-    if kubectl get configmap podvm-images -n openshift-sandboxed-containers-operator >/dev/null 2>&1; then
-        # Get the current value of the aws key in podvm-images configmap
-        AMI_ID_LIST=$(kubectl get configmap podvm-images -n openshift-sandboxed-containers-operator -o jsonpath='{.data.aws}' ||
-            error_exit "Failed to get the current value of the aws key in podvm-images configmap")
-
-        # If the current value of the aws key is empty, then set the value to the new ami id
-        if [[ -z "${AMI_ID_LIST}" ]]; then
-            AMI_ID_LIST="${AMI_ID}"
-        else
-            # If the current value of the aws key is not empty, then append the new ami id in the beginning
-            # The first ami id in the list is the latest ami id
-            AMI_ID_LIST="${AMI_ID} ${AMI_ID_LIST}"
-        fi
-    else
-        # If the podvm-images configmap does not exist, set the value to the new ami id
-        AMI_ID_LIST="${AMI_ID}"
-    fi
-
-    kubectl create configmap podvm-images \
-        -n openshift-sandboxed-containers-operator \
-        --from-literal=aws="${AMI_ID_LIST}" \
-        --dry-run=client -o yaml |
-        kubectl apply -f - ||
-        error_exit "Failed to create or update podvm-images configmap"
-
-}
-
-# Funtion to recreate podvm-images configmap with all the amis
-
-function recreate_image_configmap() {
-    echo "Recreating podvm-images configmap"
-
-    # Get list of all ami ids
-    get_all_ami_ids
-
-    # Check if IMAGE_ID_LIST is empty
-    [[ -z "${AMI_ID_LIST}" ]] && error_exit "Nothing to recreate in podvm-images configmap"
-
-    kubectl create configmap podvm-images \
-        -n openshift-sandboxed-containers-operator \
-        --from-literal=aws="${AMI_ID_LIST}" \
-        --dry-run=client -o yaml |
-        kubectl apply -f - ||
-        error_exit "Failed to recreate podvm-images configmap"
-
-    echo "podvm-images configmap recreated successfully"
-}
-
 function create_ami_from_prebuilt_artifact() {
     echo "Creating AWS AMI image from prebuilt artifact"
 
@@ -329,9 +270,9 @@ function upload_image_to_s3() {
 
     if [[ "${PODVM_IMAGE_FORMAT}" == "qcow2" ]]; then
         convert_qcow2_to_raw ${podvm_image_path}
-	raw_to_upload=${RAW_IMAGE_PATH}
+        raw_to_upload=${RAW_IMAGE_PATH}
     elif [[ "${PODVM_IMAGE_FORMAT}" == "raw" ]]; then
-	raw_to_upload=${podvm_image_path}
+        raw_to_upload=${podvm_image_path}
     else
         error_exit "Unsupported format"
     fi
@@ -348,7 +289,7 @@ import_snapshot_n_wait() {
     echo "Importing image file into snapshot"
 
     local image_import_json_file=$(mktemp)
-    cat <<EOF > "image_import_json_file"
+    cat <<EOF >"image_import_json_file"
 {
     "Description": "Peer Pod VM image",
     "Format": "RAW",
@@ -363,20 +304,21 @@ EOF
 
     local import_status=$(aws ec2 describe-import-snapshot-tasks --import-task-ids ${import_task_id} --output json --region ${AWS_REGION} | jq -r '.ImportSnapshotTasks[].SnapshotTaskDetail.Status')
     local x=0
-    while [ "${import_status}" = "active" ] && [ $x -lt 120 ]
-    do
+    while [ "${import_status}" = "active" ] && [ $x -lt 120 ]; do
         import_status=$(aws ec2 describe-import-snapshot-tasks --import-task-ids ${import_task_id} --output json --region ${AWS_REGION} | jq -r '.ImportSnapshotTasks[].SnapshotTaskDetail.Status')
         import_status_msg=$(aws ec2 describe-import-snapshot-tasks --import-task-ids ${import_task_id} --output json --region ${AWS_REGION} | jq -r '.ImportSnapshotTasks[].SnapshotTaskDetail.StatusMessage')
         echo "Import Status: ${import_status} / ${import_status_msg}"
-        x=$(( $x + 1 ))
+        x=$(($x + 1))
         sleep 15
     done
     if [ $x -eq 120 ]; then
-        echo "ERROR: Import task taking too long, exiting..."; exit 1;
+        echo "ERROR: Import task taking too long, exiting..."
+        exit 1
     elif [ "${import_status}" = "completed" ]; then
-         echo "Import completed Successfully"
+        echo "Import completed Successfully"
     else
-         echo "Import Failed, exiting"; exit 2;
+        echo "Import Failed, exiting"
+        exit 2
     fi
 
     export SNAPSHOT_ID=$(aws ec2 describe-import-snapshot-tasks --import-task-ids ${import_task_id} --output json --region ${AWS_REGION} | jq -r '.ImportSnapshotTasks[].SnapshotTaskDetail.SnapshotId')
@@ -384,11 +326,10 @@ EOF
     aws ec2 wait snapshot-completed --snapshot-ids ${SNAPSHOT_ID} --region ${AWS_REGION} || exit $?
 }
 
-
 register_ami() {
     echo "Registering AMI with Snapshot $SNAPSHOT_ID"
     local register_json_file=$(mktemp)
-    cat <<EOF > "${register_json_file}"
+    cat <<EOF >"${register_json_file}"
 {
     "Architecture": "x86_64",
     "BlockDeviceMappings": [
@@ -487,10 +428,10 @@ function delete_ami_snapshots() {
         # Validate the snapshot was deleted
         snapshot_description=$(
             aws ec2 describe-snapshots \
-            --region "${AWS_REGION}" \
-            --filters "Name=snapshot-id,Values='${SNAPSHOT_ID}'" \
-            --query "Snapshots" \
-            --output text
+                --region "${AWS_REGION}" \
+                --filters "Name=snapshot-id,Values='${SNAPSHOT_ID}'" \
+                --query "Snapshots" \
+                --output text
         ) || error_exit "Failed to get the ami's snapshot description"
         if [[ -n "$snapshot_description" ]]; then
             error_exit "Snapshot '${SNAPSHOT_ID}' still exists after deletion attempt"
@@ -516,10 +457,10 @@ function delete_ami_using_id() {
     SNAPSHOT_IDS_JSON_PATH='Images[].BlockDeviceMappings[].Ebs.SnapshotId'
     SNAPSHOT_IDS=$(
         aws ec2 describe-images \
-        --region "${AWS_REGION}" \
-        --image-ids "${AMI_ID}" \
-        --query "${SNAPSHOT_IDS_JSON_PATH}" \
-        --output text
+            --region "${AWS_REGION}" \
+            --image-ids "${AMI_ID}" \
+            --query "${SNAPSHOT_IDS_JSON_PATH}" \
+            --output text
     ) || error_exit "Failed to get the ami's snapshot ids"
     export SNAPSHOT_IDS
 
@@ -573,7 +514,7 @@ if [ "$1" = "--" ]; then
         ;;
     esac
 else
-    while getopts "cCRh" opt; do
+    while getopts "cCh" opt; do
         verify_vars
         case ${opt} in
         c)
@@ -584,10 +525,6 @@ else
             # Delete the ami
             delete_ami_using_id
 
-            ;;
-        R)
-            # Recreate the podvm-images configmap
-            recreate_image_configmap
             ;;
         h)
             # Display help

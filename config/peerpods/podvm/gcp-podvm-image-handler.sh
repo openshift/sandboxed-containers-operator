@@ -72,12 +72,6 @@ EOM
   echo "GCP CLI installed successfully"
 }
 
-# Function to recreate podvm-images configmap with all the images
-# TODO: Not sure if aws, azure is working either.
-function recreate_image_configmap() {
-  echo "Recreating podvm-images configmap not implemented"
-}
-
 # Creates a GCP Image with the PodVM distro.
 function create_image() {
   echo "Creating GCP Image"
@@ -219,17 +213,17 @@ delete_image_using_id() {
 }
 
 function login_to_gcp() {
-    echo "Logging in to GCP"
+  echo "Logging in to GCP"
 
-    creds_file="/tmp/gcp-credentials.json"
-    echo "${GCP_CREDENTIALS}" > ${creds_file}
+  creds_file="/tmp/gcp-credentials.json"
+  echo "${GCP_CREDENTIALS}" >${creds_file}
 
-    gcloud auth activate-service-account --key-file=${creds_file} ||
-        error_exit "Failed to login to GCP"
+  gcloud auth activate-service-account --key-file=${creds_file} ||
+    error_exit "Failed to login to GCP"
 
-    rm -Rf ${creds_file}
+  rm -Rf ${creds_file}
 
-    echo "Logged in to GCP successfully"
+  echo "Logged in to GCP successfully"
 }
 
 # Display help message
@@ -239,7 +233,6 @@ function display_help() {
   echo "Options:"
   echo "-c  Create image"
   echo "-C  Delete image"
-  echo "-R  Recreate podvm-images configMap"
   echo "-h  This help"
 }
 
@@ -270,7 +263,7 @@ if [ "$1" = "--" ]; then
     ;;
   esac
 else
-  while getopts "cCRh" opt; do
+  while getopts "cCh" opt; do
     case ${opt} in
     c)
       # Create the image
@@ -284,10 +277,6 @@ else
       login_to_gcp
       delete_image_using_id
 
-      ;;
-    R)
-      # Recreate the podvm-images configmap
-      recreate_image_configmap
       ;;
     h)
       # Display help

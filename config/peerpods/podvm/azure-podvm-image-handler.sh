@@ -321,59 +321,6 @@ function get_all_image_version_ids() {
 
 }
 
-# Function to create or update podvm-images configmap with all the images
-# Input IMAGE_ID_LIST is a list of image ids
-
-function create_or_update_image_configmap() {
-    echo "Creating or updating podvm-images configmap"
-
-    # Check if the podvm-images configmap already exists
-    # If exists get the current value of the azure key and append the new image id to it
-    # If not exists, create the podvm-images configmap with the new image id
-
-    # Check if the podvm-images configmap exists
-    if kubectl get configmap podvm-images -n openshift-sandboxed-containers-operator >/dev/null 2>&1; then
-        # Get the current value of the azure key in podvm-images configmap
-        IMAGE_ID_LIST=$(kubectl get configmap podvm-images -n openshift-sandboxed-containers-operator -o jsonpath='{.data.azure}') ||
-            error_exit "Failed to get the current value of the azure key in podvm-images configmap"
-
-        # If the current value of the azure key is empty, then set the value to the new image id
-        if [[ -z "${IMAGE_ID_LIST}" ]]; then
-            IMAGE_ID_LIST="${IMAGE_ID}"
-        else
-            # If the current value of the azure key is not empty, then append the new azure image in the beginning
-            # The first azure image id in the list is the latest azure image id
-            IMAGE_ID_LIST="${IMAGE_ID} ${IMAGE_ID_LIST}"
-        fi
-    else
-        # If the podvm-images configmap does not exist, set the value to the new image id
-        IMAGE_ID_LIST="${IMAGE_ID}"
-    fi
-
-    echo "podvm-images configmap created or updated successfully"
-}
-
-# Funtion to recreate podvm-images configmap with all the images
-
-function recreate_image_configmap() {
-    echo "Recreating podvm-images configmap"
-
-    # Get list of all image version ids
-    get_all_image_version_ids
-
-    # Check if IMAGE_ID_LIST is empty
-    [[ -z "${IMAGE_ID_LIST}" ]] && error_exit "Nothing to recreate in podvm-images configmap"
-
-    kubectl create configmap podvm-images \
-        -n openshift-sandboxed-containers-operator \
-        --from-literal=azure="${IMAGE_ID_LIST}" \
-        --dry-run=client -o yaml |
-        kubectl apply -f - ||
-        error_exit "Failed to recreate podvm-images configmap"
-
-    echo "podvm-images configmap recreated successfully"
-}
-
 # Function to add image gallery annotation to peer-pods-cm configmap
 
 function add_image_gallery_annotation_to_peer_pods_cm() {
@@ -785,7 +732,6 @@ function display_help() {
     echo "-D Delete image definition [force]"
     echo "-i Create image version"
     echo "-I Delete image version"
-    echo "-R Recreate podvm-images configMap"
     echo "-h Display help"
 }
 
@@ -815,7 +761,7 @@ if [ "$1" = "--" ]; then
         ;;
     esac
 else
-    while getopts ":cCgGdDiIRh" opt; do
+    while getopts ":cCgGdDiIh" opt; do
         verify_vars
         login_to_azure
         case ${opt} in
@@ -856,10 +802,6 @@ else
         I)
             # Delete image version
             delete_image_version
-            ;;
-        R)
-            # Recreate the podvm-images configmap
-            recreate_image_configmap
             ;;
         h)
             display_help
