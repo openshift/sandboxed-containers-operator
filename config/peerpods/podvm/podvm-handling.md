@@ -146,3 +146,9 @@ delete the image gallery defined in the `IMAGE_GALLERY_NAME` key in
 * The code verifies all the required config parameters
 * Based on the `PODVM_IMAGE_URI` presence on the cloud provider specific configMap (eg: `libvirt-podvm-image-cm`), `IMAGE_TYPE` is set to either `operator-built` or `pre-built`.
 * Based on the `IMAGE_TYPE` it will invoke the create image from scratch for `operator-built` and pull an existing image if it's `pre-built`.
+
+## Cloud init
+
+When `CONFIDENTIAL_COMPUTE_ENABLED` is enabled and provider is not `libvirt`, the pod VM image generated doesn't have the cloud-init package.
+This is by design. The consequence is that SSH is disabled.
+For debugging, if you want to enable SSH, then set `CUSTOM_CLOUD_INIT_MODULES` to `yes` in the respective configMap before image creation.
