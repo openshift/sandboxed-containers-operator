@@ -63,7 +63,7 @@ function verify_vars() {
     [[ ! "${AWS_SUBNET_ID}" ]] && error_exit "AWS_SUBNET_ID is not set"
 
     [[ -z "${AMI_BASE_NAME}" ]] && error_exit "AMI_BASE_NAME is not set"
-    [[ -z "${AMI_VERSION_MAJ_MIN}" ]] && error_exit "AMI_VERSION_MAJ_MIN is not set"
+    [[ -z "${AMI_VERSION}" ]] && error_exit "AMI_VERSION is not set"
     [[ -z "${AMI_VOLUME_SIZE}" ]] && error_exit "AMI_VOLUME_SIZE is not set"
 
     [[ -z "${PODVM_DISTRO}" ]] && error_exit "PODVM_DISTRO is not set"
@@ -116,7 +116,7 @@ function create_ami_using_packer() {
     # The variables are set before calling the function
 
     # If PODVM_DISTRO is not set to rhel then exit
-    [[ "${PODVM_DISTRO}" != "rhel" ]] && error_exit "unsupport distro"
+    [[ "${PODVM_DISTRO}" != "rhel" ]] && error_exit "unsupported distro"
 
     # Set the packer variables
 
@@ -142,11 +142,6 @@ function create_ami_using_packer() {
 }
 
 function set_ami_name() {
-    # Set the AMI version
-    # It should follow the Major(int).Minor(int).Patch(int)
-    AMI_VERSION="${AMI_VERSION_MAJ_MIN}.$(date +'%Y%m%d%S')"
-    export AMI_VERSION
-
     # Set the image name
     AMI_NAME="${AMI_BASE_NAME}-${AMI_VERSION}"
     export AMI_NAME
@@ -379,6 +374,22 @@ function create_ami_from_scratch() {
 function create_ami() {
     echo "Creating AWS AMI"
 
+    # generate & set the ami name
+    set_ami_name
+
+    ami_exists
+    ami_status=$?
+
+    if [[ "${ami_status}" -eq 0 ]]; then
+        echo "AMI exists. Skipping creation"
+        return
+    elif [[ "${ami_status}" -eq 2 ]]; then
+        echo "De-registering AMI (${AMI_NAME}) and deleting associated snapshot, before recreating"
+        delete_ami_using_name
+    fi
+
+    echo "AMI does not exist. Proceeding to create the AMI"
+
     # Create the AWS image
     # If any error occurs, exit the script with an error message
 
@@ -391,16 +402,13 @@ function create_ami() {
         install_binary_packages
     fi
 
-    # generate & set the ami name
-    set_ami_name
-
     if [[ "${IMAGE_TYPE}" == "operator-built" ]]; then
         create_ami_from_scratch
     elif [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
         create_ami_from_prebuilt_artifact
     fi
 
-    # Get the ami id of the newly created image
+    # Get the ami id
     # This will set the AMI_ID environment variable
     get_ami_id
 
@@ -473,6 +481,80 @@ function delete_ami_using_id() {
 
     # Remove the ami id annotation from peer-pods-cm configmap
     delete_cm_annotation "LATEST_AMI_ID"
+
+}
+
+# Function to delete AMI and associated snapshots by name
+# AMI_NAME must be set as an environment variable
+
+function delete_ami_using_name() {
+    echo "Deleting AWS AMI by name"
+
+    # Delete the AMI by name
+    # If any error occurs, exit the script with an error message
+
+    # AMI_NAME shouldn't be empty
+    [[ -z "${AMI_NAME}" ]] && error_exit "AMI_NAME is empty"
+
+    # Retrieve the AMI ID before deleting the ami
+    AMI_ID=$(
+        aws ec2 describe-images \
+            --region "${AWS_REGION}" \
+            --filters "Name=name,Values=${AMI_NAME}" \
+            --query 'Images[*].ImageId' \
+            --output text
+    ) || error_exit "Failed to get the ami id"
+
+    # If AMI_ID is empty, then nothing to do. Return
+    [[ -z "${AMI_ID}" ]] && return
+
+    delete_ami_using_id
+
+}
+
+# Check if AMI name exists
+# This checks if AMI already exist in Aws
+# and the LATEST_AMI_ID annotation is set in the peer-pods-cm configmap
+# 0: AMI exists and matches
+# 1: AMI does not exist
+# 2: AMI mismatch (caller should delete AMI & snapshot)
+# The required variables are assumed to be set
+function ami_exists() {
+    echo "Checking if AMI exists"
+
+    local ami_id latest_ami_id ami_return_code
+
+    # Retrieve the AMI ID from AWS
+    ami_id=$(aws ec2 describe-images --region "${AWS_REGION}" --filters "Name=name,Values=${AMI_NAME}" --query 'Images[*].ImageId' --output text)
+    ami_return_code=$?
+
+    # Retrieve the latest AMI ID from the configmap
+    latest_ami_id=$(kubectl get configmap peer-pods-cm -n openshift-sandboxed-containers-operator -o jsonpath='{.metadata.annotations.LATEST_AMI_ID}')
+
+    # Handle AWS command failure
+    if [[ "${ami_return_code}" -ne 0 ]]; then
+        error_exit "Error querying AWS for AMI."
+    fi
+
+    # Case 1: AMI exists and matches the configmap.
+    # In AWS ami_id will be empty if AMI doesn't exist. Unlike Azure which returns an error
+    # So we need to additionally check that ami_id is not empty
+    if [[ -n "${ami_id}" && -n "${latest_ami_id}" && "${ami_id}" == "${latest_ami_id}" ]]; then
+        echo "AMI (${ami_id}) is up-to-date in AWS and configmap."
+        return 0
+    # Case 2: No AMI in AWS and no record in the configmap
+    elif [[ -z "${ami_id}" && -z "${latest_ami_id}" ]]; then
+        echo "No AMI found in AWS, and no record in configmap."
+        return 1
+    # Case 3: AMI missing in AWS but present in configmap
+    elif [[ -z "${ami_id}" && -n "${latest_ami_id}" ]]; then
+        echo "No AMI found in AWS, but configmap has record (${latest_ami_id}). AMI might have been deleted."
+        return 1
+    # Case 4: AMI exists in AWS but does not match configmap.
+    else
+        echo "AMI ID mismatch: AWS AMI (${ami_id}) differs from ConfigMap AMI (${latest_ami_id})."
+        return 2 # Caller should delete AMI and snapshot and recreate AMI
+    fi
 
 }
 

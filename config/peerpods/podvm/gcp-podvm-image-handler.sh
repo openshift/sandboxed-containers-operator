@@ -28,6 +28,7 @@ function verify_vars() {
 
     # From gcp-podvm-image-cm:
     "IMAGE_BASE_NAME"
+    "IMAGE_VERSION"
     "INSTALL_PACKAGES"
     "DISABLE_CLOUD_CONFIG"
 
@@ -101,10 +102,7 @@ function create_image() {
   echo "GCP image created successfully"
 }
 
-function set_image_version_and_name() {
-  IMAGE_VERSION="$(date +'%Y%m%d%S')"
-  export IMAGE_VERSION
-
+function set_image_name() {
   # Set the image name
   IMAGE_NAME="${IMAGE_BASE_NAME}-${IMAGE_VERSION}"
   export IMAGE_NAME
@@ -113,8 +111,8 @@ function set_image_version_and_name() {
 function create_image_from_prebuilt_artifact() {
   echo "Creating GCP image from prebuilt artifact"
 
-  # Set the IMAGE_VERSION and IMAGE_NAME
-  set_image_version_and_name
+  # Set the IMAGE_NAME
+  set_image_name
 
   echo "Pulling the podvm image from the provided path"
   image_src="/tmp/image"
