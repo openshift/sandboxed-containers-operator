@@ -1428,7 +1428,18 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 			// RequeueNeeded
 			// ImageCreationStatusUnknown
 
-			status, err := ImageCreate(r.Client)
+			// Check if at least one node is installed with Kata
+			// If not, then we should not proceed with the image creation
+			// It's available r.kataConfig.Status.KataNodes.Installed
+
+			if len(r.kataConfig.Status.KataNodes.Installed) == 0 {
+				r.Log.Info("No nodes are installed with Kata. Skipping image creation")
+				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
+			}
+
+			r.Log.Info("At least one node with Kata is installed. Proceeding to image creation")
+
+			status, err := ImageCreate(r.Client, r.kataConfig.Status.KataNodes.Installed[0])
 			switch status {
 			case ImageCreatedSuccessfully:
 				r.setInProgressConditionToPodVMImageCreated()

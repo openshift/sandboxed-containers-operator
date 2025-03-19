@@ -136,7 +136,7 @@ func GetImageGenerator() *ImageGenerator {
 }
 
 // ImageCreate creates a podvm image for a cloud provider if not present
-func ImageCreate(c client.Client) (int, error) {
+func ImageCreate(c client.Client, nodeName string) (int, error) {
 	if err := InitializeImageGenerator(c); err != nil {
 		igLogger.Info("error initializing ImageGenerator instance", "err", err)
 		return ImageCreationFailed, ErrInitializingImageGenerator
@@ -165,7 +165,7 @@ func ImageCreate(c client.Client) (int, error) {
 		return ImageCreationFailed, ErrUpdatingImageConfigMap
 	}
 
-	status, err := ig.imageCreateJobRunner()
+	status, err := ig.imageCreateJobRunner(nodeName)
 	if err != nil {
 		igLogger.Info("error running image create job", "err", err)
 		return ImageCreationFailed, err
@@ -415,7 +415,7 @@ func (r *ImageGenerator) getPeerPodsCM() (*corev1.ConfigMap, error) {
 // aws-podvm-image-cm.yaml for AWS
 // libvirt-podvm-image-cm.yaml for Libvirt
 
-func (r *ImageGenerator) imageCreateJobRunner() (int, error) {
+func (r *ImageGenerator) imageCreateJobRunner(nodeName string) (int, error) {
 	igLogger.Info("imageCreateJobRunner: Start")
 
 	// We create the job first irrespective of the image ID being set or not
@@ -428,6 +428,10 @@ func (r *ImageGenerator) imageCreateJobRunner() (int, error) {
 		igLogger.Info("error creating the image creation job object from yaml file", "err", err)
 		return ImageCreationFailed, ErrCreatingImageJob
 	}
+
+	// Update the job spec to add nodeName where it'll run
+	igLogger.Info("Setting nodeName for the job", "nodeName", nodeName)
+	job.Spec.Template.Spec.NodeName = nodeName
 
 	// Handle job deletion if the image ID is already set and entering here on requeue
 	if r.isImageIDSet() {
