@@ -134,7 +134,7 @@ function create_podvm_image() {
 
       # Update peer-pods-cm configmap with the IMAGE_ID value
       echo "Updating peer-pods-cm configmap with IMAGE_ID=${IMAGE_ID}"
-      kubectl patch configmap peer-pods-cm -n openshift-sandboxed-containers-operator --type merge -p "{\"data\":{\"PODVM_IMAGE_ID\":\"${IMAGE_ID}\"}}"
+      kubectl patch configmap peer-pods-cm -n openshift-sandboxed-containers-operator --type merge -p "{\"data\":{\"PODVM_IMAGE_NAME\":\"${IMAGE_ID}\"}}"
     fi
     ;;
 
