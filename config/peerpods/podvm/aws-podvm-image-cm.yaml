@@ -9,7 +9,11 @@ data:
 
   # Image
   AMI_BASE_NAME: "podvm-image"
-  AMI_VERSION_MAJ_MIN: "0.0"
+  # Must be in Major(int).Minor(int).Patch(int) format. Not mandatory for AWS, but
+  # for consistency sake with Azure
+  # When deployed from operator, update the AMI_VERSION to something like
+  # "$clusterid.0.1"
+  AMI_VERSION: "0.0.1"
   AMI_VOLUME_SIZE: "30"
 
   # Packer Instance type

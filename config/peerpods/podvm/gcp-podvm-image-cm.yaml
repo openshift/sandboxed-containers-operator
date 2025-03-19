@@ -11,6 +11,10 @@ data:
   CAA_REF: "main"
 
   IMAGE_BASE_NAME: "podvm-image"
+  # Must be in Major(int).Minor(int).Patch(int) format
+  # When deployed from operator, update the IMAGE_VERSION to something like
+  # "$clusterid-0-1"
+  IMAGE_VERSION: "0-0-1"
 
   # Booleans
   INSTALL_PACKAGES: "no"

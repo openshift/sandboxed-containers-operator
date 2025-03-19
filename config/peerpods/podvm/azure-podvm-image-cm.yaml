@@ -33,7 +33,10 @@ data:
 
   # Image
   IMAGE_BASE_NAME: "podvm-image"
-  IMAGE_VERSION_MAJ_MIN: "0.0"
+  # Must be in Major(int).Minor(int).Patch(int) format
+  # When deployed from operator, update the IMAGE_VERSION to something like
+  # "$clusterid.0.1"
+  IMAGE_VERSION: "0.0.1"
 
   # Packer VM size
   VM_SIZE: "Standard_D2as_v5"

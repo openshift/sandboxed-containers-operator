@@ -745,8 +745,25 @@ func (r *ImageGenerator) createImageConfigMapFromFile() error {
 		return err
 	}
 
+	// This is to ensure that the image version (for azure) or ami version (for aws)
+	// is unique for each cluster
+	// image version expects the format <major>.<minor>.<patch> - all digits
+	// clusterID is a hex string, so we need to convert it to an integer
+	// This is to ensure that the image version is unique for each cluster
+	imageVersion := "0.0.1"
+	clusterIdInt, err := strconv.ParseUint(r.clusterId, 16, 32)
+	if err == nil {
+		imageVersion = fmt.Sprintf("%d.0.1", clusterIdInt)
+	} else {
+		igLogger.Info("clusterId is not a valid hex number, using default version")
+	}
+
+	igLogger.Info("using image version", "image_version", imageVersion)
+
 	// For Azure provider set the IMAGE_GALLERY_NAME if its empty
 	// The IMAGE_GALLERY_NAME is set to azureImageGalleryPrefix + "_" + clusterID
+	// Also set the IMAGE_VERSION or AMI_VERSION
+
 	if r.provider == AzureProvider {
 		if cm.Data["IMAGE_GALLERY_NAME"] == "" {
 			image_gallery_name := azureImageGalleryPrefix + "_" + r.clusterId
@@ -754,6 +771,21 @@ func (r *ImageGenerator) createImageConfigMapFromFile() error {
 			igLogger.Info("Setting IMAGE_GALLERY_NAME", "image_gallery_name", image_gallery_name)
 		}
 
+		cm.Data["IMAGE_VERSION"] = imageVersion
+		igLogger.Info("Setting IMAGE_VERSION", "image_version", imageVersion)
+
+	}
+
+	if r.provider == AWSProvider {
+		cm.Data["AMI_VERSION"] = imageVersion
+		igLogger.Info("Setting AMI_VERSION", "ami_version", imageVersion)
+	}
+
+	if r.provider == GCPProvider {
+		// GCP doesn't allow dot. It needs to use dash
+		imageVersion = strings.ReplaceAll(imageVersion, ".", "-")
+		cm.Data["IMAGE_VERSION"] = imageVersion
+		igLogger.Info("Setting IMAGE_VERSION", "image_version", imageVersion)
 	}
 
 	if err := r.client.Create(context.TODO(), cm); err != nil {

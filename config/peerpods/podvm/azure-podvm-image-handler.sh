@@ -63,7 +63,7 @@ function verify_vars() {
 
     # Ensure that the image variables are set
     [[ -z "${IMAGE_BASE_NAME}" ]] && error_exit "IMAGE_BASE_NAME is empty"
-    [[ -z "${IMAGE_VERSION_MAJ_MIN}" ]] && error_exit "IMAGE_VERSION_MAJ_MIN is empty"
+    [[ -z "${IMAGE_VERSION}" ]] && error_exit "IMAGE_VERSION is empty"
 
     [[ -z "${CAA_SRC}" ]] && error_exit "CAA_SRC is empty"
     [[ -z "${CAA_REF}" ]] && error_exit "CAA_REF is empty"
@@ -98,14 +98,11 @@ function add_azure_repositories() {
     echo "Azure yum repositories added successfully"
 }
 
-function set_image_version_and_name() {
-    # Set the image version
-    # It should follow the Major(int).Minor(int).Patch(int)
-    IMAGE_VERSION="${IMAGE_VERSION_MAJ_MIN}.$(date +'%Y%m%d%S')"
-    export IMAGE_VERSION
+function set_image_name() {
 
     # Set the image name
     IMAGE_NAME="${IMAGE_BASE_NAME}-${IMAGE_VERSION}"
+    echo "Image name: ${IMAGE_NAME}"
     export IMAGE_NAME
 }
 
@@ -245,8 +242,6 @@ function create_image_using_packer() {
     # If any error occurs, exit the script with an error message
     # The variables are set before calling the function
 
-    # Set the image version and name
-    set_image_version_and_name
     # Set the base image details
 
     if [[ "${PODVM_DISTRO}" != "rhel" ]]; then
@@ -273,6 +268,10 @@ function create_image_using_packer() {
         error_exit "Failed to change directory to ${CAA_SRC_DIR}/azure/image"
     packer init "${PODVM_DISTRO}"/
     make BINARIES= PAUSE_BUNDLE= image
+
+    # Check if make resulted in error
+    return_code=$?
+    [[ "$return_code" -ne 0 ]] && error_exit "Failed to create Azure image using packer"
 
     # Wait for the image to be created
 
@@ -368,6 +367,22 @@ function create_image() {
     echo "Creating Azure image"
     # If any error occurs, exit the script with an error message
 
+    # Set the image version and name
+    set_image_name
+
+    image_exists
+    image_status=$?
+
+    if [[ "${image_status}" -eq 0 ]]; then
+        echo "Image exists. Skipping creation"
+        return
+    elif [[ "${image_status}" -eq 2 ]]; then
+        echo "Deleting image version, before recreating"
+        delete_image_version
+    fi
+
+    echo "Image does not exist. Proceeding to create the image"
+
     # Install packages if INSTALL_PACKAGES is set to yes
     if [[ "${INSTALL_PACKAGES}" == "yes" ]]; then
         # Add Azure yum repositories
@@ -387,7 +402,7 @@ function create_image() {
         create_azure_image_from_prebuilt_artifact
     fi
 
-    # Get the image id of the newly created image.
+    # Get the image id
     # This will set the IMAGE_ID variable
     get_image_id
 
@@ -424,9 +439,6 @@ function create_azure_image_from_scratch() {
 
 function create_azure_image_from_prebuilt_artifact() {
     echo "Creating Azure image from prebuilt artifact"
-
-    # Set the IMAGE_VERSION and IMAGE_NAME
-    set_image_version_and_name
 
     echo "Pulling the podvm image from the provided path"
     image_src="/tmp/image"
@@ -716,6 +728,54 @@ function delete_image_using_id() {
     delete_cm_annotation LATEST_IMAGE_ID
 
     echo "Azure image deleted successfully"
+}
+
+# Function to check if image already exists
+# This checks if IMAGE_VERSION and IMAGE_ID already exist in Azure
+# and the LATEST_IMAGE_ID annotation is set in the peer-pods-cm configmap
+# 0: Image exists and matches
+# 1: Image does not exist
+# 2: Image mismatch (caller should delete Image)
+# The required variables are assumed to be set
+function image_exists() {
+
+    local image_id
+    # Get the image id
+    image_id=$(az sig image-version show --resource-group "${AZURE_RESOURCE_GROUP}" \
+        --gallery-name "${IMAGE_GALLERY_NAME}" \
+        --gallery-image-definition "${IMAGE_DEFINITION_NAME}" \
+        --gallery-image-version "${IMAGE_VERSION}" \
+        --query "id" --output tsv)
+
+    img_return_code=$?
+
+    # Get the latest image id from the peer-pods-cm configmap
+    local latest_image_id
+    latest_image_id=$(kubectl get configmap peer-pods-cm -n openshift-sandboxed-containers-operator -o jsonpath='{.metadata.annotations.LATEST_IMAGE_ID}')
+
+    # Handle Azure command failure
+    if [[ "${img_return_code}" -ne 0 ]]; then
+        error_exit "Error querying Azure for Image."
+    fi
+
+    # Case 1: Image exists and matches the configmap
+    if [[ "${image_id}" == "${latest_image_id}" ]]; then
+        echo "Image (${image_id}) is up-to-date in configmap."
+        return 0
+    # Case 2: No Image in Azure and no record in the configmap
+    elif [[ -z "${image_id}" && -z "${latest_image_id}" ]]; then
+        echo "No Image found in Azure, and no record in configmap."
+        return 1
+    # Case 3: Image missing in Azure but present in configmap
+    elif [[ -z "${image_id}" && -n "${latest_image_id}" ]]; then
+        echo "No Image found in Azure, but configmap has record (${latest_image_id}). Image might have been deleted."
+        return 1
+    # Case 4: Image exists in Azure but does not match configmap.
+    else
+        echo "Image mismatch: Azure Image (${image_id}) differs from ConfigMap Image (${latest_image_id})."
+        return 2 # Caller should delete Azure image version and recreate
+    fi
+
 }
 
 # display help message
