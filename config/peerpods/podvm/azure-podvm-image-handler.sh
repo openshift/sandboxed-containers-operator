@@ -755,22 +755,20 @@ function image_exists() {
 
     # Handle Azure command failure
     if [[ "${img_return_code}" -ne 0 ]]; then
-        error_exit "Error querying Azure for Image."
+        # Treating any error as non-existent image as unlike AWS, Azure does not return empty string for non-existent image
+        echo "Image does not exist in Azure."
+        return 1
     fi
 
     # Case 1: Image exists and matches the configmap
     if [[ "${image_id}" == "${latest_image_id}" ]]; then
         echo "Image (${image_id}) is up-to-date in configmap."
         return 0
-    # Case 2: No Image in Azure and no record in the configmap
-    elif [[ -z "${image_id}" && -z "${latest_image_id}" ]]; then
-        echo "No Image found in Azure, and no record in configmap."
-        return 1
-    # Case 3: Image missing in Azure but present in configmap
+    # Case 2: Image missing in Azure but present in configmap
     elif [[ -z "${image_id}" && -n "${latest_image_id}" ]]; then
         echo "No Image found in Azure, but configmap has record (${latest_image_id}). Image might have been deleted."
         return 1
-    # Case 4: Image exists in Azure but does not match configmap.
+    # Case 3: Image exists in Azure but does not match configmap (it may be empty or have any other image listed).
     else
         echo "Image mismatch: Azure Image (${image_id}) differs from ConfigMap Image (${latest_image_id})."
         return 2 # Caller should delete Azure image version and recreate
