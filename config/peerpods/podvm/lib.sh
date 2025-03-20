@@ -226,7 +226,7 @@ to edit policy.conf"
         echo "Setting custom agent policy to CoCo's recommended policy"
         sed 's/default ReadStreamRequest := true/default ReadStreamRequest := false/;
             s/default ExecProcessRequest := true/default ExecProcessRequest := false/' \
-            "${podvm_dir}"/files/etc/kata-opa/default-policy.rego >"${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
+            "${podvm_dir}"/files/etc/kata-opa/allow-all.rego >"${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
         sed -i 's/allow-all.rego/coco-default-policy.rego/g' "${podvm_dir}"/files/etc/tmpfiles.d/policy.conf || error_exit "Failed to edit policy.conf"
 	echo "~~~ Fallback default policy is set to: ~~~" && cat "${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
     fi
