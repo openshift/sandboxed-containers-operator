@@ -1,6 +1,5 @@
-FROM registry.access.redhat.com/ubi9/go-toolset:1.22.9-1741020486 AS builder
+FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_golang_1.23 AS builder
 
-USER root
 WORKDIR /workspace
 
 COPY Makefile Makefile
