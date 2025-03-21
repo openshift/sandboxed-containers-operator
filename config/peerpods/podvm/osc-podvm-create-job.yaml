@@ -35,6 +35,10 @@ spec:
           # aws-podvm-image-handler.sh script under /scripts/aws-podvm-image-handler.sh
           # gcp-podvm-image-handler.sh script under /scripts/gcp-podvm-image-handler.sh
           # sources for cloud-api-adaptor under /src/cloud-api-adaptor
+          lifecycle: 
+            preStop: 
+              exec: 
+                command: ["/scripts/packer-resource-cleanup.sh"]
           securityContext: # TODO: evaluate if these are actually needed
             privileged: true
             allowPrivilegeEscalation: true
@@ -77,7 +81,8 @@ spec:
               readOnly: true
             - name: store-volume
               mountPath: /store
-
+      # Default is 30s which is too less for the preStop hook to fully execute        
+      terminationGracePeriodSeconds: 180
       volumes:
         - name: payload
           emptyDir: {}
