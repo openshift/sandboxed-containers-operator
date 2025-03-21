@@ -239,6 +239,13 @@ function create_image_definition() {
 function create_image_using_packer() {
     echo "Creating Azure image using packer"
 
+    echo "Deleting any leftover managed image (${IMAGE_NAME}) due to abrupt exit of packer build"
+    # This will be of the form
+    # /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Compute/images/<image-name>
+    # Note that this is not tied to gallery
+    # We ignore any errors here.
+    az image delete --name "${IMAGE_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" || true
+
     # If any error occurs, exit the script with an error message
     # The variables are set before calling the function
 
@@ -377,7 +384,7 @@ function create_image() {
         echo "Image exists. Skipping creation"
         return
     elif [[ "${image_status}" -eq 2 ]]; then
-        echo "Deleting image version, before recreating"
+        echo "Deleting image version (${IMAGE_VERSION}), before recreating"
         delete_image_version
     fi
 
@@ -568,7 +575,7 @@ function upload_vhd_image() {
 # Function to delete a specific image version from Azure
 
 function delete_image_version() {
-    echo "Deleting Azure image version"
+    echo "Deleting Azure image version (${IMAGE_VERSION})"
     # If any error occurs, exit the script with an error message
 
     # Delete the image version
@@ -578,7 +585,7 @@ function delete_image_version() {
         --gallery-image-version "${IMAGE_VERSION}" ||
         error_exit "Failed to delete the image version"
 
-    echo "Azure image version deleted successfully"
+    echo "Azure image version (${IMAGE_VERSION}) deleted successfully"
 }
 
 # Function delete all image versions from Azure image-definition
@@ -731,7 +738,7 @@ function delete_image_using_id() {
 }
 
 # Function to check if image already exists
-# This checks if IMAGE_VERSION and IMAGE_ID already exist in Azure
+# This checks if IMAGE_VERSION exist in Azure
 # and the LATEST_IMAGE_ID annotation is set in the peer-pods-cm configmap
 # 0: Image exists and matches
 # 1: Image does not exist
