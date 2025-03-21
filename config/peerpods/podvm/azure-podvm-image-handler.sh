@@ -691,9 +691,17 @@ function delete_image_gallery() {
     delete_image_definition
 
     # Delete the image gallery
-    az sig delete --resource-group "${AZURE_RESOURCE_GROUP}" \
-        --gallery-name "${IMAGE_GALLERY_NAME}" ||
-        error_exit "Failed to delete the image gallery"
+    #az sig delete --resource-group "${AZURE_RESOURCE_GROUP}" \
+    #    --gallery-name "${IMAGE_GALLERY_NAME}" ||
+    #    error_exit "Failed to delete the image gallery"
+
+    # Sometimes the delete fails with teh following command:
+    # "ERROR: (CannotDeleteResource) Cannot delete resource while nested resources exist"
+    # This could be temporary due to image definition deletion not being immediate
+    # Hence add retry logic to delete the image gallery
+
+    retry_command az sig delete --resource-group "${AZURE_RESOURCE_GROUP}" --gallery-name "${IMAGE_GALLERY_NAME}" ||
+        echo "Failed to delete the image gallery."
 
     # Remove the image gallery annotation from peer-pods-cm configmap
     delete_image_gallery_annotation_from_peer_pods_cm
