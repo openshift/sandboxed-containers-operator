@@ -34,7 +34,7 @@ function install_rpm_packages() {
         "skopeo"
         "jq"
         "qemu-img" # for handling pre-built images. Note that this rpm requires subscription
-        "podman" # TODO: can we drop podman/skopeo?
+        "podman"   # TODO: can we drop podman/skopeo?
     )
 
     # Create a new array to store rpm packages that are not installed
@@ -221,14 +221,14 @@ to edit policy.conf"
         else
             error_exit "Invalid AGENT_POLICY value set, expected base64 encoded valid agent policy, got: \"${AGENT_POLICY}\""
         fi
-	echo "~~~ Fallback default policy is set to: ~~~" && cat "${podvm_dir}"/files/etc/kata-opa/custom.rego
+        echo "~~~ Fallback default policy is set to: ~~~" && cat "${podvm_dir}"/files/etc/kata-opa/custom.rego
     elif [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]]; then
         echo "Setting custom agent policy to CoCo's recommended policy"
         sed 's/default ReadStreamRequest := true/default ReadStreamRequest := false/;
             s/default ExecProcessRequest := true/default ExecProcessRequest := false/' \
             "${podvm_dir}"/files/etc/kata-opa/allow-all.rego >"${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
         sed -i 's/allow-all.rego/coco-default-policy.rego/g' "${podvm_dir}"/files/etc/tmpfiles.d/policy.conf || error_exit "Failed to edit policy.conf"
-	echo "~~~ Fallback default policy is set to: ~~~" && cat "${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
+        echo "~~~ Fallback default policy is set to: ~~~" && cat "${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
     fi
 
     # Fix disk mounts for CoCo
@@ -254,7 +254,7 @@ to edit policy.conf"
     if [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]]; then
         local agent_config_file="/etc/agent-config.toml"
 
-        cat<<EOF>"${podvm_dir}/files${agent_config_file}"
+        cat <<EOF >"${podvm_dir}/files${agent_config_file}"
 server_addr = "unix:///run/kata-containers/agent.sock"
 guest_components_procs = "none"
 image_registry_auth = "file:///run/peerpod/auth.json"
@@ -482,7 +482,7 @@ function bootc_image_builder_conversion() {
     # some VM customizations
     if [[ -n "${BOOTC_BUILD_CONFIG}" ]]; then
         echo "Using Custom Bootc Build Configuration"
-        echo "${BOOTC_BUILD_CONFIG}" > ./custom-config.toml
+        echo "${BOOTC_BUILD_CONFIG}" >./custom-config.toml
         BOOTC_BUILD_CONFIG_PATH=$(pwd)/custom-config.toml
     else
         echo "Using Default Bootc Build Configuration"
@@ -494,15 +494,14 @@ function bootc_image_builder_conversion() {
     # login for local registry pulling # TODO: can we use token instead?
     if [[ "${container_image_repo_url}" == *"image-registry.openshift-image-registry.svc"* ]]; then
         echo "login to local registry"
-        mkdir  /etc/containers/certs.d/image-registry.openshift-image-registry.svc:5000
-        ln -s /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt  /etc/containers/certs.d/image-registry.openshift-image-registry.svc:5000/service-ca.crt
+        mkdir /etc/containers/certs.d/image-registry.openshift-image-registry.svc:5000
+        ln -s /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt /etc/containers/certs.d/image-registry.openshift-image-registry.svc:5000/service-ca.crt
         podman login -u kubeadmin -p $(cat /var/run/secrets/kubernetes.io/serviceaccount/token) image-registry.openshift-image-registry.svc:5000
         podman pull "${container_image_repo_url}:${image_tag}" || error_exit "Failed to pull local bootc image"
     else
         # pull first to authenticate properly, if REGISTRY_AUTH_FILE is empty, it's ignored
         REGISTRY_AUTH_FILE=${auth_json_file} podman pull "${container_image_repo_url}:${image_tag}" || error_exit "Failed to pull bootc image"
     fi
-
 
     # execute bootc-image-builder
     # TODO: check if we can avoid this to drop the /store volumeMount
@@ -679,6 +678,31 @@ delete_cm_annotation() {
         error_exit "Failed to delete annotation ${key} from ${cm}"
 
     echo "Annotation ${key} deleted successfully from ${cm}"
+}
+
+# Function to retry a command with exponential backoff
+retry_command() {
+    local max_retries=5
+    local delay=10
+    local attempt=1
+
+    while [ $attempt -le $max_retries ]; do
+        echo "Attempt $attempt: Executing command..."
+        "$@" # Execute the passed command
+
+        if [ $? -eq 0 ]; then
+            echo "Command succeeded."
+            return 0
+        fi
+
+        echo "Command failed. Retrying in $delay seconds..."
+        sleep $delay
+        delay=$((delay * 2)) # Exponential backoff
+        ((attempt++))
+    done
+
+    echo "Command failed after $max_retries attempts."
+    return 1
 }
 
 # Global variables
