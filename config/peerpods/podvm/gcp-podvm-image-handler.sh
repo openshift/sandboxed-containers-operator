@@ -105,6 +105,7 @@ function create_image() {
 function set_image_name() {
   # Set the image name
   IMAGE_NAME="${IMAGE_BASE_NAME}-${IMAGE_VERSION}"
+  echo "Image name: ${IMAGE_NAME}"
   export IMAGE_NAME
 }
 
@@ -113,6 +114,19 @@ function create_image_from_prebuilt_artifact() {
 
   # Set the IMAGE_NAME
   set_image_name
+
+  image_exists
+  image_status=$?
+
+  if [[ "${image_status}" -eq 0 ]]; then
+      echo "Image exists. Skipping creation"
+      return
+  elif [[ "${image_status}" -eq 2 ]]; then
+      echo "Deleting image version, before recreating"
+      delete_image_using_id
+  fi
+
+  echo "Image does not exist. Proceeding to create the image"
 
   echo "Pulling the podvm image from the provided path"
   image_src="/tmp/image"
@@ -186,6 +200,39 @@ function create_image_from_prebuilt_artifact() {
     error_exit "Failed to create GCP image"
 
   echo "GCP image created successfully from prebuilt artifact"
+}
+
+function image_exists() {
+    echo "Checking if GCP image exists"
+
+    local image_path latest_image_id
+
+		# This command returns something like this:
+		# https://www.googleapis.com/compute/v1/projects/my-project/global/images/my-image
+		# Getting the cutted version to fetch from projects.*
+    image_path=$(gcloud compute images describe "${IMAGE_NAME}-${IMAGE_VERSION}" \
+        --project="${GCP_PROJECT_ID}" \
+        --format='get(selfLink)' 2>/dev/null | cut -d/ -f6-)
+
+    latest_image_id=$(kubectl get configmap peer-pods-cm \
+        -n openshift-sandboxed-containers-operator \
+        -o jsonpath='{.metadata.annotations.LATEST_IMAGE_ID}')
+
+    if [[ -z "${image_path}" && -z "${latest_image_id}" ]]; then
+        echo "No image in GCP and no record in configmap."
+        return 1
+    elif [[ -z "${image_path}" && -n "${latest_image_id}" ]]; then
+        echo "No image in GCP, but configmap has record (${latest_image_id})."
+        return 1
+		# Since GCP supports both cases, lets see if image_path is a suffix of
+		# latest_image_id.
+    elif [[ "${image_path}" == *"${latest_image_id}" ]]; then
+        echo "Image (${latest_image_id}) is up-to-date in configmap."
+        return 0
+    else
+        echo "Image mismatch: GCP image (${image_path}) different from ConfigMap (${latest_image_id})."
+        return 2
+    fi
 }
 
 # function to delete the image
