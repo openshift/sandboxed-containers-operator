@@ -13,7 +13,6 @@ function log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >>"$LOG_FILE"
 }
 
-
 function azure_cleanup() {
     # Capture Packer created VM names in an array
     log "Deleting Packer VMs"
@@ -98,12 +97,53 @@ function azure_cleanup() {
     done
 }
 
+function aws_cleanup() {
+    log "Deleting Packer VMs"
+
+    # Get the default VPC for the region. This is created as part of packer build.
+    DEFAULT_VPC_ID=$(aws ec2 describe-vpcs --filters "Name=is-default,Values=true" --region "$AWS_REGION" --query "Vpcs[0].VpcId" --output text)
+    log "Default VPC: $DEFAULT_VPC_ID"
+
+    aws ec2 describe-instances --filters "Name=instance.group-name,Values=packer*" \
+        "Name=vpc-id,Values=$DEFAULT_VPC_ID" \
+        --region "$AWS_REGION" \
+        --query "Reservations[*].Instances[*].[InstanceId, KeyName, join(',', SecurityGroups[*].GroupId)]" \
+        --output text | while read -r INSTANCE_ID KEY_NAME SG_IDS; do
+
+        log "Deleting"
+        log "Instance ID: $INSTANCE_ID"
+        log "Key Name: $KEY_NAME"
+        log "Security Groups: $SG_IDS"
+
+        # Terminate the instance
+        aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
+
+        # Wait for instance to be completely terminated
+        echo "Waiting for instance $INSTANCE_ID to terminate..."
+        aws ec2 wait instance-terminated --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
+
+        # Delete the key pair if it exists
+        if [[ -n "$KEY_NAME" && "$KEY_NAME" != "None" ]]; then
+            aws ec2 delete-key-pair --key-name "$KEY_NAME" --region "$AWS_REGION"
+        fi
+
+        # Delete the security groups (iterate if multiple SGs exist)
+        for SG_ID in $(echo "$SG_IDS" | tr ',' ' '); do
+            aws ec2 delete-security-group --group-id "$SG_ID" --region "$AWS_REGION"
+        done
+
+    done
+
+}
+
 # Log the start of the script
 log "Starting Packer resource cleanup script."
 
 # Execute cleanup if CLOUD_PROVIDER==azure
 if [ "$CLOUD_PROVIDER" == "azure" ]; then
     azure_cleanup
+elif [ "$CLOUD_PROVIDER" == "aws" ]; then
+    aws_cleanup
 else
     log "Cleanup not supported for CLOUD_PROVIDER: $CLOUD_PROVIDER"
 fi
