@@ -38,8 +38,10 @@ var (
 func (r *KataConfig) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	clientInst = mgr.GetClient()
 
+	kataconfiglog.Info("SetupWebhookWithManager")
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(r).
+		WithValidator(r).
 		Complete()
 }
 
