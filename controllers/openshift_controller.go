@@ -1267,7 +1267,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.setInProgressConditionToInstalling()
 	}
 
-	isInstallationInProgress := r.isMcpUpdating(machinePool) || (!isConvergedCluster && r.isMcpUpdating("worker"))
+	isInstallationInProgress := r.isMcpUpdating(machinePool)
 
 	// Create kata-oc MCP only if it's not a converged cluster
 	if !isConvergedCluster {
@@ -1318,11 +1318,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	r.Log.Info("MCP updating state", "MCP name", machinePool, "is updating", isKataMcpUpdating)
 
 	isMcoUpdating := isKataMcpUpdating
-	if !isConvergedCluster {
-		isWorkerUpdating := r.isMcpUpdating("worker")
-		r.Log.Info("MCP updating state", "MCP name", "worker", "is updating", isWorkerUpdating)
-		isMcoUpdating = isKataMcpUpdating || isWorkerUpdating
-	}
 
 	if isMcoUpdating && r.getInProgressConditionValue() == corev1.ConditionFalse {
 		r.setInProgressConditionToUpdating()
