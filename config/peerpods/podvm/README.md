@@ -67,3 +67,68 @@ PODVM_IMAGE_URI: "oci::quay.io/openshift_sandboxed_containers/libvirt-podvm-imag
 In this example, `<image_tag>` and `<image_path>` are optional. If not provided, the default values will be `<image_tag>`: `latest` and `<image_path>`: `/image/podvm.qcow2`.
 
 **Note:** When pulling container images from authenticated registries, make sure that the OpenShift `pull-secrets` are updated with the necessary registry credentials.
+
+## PodVM image re-create
+
+As explained in [PodVM image generation configuration](#podvm-image-generation-configuration) section, the image generation is configured via configmap. You may want to re-create the image with a different configuration, for example, set `CUSTOM_CLOUD_INIT_MODULES=no` to start the SSH Server in the podVM. In this section you will learn how to delete the podVM image to then create it again.
+
+In order to delete the current image you will need to get the image ID as is set on `peer-pods-cm` configmap, which depends on the cloud you have peer pods deployed:
+
+* Azure
+  ```bash
+  IMAGE_ID=$(oc get cm/peer-pods-cm -n openshift-sandboxed-containers-operator -o jsonpath='{.data.AZURE_IMAGE_ID}')
+  ```
+* AWS
+  ```bash
+  IMAGE_ID=$(oc get cm/peer-pods-cm -n openshift-sandboxed-containers-operator -o jsonpath='{.data.AWS_AMI_ID}')
+  ```
+* GCP
+  ```bash
+  IMAGE_ID=$(oc get cm/peer-pods-cm -n openshift-sandboxed-containers-operator -o jsonpath='{.data.IMAGE_NAME}')
+  ```
+
+Ensure that any previous delete job isn't still around, otherwise the deployment of a new job will fail:
+
+```bash
+oc delete --ignore-not-found=true job/osc-podvm-image-deletion -n openshift-sandboxed-containers-operator
+```
+
+Create the new delete job:
+
+```bash
+cat osc-podvm-delete-job.yaml | \
+  yq e '.spec.template.spec.containers[0].env = [{"name": "IMAGE_ID", "value": "'$IMAGE_ID'"}]' | \
+  oc apply -f -
+```
+
+On the command above the current image ID is set on the `IMAGE_ID` environment variable, so the job knows which image should be deleted. If you don't want to use `yq` to update the `IMAGE_ID` then simply edit [osc-podvm-delete-job.yaml](./osc-podvm-delete-job.yaml) with your preferred tool.
+
+Wait the new *osc-podvm-image-deletion* pod to complete:
+
+```bash
+watch -n 20 "oc get pods -n openshift-sandboxed-containers-operator  | grep osc-podvm-image-deletion"
+```
+
+If everything went well then the image ID field on `peer-pods-cm` configmap is now empty. You can check it like that:
+
+* Azure
+  ```bash
+  oc get cm/peer-pods-cm -o jsonpath='{.data.AZURE_IMAGE_ID}' -n openshift-sandboxed-containers-operator
+  ```
+* AWS
+  ```bash
+  oc get cm/peer-pods-cm -o jsonpath='{.data.AWS_AMI_ID}' -n openshift-sandboxed-containers-operator
+  ```
+* GCP
+  ```bash
+  oc get cm/peer-pods-cm -o jsonpath='{.data.IMAGE_NAME}' -n openshift-sandboxed-containers-operator
+  ```
+
+Now you can start the create image job and wait it to be completed:
+
+```bash
+oc apply -f osc-podvm-create-job.yaml
+watch -n 20 "oc get pods -n openshift-sandboxed-containers-operator  | grep osc-podvm-image-creation"
+```
+
+Check again the image ID field in `peer-pods-cm` configmap, it should be fulfilled now if the image was built.
