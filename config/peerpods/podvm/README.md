@@ -68,6 +68,10 @@ In this example, `<image_tag>` and `<image_path>` are optional. If not provided,
 
 **Note:** When pulling container images from authenticated registries, make sure that the OpenShift `pull-secrets` are updated with the necessary registry credentials.
 
+## bootc-based PodVM image
+
+Refer to the following [page](./bootc/README.md) to learn about bootc-based podVM images.
+
 ## PodVM image re-create
 
 As explained in [PodVM image generation configuration](#podvm-image-generation-configuration) section, the image generation is configured via configmap. You may want to re-create the image with a different configuration, for example, set `CUSTOM_CLOUD_INIT_MODULES=no` to start the SSH Server in the podVM. In this section you will learn how to delete the podVM image to then create it again.
