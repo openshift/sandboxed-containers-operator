@@ -8,9 +8,9 @@ the operator to generate a pod VM image.
 
 The configuration used for the podvm image generation is available in the following configmaps:
 
-- Azure: `azure-podvm-image-cm`
-- AWS: `aws-podvm-image-cm`
-- GCP: `gcp-podvm-image-cm`
+- Azure: [`azure-podvm-image-cm`](./azure-podvm-image-cm.yaml)
+- AWS: [`aws-podvm-image-cm`](./aws-podvm-image-cm.yaml)
+- GCP: [`gcp-podvm-image-cm`](./gcp-podvm-image-cm.yaml)
 
 If you want to change the default configuration, then depending on the cloud
 provider (eg. aws, azure or gcp) you'll need to pre-create the respective
@@ -40,7 +40,7 @@ provided config.
 
 The PodVM image can be embedded into a container image. This container image can then be unwrapped and uploaded to the libvirt volume specified in the `peer-pods-cm`. Please note that this feature is currently supported only for the libvirt provider.
 
-To create an OCI image with the PodVM image, you can use the `Dockerfile.podvm-oci` as follows:
+To create an OCI image with the PodVM image, you can use the [`Dockerfile.podvm-oci`](Dockerfile.podvm-oci) as follows:
 
 ```bash
 docker build -t podvm-libvirt \
