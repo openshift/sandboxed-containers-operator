@@ -25,6 +25,12 @@ data:
 
   # To Enable SE for IBM Z
   SE_BOOT: "true"
+  
+  # To enable SE verification on IBM Z
+  SE_VERIFY: "true"
 
   # For Pre-built PodVM images.
   PODVM_IMAGE_URI: "" # eg: oci::quay.io/openshift_sandboxed_containers/libvirt-podvm-image:latest::/image/podvm.qcow2
+
+  # Name of PodVM qcow2 to be built.
+  IMAGE_NAME: "podvm-image" 

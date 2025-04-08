@@ -245,6 +245,22 @@ to edit policy.conf"
             error_exit "Error: HKD is not present."
         else
             echo "$HOST_KEY_CERTS" >>"${podvm_dir}/files/HKD.crt"
+            if [[ "$SE_VERIFY" == "true" ]]; then
+               curl -o "${podvm_dir}/files/ibm-z-host-key-signing-gen2.crt" "https://www.ibm.com/support/resourcelink/api/content/public/ibm-z-host-key-signing-gen2.crt"
+               if [[ $? -ne 0 ]]; then
+                       error_exit "Error: Failed to download ibm-z-host-key-signing-gen2.crt."
+               fi
+
+               curl -o "${podvm_dir}/files/DigiCertCA.crt" "https://www.ibm.com/support/resourcelink/api/content/public/DigiCertCA.crt"
+               if [[ $? -ne 0 ]]; then
+                       error_exit "Error: Failed to download DigiCertCA.crt."
+               fi
+
+               curl -o "${podvm_dir}/files/ibm-z-host-key-gen2.crl" "https://www.ibm.com/support/resourcelink/api/content/public/ibm-z-host-key-gen2.crl"
+               if [[ $? -ne 0 ]]; then
+                       error_exit "Error: Failed to download ibm-z-host-key-gen2.crl."
+               fi
+           fi
         fi
     fi
 
