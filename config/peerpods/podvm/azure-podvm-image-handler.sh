@@ -140,6 +140,10 @@ function login_to_azure() {
         --tenant="${AZURE_TENANT_ID}" ||
         error_exit "Failed to login to Azure"
 
+    echo "Selecting subscription"
+    az account set --subscription ${AZURE_SUBSCRIPTION_ID} ||
+        error_exit "Failed to select subscription"
+
     echo "Logged in to Azure successfully"
 }
 
