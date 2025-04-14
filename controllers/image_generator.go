@@ -753,7 +753,12 @@ func (r *ImageGenerator) createImageConfigMapFromFile() error {
 	imageVersion := "0.0.1"
 	clusterIdInt, err := strconv.ParseUint(r.clusterId, 16, 32)
 	if err == nil {
-		imageVersion = fmt.Sprintf("%d.0.1", clusterIdInt)
+		// Ensure the version number is within Azure's allowed range (32-bit integer 0-2,147,483,647)
+		// Ref: https://learn.microsoft.com/en-us/rest/api/compute/gallery-image-versions/create-or-update
+		const maxVersionNumber = 2147483647
+		majorVersion := clusterIdInt % (maxVersionNumber + 1)
+		imageVersion = fmt.Sprintf("%d.0.1", majorVersion)
+		igLogger.Info("Using cluster ID based image version", "cluster_id", r.clusterId, "image_version", imageVersion)
 	} else {
 		igLogger.Info("clusterId is not a valid hex number, using default version")
 	}
