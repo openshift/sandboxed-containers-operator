@@ -1,5 +1,4 @@
 #!/bin/bash
-#
 
 # Function to install Azure deps
 function install_azure_deps() {
@@ -140,7 +139,10 @@ function create_podvm_image() {
 
   libvirt)
     echo "Creating Libvirt qcow2"
-    /scripts/libvirt-podvm-image-handler.sh -c
+    /scripts/libvirt-podvm-image-handler.sh -c || {
+      echo "Libvirt image creation failed"
+      exit 1
+    }
     if [ "${UPDATE_PEERPODS_CM}" == "yes" ]; then
       # Check if peer-pods-cm configmap exists
       if ! check_peer_pods_cm_exists; then

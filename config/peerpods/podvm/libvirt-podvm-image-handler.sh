@@ -1,6 +1,5 @@
 #!/bin/bash
 # FILEPATH: libvirt-podvm-image-handler.sh
-
 # This script is used to create or delete libvirt qcow2 image for podvm
 # The basic assumption is that the required variables are set as environment variables in the pod
 # Typically the variables are read from configmaps and set as environment variables in the pod
@@ -249,6 +248,8 @@ function upload_libvirt_image() {
     virsh -d 0 -c "${LIBVIRT_URI}" vol-upload --vol "${LIBVIRT_VOL_NAME}" "${PODVM_IMAGE_PATH}" --pool "${LIBVIRT_POOL}" --sparse
     if [ $? -eq 0 ]; then
         echo "Uploaded the image successfully"
+    else
+        error_exit "Failed to upload image"
     fi
 }
 
