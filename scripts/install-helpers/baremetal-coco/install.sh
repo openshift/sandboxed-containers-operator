@@ -554,7 +554,7 @@ function display_help() {
     echo "Options:"
     echo "  -t <tee_type> Specify the TEE type (tdx or snp)"
     echo "  -h Display help"
-    echo "  -m Install the image mirroring config"
+    echo "  -m Install the image mirroring config to pull required images from internal (brew) registry"
     echo "  -s Set additional cluster-wide image pull secret."
     echo "     Requires the secret to be set in PULL_SECRET_JSON environment variable"
     echo "     Example PULL_SECRET_JSON='{\"my.registry.io\": {\"auth\": \"ABC\"}}'"

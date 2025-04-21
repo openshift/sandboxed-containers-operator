@@ -1,6 +1,6 @@
 apiVersion: v1
 data:
-  osImageURL: "quay.io/openshift_sandboxed_containers/rhcos-layer/ocp-4.16:tdx-0.1.0"
+  osImageURL: "quay.io/openshift_sandboxed_containers/rhcos-layer/ocp-4.18:tdx-0.2.0"
   kernelArguments: "kvm_intel.tdx=1"
 kind: ConfigMap
 metadata:
