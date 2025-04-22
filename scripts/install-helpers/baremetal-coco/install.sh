@@ -183,13 +183,41 @@ function wait_for_runtimeclass() {
     return 1
 }
 
+# Function to wait for an installPlan to be available in specific namespace
+# This simply checks if at least a single installPlan object is available in specific namespace
+function is_installplan_available_in_ns() {
+
+    local ns=$1
+    local timeout=$CMD_TIMEOUT
+    local interval=5
+    local elapsed=0
+    local ready=0
+
+    while [ $elapsed -lt "$timeout" ]; do
+        ready=$(oc get installplan -n "$ns" -o jsonpath='{.items[0].metadata.name}')
+        if [ -n "$ready" ]; then
+            echo "InstallPlan $ready is available in namespace $ns"
+            return 0
+        fi
+        sleep $interval
+        elapsed=$((elapsed + interval))
+    done
+
+}
+
 # Function to apply the operator manifests
 function apply_operator_manifests() {
+    local installplan=""
+
     # Apply the manifests
     oc apply -f ns.yaml || return 1
     oc apply -f og.yaml || return 1
     if [[ "$GA_RELEASE" == "true" ]]; then
         oc apply -f subs-ga.yaml || return 1
+        is_installplan_available_in_ns openshift-sandboxed-containers-operator || return 1
+        # Approve the installplan
+        installplan=$(oc get installplan -n openshift-sandboxed-containers-operator -o name)
+        oc patch "$installplan" -n openshift-sandboxed-containers-operator -p '{"spec":{"approved":true}}' --type merge || return 1
     else
         oc apply -f osc_catalog.yaml || return 1
         oc apply -f subs-upstream.yaml || return 1

@@ -5,7 +5,7 @@ metadata:
   namespace: openshift-sandboxed-containers-operator
 spec:
   channel: stable
-  installPlanApproval: Automatic
+  installPlanApproval: Manual
   name: sandboxed-containers-operator
   source: redhat-operators
   sourceNamespace: openshift-marketplace
