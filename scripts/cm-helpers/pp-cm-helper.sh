@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 ENV_FILE=$(mktemp -t pp-cm-env-XXXX.env)
 IS_ARO=false
