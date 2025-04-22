@@ -10,6 +10,7 @@ TRUSTEE_URL="${TRUSTEE_URL:-"http://kbs-service.trustee-operator-system:8080"}"
 CMD_TIMEOUT="${CMD_TIMEOUT:-2700}"
 TDX_NODE_LABEL='intel.feature.node.kubernetes.io/tdx: "true"'
 SNP_NODE_LABEL='amd.feature.node.kubernetes.io/snp: "true"'
+DEFAULT_OSC_OPERATOR_CSV=sandboxed-containers-operator.v1.8.1
 
 export PCCS_API_KEY="${PCCS_API_KEY:-}"
 export PCCS_DB_NAME="${PCCS_DB_NAME:-database}"
@@ -18,6 +19,8 @@ export PCCS_DB_PASSWORD="${PCCS_DB_PASSWORD:-password}"
 export PCCS_USER_TOKEN="${PCCS_USER_TOKEN:-}"
 PCCS_ADMIN_TOKEN="${PCCS_ADMIN_TOKEN:-}"
 PCCS_PEM_CERT_PATH="${PCCS_PEM_CERT_PATH:-}"
+
+OSC_OPERATOR_CSV=${OSC_OPERATOR_CSV:-$DEFAULT_OSC_OPERATOR_CSV}
 
 # Function to check if a command is available
 function check_command() {
@@ -183,13 +186,47 @@ function wait_for_runtimeclass() {
     return 1
 }
 
+# Function to approve installPlan tied to specific CSV to be available in specific namespace
+approve_installplan_for_target_csv() {
+    local ns="$1"
+    local target_csv="$2"
+    local timeout=300
+    local interval=5
+    local elapsed=0
+
+    echo "Waiting for InstallPlan with CSV '$target_csv' in namespace '$ns'..."
+
+    while [ $elapsed -lt "$timeout" ]; do
+        installplans=$(oc get installplan -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+        for ip in $installplans; do
+            csvs=$(oc get installplan "$ip" -n "$ns" -o jsonpath="{.spec.clusterServiceVersionNames[*]}" 2>/dev/null)
+            for csv in $csvs; do
+                if [ "$csv" == "$target_csv" ]; then
+                    echo "Found matching InstallPlan: $ip"
+                    echo "Approving InstallPlan: $ip"
+                    oc patch installplan "$ip" -n "$ns" -p '{"spec":{"approved":true}}' --type merge || return 1
+                    return 0
+                fi
+            done
+        done
+        sleep $interval
+        elapsed=$((elapsed + interval))
+    done
+
+    echo "Timed out waiting for InstallPlan with CSV '$target_csv' in namespace '$ns'"
+    return 1
+}
+
 # Function to apply the operator manifests
 function apply_operator_manifests() {
+    local installplan=""
+
     # Apply the manifests
     oc apply -f ns.yaml || return 1
     oc apply -f og.yaml || return 1
     if [[ "$GA_RELEASE" == "true" ]]; then
         oc apply -f subs-ga.yaml || return 1
+	approve_installplan_for_target_csv openshift-sandboxed-containers-operator "$OSC_OPERATOR_CSV" || return 1
     else
         oc apply -f osc_catalog.yaml || return 1
         oc apply -f subs-upstream.yaml || return 1
