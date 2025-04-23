@@ -17,10 +17,6 @@ COPY controllers controllers/
 # See comments in the script itself for more details.
 COPY controller-gen bin/controller-gen-v0.17.2
 
-RUN go mod download
-# needed for docker build but not for local builds
-RUN go mod vendor
-
 RUN make build
 
 # Use OpenShift base image
