@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# This is a hack to enable hermetic builds for the operator.
+# Rather than installing controller-gen, we declare it as a dependency in the
+# go.mod file. Cachi2/Hermeto will then get the sources as part of the prefetch
+# phase.
+# Once the sources are in, we can use "go run" to build and run the tool from
+# its sources, without needing access to the network.
+#
+# In order to keep the Makefile untouched (as it is partly generated from
+# operator-sdk), we put this script in the location where the Makefile expect
+# to find controller-gen.
+# Makefile will then NOT install the tool, and just run the script instead.
+
+go run sigs.k8s.io/controller-tools/cmd/controller-gen $@

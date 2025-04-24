@@ -13,6 +13,10 @@ COPY api api/
 COPY config config/
 COPY controllers controllers/
 
+# Copy our controller-gen script to work around hermetic build issues
+# See comments in the script itself for more details.
+COPY controller-gen bin/controller-gen-v0.17.2
+
 RUN go mod download
 # needed for docker build but not for local builds
 RUN go mod vendor
