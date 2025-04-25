@@ -227,7 +227,7 @@ GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.4.3
-CONTROLLER_TOOLS_VERSION ?= v0.17.2
+CONTROLLER_TOOLS_VERSION ?= v0.17.2 # this is overriden by our Dockerfile for container builds
 ENVTEST_VERSION ?= release-0.19
 GOLANGCI_LINT_VERSION ?= v1.59.1
 
