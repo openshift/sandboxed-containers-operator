@@ -28,6 +28,8 @@ spec:
     value: config/peerpods/podvm
   - name: build-args-file
     value: '.tekton/build-args.env'
+  - name: prefetch-input
+    value: '{"type": "rpm", "path": "./config/peerpods/podvm/"}'
   pipelineSpec:
     description: |
       This pipeline is ideal for building container images from a Containerfile while reducing network traffic.
@@ -97,7 +99,7 @@ spec:
       description: Skip checks against built image
       name: skip-checks
       type: string
-    - default: "false"
+    - default: "true"
       description: Execute the build with network isolation
       name: hermetic
       type: string
@@ -186,6 +188,8 @@ spec:
       params:
       - name: input
         value: $(params.prefetch-input)
+      - name: dev-package-managers
+        value: "true"
       runAfter:
       - clone-repository
       taskRef:
