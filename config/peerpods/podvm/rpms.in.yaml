@@ -1,0 +1,27 @@
+packages:
+  - curl
+  - git
+  - make
+  - unzip
+  - skopeo
+  - jq
+  - qemu-img
+  - podman
+
+contentOrigin:
+  repofiles:
+    - ./ubi.repo
+    - ./redhat.repo
+
+arches:
+  - x86_64
+  - s390x
+
+context:
+  containerfile: Dockerfile.podvm-builder
+
+# Tell DNF it may erase already installed packages when resolving the
+# transaction. Defaults to false.
+# NOTE: our podvm builder scripts are using this option, so we need
+# to do the same for rpm-lockfile-prototype
+allowerasing: true
