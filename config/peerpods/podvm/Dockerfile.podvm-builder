@@ -46,8 +46,19 @@ RUN if [[ -n "$CERT_RPM" ]] ; then \
     dnf install -y $CERT_RPM ; \
     fi
 
-
-RUN git clone ${CAA_SRC} -b ${CAA_REF} /src/cloud-api-adaptor
+# If we are running in a hermetic environment, we can't use "git clone".
+# Get the archive from github instead. We need to make sure the archive is
+# declared in Hermeto (see artifacts.lock.yaml)
+# Also see documentation for Konflux:
+# https://konflux.pages.redhat.com/docs/users/building/prefetching-dependencies.html#generic
+RUN if [[ -e /cachi2/cachi2.env ]]; then \
+      mkdir -p /src/ ; \
+      cd /src/ ; \
+      unzip /cachi2/output/deps/generic/${CAA_REF}.zip ; \
+      mv cloud-api-adaptor-${CAA_REF} cloud-api-adaptor ; \
+    else  \
+      git clone ${CAA_SRC} -b ${CAA_REF} /src/cloud-api-adaptor ; \
+    fi
 
 ADD podvm-builder.sh /podvm-builder.sh
 

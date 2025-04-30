@@ -1,0 +1,6 @@
+---
+metadata:
+  version: "1.0"
+artifacts:
+  - download_url: "https://github.com/openshift/cloud-api-adaptor/archive/refs/heads/osc-release.zip"
+    checksum: "sha256:a0fb7224ad4edf65302a628f38658710f6a827fbc0874c93294b46f28e001542"
