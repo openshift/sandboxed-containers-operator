@@ -6,7 +6,14 @@ metadata:
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch == "devel" && files.all.exists(path, !path.matches('bundle*|.tekton/*bundle*')) && files.all.exists(path, !path.matches('must-gather*|.tekton/*must-gather*')) && files.all.exists(path, !path.matches('config/peerpods/podvm*|.tekton/*podvm-builder*')) && files.all.exists(path, !path.matches('.tekton/.*fbc-.*|fbc/.*'))
+    pipelinesascode.tekton.dev/on-cel-expression: |
+      event == "push" &&
+      target_branch == "devel" &&
+      files.all.exists(path, !path.matches('bundle*|.tekton/*bundle*')) &&
+      files.all.exists(path, !path.matches('must-gather*|.tekton/*must-gather*')) &&
+      files.all.exists(path, !path.matches('config/peerpods/podvm*|.tekton/*podvm-builder*')) &&
+      files.all.exists(path, !path.matches('.tekton/.*fbc-.*|fbc/.*')) &&
+      files.all.exists(path, !path.matches('config/manager/*'))
   creationTimestamp:
   labels:
     appstudio.openshift.io/application: openshift-sandboxed-containers
