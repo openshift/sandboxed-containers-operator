@@ -371,8 +371,9 @@ function install_packages() {
 
     if [ "${ARCH}" == "s390x" ]; then
         # Build umoci from source for s390x as there are no prebuilt binaries
+        UMOCI_VERSION="v0.5.0"
         mkdir -p umoci
-        git clone https://github.com/opencontainers/umoci.git
+        git clone --depth 1 --single-branch https://github.com/opencontainers/umoci.git -b "${UMOCI_VERSION}"
         cd umoci || error_exit "Failed to change directory to umoci"
         make
         cp -pr umoci /usr/local/bin/
