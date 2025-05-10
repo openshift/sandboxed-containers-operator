@@ -7,10 +7,8 @@ metadata:
     build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression:
-      event == "pull_request" &&
-      target_branch == "devel" &&
-      files.all.exists(path, path.matches('.tekton/fbc-pipeline.yaml$|.tekton/osc-fbc-4-17-.*.yaml$|fbc/v4.17/Dockerfile$|fbc/v4.17/.*/catalog.json$'))
+    pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && target_branch
+      == "devel" && files.all.exists(path, path.matches('.tekton/fbc-pipeline.yaml$|.tekton/osc-fbc-4-17-.*.yaml$|fbc/v4.17/Dockerfile$|fbc/v4.17/.*/catalog.json$'))
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: osc-fbc-4-17
@@ -37,7 +35,8 @@ spec:
     value: fbc/v4.17/Dockerfile
   pipelineRef:
     name: fbc-pipeline
-  taskRunTemplate: {}
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-osc-fbc-4-17
   workspaces:
   - name: git-auth
     secret:
