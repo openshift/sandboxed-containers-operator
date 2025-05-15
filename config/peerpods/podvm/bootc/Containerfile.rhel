@@ -1,7 +1,7 @@
 # build pause
 FROM registry.k8s.io/pause:3.9 as pause-bin
 
-FROM registry.redhat.io/ubi9/ubi-minimal:9.5 as pause
+FROM registry.redhat.io/ubi9/ubi-minimal:9.6 as pause
 RUN curl -L https://github.com/opencontainers/umoci/releases/download/v0.4.7/umoci.amd64 -o /usr/bin/umoci && chmod +x /usr/bin/umoci
 RUN umoci init --layout pause && umoci new --image pause:k8s
 RUN umoci config --image pause:k8s --config.entrypoint=/pause --author="OSC"
