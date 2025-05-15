@@ -10,7 +10,7 @@ TRUSTEE_URL="${TRUSTEE_URL:-"http://kbs-service.trustee-operator-system:8080"}"
 CMD_TIMEOUT="${CMD_TIMEOUT:-2700}"
 TDX_NODE_LABEL='intel.feature.node.kubernetes.io/tdx: "true"'
 SNP_NODE_LABEL='amd.feature.node.kubernetes.io/snp: "true"'
-DEFAULT_OSC_OPERATOR_CSV=sandboxed-containers-operator.v1.8.1
+DEFAULT_OSC_OPERATOR_CSV=sandboxed-containers-operator.v1.9.0
 
 export PCCS_API_KEY="${PCCS_API_KEY:-}"
 export PCCS_DB_NAME="${PCCS_DB_NAME:-database}"
