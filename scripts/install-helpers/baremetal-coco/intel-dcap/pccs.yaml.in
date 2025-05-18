@@ -88,7 +88,7 @@ spec:
         kubernetes.io/hostname: ${PCCS_NODE}
       initContainers:
        - name: init-seclabel
-         image: quay.io/openshift_sandboxed_containers/init-seclabel:latest
+         image: quay.io/openshift_sandboxed_containers/init-seclabel:0.2.0
          command: ["sh", "-c", "chcon -Rt container_file_t /var/cache/pccs"]
          volumeMounts:
          - name: host-database
@@ -99,7 +99,7 @@ spec:
            privileged: true  # Required for chcon to work on host files
       containers:
         - name: pccs
-          image: quay.io/openshift_sandboxed_containers/dcap/pccs:1.21
+          image: quay.io/openshift_sandboxed_containers/dcap/pccs:0.2.0
           ports:
             - containerPort: 8042
               name: pccs-port

@@ -36,7 +36,7 @@ spec:
           - name: efivars
             mountPath: /sys/firmware/efi/efivars
         workingDir: "/opt/intel/sgx-pck-id-retrieval-tool/"
-        image: quay.io/openshift_sandboxed_containers/dcap/dcap-registration-flow:latest
+        image: quay.io/openshift_sandboxed_containers/dcap/dcap-registration-flow:0.2.0
         imagePullPolicy: IfNotPresent
         envFrom:
         - secretRef:

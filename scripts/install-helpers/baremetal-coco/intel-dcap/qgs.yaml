@@ -47,7 +47,7 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: tdx-qgs
-          image: quay.io/openshift_sandboxed_containers/dcap/tdx-qgs:1.21
+          image: quay.io/openshift_sandboxed_containers/dcap/tdx-qgs:0.2.0
           workingDir: /opt/intel/tdx-qgs
           securityContext:
             readOnlyRootFilesystem: true
