@@ -88,7 +88,7 @@ spec:
         kubernetes.io/hostname: ${PCCS_NODE}
       initContainers:
        - name: init-seclabel
-         image: quay.io/openshift_sandboxed_containers/init-seclabel:0.2.0
+         image: registry.access.redhat.com/ubi9/ubi:latest
          command: ["sh", "-c", "chcon -Rt container_file_t /var/cache/pccs"]
          volumeMounts:
          - name: host-database
