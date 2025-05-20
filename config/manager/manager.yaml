@@ -78,7 +78,7 @@ spec:
             - name: PEERPODS_NAMESPACE
               value: "openshift-sandboxed-containers-operator"
             - name: RELATED_IMAGE_KATA_MONITOR
-              value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-monitor@sha256:1e19738be039443b1086a22c446897216e791a6cd72da5aeeb6e538f1c9aa447
+              value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-monitor@sha256:2b8c5b2ec0ccce382096bc41d8c29c942d4e8e0a008254085974600cd3516372
             - name: RELATED_IMAGE_CAA
               value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa@sha256:0123d325c48ad6ed051a06d97a183083ca9a5132884a055f852e7a863867400d
             - name: RELATED_IMAGE_PEERPODS_WEBHOOK
