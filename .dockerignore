@@ -8,3 +8,4 @@ api/v1/zz_generated.deepcopy.go
 config/crd/bases/kataconfiguration.openshift.io_kataconfigs.yaml
 config/rbac/role.yaml
 config/webhook/manifests.yaml
+config/peerpods/podvm/bootc/output/
