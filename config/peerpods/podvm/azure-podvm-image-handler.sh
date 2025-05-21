@@ -19,8 +19,6 @@
 # Create image version (-i)
 # Delete image version (-I)
 
-[[ "$DEBUG" == "true" ]] && set -x
-
 # include common functions from lib.sh
 # shellcheck source=/dev/null
 # The directory is where azure-podvm-image-handler.sh is located

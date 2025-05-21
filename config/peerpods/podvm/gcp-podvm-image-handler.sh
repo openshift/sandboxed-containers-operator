@@ -8,8 +8,6 @@
 # Create image (-c)
 # Delete image (-C)
 
-[[ "$DEBUG" == "true" ]] && set -x
-
 # include common functions from lib.sh
 # shellcheck source=/dev/null
 # The directory is where gcp-podvm-image-handler.sh is located

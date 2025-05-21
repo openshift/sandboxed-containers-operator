@@ -1,8 +1,6 @@
 #!/bin/bash
 # Contains common functions used by the scripts
 
-[[ "$DEBUG" == "true" ]] && set -x
-
 # Bootc Defaults
 BIB_IMAGE=${BIB_IMAGE:-registry.redhat.io/rhel9/bootc-image-builder:9.5}
 
