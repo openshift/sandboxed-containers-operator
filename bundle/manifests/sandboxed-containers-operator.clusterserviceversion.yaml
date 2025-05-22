@@ -380,7 +380,7 @@ spec:
                 - name: RELATED_IMAGE_KATA_MONITOR
                   value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-monitor@sha256:2b8c5b2ec0ccce382096bc41d8c29c942d4e8e0a008254085974600cd3516372
                 - name: RELATED_IMAGE_CAA
-                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa@sha256:0123d325c48ad6ed051a06d97a183083ca9a5132884a055f852e7a863867400d
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa@sha256:0db4895c4936816f3ba2164a7d02c5af6a39e3821229052a8e668d26c09d58ec
                 - name: RELATED_IMAGE_PEERPODS_WEBHOOK
                   value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa-webhook@sha256:bc2c79d34967985c35438f566975e5c2d89dc042592886077e56cad0072ac8b5
                 - name: RELATED_IMAGE_PODVM_BUILDER
@@ -535,7 +535,7 @@ spec:
   relatedImages:
   - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-monitor@sha256:2b8c5b2ec0ccce382096bc41d8c29c942d4e8e0a008254085974600cd3516372
     name: kata-monitor
-  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa@sha256:0123d325c48ad6ed051a06d97a183083ca9a5132884a055f852e7a863867400d
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa@sha256:0db4895c4936816f3ba2164a7d02c5af6a39e3821229052a8e668d26c09d58ec
     name: caa
   - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa-webhook@sha256:bc2c79d34967985c35438f566975e5c2d89dc042592886077e56cad0072ac8b5
     name: peerpods-webhook
