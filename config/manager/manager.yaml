@@ -86,7 +86,7 @@ spec:
             - name: RELATED_IMAGE_PODVM_BUILDER
               value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-builder@sha256:ebbfe76f9280756f4bfc0657817941f8e252344003a36bcc4a977525522bbb6e
             - name: RELATED_IMAGE_PODVM_PAYLOAD
-              value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-payload@sha256:c282c01cb7b7d9984c5b5a4a2b434a9dff4b5b63c125bc2ae129d818696c0e29
+              value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-payload@sha256:ab9ff45ef8761153f1a9b6ccd5cec9b0dff06d32ff70b254ad32211b4ad78b08
           imagePullPolicy: Always
           resources:
             limits:
