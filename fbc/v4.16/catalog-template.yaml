@@ -83,4 +83,27 @@ entries:
     schema: olm.bundle
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:a37f38455aff326ef87ba4cef4c4c6268351f665265321f39d9e033de819cd69
     schema: olm.bundle
+  - schema: olm.deprecations
+    package: sandboxed-containers-operator
+    entries:
+      - reference:
+          schema: olm.channel
+          name: preview-1.0
+        message: |
+          The preview-1.0 channel is deprecated. Please use the 'stable' channel for the latest supported version.
+      - reference:
+          schema: olm.channel
+          name: preview-1.1
+        message: |
+          The preview-1.1 channel is deprecated. Please use the 'stable' channel for the latest supported version.
+      - reference:
+          schema: olm.channel
+          name: stable-1.2
+        message: |
+          The stable-1.2 channel is deprecated. Please use the 'stable' channel for the latest supported version.
+      - reference:
+          schema: olm.channel
+          name: stable-1.3
+        message: |
+          The stable-1.3 channel is deprecated. Please use the 'stable' channel for the latest supported version.
 schema: olm.template.basic
