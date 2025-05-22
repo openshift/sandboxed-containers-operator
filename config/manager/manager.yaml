@@ -84,7 +84,7 @@ spec:
             - name: RELATED_IMAGE_PEERPODS_WEBHOOK
               value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa-webhook@sha256:bc2c79d34967985c35438f566975e5c2d89dc042592886077e56cad0072ac8b5
             - name: RELATED_IMAGE_PODVM_BUILDER
-              value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-builder@sha256:a35214a970ce7ff2729adbdad5aa7caf202bf131fafa702dd1b006f102779f07
+              value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-builder@sha256:ebbfe76f9280756f4bfc0657817941f8e252344003a36bcc4a977525522bbb6e
             - name: RELATED_IMAGE_PODVM_PAYLOAD
               value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-payload@sha256:c282c01cb7b7d9984c5b5a4a2b434a9dff4b5b63c125bc2ae129d818696c0e29
           imagePullPolicy: Always
