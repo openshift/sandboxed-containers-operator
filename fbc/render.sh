@@ -5,11 +5,12 @@ set -xe
 
 OCP_VERSIONS=$1
 
-test -n "$OCP_VERSIONS" || OCP_VERSIONS=$(ls v4.*)
+test -n "$OCP_VERSIONS" || OCP_VERSIONS="v4.*"
 
 BUILD_REGISTRY="quay.io/redhat-user-workloads/ose-osc-tenant"
 RELEASE_REGISTRY="registry.redhat.io"
 PACKAGE_NAME="sandboxed-containers-operator"
+TEMPLATE_NAME="catalog-template.yaml"
 
 echo
 
@@ -17,7 +18,7 @@ for OCP_VERSION in $OCP_VERSIONS
 do
     pushd "$OCP_VERSION"
     # Switch to the build registry, so `opm` can pull freely.
-    sed -i "s|$RELEASE_REGISTRY|$BUILD_REGISTRY|" catalog-template.json
+    sed -i "s|$RELEASE_REGISTRY|$BUILD_REGISTRY|" "$TEMPLATE_NAME"
 
     # enable migrate params for OCP 4.17 and onwards
     OCP_VERSION_NUMERAL=$(echo $OCP_VERSION | grep -o -E '[0-9.]+')
@@ -28,9 +29,9 @@ do
     fi
 
     # Render that template. It's what we're here for.
-    opm $MIGRATE_PARAM alpha render-template basic catalog-template.json > catalog/${PACKAGE_NAME}/catalog.json
+    opm $MIGRATE_PARAM alpha render-template basic "$TEMPLATE_NAME" > catalog/${PACKAGE_NAME}/catalog.json
     # Switch back to the release registry.
-    sed -i "s|$BUILD_REGISTRY|$RELEASE_REGISTRY|" catalog-template.json
+    sed -i "s|$BUILD_REGISTRY|$RELEASE_REGISTRY|" "$TEMPLATE_NAME"
     sed -i "s|$BUILD_REGISTRY|$RELEASE_REGISTRY|" catalog/${PACKAGE_NAME}/catalog.json
     popd
     echo

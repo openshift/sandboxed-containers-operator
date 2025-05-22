@@ -13,7 +13,7 @@ opm migrate registry.redhat.io/redhat/redhat-operator-index:${OCP_VERSION} ./mig
 
 # Generate a catalog template:
 mkdir -p catalog/sandboxed-containers-operator/
-opm alpha convert-template basic migrate/sandboxed-containers-operator/catalog.json > catalog-template.json
+opm alpha convert-template basic -o yaml migrate/sandboxed-containers-operator/catalog.json > catalog-template.yaml
 
 # Generate a Dockerfile:
 opm generate dockerfile . \
