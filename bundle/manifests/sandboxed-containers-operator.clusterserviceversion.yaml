@@ -394,7 +394,7 @@ spec:
                 - configMapRef:
                     name: peer-pods-cm
                     optional: true
-                image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator@sha256:545b2bfbb1b37b36e72d81a810b0952f13277e375036a2eff8af4583afd98597
+                image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator@sha256:d16d53bcc312d46af6cfe5a4f8c244106164fe503db5b916a1cd807527c7331e
                 imagePullPolicy: Always
                 name: manager
                 ports:
@@ -467,7 +467,7 @@ spec:
               containers:
               - command:
                 - /metrics-server
-                image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator@sha256:545b2bfbb1b37b36e72d81a810b0952f13277e375036a2eff8af4583afd98597
+                image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator@sha256:d16d53bcc312d46af6cfe5a4f8c244106164fe503db5b916a1cd807527c7331e
                 name: metrics-server
                 ports:
                 - containerPort: 8091
