@@ -22,7 +22,7 @@ for OCP_VERSION in $OCP_VERSIONS
 do
     pushd "$OCP_VERSION"
     # Switch to the build registry, so `opm` can pull freely.
-    sed -i "s|$RELEASE_REGISTRY|$BUILD_REGISTRY|" "$TEMPLATE_NAME"
+#    sed -i "s|$RELEASE_REGISTRY|$BUILD_REGISTRY|" "$TEMPLATE_NAME"
 
     # Add the icon data.
     yq -i ".entries[0].icon.base64data = \"$(cat ../$ICON_BASE64)\"" "$TEMPLATE_NAME"
