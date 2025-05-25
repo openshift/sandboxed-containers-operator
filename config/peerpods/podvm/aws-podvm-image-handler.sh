@@ -284,7 +284,7 @@ import_snapshot_n_wait() {
     echo "Importing image file into snapshot"
 
     local image_import_json_file=$(mktemp)
-    cat <<EOF >"image_import_json_file"
+    cat <<EOF > "${image_import_json_file}"
 {
     "Description": "Peer Pod VM image",
     "Format": "RAW",
@@ -321,10 +321,11 @@ EOF
     aws ec2 wait snapshot-completed --snapshot-ids ${SNAPSHOT_ID} --region ${AWS_REGION} || exit $?
 }
 
+
 register_ami() {
     echo "Registering AMI with Snapshot $SNAPSHOT_ID"
     local register_json_file=$(mktemp)
-    cat <<EOF >"${register_json_file}"
+    cat <<EOF > "${register_json_file}"
 {
     "Architecture": "x86_64",
     "BlockDeviceMappings": [
@@ -343,7 +344,7 @@ register_ami() {
     "BootMode": "uefi"
 }
 EOF
-    AMI_ID=$(aws ec2 register-image --name ${AMI_NAME} --cli-input-json="file://${register_json_file}" --tpm-support v2.0 --output json --region ${REGION} | jq -r '.ImageId')
+    AMI_ID=$(aws ec2 register-image --name ${AMI_NAME} --cli-input-json="file://${register_json_file}" --tpm-support v2.0 --output json --region ${AWS_REGION} | jq -r '.ImageId')
     echo "AMI name: ${AMI_NAME}"
     echo "AMI ID: ${AMI_ID}"
 }
