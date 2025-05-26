@@ -1,0 +1,45 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  annotations:
+    build.appstudio.openshift.io/repo: https://github.com/openshift/sandboxed-containers-operator?rev={{revision}}
+    build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
+    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
+    pipelinesascode.tekton.dev/max-keep-runs: "3"
+    pipelinesascode.tekton.dev/on-cel-expression:
+      event == "pull_request" &&
+      target_branch == "devel" &&
+      files.all.exists(path, path.matches('.tekton/fbc-pipeline.yaml$|.tekton/osc-fbc-4-19-.*.yaml$|fbc/v4.19/Dockerfile$|fbc/v4.19/.*/catalog.json$'))
+  creationTimestamp: null
+  labels:
+    appstudio.openshift.io/application: osc-fbc-4-19
+    appstudio.openshift.io/component: osc-fbc-4-19
+    pipelines.appstudio.openshift.io/type: build
+  name: osc-fbc-4-19-on-pull-request
+  namespace: ose-osc-tenant
+spec:
+  params:
+  - name: git-url
+    value: '{{source_url}}'
+  - name: revision
+    value: '{{revision}}'
+  - name: output-image
+    value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-fbc-4-19:on-pr-{{revision}}
+  - name: image-expires-after
+    value: 5d
+  - name: build-platforms
+    value:
+    - linux/x86_64
+  - name: path-context
+    value: fbc/v4.19
+  - name: dockerfile
+    value: fbc/v4.19/Dockerfile
+  pipelineRef:
+    name: fbc-pipeline
+  taskRunTemplate: {}
+  workspaces:
+  - name: git-auth
+    secret:
+      secretName: '{{ git_auth_secret }}'
+status: {}
