@@ -30,6 +30,8 @@ spec:
               value: "" # Set this to the azure image id to delete
             - name: LIBVIRT_IMAGE_ID
               value: "" # Set this to the libvirt image id to delete
+            - name: IMAGE_NAME
+              value: "" # Set this to the gcp image name to delete
           envFrom:
             - secretRef:
                 name: peer-pods-secret

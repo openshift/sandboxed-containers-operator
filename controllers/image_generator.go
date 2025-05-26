@@ -318,7 +318,7 @@ func (r *ImageGenerator) createJobFromFile(jobFileName string) (*batchv1.Job, er
 			})
 		} else if r.provider == GCPProvider {
 			job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
-				Name:  "IMAGE_ID",
+				Name:  "IMAGE_NAME",
 				Value: imageId,
 			})
 		} else if r.provider == LibvirtProvider {
