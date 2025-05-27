@@ -19,3 +19,23 @@ LABEL operators.operatorframework.io.test.config.v1=tests/scorecard/
 COPY bundle/manifests /manifests/
 COPY bundle/metadata /metadata/
 COPY bundle/tests/scorecard /tests/scorecard/
+
+# Red Hat labels
+LABEL io.k8s.display-name='OpenShift sandboxed containers operator'
+LABEL io.k8s.description='This operator manages the sandboxed-containers runtime'
+LABEL com.redhat.delivery.appregistry=''
+LABEL maintainer='support@redhat.com'
+LABEL name="openshift/sandboxed-containers-operator-bundle"
+LABEL com.redhat.component="osc-operator-bundle-container"
+LABEL io.openshift.maintainer.product='OpenShift Container Platform'
+LABEL io.openshift.maintainer.component='Sandboxed Containers'
+LABEL version=1.9.0
+LABEL com.redhat.delivery.operator.bundle=true
+LABEL com.redhat.openshift.versions=v4.15
+LABEL summary="This operator manages the sandboxed-containers runtime"
+LABEL description="This operator manages the sandboxed-containers runtime"
+LABEL io.openshift.tags=""
+LABEL distribution-scope=public
+LABEL release="1"
+LABEL url="https://access.redhat.com/"
+LABEL vendor="Red Hat, Inc."

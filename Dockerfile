@@ -36,5 +36,16 @@ COPY --from=builder /workspace/config/peerpods /config/peerpods
 RUN useradd  -r -u 499 nonroot
 RUN getent group nonroot || groupadd -o -g 499 nonroot
 
+# Red Hat labels
+LABEL name="openshift-sandboxed-containers-operator" \
+version="1.9.0" \
+com.redhat.component="osc-operator-container" \
+summary="This operator manages the Openshift Sandboxed Containers runtime installation" \
+maintainer="redhat@redhat.com" \
+description="The Openshift Sandboxed containers operator manages runtime configuration and lifecycle" \
+io.k8s.display-name="openshift-sandboxed-containers-operator" \
+io.k8s.description="This operator manages the Openshift Sandboxed Containers runtime installation" \
+io.openshift.tags=""
+
 USER 499:499
 ENTRYPOINT ["/manager"]

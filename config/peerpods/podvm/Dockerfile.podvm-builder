@@ -51,4 +51,15 @@ RUN git clone ${CAA_SRC} -b ${CAA_REF} /src/cloud-api-adaptor
 
 ADD podvm-builder.sh /podvm-builder.sh
 
+# Red Hat labels
+LABEL name="openshift-sandboxed-containers-podvm-builder" \
+version="1.9.0" \
+com.redhat.component="osc-podvm-builder-container" \
+summary="Container image containing artefacts that is required for creating Pod VM images" \
+maintainer="redhat@redhat.com" \
+description="Container image containing artefacts that is required for creating Pod VM images" \
+io.k8s.display-name="openshift-sandboxed-containers-podvm-builder" \
+io.k8s.description="Container image containing artefacts that is required for creating Pod VM images" \
+io.openshift.tags=""
+
 ENTRYPOINT ["/podvm-builder.sh"]
