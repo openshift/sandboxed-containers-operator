@@ -14,6 +14,9 @@ metadata:
       ]
     capabilities: Seamless Upgrades
     createdAt: "2025-03-10T11:49:47Z"
+    features.operators.openshift.io/cnf: "false"
+    features.operators.openshift.io/cni: "false"
+    features.operators.openshift.io/csi: "false"
     features.operators.openshift.io/disconnected: "true"
     features.operators.openshift.io/fips-compliant: "false"
     features.operators.openshift.io/proxy-aware: "false"
