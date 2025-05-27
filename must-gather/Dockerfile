@@ -1,4 +1,4 @@
-FROM quay.io/openshift/origin-must-gather:latest as builder
+FROM registry.redhat.io/openshift4/ose-must-gather:latest as builder
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5-1741850109
 
