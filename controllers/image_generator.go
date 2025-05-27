@@ -833,10 +833,16 @@ func (r *ImageGenerator) updateImageConfigMap() error {
 		// Update the ConfigMap with the FIPS value
 		cm.Data[fipsCMKey] = "true"
 		igLogger.Info("Setting FIPS mode")
+	}
 
-		if err := r.client.Update(context.TODO(), cm); err != nil {
-			return err
-		}
+	// set to default image
+	if cm.Data["PODVM_IMAGE_URI"] == "" && os.Getenv("RELATED_IMAGE_PODVM_OCI") != "" {
+		cm.Data["PODVM_IMAGE_URI"] = "oci::" + os.Getenv("RELATED_IMAGE_PODVM_OCI")
+		igLogger.Info("Setting PODVM_IMAGE_URI to default value", "PODVM_IMAGE_URI", cm.Data["PODVM_IMAGE_URI"])
+	}
+
+	if err := r.client.Update(context.TODO(), cm); err != nil {
+		return err
 	}
 
 	igLogger.Info("ConfigMap has been updated successfully", "name", cmName)
