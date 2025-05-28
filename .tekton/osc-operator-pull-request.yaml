@@ -10,11 +10,10 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request" &&
       target_branch == "devel" &&
-      files.all.exists(path, !path.matches('bundle/.*|.tekton/.*bundle.*yaml$')) &&
+      files.all.exists(path, !path.matches('bundle/.*|.tekton/.*bundle.*yaml$|config/manager/.*')) &&
       files.all.exists(path, !path.matches('must-gather/.*|.tekton/.*must-gather.*yaml$')) &&
       files.all.exists(path, !path.matches('config/peerpods/podvm/.*|.tekton/.*podvm-builder.*yaml$')) &&
-      files.all.exists(path, !path.matches('.tekton/.*fbc-.*|fbc/.*')) &&
-      files.all.exists(path, !path.matches('config/manager/.*'))
+      files.all.exists(path, !path.matches('.tekton/.*fbc-.*|fbc/.*'))
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: openshift-sandboxed-containers
