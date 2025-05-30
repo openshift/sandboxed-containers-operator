@@ -521,7 +521,7 @@ function create_runtimeclasses() {
     local ext_resources=''
 
     if is_single_node_or_converged_ocp; then
-        label='node-role.kubernetes.io/master: ""'
+        label='node-role.kubernetes.io/control-plane: ""'
     fi
 
     case $tee_type in
