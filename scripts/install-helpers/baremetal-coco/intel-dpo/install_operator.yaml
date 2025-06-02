@@ -20,4 +20,4 @@ spec:
   name: intel-device-plugins-operator
   source: certified-operators
   sourceNamespace: openshift-marketplace
-  startingCSV: intel-device-plugins-operator.v0.29.1
+  startingCSV: intel-device-plugins-operator.v0.32.1
