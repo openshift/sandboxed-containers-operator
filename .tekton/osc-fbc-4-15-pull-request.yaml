@@ -36,7 +36,14 @@ spec:
   - name: dockerfile
     value: fbc/v4.15/Dockerfile
   pipelineRef:
-    name: fbc-pipeline
+    params:
+    - name: name
+      value: fbc-builder
+    - name: bundle
+      value: quay.io/konflux-ci/tekton-catalog/pipeline-fbc-builder:devel@sha256:0bd24df76558d712c30ff5f702e09423923432a228c5a68d5edfe7f49c75dc9b
+    - name: kind
+      value: pipeline
+    resolver: bundles
   taskRunTemplate: {}
   workspaces:
   - name: git-auth
