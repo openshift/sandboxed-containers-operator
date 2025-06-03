@@ -78,15 +78,15 @@ spec:
             - name: PEERPODS_NAMESPACE
               value: "openshift-sandboxed-containers-operator"
             - name: RELATED_IMAGE_KATA_MONITOR
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor@sha256:2b8c5b2ec0ccce382096bc41d8c29c942d4e8e0a008254085974600cd3516372
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:36675eb8b89e5dc105647d08ec354fcdcff148c81b6b34602efe5736d7479d1a
             - name: RELATED_IMAGE_CAA
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-caa@sha256:0db4895c4936816f3ba2164a7d02c5af6a39e3821229052a8e668d26c09d58ec
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:0783703ec7b537373564d1dec8a76ffd3e6de469680d8367d232e8e73762a1d3
             - name: RELATED_IMAGE_PEERPODS_WEBHOOK
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-caa-webhook@sha256:bc2c79d34967985c35438f566975e5c2d89dc042592886077e56cad0072ac8b5
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:85e990ba4427c3514921fde077de41291ab5a3af058e85e15288de364d8da2a0
             - name: RELATED_IMAGE_PODVM_BUILDER
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder@sha256:ebbfe76f9280756f4bfc0657817941f8e252344003a36bcc4a977525522bbb6e
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:ddf5811edffa183420db6350c8d9fd467dd8535cb2d03b95fbb576beab30ce9a
             - name: RELATED_IMAGE_PODVM_PAYLOAD
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload@sha256:ab9ff45ef8761153f1a9b6ccd5cec9b0dff06d32ff70b254ad32211b4ad78b08
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:0b6e261b2dfb58ea1fc63682d893a73e1e68456509caa601d3f422e310ab856d
           imagePullPolicy: Always
           resources:
             limits:
