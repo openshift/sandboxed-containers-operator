@@ -9,4 +9,4 @@ spec:
   name: sandboxed-containers-operator
   source: osc-upstream-catalog
   sourceNamespace: openshift-marketplace
-  startingCSV: sandboxed-containers-operator.v1.9.0  ## OSC_VERSION
+  startingCSV: sandboxed-containers-operator.v1.10.0  ## OSC_VERSION

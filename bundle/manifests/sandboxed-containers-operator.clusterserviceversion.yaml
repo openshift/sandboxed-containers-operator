@@ -24,7 +24,7 @@ metadata:
     features.operators.openshift.io/token-auth-aws: "false"
     features.operators.openshift.io/token-auth-azure: "false"
     features.operators.openshift.io/token-auth-gcp: "false"
-    olm.skipRange: '>=1.1.0 <1.9.0'
+    olm.skipRange: '>=1.1.0 <1.10.0'
     operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
     operators.openshift.io/valid-subscription: '["OpenShift Container Platform", "OpenShift
       Platform Plus"]'
@@ -35,7 +35,7 @@ metadata:
   labels:
     operatorframework.io/arch.amd64: supported
     operatorframework.io/os.linux: supported
-  name: sandboxed-containers-operator.v1.9.0
+  name: sandboxed-containers-operator.v1.10.0
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
@@ -546,8 +546,8 @@ spec:
     name: podvm-builder
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:cacdcb85e4f421b394765fd4632e6accf53ab6dcf78afd285a1a56bc863dc714
     name: podvm-payload
-  replaces: sandboxed-containers-operator.v1.8.1
-  version: 1.9.0
+  replaces: sandboxed-containers-operator.v1.9.0
+  version: 1.10.0
   webhookdefinitions:
   - admissionReviewVersions:
     - v1

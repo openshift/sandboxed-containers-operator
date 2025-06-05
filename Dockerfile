@@ -38,7 +38,7 @@ RUN getent group nonroot || groupadd -o -g 499 nonroot
 
 # Red Hat labels
 LABEL name="openshift-sandboxed-containers-operator" \
-version="1.9.0" \
+version="1.10.0" \
 com.redhat.component="osc-operator-container" \
 summary="This operator manages the Openshift Sandboxed Containers runtime installation" \
 maintainer="redhat@redhat.com" \

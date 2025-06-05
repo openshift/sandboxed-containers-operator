@@ -53,7 +53,7 @@ ADD podvm-builder.sh /podvm-builder.sh
 
 # Red Hat labels
 LABEL name="openshift-sandboxed-containers-podvm-builder" \
-version="1.9.0" \
+version="1.10.0" \
 com.redhat.component="osc-podvm-builder-container" \
 summary="Container image containing artefacts that is required for creating Pod VM images" \
 maintainer="redhat@redhat.com" \
