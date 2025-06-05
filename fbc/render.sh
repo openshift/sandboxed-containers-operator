@@ -7,8 +7,8 @@ OCP_VERSIONS=$1
 
 test -n "$OCP_VERSIONS" || OCP_VERSIONS="v4.*"
 
-BUILD_REGISTRY="quay.io/redhat-user-workloads/ose-osc-tenant"
-RELEASE_REGISTRY="registry.redhat.io"
+BUILD_REGISTRY="quay.io/redhat-user-workloads/ose-osc-tenant/"
+RELEASE_REGISTRY="registry.redhat.io/openshift-sandboxed-containers/"
 PACKAGE_NAME="sandboxed-containers-operator"
 TEMPLATE_NAME="catalog-template.yaml"
 ICON="icon.png"
@@ -21,8 +21,12 @@ base64 "$ICON" > "$ICON_BASE64"
 for OCP_VERSION in $OCP_VERSIONS
 do
     pushd "$OCP_VERSION"
+
+    RELEASE_IMAGE=$(yq '.entries[] | select(.schema == "olm.bundle") | .image' "$TEMPLATE_NAME" | tail -n1)
+    BUILD_IMAGE=$(echo $RELEASE_IMAGE | sed "s|$RELEASE_REGISTRY|$BUILD_REGISTRY|")
+
     # Switch to the build registry, so `opm` can pull freely.
-#    sed -i "s|$RELEASE_REGISTRY|$BUILD_REGISTRY|" "$TEMPLATE_NAME"
+    sed -i "s|$RELEASE_IMAGE|$BUILD_IMAGE|" "$TEMPLATE_NAME"
 
     # Add the icon data.
     yq -i ".entries[0].icon.base64data = \"$(cat ../$ICON_BASE64)\"" "$TEMPLATE_NAME"
@@ -39,8 +43,8 @@ do
     opm $MIGRATE_PARAM alpha render-template basic "$TEMPLATE_NAME" > catalog/${PACKAGE_NAME}/catalog.json
 
     # Switch back to the release registry.
-    sed -i "s|$BUILD_REGISTRY|$RELEASE_REGISTRY|" "$TEMPLATE_NAME"
-    sed -i "s|$BUILD_REGISTRY|$RELEASE_REGISTRY|" catalog/${PACKAGE_NAME}/catalog.json
+    sed -i "s|$BUILD_IMAGE|$RELEASE_IMAGE|" "$TEMPLATE_NAME"
+    sed -i "s|$BUILD_IMAGE|$RELEASE_IMAGE|" catalog/${PACKAGE_NAME}/catalog.json
     # Remove the icon base64 data.
     yq -i ".entries[0].icon.base64data = \"\"" "$TEMPLATE_NAME"
 
