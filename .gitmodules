@@ -1,0 +1,4 @@
+[submodule "config/peerpods/podvm/cloud-api-adaptor"]
+	path = config/peerpods/podvm/cloud-api-adaptor
+	url = https://github.com/openshift/cloud-api-adaptor/
+	branch = osc-release

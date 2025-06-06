@@ -7,8 +7,7 @@ COPY hack hack/
 COPY PROJECT PROJECT
 COPY go.mod go.mod
 COPY go.sum go.sum
-COPY main.go main.go
-COPY cmd/metrics cmd/metrics/
+COPY cmd/ cmd/
 COPY api api/
 COPY config config/
 COPY controllers controllers/

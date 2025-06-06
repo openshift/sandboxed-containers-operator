@@ -104,11 +104,11 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="{./api/v1,./cmd/manager,./cmd/metrics,./controllers}" output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="{./api/v1,./cmd/manager,./cmd/metrics,./controllers}"
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -139,12 +139,12 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager and metrics-server binaries.
-	CGO_ENABLED=0 GOOS=linux go build $(GOFLAGS) -o bin/manager main.go
+	CGO_ENABLED=0 GOOS=linux go build $(GOFLAGS) -o bin/manager cmd/manager/main.go
 	CGO_ENABLED=0 GOOS=linux go build $(GOFLAGS) -o bin/metrics-server cmd/metrics/metrics.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./main.go
+	go run cmd/manager/main.go
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.

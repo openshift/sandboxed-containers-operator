@@ -47,7 +47,7 @@ RUN if [[ -n "$CERT_RPM" ]] ; then \
     fi
 
 
-RUN git clone ${CAA_SRC} -b ${CAA_REF} /src/cloud-api-adaptor
+COPY cloud-api-adaptor /src/
 
 ADD podvm-builder.sh /podvm-builder.sh
 
