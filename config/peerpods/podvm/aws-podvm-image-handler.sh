@@ -207,8 +207,27 @@ function bootc_to_ami() {
     bootc_image_builder_conversion "${container_image_repo_url}" "${image_tag}" "${auth_json_file}" "${run_args}" "${bib_args}"
 }
 
+function prepare_for_prebuilt_artifact() {
+    echo "Preparing infrastructure for prebuilt artifact"
+
+    [[ ! ${BUCKET_NAME} ]] && export BUCKET_NAME=${AMI_BASE_NAME}-${AMI_VERSION}
+
+    # Update the BUCKET_NAME in the aws-podvm-image-cm configmap
+    kubectl patch configmap aws-podvm-image-cm -n openshift-sandboxed-containers-operator --type merge -p "{\"data\":{\"BUCKET_NAME\":\"${BUCKET_NAME}\"}}"
+
+    echo "Calling the helper script to extend credentials, create vmimport role and a bucket"
+    /scripts/ami-helper.sh -i -b ${BUCKET_NAME} || error_exit "Failed to extend credentials, create vmimport role and a bucket using the helper script"
+
+    echo "Extending the credentials in use"
+    local extended_secret_name="peer-pods-image-creation-secret"
+    export AWS_ACCESS_KEY_ID=$(oc get secret ${extended_secret_name} -n openshift-sandboxed-containers-operator -o jsonpath='{.data.aws_access_key_id}' | base64 -d)
+    export AWS_SECRET_ACCESS_KEY=$(oc get secret ${extended_secret_name} -n openshift-sandboxed-containers-operator -o jsonpath='{.data.aws_secret_access_key}' | base64 -d)
+}
+
 function create_ami_from_prebuilt_artifact() {
     echo "Creating AWS AMI image from prebuilt artifact"
+
+    prepare_for_prebuilt_artifact
 
     echo "Pulling the podvm image from the provided path"
     image_src="/tmp/image"
@@ -221,7 +240,7 @@ function create_ami_from_prebuilt_artifact() {
     get_image_type_url_and_path
 
     case "${PODVM_IMAGE_TYPE}" in
-    oci) # TODO: test
+    oci)
         echo "Extracting the raw image from the given path."
 
         mkdir -p "${extraction_destination_path}" ||
@@ -233,7 +252,7 @@ function create_ami_from_prebuilt_artifact() {
             "${extraction_destination_path}" \
             "${image_repo_auth_file}"
 
-        # Form the path of the podvm vhd image.
+        # Form the path of the podvm disk image.
         podvm_image_path="${extraction_destination_path}/rootfs/${PODVM_IMAGE_SRC_PATH}"
 
         upload_image_to_s3
@@ -251,13 +270,19 @@ function create_ami_from_prebuilt_artifact() {
         error_exit "Currently only OCI image unpacking is supported, exiting."
         ;;
     esac
+
+    echo "Deleting the bucket"
+    /scripts/ami-helper.sh -i -d -b ${BUCKET_NAME} || error_exit "Failed to delete the bucket using the helper script"
+
+    echo "Cleaning the credentials"
+    /scripts/ami-helper.sh -i -c || error_exit "Failed to clean the credentials using the helper script"
 }
 
 function upload_image_to_s3() {
     echo "Uploading the image to S3"
 
     # Check if the image exists
-    [[ ! -f "${podvm_image_path}" ]] && error_exit "Image does not exist"
+    [[ ! -f "${podvm_image_path}" ]] && error_exit "Image does not exist at ${podvm_image_path}"
 
     get_podvm_image_format ${podvm_image_path}
 

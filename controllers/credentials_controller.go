@@ -65,6 +65,9 @@ const (
 
 // TODO: reduce secret's RBAC if possible
 
+// the following is not required by this controller, it's required by the AWS podvm creation scripts (ami-helper.sh)
+//+kubebuilder:rbac:groups=cloudcredential.openshift.io,resources=credentialsrequests,verbs=create;delete;get;list
+
 // Reconciles cco-secret secret based on the secretsFilterPredicate and maps the cco-secret
 // created by the cloud-credentials-operator to peer-pods compatible secret
 // KataConfigs are handled by the KataConfigHandler to create/delete credentialRequests from cloud-credentials-operator

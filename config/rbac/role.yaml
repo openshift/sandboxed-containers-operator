@@ -118,6 +118,8 @@ rules:
   verbs:
   - create
   - delete
+  - get
+  - list
 - apiGroups:
   - confidentialcontainers.org
   resources:
