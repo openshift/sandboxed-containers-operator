@@ -8,7 +8,8 @@ metadata:
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
-      == "devel"
+      == "devel" && ( "config/peerpods/podvm/***".pathChanged() || ".tekton/osc-podvm-builder-push.yaml".pathChanged()
+      )
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: openshift-sandboxed-containers
@@ -31,6 +32,10 @@ spec:
     value: Dockerfile.podvm-builder
   - name: path-context
     value: config/peerpods/podvm
+  - name: build-args-file
+    value: .tekton/build-args.env
+  - name: prefetch-input
+    value: '{"type": "rpm", "path": "./config/peerpods/podvm/"}'
   pipelineSpec:
     description: |
       This pipeline is ideal for building multi-arch container images from a Containerfile while maintaining trust after pipeline customization.
@@ -92,7 +97,7 @@ spec:
       description: Image tag expiration time, time values could be something like
         1h, 2d, 3w for hours, days, and weeks, respectively.
       name: image-expires-after
-    - default: "false"
+    - default: "true"
       description: Build a source image.
       name: build-source-image
       type: string
@@ -183,6 +188,8 @@ spec:
       params:
       - name: input
         value: $(params.prefetch-input)
+      - name: dev-package-managers
+        value: "true"
       - name: SOURCE_ARTIFACT
         value: $(tasks.clone-repository.results.SOURCE_ARTIFACT)
       - name: ociStorage
