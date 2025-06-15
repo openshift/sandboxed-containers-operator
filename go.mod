@@ -6,7 +6,7 @@ require (
 	github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl v0.12.0
 	github.com/coreos/ignition/v2 v2.20.0
 	github.com/ghodss/yaml v1.0.1-0.20220118164431-d8423dcdf344
-	github.com/go-logr/logr v1.4.2
+	github.com/go-logr/logr v1.4.3
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
 	github.com/openshift/api v0.0.0-20250613225054-29b831646a5f
