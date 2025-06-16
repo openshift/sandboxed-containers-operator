@@ -64,57 +64,57 @@ spec:
     - description: Source Repository URL
       name: git-url
       type: string
-    - default: ""
-      description: Revision of the Source Repository
+    - description: Revision of the Source Repository
+      default: ""
       name: revision
       type: string
     - description: Fully Qualified Output Image
       name: output-image
       type: string
-    - default: .
-      description: Path to the source code of an application's component from where
+    - description: Path to the source code of an application's component from where
         to build image.
+      default: .
       name: path-context
       type: string
-    - default: Dockerfile
-      description: Path to the Dockerfile inside the context specified by parameter
+    - description: Path to the Dockerfile inside the context specified by parameter
         path-context
+      default: Dockerfile
       name: dockerfile
       type: string
-    - default: "false"
-      description: Force rebuild image
+    - description: Force rebuild image
+      default: "false"
       name: rebuild
       type: string
-    - default: "false"
-      description: Skip checks against built image
+    - description: Skip checks against built image
+      default: "false"
       name: skip-checks
       type: string
-    - default: "true"
-      description: Execute the build with network isolation
+    - description: Execute the build with network isolation
+      default: "true"
       name: hermetic
       type: string
-    - default: ""
-      description: Build dependencies to be prefetched by Cachi2
+    - description: Build dependencies to be prefetched by Cachi2
+      default: ""
       name: prefetch-input
       type: string
-    - default: ""
-      description: Image tag expiration time, time values could be something like
+    - description: Image tag expiration time, time values could be something like
         1h, 2d, 3w for hours, days, and weeks, respectively.
+      default: ""
       name: image-expires-after
-    - default: "true"
-      description: Build a source image.
+    - description: Build a source image.
+      default: "true"
       name: build-source-image
       type: string
-    - default: "true"
-      description: Add built image into an OCI image index
+    - description: Add built image into an OCI image index
+      default: "true"
       name: build-image-index
       type: string
-    - default: []
-      description: Array of --build-arg values ("arg=value" strings) for buildah
+    - description: Array of --build-arg values ("arg=value" strings) for buildah
+      default: []
       name: build-args
       type: array
-    - default: ""
-      description: Path to a file with build arguments for buildah, see https://www.mankier.com/1/buildah-build#--build-arg-file
+    - description: Path to a file with build arguments for buildah, see https://www.mankier.com/1/buildah-build#--build-arg-file
+      default: ""
       name: build-args-file
       type: string
     - default: "false"
