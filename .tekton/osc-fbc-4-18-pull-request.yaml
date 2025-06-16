@@ -31,6 +31,7 @@ spec:
   - name: build-platforms
     value:
     - linux/x86_64
+    - linux/s390x
   - name: path-context
     value: fbc/v4.18
   - name: dockerfile
