@@ -381,15 +381,15 @@ spec:
                 - name: PEERPODS_NAMESPACE
                   value: openshift-sandboxed-containers-operator
                 - name: RELATED_IMAGE_KATA_MONITOR
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:36675eb8b89e5dc105647d08ec354fcdcff148c81b6b34602efe5736d7479d1a
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:158f8ffd4128a65e77e6d80f9533754472b66c31c225a241d2735d390fdfe267
                 - name: RELATED_IMAGE_CAA
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:292f1533b098be5622b58636b27355f137566714fc947852e888a29cbb357775
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:2453b3f36547f5dde1f771df8c07eea6cd1467c07338d1598ee503d302db1e52
                 - name: RELATED_IMAGE_PEERPODS_WEBHOOK
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:d68e4549c926d2e38ba55ea443cadef0063a528e8d7bc780e8d4f024571f4bdf
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:abfbd658b8fa83492420ff276fe369388898a828ba18e060f33d13e54ae4353f
                 - name: RELATED_IMAGE_PODVM_BUILDER
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:d635d2e688982986f6942b19948e0a874b093957045335c1009f0765aa9bd42e
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:fc62f3b841851e76f2736ba3d1a0f6132dc2e7b0e89ae2331e26bd4396463a52
                 - name: RELATED_IMAGE_PODVM_PAYLOAD
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:cacdcb85e4f421b394765fd4632e6accf53ab6dcf78afd285a1a56bc863dc714
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:925ccddf23ba2a12a1c8ec86d3a678f28e4a868441b28aa0e3932cc6d4caccaa
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -397,7 +397,7 @@ spec:
                 - configMapRef:
                     name: peer-pods-cm
                     optional: true
-                image: registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:51eba3d21a9318ecbdd22022e9e32237293d2789fb44ef7d1930272029cb4be7
+                image: registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:3da2856b2cea4e15855689a5459b077da214bc837655a5851f4c8416d79dcbeb
                 imagePullPolicy: Always
                 name: manager
                 ports:
@@ -470,7 +470,7 @@ spec:
               containers:
               - command:
                 - /metrics-server
-                image: registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:51eba3d21a9318ecbdd22022e9e32237293d2789fb44ef7d1930272029cb4be7
+                image: registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:3da2856b2cea4e15855689a5459b077da214bc837655a5851f4c8416d79dcbeb
                 name: metrics-server
                 ports:
                 - containerPort: 8091
@@ -536,15 +536,15 @@ spec:
   provider:
     name: Red Hat
   relatedImages:
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:36675eb8b89e5dc105647d08ec354fcdcff148c81b6b34602efe5736d7479d1a
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:158f8ffd4128a65e77e6d80f9533754472b66c31c225a241d2735d390fdfe267
     name: kata-monitor
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:292f1533b098be5622b58636b27355f137566714fc947852e888a29cbb357775
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:2453b3f36547f5dde1f771df8c07eea6cd1467c07338d1598ee503d302db1e52
     name: caa
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:d68e4549c926d2e38ba55ea443cadef0063a528e8d7bc780e8d4f024571f4bdf
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:abfbd658b8fa83492420ff276fe369388898a828ba18e060f33d13e54ae4353f
     name: peerpods-webhook
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:d635d2e688982986f6942b19948e0a874b093957045335c1009f0765aa9bd42e
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:fc62f3b841851e76f2736ba3d1a0f6132dc2e7b0e89ae2331e26bd4396463a52
     name: podvm-builder
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:cacdcb85e4f421b394765fd4632e6accf53ab6dcf78afd285a1a56bc863dc714
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:925ccddf23ba2a12a1c8ec86d3a678f28e4a868441b28aa0e3932cc6d4caccaa 
     name: podvm-payload
   replaces: sandboxed-containers-operator.v1.9.0
   version: 1.10.0
