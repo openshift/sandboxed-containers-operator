@@ -47,7 +47,7 @@ RUN if [[ -n "$CERT_RPM" ]] ; then \
     fi
 
 
-COPY cloud-api-adaptor /src/
+COPY cloud-api-adaptor /src/cloud-api-adaptor
 
 ADD podvm-builder.sh /podvm-builder.sh
 
