@@ -32,11 +32,13 @@ do
     yq -i ".entries[0].icon.base64data = \"$(cat ../$ICON_BASE64)\"" "$TEMPLATE_NAME"
 
     # enable migrate params for OCP 4.17 and onwards
-    OCP_VERSION_NUMERAL=$(echo $OCP_VERSION | grep -o -E '[0-9.]+')
-    if [ "`echo "${OCP_VERSION_NUMERAL} > 4.16" | bc`" -eq 1 ]; then
-        MIGRATE_PARAM="--migrate-level bundle-object-to-csv-metadata"
-    else
-        MIGRATE_PARAM=""
+    # skip the check for test-fbc, assuming it is always using the latest version
+    MIGRATE_PARAM="--migrate-level bundle-object-to-csv-metadata"
+    if [ "$OCP_VERSION" != "test-fbc" ]; then
+        OCP_VERSION_NUMERAL=$(echo $OCP_VERSION | grep -o -E '[0-9.]+')
+        if [ "`echo "${OCP_VERSION_NUMERAL} < 4.17" | bc`" -eq 1 ]; then
+            MIGRATE_PARAM=""
+        fi
     fi
 
     # Render that template. It's what we're here for.

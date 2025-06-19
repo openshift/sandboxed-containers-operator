@@ -1,0 +1,18 @@
+---
+entries:
+  - defaultChannel: stable
+    icon:
+      base64data: ""
+      mediatype: image/png
+    name: sandboxed-containers-operator
+    schema: olm.package
+  - entries:
+      - name: sandboxed-containers-operator.v1.10.0
+        replaces: sandboxed-containers-operator.v1.9.0
+        skipRange: '>=1.1.0 <1.10.0'
+    name: stable
+    package: sandboxed-containers-operator
+    schema: olm.channel
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:23eb79b96ef69c351b5bcb81bae0524e87aa964047759fbfe92d57b59d90cee2
+    schema: olm.bundle
+schema: olm.template.basic
