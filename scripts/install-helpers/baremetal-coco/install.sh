@@ -334,7 +334,7 @@ function deploy_intel_device_plugins() {
 
     pushd intel-dpo || return 1
     oc apply -f install_operator.yaml || return 1
-    wait_for_deployment inteldeviceplugins-controller-manager openshift-operators || return 1
+    wait_for_deployment intel-deviceplugins-controller-manager openshift-operators || return 1
     wait_for_service_ep_ip intel-deviceplugins-controller-manager-service openshift-operators || return 1
     oc apply -f sgx_device_plugin.yaml || return 1
     popd || return 1
