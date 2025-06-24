@@ -40,6 +40,7 @@ done
 
 # Expected Configuration Keys
 common_vars=("CLOUD_PROVIDER" "VXLAN_PORT" "PROXY_TIMEOUT" "DISABLECVM")
+[[ "${DISABLECVM}" == "false" ]] && common_vars+=("INITDATA")
 
 aws_vars=("PODVM_INSTANCE_TYPE" "PODVM_INSTANCE_TYPES" "AWS_REGION" "AWS_SUBNET_ID" "AWS_VPC_ID" "AWS_SG_IDS")
 aws_optional=("PODVM_AMI_ID")
