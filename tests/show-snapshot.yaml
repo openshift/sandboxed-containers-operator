@@ -26,32 +26,31 @@ spec:
           - name: SNAPSHOT
             value: $(params.SNAPSHOT)
           script: |
-          #!/bin/bash
-          set -e
-          dnf -y install jq
-          snapshotComponents=$(jq -c '.components[]' <<< "${SNAPSHOT}")
+            #!/bin/bash
+            set -e
+            dnf -y install jq
+            snapshotComponents=$(jq -c '.components[]' <<< "${SNAPSHOT}")
 
-          echo -e "Example test task for the Snapshot:\n ${SNAPSHOT}"
-          # Run custom tests for the given Snapshot here
-          while read componentEntry
-          do
-            # Variables
-            componentName=$(echo "${componentEntry}" | jq -r '.name')
-            componentUrl=$(echo "${componentEntry}" | jq -r '.source.git.url')
-            componentUrlWithoutSuffix=$(echo $componentUrl | sed 's/\.git$//')
-            componentSha=$(echo "${componentEntry}" | jq -r '.source.git.revision')
+            echo -e "Example test task for the Snapshot:\n ${SNAPSHOT}"
+            # Run custom tests for the given Snapshot here
+            while read componentEntry
+            do
+              # Variables
+              componentName=$(echo "${componentEntry}" | jq -r '.name')
+              componentUrl=$(echo "${componentEntry}" | jq -r '.source.git.url')
+              componentSha=$(echo "${componentEntry}" | jq -r '.source.git.revision')
 
-            echo "Print the infomation for component ${componentName} included in snapshot, more test can be added to inspect git source and containerImage in component::"
-            echo "${componentName}"
-            echo "${componentUrl}"
-            echo "${componentUrlWithoutSuffix}"
-            echo "${componentSha}"
-          done < <(echo "$snapshotComponents")
+              echo "Print the infomation for component ${componentName} included in snapshot, more test can be added to inspect git source and containerImage in component::"
+              echo "${componentName}"
+              echo "  - URL: ${componentUrl}"
+              echo "  - SHA: ${componentSha}"
+              echo
+            done < <(echo "$snapshotComponents")
 
-          # After the tests finish, record the overall result in the RESULT variable
-          RESULT="SUCCESS"
+            # After the tests finish, record the overall result in the RESULT variable
+            RESULT="SUCCESS"
 
-          # Output the standardized TEST_OUTPUT result in JSON form
-          TEST_OUTPUT=$(jq -rc --arg date $(date -u --iso-8601=seconds) --arg RESULT "${RESULT}" --null-input \
-            '{result: $RESULT, timestamp: $date, failures: 0, successes: 1, warnings: 0}')
-          echo -n "${TEST_OUTPUT}" | tee $(results.TEST_OUTPUT.path)
+            # Output the standardized TEST_OUTPUT result in JSON form
+            TEST_OUTPUT=$(jq -rc --arg date $(date -u --iso-8601=seconds) --arg RESULT "${RESULT}" --null-input \
+              '{result: $RESULT, timestamp: $date, failures: 0, successes: 1, warnings: 0}')
+            echo -n "${TEST_OUTPUT}" | tee $(results.TEST_OUTPUT.path)
