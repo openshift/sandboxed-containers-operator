@@ -139,8 +139,8 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager and metrics-server binaries.
-	CGO_ENABLED=0 GOOS=linux go build $(GOFLAGS) -o bin/manager cmd/manager/main.go
-	CGO_ENABLED=0 GOOS=linux go build $(GOFLAGS) -o bin/metrics-server cmd/metrics/metrics.go
+	CGO_ENABLED=1 GOOS=linux go build $(GOFLAGS) -o bin/manager cmd/manager/main.go
+	CGO_ENABLED=1 GOOS=linux go build $(GOFLAGS) -o bin/metrics-server cmd/metrics/metrics.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
