@@ -8,7 +8,7 @@ metadata:
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
-      == "devel" && ( "test-fbc/***".pathChanged() || "fbc/render.sh".pathChanged() || ".tekton/osc-test-fbc-push.yaml".pathChanged() )
+      == "devel" && ( "fbc/test-fbc/***".pathChanged() || "fbc/render.sh".pathChanged() || ".tekton/osc-test-fbc-push.yaml".pathChanged() )
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: osc-test-catalog
