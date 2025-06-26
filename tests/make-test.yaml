@@ -1,0 +1,56 @@
+kind: Pipeline
+apiVersion: tekton.dev/v1beta1
+metadata:
+  name: make-test
+spec:
+  params:
+    - description: 'Snapshot of the application'
+      name: SNAPSHOT
+      default: '{"components": [{"name":"test-app", "containerImage": "quay.io/example/repo:latest"}]}'
+      type: string
+  tasks:
+    - name: run-make-test
+      description: Get the sources of the operator, and run 'make test' on them
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+      taskSpec:
+        params:
+        - name: SNAPSHOT
+        results:
+        - name: TEST_OUTPUT
+          description: Test output
+        steps:
+        - image: registry.redhat.io/openshift4/ose-cli:latest
+          env:
+          - name: SNAPSHOT
+            value: $(params.SNAPSHOT)
+          script: |
+            #!/bin/bash
+            set -e
+            SUCCESSES=0
+            FAILURES=0
+            WARNINGS=0
+
+            dnf -y install jq
+            srcURL=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.url' <<< "${SNAPSHOT}")
+            srcREV=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.revision' <<< "${SNAPSHOT}")
+
+            git clone ${srcURL} --revision ${srcREV} sources
+            cd sources
+            make test
+
+            # After the tests finish, record the overall result in the RESULT variable
+            if [ $? -eq 0 ]; then
+              RESULT="SUCCESS"
+              SUCCESSES=1
+            else
+              RESULT="FAILURE"
+              FAILURES=1
+            fi
+
+            # Output the standardized TEST_OUTPUT result in JSON form
+            TEST_OUTPUT=$(jq -rc --arg date $(date -u --iso-8601=seconds) --arg RESULT "${RESULT}" \
+                --arg FAILURES "${FAILURES}" --arg SUCCESSES "${SUCCESSES}" --arg WARNINGS "${WARNINGS}" --null-input \
+                '{result: $RESULT, timestamp: $date, failures: $FAILURES, successes: $SUCCESSES, warnings: $WARNINGS}')
+            echo -n "${TEST_OUTPUT}" | tee $(results.TEST_OUTPUT.path)
