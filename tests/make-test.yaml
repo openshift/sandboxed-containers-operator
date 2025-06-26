@@ -32,12 +32,13 @@ spec:
             FAILURES=0
             WARNINGS=0
 
-            dnf -y install jq
+            dnf -y install jq git make go
             srcURL=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.url' <<< "${SNAPSHOT}")
             srcREV=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.revision' <<< "${SNAPSHOT}")
 
-            git clone ${srcURL} --revision ${srcREV} sources
+            git clone ${srcURL} sources
             cd sources
+            git checkout ${srcREV}
             make test
 
             # After the tests finish, record the overall result in the RESULT variable
@@ -51,6 +52,6 @@ spec:
 
             # Output the standardized TEST_OUTPUT result in JSON form
             TEST_OUTPUT=$(jq -rc --arg date $(date -u --iso-8601=seconds) --arg RESULT "${RESULT}" \
-                --arg FAILURES "${FAILURES}" --arg SUCCESSES "${SUCCESSES}" --arg WARNINGS "${WARNINGS}" --null-input \
+                --argjson FAILURES ${FAILURES} --argjson SUCCESSES ${SUCCESSES} --argjson WARNINGS ${WARNINGS} --null-input \
                 '{result: $RESULT, timestamp: $date, failures: $FAILURES, successes: $SUCCESSES, warnings: $WARNINGS}')
             echo -n "${TEST_OUTPUT}" | tee $(results.TEST_OUTPUT.path)
