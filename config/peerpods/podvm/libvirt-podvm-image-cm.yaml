@@ -31,6 +31,3 @@ data:
 
   # For Pre-built PodVM images.
   PODVM_IMAGE_URI: "" # eg: oci::quay.io/openshift_sandboxed_containers/libvirt-podvm-image:latest::/image/podvm.qcow2
-
-  # Name of PodVM qcow2 to be built.
-  IMAGE_NAME: "podvm-image" 

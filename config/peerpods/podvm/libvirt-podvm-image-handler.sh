@@ -166,6 +166,9 @@ function create_libvirt_image_from_prebuilt_artifact() {
 function create_libvirt_image_from_scratch() {
     echo "Creating qcow2 image for libvirt provider from scratch"
 
+    # Define image name 
+    export IMAGE_NAME="podvm-image"
+
     # If any error occurs, exit the script with an error message
 
     if [[ "${DOWNLOAD_SOURCES}" == "yes" ]]; then
