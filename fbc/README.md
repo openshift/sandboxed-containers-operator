@@ -2,17 +2,24 @@
 
 The file based catalog (**FBC**) for OpenShift sandboxed containers.
 
-## Install `opm`
+## Prerequisites
+
+### Install `opm`
 
 You need v1.46.0 or greater.
 
 Download the binary from [Github releases](https://github.com/operator-framework/operator-registry/releases).
 
+### Install `jq` and `curl`
+
+Packages from your favorite distros should work.
+
 ## Update the FBC
 
 1. Update the digests in the template.
-2. Run `./render.sh` to update the actual catalog.
-3. Open a pull request with your changes.
+2. Run `./update.sh [VERSION]` to update the digests in the template.
+3. Run `./render.sh [VERSION]` to update the actual catalog.
+4. Open a pull request with your changes.
 
 ## Add a new OpenShift version
 
