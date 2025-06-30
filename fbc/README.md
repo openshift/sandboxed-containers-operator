@@ -11,8 +11,8 @@ Download the binary from [Github releases](https://github.com/operator-framework
 ## Update the FBC
 
 1. Update the digests in the template.
-1. Run `./render.sh` to update the actual catalog.
-1. Open a pull request with your changes.
+2. Run `./render.sh` to update the actual catalog.
+3. Open a pull request with your changes.
 
 ## Add a new OpenShift version
 
@@ -21,9 +21,9 @@ In examples that follow, the latest release is `v4.17` and you want to release f
 ### New Konflux application
 
 1. In the web UI, add a new application and a new component.
-1. Ignore the pull request from the Konflux bot.
-1. Add the new application to the ReleasePlanAdmission.
-1. Create a new ReleasePlan.
+2. Ignore the pull request from the Konflux bot.
+3. Add the new application to the ReleasePlanAdmission.
+4. Create a new ReleasePlan.
 
 ### New files
 
@@ -32,7 +32,7 @@ In examples that follow, the latest release is `v4.17` and you want to release f
     ./duplicate.sh v4.17 v4.18
     ```
 
-1. Run the render script to update the actual catalog. Note that this command will not make any changes, if they are not needed.
+2. Run the render script to update the actual catalog. Note that this command will not make any changes, if they are not needed.
     ```
     ./render.sh
     ```
