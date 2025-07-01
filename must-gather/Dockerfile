@@ -1,6 +1,6 @@
 FROM registry.redhat.io/openshift4/ose-must-gather:latest as builder
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.6-1750782676
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.6-1751286687
 
 # For gathering data from nodes
 # NOTE for hermetic build: any change to the packages installed here must
