@@ -45,6 +45,13 @@ rules:
   - update
 - apiGroups:
   - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - ""
   - machineconfiguration.openshift.io
   resources:
   - configmaps

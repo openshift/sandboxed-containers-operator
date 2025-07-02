@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2025-03-10T11:49:47Z"
+    createdAt: "2025-07-02T13:32:40Z"
     features.operators.openshift.io/cnf: "false"
     features.operators.openshift.io/cni: "false"
     features.operators.openshift.io/csi: "false"
@@ -180,6 +180,13 @@ spec:
           - get
           - patch
           - update
+        - apiGroups:
+          - ""
+          resources:
+          - serviceaccounts
+          verbs:
+          - get
+          - list
         - apiGroups:
           - ""
           - machineconfiguration.openshift.io
