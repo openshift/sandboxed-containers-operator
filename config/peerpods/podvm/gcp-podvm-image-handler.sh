@@ -154,8 +154,8 @@ function create_image_from_prebuilt_artifact() {
 
   echo "Compacting ${RAW_IMAGE_PATH} into /tmp/${IMAGE_NAME}.tar.gz"
 
-  # TAR the raw image (GCP expects a compressed archive)
-  tar -cvzf "/tmp/${IMAGE_NAME}.tar.gz" -C "$(dirname "${RAW_IMAGE_PATH}")" "$(basename "${RAW_IMAGE_PATH}")" ||
+  # TAR the raw image (GCP expects a compressed archive with disk.raw named file)
+  tar -cvzf "/tmp/${IMAGE_NAME}.tar.gz" -C "$(dirname "${RAW_IMAGE_PATH}")" --transform="s|$(basename "${RAW_IMAGE_PATH}")|disk.raw|" "$(basename "${RAW_IMAGE_PATH}")" ||
     error_exit "Failed to create tarball for GCP"
 
   # Create bucket if doesn't exist
