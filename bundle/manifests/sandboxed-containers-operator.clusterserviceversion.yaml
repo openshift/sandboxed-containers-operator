@@ -398,7 +398,7 @@ spec:
                 - name: RELATED_IMAGE_PODVM_BUILDER
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:bf562322f0aa738b1a68bf7faf1b57aefefa81ea9e49fb2b2d6cf33ad812cadc
                 - name: RELATED_IMAGE_PODVM_PAYLOAD
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:72b387b20e3bfd2fccf5ac69b763908bb227e777bd2930c68abd44694c6e225a
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:596be40dd2149673d03f8b83eba642f391e7abf70d65974e431a33e63d698386
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -553,7 +553,7 @@ spec:
     name: peerpods-webhook
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:bf562322f0aa738b1a68bf7faf1b57aefefa81ea9e49fb2b2d6cf33ad812cadc
     name: podvm-builder
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:72b387b20e3bfd2fccf5ac69b763908bb227e777bd2930c68abd44694c6e225a 
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:596be40dd2149673d03f8b83eba642f391e7abf70d65974e431a33e63d698386 
     name: podvm-payload
   replaces: sandboxed-containers-operator.v1.9.0
   version: 1.10.0
