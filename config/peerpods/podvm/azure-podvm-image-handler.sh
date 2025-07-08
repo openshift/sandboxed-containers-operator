@@ -495,6 +495,8 @@ function create_azure_image_from_prebuilt_artifact() {
     # This will set the VHD_URL global variable
     upload_vhd_image "${VHD_IMAGE_PATH}" "${IMAGE_NAME}"
 
+    echo "Creating the image version from the VHD..."
+
     # Create the image version from the VHD
     az sig image-version create \
         --resource-group "${AZURE_RESOURCE_GROUP}" \
