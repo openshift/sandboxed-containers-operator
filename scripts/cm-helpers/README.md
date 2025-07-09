@@ -9,6 +9,7 @@ cloud provider, recommended best practices, and user-provided input.
 * AWS
 * Azure
 * Libvirt
+* GCP
 
 ### Prerequisites
 * jq, kubectl or oc installed

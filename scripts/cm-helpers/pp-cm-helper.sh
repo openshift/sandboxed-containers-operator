@@ -48,6 +48,9 @@ aws_optional=("PODVM_AMI_ID")
 azure_vars=("AZURE_INSTANCE_SIZE" "AZURE_INSTANCE_SIZES" "AZURE_SUBNET_ID" "AZURE_NSG_ID" "AZURE_REGION" "AZURE_RESOURCE_GROUP")
 azure_optional=("AZURE_IMAGE_ID")
 
+gcp_vars=("GCP_PROJECT_ID" "GCP_ZONE" "GCP_NETWORK" "GCP_MACHINE_TYPE")
+gcp_optional=("GCP_IMAGE_NAME")
+
 libvirt_vars=("LIBVIRT_POOL" "LIBVIRT_VOL_NAME" "LIBVIRT_DIR_NAME")
 libvirt_optional=("LIBVIRT_IMAGE_ID")
 
@@ -122,8 +125,13 @@ spec:
           AZURE_RESOURCE_GROUP=\$(curl -s -m 15 -H Metadata:true --noproxy "*" "http://169.254.169.254/metadata/instance/compute/resourceGroupName?api-version=2017-08-01&format=text")
           AZURE_SUBSCRIPTION_ID=\$(curl -s -m 15 -H Metadata:true --noproxy "*" "http://169.254.169.254/metadata/instance/compute/subscriptionId?api-version=2017-08-01&format=text")
           EOS
+          elif [ \${provider} == "gcp" ]; then
+              cat <<EOS >> /tmp/cm.env
+          GCP_PROJECT_ID=\$(curl -s -m 15 -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/project/project-id)
+          GCP_ZONE=\$(curl -s -m 15 -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/zone | awk -F/ '{print \$(NF)}')
+          EOS
           else
-              echo "Uknown provider: \"\${provider}\"" && exit 0
+              echo "Unknown provider: \"\${provider}\"" && exit 0
           fi
           cat /tmp/cm.env
           oc create cm peer-pods-cm --from-env-file=/tmp/cm.env -n openshift-sandboxed-containers-operator
@@ -164,6 +172,11 @@ function getLocalDefaults() {
     [[ "${DISABLECVM}" == true ]] && AZURE_INSTANCE_SIZES=${AZURE_INSTANCE_SIZES:-Standard_B2als_v2,Standard_D2as_v5,Standard_D4as_v5,Standard_D2ads_v5}
     #AZURE_IMAGE_ID=${AZURE_IMAGE_ID}
 
+    # gcp
+    GCP_MACHINE_TYPE=${GCP_MACHINE_TYPE:-n2d-standard-2}
+    GCP_NETWORK=${GCP_NETWORK:-global/networks/default}
+    #GCP_IMAGE_NAME=${GCP_IMAGE_NAME}
+
     # libvirt
     LIBVIRT_POOL=${LIBVIRT_POOL:-default}
     LIBVIRT_VOL_NAME=${LIBVIRT_VOL_NAME:-default}
@@ -181,6 +194,10 @@ function userVerification() {
         "azure")
             verifyAndSetVars "${azure_vars[@]}"
             verifyAndSetVars "${azure_optional[@]}"
+            ;;
+        "gcp")
+            verifyAndSetVars "${gcp_vars[@]}"
+            verifyAndSetVars "${gcp_optional[@]}"
             ;;
         "libvirt")
             verifyAndSetVars "${libvirt_vars[@]}"
