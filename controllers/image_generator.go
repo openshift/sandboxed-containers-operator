@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -835,8 +836,8 @@ func (r *ImageGenerator) updateImageConfigMap() error {
 		igLogger.Info("Setting FIPS mode")
 	}
 
-	// set to default image
-	if cm.Data["PODVM_IMAGE_URI"] == "" && os.Getenv("RELATED_IMAGE_PODVM_OCI") != "" {
+	// set to default image which is currently not built for s390x
+	if cm.Data["PODVM_IMAGE_URI"] == "" && os.Getenv("RELATED_IMAGE_PODVM_OCI") != "" && runtime.GOARCH != "s390x" {
 		cm.Data["PODVM_IMAGE_URI"] = "oci::" + os.Getenv("RELATED_IMAGE_PODVM_OCI")
 		igLogger.Info("Setting PODVM_IMAGE_URI to default value", "PODVM_IMAGE_URI", cm.Data["PODVM_IMAGE_URI"])
 	}
