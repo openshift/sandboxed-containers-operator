@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2025-07-02T13:32:40Z"
+    createdAt: "2025-07-20T08:00:23Z"
     features.operators.openshift.io/cnf: "false"
     features.operators.openshift.io/cni: "false"
     features.operators.openshift.io/csi: "false"
@@ -399,6 +399,8 @@ spec:
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:fec854750f7c5e137d0f77d2069e8a8cb66b17d6e4fc8f8eec2df22b56b2772e
                 - name: RELATED_IMAGE_PODVM_PAYLOAD
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:73a82ac1c252f068f9d046a36dfca7932202ad728f94fc575a332d8707650905
+                - name: RELATED_IMAGE_PODVM_OCI
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:93f3c45cda820a16030273e5a3f5c186d602f9affcb3cfa91230084a516dc3f4
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -555,6 +557,8 @@ spec:
     name: podvm-builder
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:73a82ac1c252f068f9d046a36dfca7932202ad728f94fc575a332d8707650905 
     name: podvm-payload
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:93f3c45cda820a16030273e5a3f5c186d602f9affcb3cfa91230084a516dc3f4
+    name: podvm-oci
   replaces: sandboxed-containers-operator.v1.9.0
   version: 1.10.0
   webhookdefinitions:

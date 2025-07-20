@@ -88,7 +88,7 @@ spec:
             - name: RELATED_IMAGE_PODVM_PAYLOAD
               value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:73a82ac1c252f068f9d046a36dfca7932202ad728f94fc575a332d8707650905 
             - name: RELATED_IMAGE_PODVM_OCI
-              value: ""
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:93f3c45cda820a16030273e5a3f5c186d602f9affcb3cfa91230084a516dc3f4
           imagePullPolicy: Always
           resources:
             limits:
