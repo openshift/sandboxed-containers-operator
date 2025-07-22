@@ -81,6 +81,18 @@ spec:
               readOnly: true
             - name: store-volume
               mountPath: /store
+            - name: registries-conf
+              mountPath: /etc/containers/registries.conf
+              readOnly: true
+            - name: registries-conf-d
+              mountPath: /etc/containers/registries.conf.d
+              readOnly: true
+            - name: containers-auth
+              mountPath:  /root/.config/containers/auth.json
+              readOnly: true
+            - name: containers-policy
+              mountPath: /etc/containers/policy.json
+              readOnly: true
       # Default is 30s which is too less for the preStop hook to fully execute        
       terminationGracePeriodSeconds: 180
       volumes:
@@ -99,4 +111,20 @@ spec:
             optional: true
         - name: store-volume
           emptyDir: {}
+        - name: registries-conf
+          hostPath:
+            path: /etc/containers/registries.conf
+            type: FileOrCreate
+        - name: registries-conf-d
+          hostPath:
+            path: /etc/containers/registries.conf.d
+            type: DirectoryOrCreate
+        - name: containers-auth
+          hostPath:
+            path: /var/lib/kubelet/config.json
+            type: File
+        - name: containers-policy
+          hostPath:
+            path: /etc/containers/policy.json
+            type: FileOrCreate
       restartPolicy: Never
