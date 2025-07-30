@@ -321,7 +321,7 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 	}
 
 	// Create runtimeClass config for peer-pods
-	err = r.createRuntimeClass(peerpodsRuntimeClassName, peerpodsRuntimeClassCpuOverhead, peerpodsRuntimeClassMemOverhead)
+	err = r.createRuntimeClass(peerpodsRuntimeClassName, peerpodsRuntimeClassCpuOverhead, peerpodsRuntimeClassMemOverhead, peerpodsRuntimeClassName, "")
 	if err != nil {
 		r.Log.Info("Error in creating kata remote runtimeclass", "err", err)
 		return err
