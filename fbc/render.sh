@@ -23,10 +23,10 @@ do
     pushd "$OCP_VERSION"
 
     RELEASE_IMAGE=$(yq '.entries[] | select(.schema == "olm.bundle") | .image' "$TEMPLATE_NAME" | tail -n1)
-    BUILD_IMAGE=$(echo $RELEASE_IMAGE | sed "s|$RELEASE_REGISTRY|$BUILD_REGISTRY|")
+    BUILD_IMAGE=$(echo $RELEASE_IMAGE)
 
     # Switch to the build registry, so `opm` can pull freely.
-    sed -i "s|$RELEASE_IMAGE|$BUILD_IMAGE|" "$TEMPLATE_NAME"
+    #sed -i "s|$RELEASE_IMAGE|$BUILD_IMAGE|" "$TEMPLATE_NAME"
 
     # Add the icon data.
     yq -i ".entries[0].icon.base64data = \"$(cat ../$ICON_BASE64)\"" "$TEMPLATE_NAME"
@@ -45,8 +45,8 @@ do
     opm $MIGRATE_PARAM alpha render-template basic "$TEMPLATE_NAME" > catalog/${PACKAGE_NAME}/catalog.json
 
     # Switch back to the release registry.
-    sed -i "s|$BUILD_IMAGE|$RELEASE_IMAGE|" "$TEMPLATE_NAME"
-    sed -i "s|$BUILD_IMAGE|$RELEASE_IMAGE|" catalog/${PACKAGE_NAME}/catalog.json
+    #sed -i "s|$BUILD_IMAGE|$RELEASE_IMAGE|" "$TEMPLATE_NAME"
+    #sed -i "s|$BUILD_IMAGE|$RELEASE_IMAGE|" catalog/${PACKAGE_NAME}/catalog.json
     # Remove the icon base64 data.
     yq -i ".entries[0].icon.base64data = \"\"" "$TEMPLATE_NAME"
 
