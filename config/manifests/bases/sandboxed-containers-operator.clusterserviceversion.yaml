@@ -33,6 +33,7 @@ metadata:
     repository: https://github.com/openshift/sandboxed-containers-operator
   labels:
     operatorframework.io/arch.amd64: supported
+    operatorframework.io/arch.s390x: supported
     operatorframework.io/os.linux: supported
   name: sandboxed-containers-operator.v1.10.0
 spec:

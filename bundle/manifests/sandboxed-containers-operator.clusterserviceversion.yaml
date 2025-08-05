@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2025-07-20T08:00:23Z"
+    createdAt: "2025-08-05T11:47:27Z"
     features.operators.openshift.io/cnf: "false"
     features.operators.openshift.io/cni: "false"
     features.operators.openshift.io/csi: "false"
@@ -34,6 +34,7 @@ metadata:
     repository: https://github.com/openshift/sandboxed-containers-operator
   labels:
     operatorframework.io/arch.amd64: supported
+    operatorframework.io/arch.s390x: supported
     operatorframework.io/os.linux: supported
   name: sandboxed-containers-operator.v1.10.0
 spec:
