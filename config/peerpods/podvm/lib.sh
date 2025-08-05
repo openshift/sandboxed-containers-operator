@@ -331,10 +331,11 @@ function extract_container_image() {
         error_exit "Usage: extract_container_image <container_image_repo_url> <image_tag> <dest_image> <destination_path> [registry_secret]"
 
     # Form the skopeo CLI. Add authfile if provided
+    # copy signatures for OCI images is not supported, hence the signatures if any are removed while copying
     if [[ -n "${5}" ]]; then
-        SKOPEO_CLI="skopeo copy --authfile ${auth_json_file}"
+        SKOPEO_CLI="skopeo copy --remove-signatures --authfile ${auth_json_file}"
     else
-        SKOPEO_CLI="skopeo copy"
+        SKOPEO_CLI="skopeo copy --remove-signatures"
     fi
 
     # Download the container image
