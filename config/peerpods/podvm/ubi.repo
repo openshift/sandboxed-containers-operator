@@ -15,7 +15,7 @@ gpgcheck = 1
 [ubi-9-for-$basearch-baseos-source-rpms]
 name = Red Hat Universal Base Image 9 (Source RPMs) - BaseOS
 baseurl = https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/baseos/source/SRPMS
-enabled = 0
+enabled = 1
 gpgkey = file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
 gpgcheck = 1
 
@@ -36,7 +36,7 @@ gpgcheck = 1
 [ubi-9-for-$basearch-appstream-source-rpms]
 name = Red Hat Universal Base Image 9 (Source RPMs) - AppStream
 baseurl = https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/appstream/source/SRPMS
-enabled = 0
+enabled = 1
 gpgkey = file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
 gpgcheck = 1
 
@@ -57,6 +57,6 @@ gpgcheck = 1
 [codeready-builder-for-ubi-9-$basearch-source-rpms]
 name = Red Hat Universal Base Image 9 (Source RPMs) - CodeReady Builder
 baseurl = https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/codeready-builder/source/SRPMS
-enabled = 0
+enabled = 1
 gpgkey = file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
 gpgcheck = 1
