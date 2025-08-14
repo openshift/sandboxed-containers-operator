@@ -1097,15 +1097,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		}
 	}
 
-	// peer pod enablement
-	if r.kataConfig.Spec.EnablePeerPods {
-		err := r.enablePeerPodsMc()
-		if err != nil {
-			r.Log.Info("Enabling peerpods machineconfigs failed", "err", err)
-			return ctrl.Result{}, err
-		}
-	}
-
 	// If converged cluster, then MCP == master, otherwise "kata-oc" if it exists
 	machinePool, err := r.getMcpName()
 	if err != nil {
