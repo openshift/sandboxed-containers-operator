@@ -24,6 +24,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	nodeapi "k8s.io/api/node/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -423,6 +424,22 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPodsMiscConfigs() error {
 			r.Log.Error(err, "error when deleting cloud-api-adaptor Daemonset, try again")
 			return err
 		}
+	}
+
+	rc := &nodeapi.RuntimeClass{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "node.k8s.io/v1",
+			Kind:       "RuntimeClass",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: peerpodsRuntimeClassName,
+		},
+	}
+
+	err = r.Client.Delete(context.TODO(), rc)
+	if err != nil && !k8serrors.IsNotFound(err) {
+		// error during removing mc. Just log the error and move on.
+		r.Log.Info("Error in deleting the runtime class for peerpods", "err", err)
 	}
 
 	mc := mcfgv1.MachineConfig{
