@@ -1,0 +1,12 @@
+apiVersion: projctl.konflux.dev/v1beta1
+kind: Project
+metadata:
+  name: sandboxed-containers-project
+spec:
+  displayName: "This project is used to deploy sandboxed containers pipelines"
+  description: |
+    Most of the development for Sandboxed Containers happen in the default branch
+    of its repositories, releasing a new version every 6 months.
+    Now sometimes we need to release an intermediate version without stopping
+    work on the future longer term release.
+    This project is used to deploy pipelines that support such concurrent work.

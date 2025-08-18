@@ -1,0 +1,475 @@
+apiVersion: projctl.konflux.dev/v1beta1
+kind: ProjectDevelopmentStreamTemplate
+metadata:
+  name: sandboxed-containers-template
+spec:
+  project: sandboxed-containers-project
+  variables:
+  - name: version
+    description: A version number for a new development stream
+  - name: versionName
+    description: A K8s-compliant name for the version
+    defaultValue: "{{hyphenize .version}}"
+
+  resources:
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Application
+    metadata:
+      name: "openshift-sandboxed-containers-{{.versionName}}"
+    spec:
+      displayName: "openshift-sandboxed-containers-{{.versionName}}"
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Application
+    metadata:
+      name: "osc-test-catalog-{{.versionName}}"
+    spec:
+      displayName: "osc-test-catalog-{{.versionName}}"
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Component
+    metadata:
+      annotations:
+        build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+        build.appstudio.openshift.io/status: '{"pac":{"state":"enabled","merge-url":"https://github.com/openshift/cloud-api-adaptor/pull/63","configuration-time":"Fri,
+          06 Jun 2025 13:07:39 UTC"},"message":"done"}'
+        git-provider: github
+        git-provider-url: https://github.com
+      name: "osc-caa-{{.versionName}}"
+    spec:
+      application: "openshift-sandboxed-containers-{{.versionName}}"
+      build-nudges-ref:
+      - "osc-operator-bundle-{{.versionName}}"
+      componentName: "osc-caa-{{.versionName}}"
+      resources: {}
+      source:
+        git:
+          context: src
+          dockerfileUrl: cloud-api-adaptor/Dockerfile.openshift
+          revision: "osc-release-{{.version}}"
+          url: https://github.com/openshift/cloud-api-adaptor
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Component
+    metadata:
+      annotations:
+        build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+        build.appstudio.openshift.io/status: '{"pac":{"state":"enabled","merge-url":"https://github.com/openshift/cloud-api-adaptor/pull/64","configuration-time":"Fri,
+          06 Jun 2025 13:08:28 UTC"},"message":"done"}'
+        git-provider: github
+        git-provider-url: https://github.com
+      name: "osc-caa-webhook-{{.versionName}}"
+    spec:
+      application: "openshift-sandboxed-containers-{{.versionName}}"
+      build-nudges-ref:
+      - "osc-operator-bundle-{{.versionName}}"
+      componentName: "osc-caa-webhook-{{.versionName}}"
+      resources: {}
+      source:
+        git:
+          context: src/webhook
+          revision: "osc-release-{{.version}}"
+          url: https://github.com/openshift/cloud-api-adaptor
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Component
+    metadata:
+      annotations:
+        build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
+        build.appstudio.openshift.io/status: '{"pac":{"state":"enabled","merge-url":"https://github.com/confidential-devhub/coco-podvm-scripts/pull/8","configuration-time":"Wed,
+          11 Jun 2025 09:31:23 UTC"},"message":"done"}'
+        git-provider: github
+        git-provider-url: https://github.com
+      name: "osc-dm-verity-image-{{.versionName}}"
+    spec:
+      application: "openshift-sandboxed-containers-{{.versionName}}"
+      build-nudges-ref:
+      - "osc-operator-bundle-{{.versionName}}"
+      componentName: "osc-dm-verity-image-{{.versionName}}"
+      resources: {}
+      source:
+        git:
+          revision: "osc-release-{{.version}}"
+          url: https://github.com/confidential-devhub/coco-podvm-scripts
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Component
+    metadata:
+      annotations:
+        build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+        build.appstudio.openshift.io/status: '{"pac":{"state":"enabled","merge-url":"https://github.com/openshift/kata-containers/pull/40","configuration-time":"Fri,
+          06 Jun 2025 13:09:05 UTC"},"message":"done"}'
+        git-provider: github
+        git-provider-url: https://github.com
+      name: "osc-monitor-{{.versionName}}"
+    spec:
+      application: "openshift-sandboxed-containers-{{.versionName}}"
+      build-nudges-ref:
+      - "osc-operator-bundle-{{.versionName}}"
+      componentName: "osc-monitor-{{.versionName}}"
+      resources: {}
+      source:
+        git:
+          dockerfileUrl: Dockerfile.monitor
+          revision: "osc-release-{{.version}}"
+          url: https://github.com/openshift/kata-containers
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Component
+    metadata:
+      annotations:
+        build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+        build.appstudio.openshift.io/status: '{"pac":{"state":"enabled","merge-url":"https://github.com/openshift/sandboxed-containers-operator/pull/680","configuration-time":"Fri,
+          06 Jun 2025 12:59:31 UTC"},"message":"done"}'
+        git-provider: github
+        git-provider-url: https://github.com
+      name: "osc-must-gather-{{.versionName}}"
+    spec:
+      application: "openshift-sandboxed-containers-{{.versionName}}"
+      componentName: "osc-must-gather-{{.versionName}}"
+      resources: {}
+      source:
+        git:
+          context: must-gather
+          revision: "osc-release-{{.version}}"
+          url: https://github.com/openshift/sandboxed-containers-operator
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Component
+    metadata:
+      annotations:
+        build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+        build.appstudio.openshift.io/status: '{"pac":{"state":"enabled","merge-url":"https://github.com/openshift/sandboxed-containers-operator/pull/681","configuration-time":"Fri,
+          06 Jun 2025 13:06:46 UTC"},"message":"done"}'
+        git-provider: github
+        git-provider-url: https://github.com
+      name: "osc-operator-bundle-{{.versionName}}"
+    spec:
+      application: "openshift-sandboxed-containers-{{.versionName}}"
+      build-nudges-ref:
+      - "osc-test-fbc-{{.versionName}}"
+      componentName: "osc-operator-bundle-{{.versionName}}"
+      resources: {}
+      source:
+        git:
+          dockerfileUrl: bundle.Dockerfile
+          revision: "osc-release-{{.version}}"
+          url: https://github.com/openshift/sandboxed-containers-operator
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Component
+    metadata:
+      annotations:
+        build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+        build.appstudio.openshift.io/status: '{"pac":{"state":"enabled","merge-url":"https://github.com/openshift/sandboxed-containers-operator/pull/679","configuration-time":"Fri,
+          06 Jun 2025 09:17:30 UTC"},"message":"done"}'
+        git-provider: github
+        git-provider-url: https://github.com
+      name: "osc-operator-{{.versionName}}"
+    spec:
+      application: "openshift-sandboxed-containers-{{.versionName}}"
+      build-nudges-ref:
+      - "osc-operator-bundle-{{.versionName}}"
+      componentName: "osc-operator-{{.versionName}}"
+      resources: {}
+      source:
+        git:
+          revision: "osc-release-{{.version}}"
+          url: https://github.com/openshift/sandboxed-containers-operator
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Component
+    metadata:
+      annotations:
+        build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+        build.appstudio.openshift.io/status: '{"pac":{"state":"enabled","merge-url":"https://github.com/openshift/sandboxed-containers-operator/pull/689","configuration-time":"Thu,
+          12 Jun 2025 09:18:36 UTC"},"message":"done"}'
+        git-provider: github
+        git-provider-url: https://github.com
+      name: "osc-podvm-builder-{{.versionName}}"
+    spec:
+      application: "openshift-sandboxed-containers-{{.versionName}}"
+      build-nudges-ref:
+      - "osc-operator-bundle-{{.versionName}}"
+      componentName: "osc-podvm-builder-{{.versionName}}"
+      resources: {}
+      source:
+        git:
+          context: config/peerpods/podvm
+          dockerfileUrl: Dockerfile.podvm-builder
+          revision: "osc-release-{{.version}}"
+          url: https://github.com/openshift/sandboxed-containers-operator
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Component
+    metadata:
+      annotations:
+        build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+        build.appstudio.openshift.io/status: '{"pac":{"state":"enabled","merge-url":"https://github.com/openshift/cloud-api-adaptor/pull/65","configuration-time":"Fri,
+          06 Jun 2025 13:09:43 UTC"},"message":"done"}'
+        git-provider: github
+        git-provider-url: https://github.com
+      name: "osc-podvm-payload-{{.versionName}}"
+    spec:
+      application: "openshift-sandboxed-containers-{{.versionName}}"
+      build-nudges-ref:
+      - "osc-operator-bundle-{{.versionName}}"
+      - "osc-dm-verity-image-{{.versionName}}"
+      componentName: "osc-podvm-payload-{{.versionName}}"
+      resources: {}
+      source:
+        git:
+          dockerfileUrl: podvm-payload/Dockerfile
+          revision: "osc-release-{{.version}}"
+          url: https://github.com/openshift/cloud-api-adaptor
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Component
+    metadata:
+      annotations:
+        build.appstudio.openshift.io/pipeline: '{"name":"fbc-builder","bundle":"latest"}'
+        build.appstudio.openshift.io/status: '{"pac":{"state":"enabled","merge-url":"https://github.com/openshift/sandboxed-containers-operator/pull/711","configuration-time":"Fri,
+          20 Jun 2025 15:10:51 UTC"},"message":"done"}'
+        git-provider: github
+        git-provider-url: https://github.com
+      name: "osc-test-fbc-{{.versionName}}"
+    spec:
+      application: "osc-test-catalog-{{.versionName}}"
+      componentName: "osc-test-fbc-{{.versionName}}"
+      resources: {}
+      source:
+        git:
+          context: fbc
+          dockerfileUrl: test-fbc/Dockerfile
+          revision: "osc-release-{{.version}}"
+          url: https://github.com/openshift/sandboxed-containers-operator
+
+    # ImageRepository is the object that links the component to a location on quay.io
+    # where the built images will be stored.
+    # We need to have a dedicated place for each component where its images will be placed,
+    # so we need to duplicate the ImageRepository objects along with the components.
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: ImageRepository
+    metadata:
+      annotations:
+        image-controller.appstudio.redhat.com/update-component-image: 'true'
+      labels:
+        appstudio.redhat.com/application: "openshift-sandboxed-containers-{{.versionName}}"
+        appstudio.redhat.com/component: "osc-caa-{{.versionName}}"
+      name: osc-caa-{{.versionName}}
+    spec:
+      image:
+        name: "ose-osc-tenant/osc-caa-{{.versionName}}"
+        visibility: public
+      notifications:
+      - config:
+          url: https://bombino.api.redhat.com/v1/sbom/quay/push
+        event: repo_push
+        method: webhook
+        title: SBOM-event-to-Bombino
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: ImageRepository
+    metadata:
+      annotations:
+        image-controller.appstudio.redhat.com/update-component-image: 'true'
+      labels:
+        appstudio.redhat.com/application: "openshift-sandboxed-containers-{{.versionName}}"
+        appstudio.redhat.com/component: "osc-caa-webhook-{{.versionName}}"
+      name: "osc-caa-webhook-{{.versionName}}"
+    spec:
+      image:
+        name: "ose-osc-tenant/osc-caa-webhook-{{.versionName}}"
+        visibility: public
+      notifications:
+      - config:
+          url: https://bombino.api.redhat.com/v1/sbom/quay/push
+        event: repo_push
+        method: webhook
+        title: SBOM-event-to-Bombino
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: ImageRepository
+    metadata:
+      annotations:
+        image-controller.appstudio.redhat.com/update-component-image: 'true'
+      labels:
+        appstudio.redhat.com/application: "openshift-sandboxed-containers-{{.versionName}}"
+        appstudio.redhat.com/component: "osc-dm-verity-image-{{.versionName}}"
+      name: "osc-dm-verity-image-{{.versionName}}"
+    spec:
+      image:
+        name: "ose-osc-tenant/osc-dm-verity-image-{{.versionName}}"
+        visibility: public
+      notifications:
+      - config:
+          url: https://bombino.api.redhat.com/v1/sbom/quay/push
+        event: repo_push
+        method: webhook
+        title: SBOM-event-to-Bombino
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: ImageRepository
+    metadata:
+      annotations:
+        image-controller.appstudio.redhat.com/update-component-image: 'true'
+      labels:
+        appstudio.redhat.com/application: "openshift-sandboxed-containers-{{.versionName}}"
+        appstudio.redhat.com/component: "osc-monitor-{{.versionName}}"
+      name: "osc-monitor-{{.versionName}}"
+    spec:
+      image:
+        name: "ose-osc-tenant/osc-monitor-{{.versionName}}"
+        visibility: public
+      notifications:
+      - config:
+          url: https://bombino.api.redhat.com/v1/sbom/quay/push
+        event: repo_push
+        method: webhook
+        title: SBOM-event-to-Bombino
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: ImageRepository
+    metadata:
+      annotations:
+        image-controller.appstudio.redhat.com/update-component-image: 'true'
+      labels:
+        appstudio.redhat.com/application: "openshift-sandboxed-containers-{{.versionName}}"
+        appstudio.redhat.com/component: "osc-must-gather-{{.versionName}}"
+      name: "osc-must-gather-{{.versionName}}"
+    spec:
+      image:
+        name: "ose-osc-tenant/osc-must-gather-{{.versionName}}"
+        visibility: public
+      notifications:
+      - config:
+          url: https://bombino.api.redhat.com/v1/sbom/quay/push
+        event: repo_push
+        method: webhook
+        title: SBOM-event-to-Bombino
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: ImageRepository
+    metadata:
+      annotations:
+        image-controller.appstudio.redhat.com/update-component-image: 'true'
+      labels:
+        appstudio.redhat.com/application: "openshift-sandboxed-containers-{{.versionName}}"
+        appstudio.redhat.com/component: "osc-operator-bundle-{{.versionName}}"
+      name: "osc-operator-bundle-{{.versionName}}"
+    spec:
+      image:
+        name: "ose-osc-tenant/osc-operator-bundle-{{.versionName}}"
+        visibility: public
+      notifications:
+      - config:
+          url: https://bombino.api.redhat.com/v1/sbom/quay/push
+        event: repo_push
+        method: webhook
+        title: SBOM-event-to-Bombino
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: ImageRepository
+    metadata:
+      annotations:
+        image-controller.appstudio.redhat.com/update-component-image: 'true'
+      labels:
+        appstudio.redhat.com/application: "openshift-sandboxed-containers-{{.versionName}}"
+        appstudio.redhat.com/component: "osc-operator-{{.versionName}}"
+      name: "osc-operator-{{.versionName}}"
+    spec:
+      image:
+        name: "ose-osc-tenant/osc-operator-{{.versionName}}"
+        visibility: public
+      notifications:
+      - config:
+          url: https://bombino.api.redhat.com/v1/sbom/quay/push
+        event: repo_push
+        method: webhook
+        title: SBOM-event-to-Bombino
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: ImageRepository
+    metadata:
+      annotations:
+        image-controller.appstudio.redhat.com/update-component-image: 'true'
+      labels:
+        appstudio.redhat.com/application: "openshift-sandboxed-containers-{{.versionName}}"
+        appstudio.redhat.com/component: "osc-podvm-builder-{{.versionName}}"
+      name: "osc-podvm-builder-{{.versionName}}"
+    spec:
+      image:
+        name: "ose-osc-tenant/osc-podvm-builder-{{.versionName}}"
+        visibility: public
+      notifications:
+      - config:
+          url: https://bombino.api.redhat.com/v1/sbom/quay/push
+        event: repo_push
+        method: webhook
+        title: SBOM-event-to-Bombino
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: ImageRepository
+    metadata:
+      annotations:
+        image-controller.appstudio.redhat.com/update-component-image: 'true'
+      labels:
+        appstudio.redhat.com/application: "openshift-sandboxed-containers-{{.versionName}}"
+        appstudio.redhat.com/component: "osc-podvm-payload-{{.versionName}}"
+      name: "osc-podvm-payload-{{.versionName}}"
+    spec:
+      image:
+        name: "ose-osc-tenant/osc-podvm-payload-{{.versionName}}"
+        visibility: public
+      notifications:
+      - config:
+          url: https://bombino.api.redhat.com/v1/sbom/quay/push
+        event: repo_push
+        method: webhook
+        title: SBOM-event-to-Bombino
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: ImageRepository
+    metadata:
+      annotations:
+        image-controller.appstudio.redhat.com/update-component-image: 'true'
+      labels:
+        appstudio.redhat.com/application: "osc-test-catalog-{{.versionName}}"
+        appstudio.redhat.com/component: "osc-test-fbc-{{.versionName}}"
+      name: "osc-test-fbc-{{.versionName}}"
+    spec:
+      image:
+        name: "ose-osc-tenant/osc-test-fbc-{{.versionName}}"
+        visibility: public
+      notifications:
+      - config:
+          url: https://bombino.api.redhat.com/v1/sbom/quay/push
+        event: repo_push
+        method: webhook
+        title: SBOM-event-to-Bombino
+
+  # IntegrationTestScenario
+  # NOTE: we don't need to duplicate the Enterprise Contract, as it will be
+  # created automatically when the ReleasePlan is created.
+  - apiVersion: appstudio.redhat.com/v1beta2
+    kind: IntegrationTestScenario
+    metadata:
+      labels:
+        test.appstudio.openshift.io/optional: "true"
+      name: "make-test-{{.versionName}}"
+    spec:
+      application: "openshift-sandboxed-containers-{{.versionName}}"
+      contexts:
+      - description: execute the integration test when component osc-operator updates
+        name: "component_osc-operator-{{.versionName}}"
+      resolverRef:
+        params:
+        - name: url
+          value: https://github.com/openshift/sandboxed-containers-operator
+        - name: revision
+          value: "osc-release-{{.version}}"
+        - name: pathInRepo
+          value: tests/make-test.yaml
+        resolver: git
+        resourceKind: pipeline
