@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2026-01-08T14:32:12Z"
+    createdAt: "2026-02-16T11:35:51Z"
     features.operators.openshift.io/cnf: "false"
     features.operators.openshift.io/cni: "false"
     features.operators.openshift.io/csi: "false"
@@ -21,9 +21,9 @@ metadata:
     features.operators.openshift.io/fips-compliant: "false"
     features.operators.openshift.io/proxy-aware: "false"
     features.operators.openshift.io/tls-profiles: "false"
-    features.operators.openshift.io/token-auth-aws: "false"
-    features.operators.openshift.io/token-auth-azure: "false"
-    features.operators.openshift.io/token-auth-gcp: "false"
+    features.operators.openshift.io/token-auth-aws: "true"
+    features.operators.openshift.io/token-auth-azure: "true"
+    features.operators.openshift.io/token-auth-gcp: "true"
     olm.skipRange: '>=1.1.0 <1.11.2'
     operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
     operators.openshift.io/valid-subscription: '["OpenShift Container Platform", "OpenShift
