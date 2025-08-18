@@ -834,6 +834,34 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName stri
 	return nil
 }
 
+func (r *KataConfigOpenShiftReconciler) deleteRuntimeClass(runtimeClassName string) error {
+
+	foundRc := &nodeapi.RuntimeClass{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: runtimeClassName}, foundRc)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+
+	if err := r.Client.Delete(context.TODO(), foundRc); err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+
+	for i, name := range r.kataConfig.Status.RuntimeClasses {
+		if name == runtimeClassName {
+			r.kataConfig.Status.RuntimeClasses = append(r.kataConfig.Status.RuntimeClasses[:i], r.kataConfig.Status.RuntimeClasses[i+1:]...)
+			break
+		}
+	}
+
+	return nil
+}
+
 // "KataConfigNodeSelector" in the names of the following couple of helper
 // functions refers to the value of KataConfig.spec.kataConfigPoolSelector,
 // i.e. the original selector supplied by the user of KataConfig.

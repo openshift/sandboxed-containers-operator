@@ -1,25 +1,53 @@
 package controllers
 
 import (
+	"context"
+	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// When the feature is enabled, handleFeatureConfidential sets config maps to confidential values.
+const (
+	// kata-cc runtime class for CoCo BM
+	kataCCRuntimeClassName        = "kata-cc"
+	kataCCRuntimeClassCpuOverhead = "0.25"
+	kataCCRuntimeClassMemOverhead = "350Mi"
+
+	// TEE node labels
+	intelTDXNodeLabel = "intel.feature.node.kubernetes.io/tdx"
+	amdSNPNodeLabel   = "amd.feature.node.kubernetes.io/snp"
+
+	// RuntimeClass handlers for TEE
+	kataCCIntelHandler = "kata-cc-intel"
+	kataCCAmdHandler   = "kata-cc-amd"
+)
+
+// When the feature is enabled, handleFeatureConfidential configures confidential computing support.
 //
-// Changes the ImageConfigMap, so that the image creation job will create a confidential image.
-// This will happen at the first reconciliation loop, before the image creation job starts.
+// For peer pods: sets ImageConfigMap and peer pods configMap to enable confidential images and CVM support.
+// For baremetal: creates kata-cc runtime classes with TEE-specific handlers (Intel TDX or AMD SNP).
 //
-// Changes the peer pods configMap to enable confidential.
-// This will happen likely after several reconciliation loops, because it has prerequisites:
-//
-//   - Peer pods must be enabled in the KataConfig.
-//   - The peer pods config map must exist.
-//
-// When the feature is disabled, handleFeatureConfidential resets the config maps to non-confidential values.
+// When the feature is disabled, handleFeatureConfidential resets config maps and deletes runtime classes.
 func (r *KataConfigOpenShiftReconciler) handleFeatureConfidential(state FeatureGateState) error {
+	if r.kataConfig.Spec.EnablePeerPods {
+		if err := r.handleConfidentialPeerPods(state); err != nil {
+			return err
+		}
+	}
 
+	if err := r.handleConfidentialBaremetal(state); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// handleConfidentialPeerPods configures confidential computing for peer pods deployments.
+// It manages ImageConfigMap and peer pods configMap to control confidential images and CVM support.
+func (r *KataConfigOpenShiftReconciler) handleConfidentialPeerPods(state FeatureGateState) error {
 	// ImageConfigMap
-
 	if err := InitializeImageGenerator(r.Client); err != nil {
 		return err
 	}
@@ -56,8 +84,6 @@ func (r *KataConfigOpenShiftReconciler) handleFeatureConfidential(state FeatureG
 		}
 	}
 
-	// peer pods config
-
 	// Patch peer pods configMap, if it exists.
 	var peerpodsCMData map[string]string
 	if state == Enabled {
@@ -75,4 +101,82 @@ func (r *KataConfigOpenShiftReconciler) handleFeatureConfidential(state FeatureG
 	}
 
 	return nil
+}
+
+// handleConfidentialBaremetal configures confidential computing for baremetal deployments.
+// It manages kata-cc runtime classes with TEE-specific handlers (Intel TDX or AMD SNP).
+func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state FeatureGateState) error {
+	if state == Enabled {
+		r.Log.Info("Creating " + kataCCRuntimeClassName + " runtime class for confidential containers")
+
+		handler, nodeLabel, err := r.computeTEEHandlerAndLabel()
+		if err != nil {
+			// If peer pods is enabled, just warn and skip baremetal coco
+			if r.kataConfig.Spec.EnablePeerPods {
+				r.Log.Info("WARNING: No TEE hardware detected, skipping baremetal confidential containers (peer pods CVM will handle confidential workloads)", "err", err)
+				return nil
+			}
+			// If peer pods disabled, this is an error - user wants baremetal coco but no hardware
+			r.Log.Info("failed to detect TEE platform", "err", err)
+			return err
+		}
+
+		// Create kata-cc runtime class restricted to the detected TEE subset
+		err = r.createRuntimeClass(kataCCRuntimeClassName, kataCCRuntimeClassCpuOverhead, kataCCRuntimeClassMemOverhead, handler, nodeLabel)
+		if err != nil {
+			r.Log.Info("Error creating "+kataCCRuntimeClassName+" runtime class", "err", err)
+			return fmt.Errorf("Error creating "+kataCCRuntimeClassName+" runtime class: %w", err)
+		}
+
+	} else {
+		r.Log.Info("Deleting " + kataCCRuntimeClassName + " runtime class for confidential containers")
+
+		// Delete kata-cc runtime class
+		err := r.deleteRuntimeClass(kataCCRuntimeClassName)
+		if err != nil {
+			r.Log.Info("Error deleting "+kataCCRuntimeClassName+" runtime class", "err", err)
+			return fmt.Errorf("Error deleting "+kataCCRuntimeClassName+" runtime class: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) computeTEEHandlerAndLabel() (string, string, error) {
+	selector, err := r.getKataConfigNodeSelectorAsSelector()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to build node selector: %w", err)
+	}
+
+	nodes := &corev1.NodeList{}
+	listOpts := []client.ListOption{
+		client.MatchingLabelsSelector{Selector: selector},
+	}
+	if err := r.Client.List(context.TODO(), nodes, listOpts...); err != nil {
+		return "", "", fmt.Errorf("failed to list nodes: %w", err)
+	}
+
+	var hasIntelTDX bool
+	var hasAmdSNP bool
+	for _, n := range nodes.Items {
+		if v, ok := n.Labels[intelTDXNodeLabel]; ok && v == "true" {
+			hasIntelTDX = true
+		}
+		if v, ok := n.Labels[amdSNPNodeLabel]; ok && v == "true" {
+			hasAmdSNP = true
+		}
+	}
+
+	if hasIntelTDX && hasAmdSNP {
+		return "", "", fmt.Errorf("multiple TEE platforms detected; only one per cluster supported")
+	}
+
+	if hasIntelTDX {
+		return kataCCIntelHandler, intelTDXNodeLabel, nil
+	}
+	if hasAmdSNP {
+		return kataCCAmdHandler, amdSNPNodeLabel, nil
+	}
+
+	return "", "", fmt.Errorf("no TEE platform labels found (expected %s or %s)", intelTDXNodeLabel, amdSNPNodeLabel)
 }
