@@ -391,17 +391,17 @@ spec:
                 - name: PEERPODS_NAMESPACE
                   value: openshift-sandboxed-containers-operator
                 - name: RELATED_IMAGE_KATA_MONITOR
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:cce42890434fcbc9e9401aa9f1255e90ad07b545fa7aa89678c6e0ef34e444cd
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-monitor-v1-10@sha256:cce42890434fcbc9e9401aa9f1255e90ad07b545fa7aa89678c6e0ef34e444cd
                 - name: RELATED_IMAGE_CAA
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:9cd8d2068f3161fe1f904e7b832b58a7dd90d620a8bc58092ebbe2e7f5a12037
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa-v1-10@sha256:9cd8d2068f3161fe1f904e7b832b58a7dd90d620a8bc58092ebbe2e7f5a12037
                 - name: RELATED_IMAGE_PEERPODS_WEBHOOK
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:97d0e8e547332adc4b6f4c2524592311d063e467c3739af8aa953d09a5b199a2
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa-webhook-v1-10@sha256:97d0e8e547332adc4b6f4c2524592311d063e467c3739af8aa953d09a5b199a2
                 - name: RELATED_IMAGE_PODVM_BUILDER
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:5a000e0476bb1e6c2179c0bde811bb73166393660ffe30639f1b3a3f304c5150
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-builder-v1-10@sha256:5a000e0476bb1e6c2179c0bde811bb73166393660ffe30639f1b3a3f304c5150
                 - name: RELATED_IMAGE_PODVM_PAYLOAD
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:f615e0fc32a197c96c472eb3d7bdd113afacb141178b6117c95a8ee2b9188558
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-payload-v1-10@sha256:f615e0fc32a197c96c472eb3d7bdd113afacb141178b6117c95a8ee2b9188558
                 - name: RELATED_IMAGE_PODVM_OCI
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:9dc6c17d1b8874e6d7771ba62b6361b67f34e367e29182da09dbb0c27896be52
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-dm-verity-image-v1-10@sha256:12674958ca8f6c1e23125005d15a55a7881135e7d013a1d30765e8055d931b51
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -548,17 +548,17 @@ spec:
   provider:
     name: Red Hat
   relatedImages:
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:cce42890434fcbc9e9401aa9f1255e90ad07b545fa7aa89678c6e0ef34e444cd
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-monitor-v1-10@sha256:cce42890434fcbc9e9401aa9f1255e90ad07b545fa7aa89678c6e0ef34e444cd
     name: kata-monitor
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:9cd8d2068f3161fe1f904e7b832b58a7dd90d620a8bc58092ebbe2e7f5a12037
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa-v1-10@sha256:9cd8d2068f3161fe1f904e7b832b58a7dd90d620a8bc58092ebbe2e7f5a12037
     name: caa
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:97d0e8e547332adc4b6f4c2524592311d063e467c3739af8aa953d09a5b199a2
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa-webhook-v1-10@sha256:97d0e8e547332adc4b6f4c2524592311d063e467c3739af8aa953d09a5b199a2
     name: peerpods-webhook
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:5a000e0476bb1e6c2179c0bde811bb73166393660ffe30639f1b3a3f304c5150
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-builder-v1-10@sha256:5a000e0476bb1e6c2179c0bde811bb73166393660ffe30639f1b3a3f304c5150
     name: podvm-builder
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:f615e0fc32a197c96c472eb3d7bdd113afacb141178b6117c95a8ee2b9188558
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-payload-v1-10@sha256:f615e0fc32a197c96c472eb3d7bdd113afacb141178b6117c95a8ee2b9188558
     name: podvm-payload
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:9dc6c17d1b8874e6d7771ba62b6361b67f34e367e29182da09dbb0c27896be52
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-dm-verity-image-v1-10@sha256:12674958ca8f6c1e23125005d15a55a7881135e7d013a1d30765e8055d931b51
     name: podvm-oci
   replaces: sandboxed-containers-operator.v1.10.0
   version: 1.10.1
