@@ -9,11 +9,11 @@ metadata:
     pipelinesascode.tekton.dev/cancel-in-progress: "true"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && target_branch
-      == "devel" && ( "fbc/test-fbc/***".pathChanged() || "fbc/render.sh".pathChanged() || ".tekton/osc-test-fbc-pull-request.yaml".pathChanged() )
+      == "osc-release-v1.10" && ( "fbc/test-fbc/***".pathChanged() || "fbc/render.sh".pathChanged() || ".tekton/osc-test-fbc-pull-request.yaml".pathChanged() )
   creationTimestamp: null
   labels:
-    appstudio.openshift.io/application: osc-test-catalog
-    appstudio.openshift.io/component: osc-test-fbc
+    appstudio.openshift.io/application: osc-test-catalog-v1-10
+    appstudio.openshift.io/component: osc-test-fbc-v1-10
     pipelines.appstudio.openshift.io/type: build
   name: osc-test-fbc-on-pull-request
   namespace: ose-osc-tenant
@@ -24,7 +24,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-test-fbc:on-pr-{{revision}}
+    value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-test-fbc-v1-10:on-pr-{{revision}}
   - name: image-expires-after
     value: 5d
   - name: build-platforms
@@ -400,7 +400,7 @@ spec:
     - name: netrc
       optional: true
   taskRunTemplate:
-    serviceAccountName: build-pipeline-osc-test-fbc
+    serviceAccountName: build-pipeline-osc-test-fbc-v1-10
   workspaces:
   - name: git-auth
     secret:

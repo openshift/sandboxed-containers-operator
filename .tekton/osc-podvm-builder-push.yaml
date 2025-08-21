@@ -7,11 +7,11 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/cancel-in-progress: 'false'
     pipelinesascode.tekton.dev/max-keep-runs: '3'
-    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch == "devel" && ( "config/peerpods/podvm/***".pathChanged() || ".tekton/osc-podvm-builder-push.yaml".pathChanged() )
+    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch == "osc-release-v1.10" && ( "config/peerpods/podvm/***".pathChanged() || ".tekton/osc-podvm-builder-push.yaml".pathChanged() )
   creationTimestamp:
   labels:
-    appstudio.openshift.io/application: openshift-sandboxed-containers
-    appstudio.openshift.io/component: osc-podvm-builder
+    appstudio.openshift.io/application: openshift-sandboxed-containers-v1-10
+    appstudio.openshift.io/component: osc-podvm-builder-v1-10
     pipelines.appstudio.openshift.io/type: build
   name: osc-podvm-builder-on-push
   namespace: ose-osc-tenant
@@ -22,7 +22,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-builder:{{revision}}
+    value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-builder-v1-10:{{revision}}
   - name: build-platforms
     value:
     - linux/x86_64
@@ -614,7 +614,7 @@ spec:
     - name: netrc
       optional: true
   taskRunTemplate:
-    serviceAccountName: build-pipeline-osc-podvm-builder
+    serviceAccountName: build-pipeline-osc-podvm-builder-v1-10
   workspaces:
   - name: git-auth
     secret:
