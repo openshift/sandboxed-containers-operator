@@ -58,7 +58,16 @@ The deployment sequence is described below:
 
 ## Install OSC operator GA release
 
-- Update `startingCSV` key in the `subs-ga.yaml` file to use the GA release you need.
+- The Subscription follows the `stable` channel; no `startingCSV` pinning is required.
+
+- Optional: pin to a specific CSV by setting `OSC_OPERATOR_CSV` before running the script. The script will patch the Subscription's `startingCSV` accordingly.
+
+  Example:
+
+  ```sh
+  export OSC_OPERATOR_CSV=sandboxed-containers-operator.v1.10.1
+  ./install.sh -t tdx
+  ```
 
 - If not using SNO or converged cluster then label at least a single worker node for deployment
   and export the label via the 1BM_NODE_LABEL1 env variable
