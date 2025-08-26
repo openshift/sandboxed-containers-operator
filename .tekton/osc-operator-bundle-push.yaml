@@ -14,7 +14,7 @@ metadata:
     appstudio.openshift.io/application: openshift-sandboxed-containers-v1-10
     appstudio.openshift.io/component: osc-operator-bundle-v1-10
     pipelines.appstudio.openshift.io/type: build
-  name: osc-operator-bundle-on-push
+  name: osc-operator-bundle-v1-10-on-push
   namespace: ose-osc-tenant
 spec:
   params:

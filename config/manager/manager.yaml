@@ -78,17 +78,17 @@ spec:
             - name: PEERPODS_NAMESPACE
               value: "openshift-sandboxed-containers-operator"
             - name: RELATED_IMAGE_KATA_MONITOR
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:cce42890434fcbc9e9401aa9f1255e90ad07b545fa7aa89678c6e0ef34e444cd
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:136fd71ff5b5b3afee83fc21c35f66b42eb57a107e55616939600ec7053fe9ef
             - name: RELATED_IMAGE_CAA
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:8dbee15543018660873198faf6c911aa500ca32a92c910a7a2832138259a60ee
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:db2d2e1f00739b67f050fa0c6eeb7c99bf78d2b405836d9e3ea9b7815ef15588
             - name: RELATED_IMAGE_PEERPODS_WEBHOOK
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:60e2e462a45624ae9ba96ace52cab50e6a0e7cc5fa5ffc1640582a7ce8a879bf
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:a7b99c5ef7ed7ceb9cb63f731954c73e6f7e87c9321d4335efc6331437205ce4
             - name: RELATED_IMAGE_PODVM_BUILDER
               value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:0d5ed13db791d34b0d065ea9482f835e523bbb3c6242445f61d5effa01fb9312
             - name: RELATED_IMAGE_PODVM_PAYLOAD
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:f615e0fc32a197c96c472eb3d7bdd113afacb141178b6117c95a8ee2b9188558 
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:954b167b1aeb1d0fa51e4135940677239bc005a7da7ec4ea6118708e1191c6e1 
             - name: RELATED_IMAGE_PODVM_OCI
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:12674958ca8f6c1e23125005d15a55a7881135e7d013a1d30765e8055d931b51
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:49a6c7c126ef7dea48562fdf49d68b6ef5637f6e46745665189597feb94dfdda
           imagePullPolicy: Always
           resources:
             limits:
