@@ -13,7 +13,7 @@ metadata:
     appstudio.openshift.io/application: openshift-sandboxed-containers-v1-10
     appstudio.openshift.io/component: osc-must-gather-v1-10
     pipelines.appstudio.openshift.io/type: build
-  name: osc-must-gather-on-push
+  name: osc-must-gather-v1-10-on-push
   namespace: ose-osc-tenant
 spec:
   params:

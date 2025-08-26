@@ -14,7 +14,7 @@ metadata:
     appstudio.openshift.io/application: openshift-sandboxed-containers-v1-10
     appstudio.openshift.io/component: osc-podvm-builder-v1-10
     pipelines.appstudio.openshift.io/type: build
-  name: osc-podvm-builder-on-pull-request
+  name: osc-podvm-builder-v1-10-on-pull-request
   namespace: ose-osc-tenant
 spec:
   params:
