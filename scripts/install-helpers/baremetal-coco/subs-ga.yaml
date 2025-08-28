@@ -9,7 +9,4 @@ spec:
   name: sandboxed-containers-operator
   source: redhat-operators
   sourceNamespace: openshift-marketplace
-  # This is tied to the CoCo on baremetal preview release
-  # We use the current GA release subscription as BM releases happens
-  # post the GA of the CoCO/peer-pods releases for now
-  startingCSV: sandboxed-containers-operator.v1.9.0
+  # Leave version resolution to channel; do not pin startingCSV
