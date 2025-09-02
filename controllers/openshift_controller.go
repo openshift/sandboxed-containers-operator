@@ -488,7 +488,9 @@ func (r *KataConfigOpenShiftReconciler) removeFinalizer() error {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) listKataPods() error {
+type PodRuntimeCheck func(podRuntimeClassName string) error
+
+func (r *KataConfigOpenShiftReconciler) listKataPodsWithCheck(checkfn PodRuntimeCheck) error {
 	podList := &corev1.PodList{}
 	listOpts := []client.ListOption{
 		client.InNamespace(corev1.NamespaceAll),
@@ -498,12 +500,32 @@ func (r *KataConfigOpenShiftReconciler) listKataPods() error {
 	}
 	for _, pod := range podList.Items {
 		if pod.Spec.RuntimeClassName != nil {
-			if contains(r.kataConfig.Status.RuntimeClasses, *pod.Spec.RuntimeClassName) {
-				return fmt.Errorf("existing pods using \"%v\" RuntimeClass found. Please delete the pods manually for KataConfig deletion to proceed", *pod.Spec.RuntimeClassName)
+			if err := checkfn(*pod.Spec.RuntimeClassName); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) listKataPods() error {
+	checkfn := func(podRuntimeClassName string) error {
+		if contains(r.kataConfig.Status.RuntimeClasses, podRuntimeClassName) {
+			return fmt.Errorf("existing pods using \"%v\" RuntimeClass found. Please delete the pods manually for KataConfig deletion to proceed", podRuntimeClassName)
+		}
+		return nil
+	}
+	return r.listKataPodsWithCheck(checkfn)
+}
+
+func (r *KataConfigOpenShiftReconciler) listKataPodsInRuntimeClass(runtimeClassName string) error {
+	checkfn := func(podRuntimeClassName string) error {
+		if podRuntimeClassName == runtimeClassName {
+			return fmt.Errorf("existing pods using \"%v\" RuntimeClass found. Please delete the pods manually for KataConfig creation or upgrade to proceed", runtimeClassName)
+		}
+		return nil
+	}
+	return r.listKataPodsWithCheck(checkfn)
 }
 
 //lint:ignore U1000 This method is unused, but let's keep it for now
