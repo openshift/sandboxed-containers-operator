@@ -571,6 +571,18 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPods() (*ctrl.Result, error) {
 }
 
 func (r *KataConfigOpenShiftReconciler) disablePeerPods() (*ctrl.Result, error) {
+	// Wait for deletion of all peer pods
+	err := r.listKataPodsInRuntimeClass(peerpodsRuntimeClassName)
+	if err != nil {
+		r.setInProgressConditionToBlockedByExistingKataPods(err.Error())
+		updErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
+		if updErr != nil {
+			return &ctrl.Result{}, updErr
+		}
+		r.Log.Info("Kata Peer PODs are present. Requeue for reconciliation ")
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+	}
+
 	// We are explicitly ignoring any errors in peerpodconfig and related machineconfigs removal as
 	// these can be removed manually if needed and this is not in the critical path
 	// of operator functionality
@@ -621,6 +633,9 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPods() (*ctrl.Result, error) 
 		// For all other statuses, just log and continue
 		r.Log.Info("PodVM Image deletion status and error", "status", status, "error", err)
 	}
+
+	// Reset the in progress condition
+	r.resetInProgressCondition()
 
 	return nil, nil
 }

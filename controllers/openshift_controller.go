@@ -1105,6 +1105,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 			if res != nil || err != nil {
 				return *res, err
 			}
+		} else {
+			res, err := r.disablePeerPods()
+			if err != nil {
+				return *res, err
+			}
 		}
 	} else {
 		// We don't requeue - we're waiting for an MCP to go
