@@ -1126,73 +1126,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 		// create Pod VM image CRD and runtimeclass for peerpods
 		if r.kataConfig.Spec.EnablePeerPods {
-			//Get pull-secret from openshift-config ns and save it as auth-json-secret in our ns
-			//This will be used by the podvm image provider to pull the pause image for embedding
-			err = r.createAuthJsonSecret()
-			if err != nil {
-				r.Log.Info("Error in creating auth-json-secret", "err", err)
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			res, err := r.enablePeerPods()
+			if res != nil || err != nil {
+				return *res, err
 			}
-
-			// Create the podvm image
-			// Since we want to declaratively reach the final state, we need to reconcile when there are errors
-			// as we want the system to give a chance of fixing the error.
-			// For cases we don't want to reconcile, ie for ImageCreatedSuccessfully and UnsupportedPodVMImageProvider
-			// we should just log the message and let the code continue without explicitly returning from the method
-
-			// Following are the returned statuses:
-			// ImageCreatedSuccessfully
-			// UnsupportedPodVMImageProvider
-			// ImageCreationFailed
-			// RequeueNeeded
-			// ImageCreationStatusUnknown
-
-			status, err := ImageCreate(r.Client)
-			switch status {
-			case ImageCreatedSuccessfully:
-				r.setInProgressConditionToPodVMImageCreated()
-				r.Log.Info("PodVM Image created successfully")
-
-			case UnsupportedPodVMImageProvider:
-				r.setInProgressConditionToPodVMImageUnsupportedProvider()
-				r.Log.Info("unsupported cloud provider, skipping image creation")
-
-			case RequeueNeeded:
-				r.setInProgressConditionToPodVMImageCreating()
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-
-			case ImageCreationFailed:
-				r.setInProgressConditionToPodVMImageCreationFailed()
-				if err != nil {
-					// We requeue only if there is an error.
-					return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-				}
-				// If there's no error, log and continue
-				r.Log.Info("Image creation failed. Check logs for more details")
-
-			case ImageCreationStatusUnknown:
-				r.setInProgressConditionToPodVMImageCreationUnknown()
-
-				// Reconcile with error
-				return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
-
-			default:
-				// For all other statuses, just log and continue
-				r.Log.Info("PodVM Image creation status and error", "status", status, "error", err)
-			}
-
-			err = r.enablePeerPodsMiscConfigs()
-			if err != nil {
-				r.Log.Info("Enabling peerpodconfig CR, runtimeclass etc", "err", err)
-				// Give sometime for the error to go away before reconciling again
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-
-			}
-
-			// Reset the in progress condition
-			r.resetInProgressCondition()
 		}
-
 	} else {
 		// We don't requeue - we're waiting for an MCP to go
 		// Updating->Updated which will trigger reconciliation
