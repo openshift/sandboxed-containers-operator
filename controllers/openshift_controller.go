@@ -1020,19 +1020,9 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	}
 
 	if r.kataConfig.Spec.EnablePeerPods {
-		// We are explicitly ignoring any errors in peerpodconfig and related machineconfigs removal as
-		// these can be removed manually if needed and this is not in the critical path
-		// of operator functionality
-		_ = r.disablePeerPods()
-
-		// Handle podvm image deletion
-		res, err := r.deletePodVMImage()
-		if res != nil {
+		res, err := r.disablePeerPods()
+		if res != nil || err != nil {
 			return *res, err
-		}
-		// FIXME : dead code, revisit deletePodVMImage() return paths
-		if err != nil {
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 		}
 	}
 

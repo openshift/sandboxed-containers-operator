@@ -368,7 +368,7 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) disablePeerPods() error {
+func (r *KataConfigOpenShiftReconciler) disablePeerPodsMiscConfigs() error {
 	ds := r.processDaemonsetForCAA()
 	err := r.Client.Delete(context.TODO(), ds)
 	if err != nil {
@@ -571,6 +571,25 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPods() (*ctrl.Result, error) {
 
 	// Reset the in progress condition
 	r.resetInProgressCondition()
+
+	return nil, nil
+}
+
+func (r *KataConfigOpenShiftReconciler) disablePeerPods() (*ctrl.Result, error) {
+	// We are explicitly ignoring any errors in peerpodconfig and related machineconfigs removal as
+	// these can be removed manually if needed and this is not in the critical path
+	// of operator functionality
+	_ = r.disablePeerPodsMiscConfigs()
+
+	// Handle podvm image deletion
+	res, err := r.deletePodVMImage()
+	if res != nil {
+		return res, err
+	}
+	// FIXME : dead code, revisit deletePodVMImage() return paths
+	if err != nil {
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+	}
 
 	return nil, nil
 }
