@@ -869,57 +869,10 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	}
 
 	if r.kataConfig.Spec.EnablePeerPods {
-		// We are explicitly ignoring any errors in peerpodconfig and related machineconfigs removal as
-		// these can be removed manually if needed and this is not in the critical path
-		// of operator functionality
-		_ = r.disablePeerPods()
-
-		// Handle podvm image deletion
-		// Since we want to declaratively reach the final state, we need to reconcile when there are errors
-		// as we want the system to give a chance of fixing the error.
-		// For cases we don't want to reconcile, ie for ImageDeletedSuccessfully and UnsupportedPodVMImageProvider
-		// we should just log the message and let the code continue without explicitly returning from the method
-
-		// Following are returned statuses:
-		// ImageDeletedSuccessfully
-		// UnsupportedPodVMImageProvider
-		// ImageDeletionFailed
-		// RequeueNeeded
-		// ImageDeletionStatusUnknown
-
-		// Handle podvm image deletion
-		status, err := ImageDelete(r.Client)
-		switch status {
-		case ImageDeletedSuccessfully:
-			r.setInProgressConditionToPodVMImageDeleted()
-			r.Log.Info("PodVM Image deleted successfully")
-
-		case UnsupportedPodVMImageProvider:
-			r.setInProgressConditionToPodVMImageUnsupportedProvider()
-			r.Log.Info("unsupported cloud provider, skipping image deletion")
-
-		case RequeueNeeded:
-			r.setInProgressConditionToPodVMImageDeleting()
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-
-		case ImageDeletionFailed:
-			r.setInProgressConditionToPodVMImageDeletionFailed()
-			if err != nil {
-				// We requeue only if there is an error.
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-			}
-			// If there's no error, log and continue
-			r.Log.Info("Image deletion failed. Check logs for more details")
-
-		case ImageDeletionStatusUnknown:
-			r.setInProgressConditionToPodVMImageDeletionUnknown()
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-
-		default:
-			// For all other statuses, just log and continue
-			r.Log.Info("PodVM Image deletion status and error", "status", status, "error", err)
+		res, err := r.disablePeerPods()
+		if res != nil || err != nil {
+			return *res, err
 		}
-
 	}
 
 	scc := GetScc()
