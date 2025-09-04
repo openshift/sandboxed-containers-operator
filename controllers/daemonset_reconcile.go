@@ -163,7 +163,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 	if r.kataConfig.Spec.EnablePeerPods {
 		// We want to make sure that the osc-config-sync daemonset removal successfully started
 		// So we will try again in case of an error
-		err = r.disablePeerPods()
+		err = r.disablePeerPodsMiscConfigs()
 		if err != nil {
 			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
 		}
