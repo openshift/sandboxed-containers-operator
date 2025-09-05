@@ -1,4 +1,7 @@
-FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_golang_1.24 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.24.6-1756993846 as builder
+
+# Required by the ubi based go-toolset image
+USER root
 
 WORKDIR /workspace
 
