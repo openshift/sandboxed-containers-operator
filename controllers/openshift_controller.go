@@ -48,11 +48,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
-
-// blank assignment to verify that KataConfigOpenShiftReconciler implements reconcile.Reconciler
-// var _ reconcile.Reconciler = &KataConfigOpenShiftReconciler{}
 
 // KataConfigOpenShiftReconciler reconciles a KataConfig object
 type KataConfigOpenShiftReconciler struct {
@@ -733,7 +729,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	r.Log.Info("KataConfig deletion in progress: ")
 	machinePool, err := r.getMcpName()
 	if err != nil {
-		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
 
 	if contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
@@ -824,7 +820,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		r.Log.Info("Waiting for MCO to start updating.")
 		// We don't requeue, an MCP going Updated->Updating will
 		// trigger reconciliation by itself thanks to our watching MCPs.
-		return reconcile.Result{}, nil
+		return ctrl.Result{}, nil
 	} else {
 		r.Log.Info("No need to wait for MCO to start updating.", "isMcoUpdating", isMcoUpdating, "Status.WaitingForMcoToStart", r.kataConfig.Status.WaitingForMcoToStart)
 		r.kataConfig.Status.WaitingForMcoToStart = false
@@ -837,7 +833,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 
 	if isMcoUpdating {
 		r.Log.Info("Waiting for MachineConfigPool to be fully updated", "machinePool", targetPool)
-		return reconcile.Result{}, nil
+		return ctrl.Result{}, nil
 	}
 
 	r.resetInProgressCondition()
@@ -1071,7 +1067,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.Log.Info("Waiting for MCO to start updating.")
 		// We don't requeue, an MCP going Updated->Updating will
 		// trigger reconciliation by itself thanks to our watching MCPs.
-		return reconcile.Result{}, nil
+		return ctrl.Result{}, nil
 	} else {
 		r.Log.Info("No need to wait for MCO to start updating.", "isMcoUpdating", isMcoUpdating, "Status.WaitingForMcoToStart", r.kataConfig.Status.WaitingForMcoToStart)
 		r.kataConfig.Status.WaitingForMcoToStart = false
@@ -1088,13 +1084,13 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		err := r.createRuntimeClass(kataRuntimeClassName, kataRuntimeClassCpuOverhead, kataRuntimeClassMemOverhead)
 		if err != nil {
 			// Give sometime for the error to go away before reconciling again
-			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 		}
 		r.Log.Info("create Scc")
 		err = r.createScc()
 		if err != nil {
 			// Give sometime for the error to go away before reconciling again
-			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 		}
 
 		ds := r.processDaemonsetForMonitor()
@@ -1189,7 +1185,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 			if err != nil {
 				r.Log.Info("Enabling peerpodconfig CR, runtimeclass etc", "err", err)
 				// Give sometime for the error to go away before reconciling again
-				return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 
 			}
 
@@ -1245,8 +1241,8 @@ func (r *KataConfigOpenShiftReconciler) createMc(machinePool string) (bool, erro
 
 }
 
-func (r *KataConfigOpenShiftReconciler) makeReconcileRequest() reconcile.Request {
-	return reconcile.Request{
+func (r *KataConfigOpenShiftReconciler) makeReconcileRequest() ctrl.Request {
+	return ctrl.Request{
 		NamespacedName: types.NamespacedName{
 			Name: r.kataConfig.Name,
 		},
@@ -1320,7 +1316,7 @@ type McpEventHandler struct {
 	reconciler *KataConfigOpenShiftReconciler
 }
 
-func (eh *McpEventHandler) Create(ctx context.Context, event event.CreateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (eh *McpEventHandler) Create(ctx context.Context, event event.CreateEvent, queue workqueue.TypedRateLimitingInterface[ctrl.Request]) {
 	mcp := event.Object
 
 	if !isMcpRelevant(mcp) {
@@ -1334,7 +1330,7 @@ func (eh *McpEventHandler) Create(ctx context.Context, event event.CreateEvent, 
 	log.Info("MCP created")
 }
 
-func (eh *McpEventHandler) Update(ctx context.Context, event event.UpdateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (eh *McpEventHandler) Update(ctx context.Context, event event.UpdateEvent, queue workqueue.TypedRateLimitingInterface[ctrl.Request]) {
 	mcpOld := event.ObjectOld
 	mcpNew := event.ObjectNew
 
@@ -1389,7 +1385,7 @@ func (eh *McpEventHandler) Update(ctx context.Context, event event.UpdateEvent, 
 	}
 }
 
-func (eh *McpEventHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (eh *McpEventHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.TypedRateLimitingInterface[ctrl.Request]) {
 	mcp := event.Object
 
 	if !isMcpRelevant(mcp) {
@@ -1402,7 +1398,7 @@ func (eh *McpEventHandler) Delete(ctx context.Context, event event.DeleteEvent, 
 	log.Info("MCP deleted")
 }
 
-func (eh *McpEventHandler) Generic(ctx context.Context, event event.GenericEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (eh *McpEventHandler) Generic(ctx context.Context, event event.GenericEvent, queue workqueue.TypedRateLimitingInterface[ctrl.Request]) {
 	mcp := event.Object
 
 	if !isMcpRelevant(mcp) {
@@ -1472,7 +1468,7 @@ type NodeEventHandler struct {
 	reconciler *KataConfigOpenShiftReconciler
 }
 
-func (eh *NodeEventHandler) Create(ctx context.Context, event event.CreateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (eh *NodeEventHandler) Create(ctx context.Context, event event.CreateEvent, queue workqueue.TypedRateLimitingInterface[ctrl.Request]) {
 	node := event.Object
 
 	log := eh.reconciler.Log.WithName("NodeCreate").WithValues("node name", node.GetName())
@@ -1494,7 +1490,7 @@ func (eh *NodeEventHandler) Create(ctx context.Context, event event.CreateEvent,
 	queue.Add(eh.reconciler.makeReconcileRequest())
 }
 
-func (eh *NodeEventHandler) Update(ctx context.Context, event event.UpdateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (eh *NodeEventHandler) Update(ctx context.Context, event event.UpdateEvent, queue workqueue.TypedRateLimitingInterface[ctrl.Request]) {
 	// This function assumes that a node cannot change its role from master to
 	// worker or vice-versa.
 	nodeOld := event.ObjectOld
@@ -1544,10 +1540,10 @@ func (eh *NodeEventHandler) Update(ctx context.Context, event event.UpdateEvent,
 	}
 }
 
-func (eh *NodeEventHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (eh *NodeEventHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.TypedRateLimitingInterface[ctrl.Request]) {
 }
 
-func (eh *NodeEventHandler) Generic(ctx context.Context, event event.GenericEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (eh *NodeEventHandler) Generic(ctx context.Context, event event.GenericEvent, queue workqueue.TypedRateLimitingInterface[ctrl.Request]) {
 }
 
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
