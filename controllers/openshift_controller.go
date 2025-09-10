@@ -65,6 +65,8 @@ type KataConfigOpenShiftReconciler struct {
 	kataConfig *kataconfigurationv1.KataConfig
 
 	ImgMc *mcfgv1.MachineConfig
+
+	DeploymentMode DeploymentMode
 }
 
 const (

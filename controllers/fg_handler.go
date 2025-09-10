@@ -13,16 +13,19 @@ const (
 	FgConfigMapName         = "osc-feature-gates"
 	ConfidentialFeatureGate = "confidential"
 	LayeredImageDeployment  = "layeredImageDeployment"
+	DeploymentModeConfig    = "deploymentMode"
 )
 
 var DefaultFeatureGates = FeatureGateStatus{
 	Confidential:           false,
 	LayeredImageDeployment: false,
+	DeploymentModeOption:   MachineConfigOption,
 }
 
 type FeatureGateStatus struct {
 	Confidential           bool
 	LayeredImageDeployment bool
+	DeploymentModeOption   DeploymentModeOption
 }
 
 // Create enum to represent the state of the feature gates
@@ -44,6 +47,7 @@ func (r *KataConfigOpenShiftReconciler) NewFeatureGateStatus() (*FeatureGateStat
 	fgStatus := &FeatureGateStatus{
 		Confidential:           DefaultFeatureGates.Confidential,
 		LayeredImageDeployment: DefaultFeatureGates.LayeredImageDeployment,
+		DeploymentModeOption:   DefaultFeatureGates.DeploymentModeOption,
 	}
 
 	cfgMap := &corev1.ConfigMap{}
@@ -64,6 +68,14 @@ func (r *KataConfigOpenShiftReconciler) NewFeatureGateStatus() (*FeatureGateStat
 				r.Log.Info("Couldn't parse layeredImageDeployment status, using default value", "default", DefaultFeatureGates.LayeredImageDeployment, "error", err)
 			} else {
 				fgStatus.LayeredImageDeployment = layeredImageDeployment
+			}
+		}
+		if value, ok := cfgMap.Data[DeploymentModeConfig]; ok {
+			mode, err := ParseDeploymentModeOption(value)
+			if err != nil {
+				r.Log.Info("Couldn't parse deploymentMode status, using default value", "default", DefaultFeatureGates.DeploymentModeOption, "error", err)
+			} else {
+				fgStatus.DeploymentModeOption = mode
 			}
 		}
 	}
@@ -112,6 +124,15 @@ func (r *KataConfigOpenShiftReconciler) processFeatureGates() error {
 				return err
 			}
 		}
+	}
+
+	if err := r.handleDeploymentModeFeature(fgStatus.DeploymentModeOption); err != nil {
+		return err
+	}
+
+	if r.DeploymentMode == DaemonSetMode {
+		r.Log.Info("Skipping layered image deployment feature, not using MCO")
+		return nil
 	}
 
 	// Check layered Image deployment FG
