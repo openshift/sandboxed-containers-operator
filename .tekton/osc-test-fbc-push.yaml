@@ -309,7 +309,7 @@ spec:
       - name: IMAGE_DIGEST
         value: $(tasks.build-image-index.results.IMAGE_DIGEST)
       - name: ADDITIONAL_TAGS
-        value: ["latest", "1.10.1-$(tasks.clone-repository.results.commit-timestamp)"]
+        value: ["latest", "1.11.0-$(tasks.clone-repository.results.commit-timestamp)"]
       runAfter:
       - build-image-index
       taskRef:
