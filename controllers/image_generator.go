@@ -680,18 +680,8 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 
 func checkKeysPresentAndNotEmpty(data interface{}, keys []string) bool {
 	// Convert the input map to a map[string]string
-	var strMap map[string]string
-
-	switch v := data.(type) {
-	case map[string]string:
-		strMap = v
-	case map[string][]byte:
-		strMap = make(map[string]string)
-		for key, value := range v {
-			strMap[key] = string(value)
-		}
-	default:
-		// Unsupported type
+	strMap := toStrMap(data)
+	if strMap == nil {
 		return false
 	}
 
@@ -706,6 +696,49 @@ func checkKeysPresentAndNotEmpty(data interface{}, keys []string) bool {
 	}
 
 	return true
+}
+
+// checkAnyKeyPresentWithValue checks if any of the specified keys are present in the input map
+// and have non-empty string values.
+// It accepts a map of type map[string][]byte or map[string]string as `data`,
+// and a slice of keys to search for.
+// Returns true if any key exists in the map and its value is not an empty string.
+func checkAnyKeyPresentWithValue(data interface{}, keys []string) bool {
+	// Convert the input to a map[string]string using a helper function.
+	strMap := toStrMap(data)
+	if strMap == nil {
+		return false // Return false if conversion fails.
+	}
+
+	// Iterate over the list of keys and check if any key exists with a non-empty value.
+	for _, key := range keys {
+		value, ok := strMap[key]
+		if ok && value != "" {
+			return true // Found a key with a non-empty value.
+		}
+	}
+
+	igLogger.Info("checkAnyKeyPresentWithValue: no key is present or has non-empty value", "searchedKeys", keys)
+
+	return false // No matching key with a non-empty value found.
+}
+
+func toStrMap(data interface{}) map[string]string {
+	var strMap map[string]string
+
+	switch v := data.(type) {
+	case map[string]string:
+		strMap = v
+	case map[string][]byte:
+		strMap = make(map[string]string)
+		for key, value := range v {
+			strMap[key] = string(value)
+		}
+	default:
+		// Unsupported type
+		return nil
+	}
+	return strMap
 }
 
 func (r *ImageGenerator) getImageConfigMapName() string {
