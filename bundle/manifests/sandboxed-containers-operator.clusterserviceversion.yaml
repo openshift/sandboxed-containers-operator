@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2025-09-09T11:30:47Z"
+    createdAt: "2025-09-12T14:30:28Z"
     features.operators.openshift.io/cnf: "false"
     features.operators.openshift.io/cni: "false"
     features.operators.openshift.io/csi: "false"
@@ -24,7 +24,7 @@ metadata:
     features.operators.openshift.io/token-auth-aws: "false"
     features.operators.openshift.io/token-auth-azure: "false"
     features.operators.openshift.io/token-auth-gcp: "false"
-    olm.skipRange: '>=1.1.0 <1.10.2'
+    olm.skipRange: '>=1.1.0 <1.10.3'
     operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
     operators.openshift.io/valid-subscription: '["OpenShift Container Platform", "OpenShift
       Platform Plus"]'
@@ -36,7 +36,7 @@ metadata:
     operatorframework.io/arch.amd64: supported
     operatorframework.io/arch.s390x: supported
     operatorframework.io/os.linux: supported
-  name: sandboxed-containers-operator.v1.10.2
+  name: sandboxed-containers-operator.v1.10.3
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
@@ -560,8 +560,8 @@ spec:
     name: podvm-payload
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:10431be6ef7be6da1b5749bbf5e6207db92804d3530605b825c0e0d98bd9f46e
     name: podvm-oci
-  replaces: sandboxed-containers-operator.v1.10.1
-  version: 1.10.2
+  replaces: sandboxed-containers-operator.v1.10.2
+  version: 1.10.3
   webhookdefinitions:
   - admissionReviewVersions:
     - v1
