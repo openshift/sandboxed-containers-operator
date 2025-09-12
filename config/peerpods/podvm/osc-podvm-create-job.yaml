@@ -34,6 +34,7 @@ spec:
           # azure-podvm-image-handler.sh script under /scripts/azure-podvm-image-handler.sh
           # aws-podvm-image-handler.sh script under /scripts/aws-podvm-image-handler.sh
           # gcp-podvm-image-handler.sh script under /scripts/gcp-podvm-image-handler.sh
+          # ibmcloud-podvm-image-handler.sh script under /scripts/ibmcloud-podvm-image-handler.sh
           # sources for cloud-api-adaptor under /src/cloud-api-adaptor
           lifecycle: 
             preStop: 
@@ -66,6 +67,9 @@ spec:
                 optional: true
             - configMapRef:
                 name: gcp-podvm-image-cm
+                optional: true
+            - configMapRef:
+                name: ibmcloud-podvm-image-cm
                 optional: true
             - configMapRef:
                 name: libvirt-podvm-image-cm
