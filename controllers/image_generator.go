@@ -54,12 +54,14 @@ const (
 	peerpodsCMAzureImageKey       = "AZURE_IMAGE_ID"
 	peerpodsCMGCPImageKey         = "PODVM_IMAGE_NAME"
 	peerpodsLibvirtImageKey       = "LIBVIRT_IMAGE_ID"
+	peerpodsCMIBMCloudImageKey    = "IBMCLOUD_PODVM_IMAGE_ID"
 	fipsCMKey                     = "BOOT_FIPS"
 	procFIPS                      = "/proc/sys/crypto/fips_enabled"
 	AWSProvider                   = "aws"
 	AzureProvider                 = "azure"
 	GCPProvider                   = "gcp"
 	LibvirtProvider               = "libvirt"
+	IBMCloudProvider              = "ibmcloud"
 	peerpodsImageJobsPathLocation = "/config/peerpods/podvm"
 	azureImageGalleryPrefix       = "PodVMGallery"
 )
@@ -259,6 +261,9 @@ func newImageGenerator(client client.Client) (*ImageGenerator, error) {
 		igLogger.Info("libvirt is our provider", "provider", provider)
 		ig.CMimageIDKey = peerpodsLibvirtImageKey
 		ig.provider = provider
+	case IBMCloudProvider:
+		ig.provider = provider
+		ig.CMimageIDKey = peerpodsCMIBMCloudImageKey
 	default:
 		igLogger.Info("unsupported cloud provider, image creation/deletion will be disabled", "provider", ig.provider)
 		ig.provider = unsupportedCloudProvider
@@ -415,6 +420,7 @@ func (r *ImageGenerator) getPeerPodsCM() (*corev1.ConfigMap, error) {
 // azure-podvm-image-cm.yaml for Azure
 // aws-podvm-image-cm.yaml for AWS
 // libvirt-podvm-image-cm.yaml for Libvirt
+// ibmcloud-podvm-image-cm.yaml for IBM Cloud
 
 func (r *ImageGenerator) imageCreateJobRunner() (int, error) {
 	igLogger.Info("imageCreateJobRunner: Start")
@@ -617,6 +623,10 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 	libvirtSecretKeys := []string{"CLOUD_PROVIDER", "LIBVIRT_URI"}
 	// libvirt ConfigMap Keys
 	libvirtConfigMapKeys := []string{"CLOUD_PROVIDER", "LIBVIRT_POOL", "LIBVIRT_VOL_NAME", "LIBVIRT_DIR_NAME"}
+	// ibmcloud Secret Keys
+	ibmcloudSecretKeys := []string{"IBMCLOUD_IAM_PROFILE_ID", "IBMCLOUD_API_KEY"}
+	// ibmcloud ConfigMap Keys
+	ibmcloudConfigMapKeys := []string{"CLOUD_PROVIDER"}
 
 	// Check for each cloud provider if respective ConfigMap keys are present in the peerPodsConfigMap
 	switch r.provider {
@@ -665,6 +675,16 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 			return fmt.Errorf("validatePeerPodsConfigs: cannot find the required keys in peer-pods-cm ConfigMap")
 		}
 
+	case IBMCloudProvider:
+		// Check if ibmcloud Secret Keys are present in the peerPodsSecret
+		if !checkAnyKeyPresentWithValue(peerPodsSecret.Data, ibmcloudSecretKeys) {
+			return fmt.Errorf("validatePeerPodsConfigs: cannot find the required keys in peer-pods-secret Secret")
+		}
+
+		// Check if ibmcloud ConfigMap Keys are present in the peerPodsConfigMap
+		if !checkKeysPresentAndNotEmpty(peerPodsCM.Data, ibmcloudConfigMapKeys) {
+			return fmt.Errorf("validatePeerPodsConfigs: cannot find the required keys in peer-pods-cm ConfigMap")
+		}
 	default:
 		return fmt.Errorf("validatePeerPodsConfigs: unsupported cloud provider %s", r.provider)
 	}
@@ -680,18 +700,8 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 
 func checkKeysPresentAndNotEmpty(data interface{}, keys []string) bool {
 	// Convert the input map to a map[string]string
-	var strMap map[string]string
-
-	switch v := data.(type) {
-	case map[string]string:
-		strMap = v
-	case map[string][]byte:
-		strMap = make(map[string]string)
-		for key, value := range v {
-			strMap[key] = string(value)
-		}
-	default:
-		// Unsupported type
+	strMap := toStrMap(data)
+	if strMap == nil {
 		return false
 	}
 
@@ -708,6 +718,49 @@ func checkKeysPresentAndNotEmpty(data interface{}, keys []string) bool {
 	return true
 }
 
+// checkAnyKeyPresentWithValue checks if any of the specified keys are present in the input map
+// and have non-empty string values.
+// It accepts a map of type map[string][]byte or map[string]string as `data`,
+// and a slice of keys to search for.
+// Returns true if any key exists in the map and its value is not an empty string.
+func checkAnyKeyPresentWithValue(data interface{}, keys []string) bool {
+	// Convert the input to a map[string]string using a helper function.
+	strMap := toStrMap(data)
+	if strMap == nil {
+		return false // Return false if conversion fails.
+	}
+
+	// Iterate over the list of keys and check if any key exists with a non-empty value.
+	for _, key := range keys {
+		value, ok := strMap[key]
+		if ok && value != "" {
+			return true // Found a key with a non-empty value.
+		}
+	}
+
+	igLogger.Info("checkAnyKeyPresentWithValue: no key is present or has non-empty value", "searchedKeys", keys)
+
+	return false // No matching key with a non-empty value found.
+}
+
+func toStrMap(data interface{}) map[string]string {
+	var strMap map[string]string
+
+	switch v := data.(type) {
+	case map[string]string:
+		strMap = v
+	case map[string][]byte:
+		strMap = make(map[string]string)
+		for key, value := range v {
+			strMap[key] = string(value)
+		}
+	default:
+		// Unsupported type
+		return nil
+	}
+	return strMap
+}
+
 func (r *ImageGenerator) getImageConfigMapName() string {
 	return r.provider + "-podvm-image-cm"
 }
@@ -716,6 +769,7 @@ func (r *ImageGenerator) getImageConfigMapName() string {
 // azure-podvm-image-cm.yaml for Azure
 // aws-podvm-image-cm.yaml for AWS
 // libvirt-podvm-image-cm.yaml for Libvirt
+// ibmcloud-podvm-image-cm.yaml for IBM Cloud
 // Returns error if the ConfigMap creation fails
 
 func (r *ImageGenerator) createImageConfigMapFromFile() error {
