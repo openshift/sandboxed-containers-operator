@@ -54,12 +54,14 @@ const (
 	peerpodsCMAzureImageKey       = "AZURE_IMAGE_ID"
 	peerpodsCMGCPImageKey         = "PODVM_IMAGE_NAME"
 	peerpodsLibvirtImageKey       = "LIBVIRT_IMAGE_ID"
+	peerpodsCMIBMCloudImageKey    = "IBMCLOUD_PODVM_IMAGE_ID"
 	fipsCMKey                     = "BOOT_FIPS"
 	procFIPS                      = "/proc/sys/crypto/fips_enabled"
 	AWSProvider                   = "aws"
 	AzureProvider                 = "azure"
 	GCPProvider                   = "gcp"
 	LibvirtProvider               = "libvirt"
+	IBMCloudProvider              = "ibmcloud"
 	peerpodsImageJobsPathLocation = "/config/peerpods/podvm"
 	azureImageGalleryPrefix       = "PodVMGallery"
 )
@@ -259,6 +261,9 @@ func newImageGenerator(client client.Client) (*ImageGenerator, error) {
 		igLogger.Info("libvirt is our provider", "provider", provider)
 		ig.CMimageIDKey = peerpodsLibvirtImageKey
 		ig.provider = provider
+	case IBMCloudProvider:
+		ig.provider = provider
+		ig.CMimageIDKey = peerpodsCMIBMCloudImageKey
 	default:
 		igLogger.Info("unsupported cloud provider, image creation/deletion will be disabled", "provider", ig.provider)
 		ig.provider = unsupportedCloudProvider
@@ -415,6 +420,7 @@ func (r *ImageGenerator) getPeerPodsCM() (*corev1.ConfigMap, error) {
 // azure-podvm-image-cm.yaml for Azure
 // aws-podvm-image-cm.yaml for AWS
 // libvirt-podvm-image-cm.yaml for Libvirt
+// ibmcloud-podvm-image-cm.yaml for IBM Cloud
 
 func (r *ImageGenerator) imageCreateJobRunner() (int, error) {
 	igLogger.Info("imageCreateJobRunner: Start")
@@ -617,6 +623,10 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 	libvirtSecretKeys := []string{"CLOUD_PROVIDER", "LIBVIRT_URI"}
 	// libvirt ConfigMap Keys
 	libvirtConfigMapKeys := []string{"CLOUD_PROVIDER", "LIBVIRT_POOL", "LIBVIRT_VOL_NAME", "LIBVIRT_DIR_NAME"}
+	// ibmcloud Secret Keys
+	ibmcloudSecretKeys := []string{"IBMCLOUD_IAM_PROFILE_ID", "IBMCLOUD_API_KEY"}
+	// ibmcloud ConfigMap Keys
+	ibmcloudConfigMapKeys := []string{"CLOUD_PROVIDER"}
 
 	// Check for each cloud provider if respective ConfigMap keys are present in the peerPodsConfigMap
 	switch r.provider {
@@ -665,6 +675,16 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 			return fmt.Errorf("validatePeerPodsConfigs: cannot find the required keys in peer-pods-cm ConfigMap")
 		}
 
+	case IBMCloudProvider:
+		// Check if ibmcloud Secret Keys are present in the peerPodsSecret
+		if !checkAnyKeyPresentWithValue(peerPodsSecret.Data, ibmcloudSecretKeys) {
+			return fmt.Errorf("validatePeerPodsConfigs: cannot find the required keys in peer-pods-secret Secret")
+		}
+
+		// Check if ibmcloud ConfigMap Keys are present in the peerPodsConfigMap
+		if !checkKeysPresentAndNotEmpty(peerPodsCM.Data, ibmcloudConfigMapKeys) {
+			return fmt.Errorf("validatePeerPodsConfigs: cannot find the required keys in peer-pods-cm ConfigMap")
+		}
 	default:
 		return fmt.Errorf("validatePeerPodsConfigs: unsupported cloud provider %s", r.provider)
 	}
@@ -749,6 +769,7 @@ func (r *ImageGenerator) getImageConfigMapName() string {
 // azure-podvm-image-cm.yaml for Azure
 // aws-podvm-image-cm.yaml for AWS
 // libvirt-podvm-image-cm.yaml for Libvirt
+// ibmcloud-podvm-image-cm.yaml for IBM Cloud
 // Returns error if the ConfigMap creation fails
 
 func (r *ImageGenerator) createImageConfigMapFromFile() error {

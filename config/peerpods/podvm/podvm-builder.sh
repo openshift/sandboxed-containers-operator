@@ -31,6 +31,11 @@ function install_gcp_deps() {
   /scripts/gcp-podvm-image-handler.sh -- install_binaries
 }
 
+# Function to install IBM Cloud deps
+function install_ibmcloud_deps() {
+  /scripts/ibmcloud-podvm-image-handler.sh -- install_cli
+  /scripts/ibmcloud-podvm-image-handler.sh -- install_binaries
+}
 
 # Function to check if peer-pods-cm configmap exists
 function check_peer_pods_cm_exists() {
@@ -381,6 +386,10 @@ libvirt)
   ;;
 gcp)
   install_gcp_deps
+  ;;
+ibmcloud)
+  echo "IBM Cloud doesn't support this feature, please provide IBMCLOUD_PODVM_IMAGE_ID in your peer-pods-cm"
+  exit 1
   ;;
 *)
   echo "CLOUD_PROVIDER is not set to azure or aws or libvirt"

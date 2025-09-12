@@ -488,6 +488,54 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForCAA() *appsv1.DaemonS
 	}
 }
 
+// Handles provider specific parts of the CAA Ds
+// Modifies the DaemonSet if needed
+func (r *KataConfigOpenShiftReconciler) processProviderConfigCAA(ds *appsv1.DaemonSet) error {
+	r.Log.Info("Getting cloud provider from infra")
+	provider, err := getCloudProviderFromInfra(r.Client)
+	if err != nil {
+		return fmt.Errorf("failed to get cloud provider from infra: %w", err)
+	}
+
+	switch provider {
+	case IBMCloudProvider:
+		var expSecs int64 = 3600
+		vaultTokenVolume := corev1.Volume{
+			Name: "vault-token",
+			VolumeSource: corev1.VolumeSource{
+				Projected: &corev1.ProjectedVolumeSource{
+					Sources: []corev1.VolumeProjection{
+						{
+							ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+								Path:              "vault-token",
+								ExpirationSeconds: &expSecs,
+								Audience:          "iam",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		vaultTokenVolumeMount := corev1.VolumeMount{
+			MountPath: "/var/run/secrets/tokens",
+			Name:      "vault-token",
+		}
+
+		ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, vaultTokenVolume)
+		for i := range ds.Spec.Template.Spec.Containers {
+			container := &ds.Spec.Template.Spec.Containers[i]
+			if container.Name == "caa-pod" {
+				container.VolumeMounts = append(container.VolumeMounts, vaultTokenVolumeMount)
+			}
+		}
+
+		return nil
+	default:
+		return nil
+	}
+}
+
 func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.DaemonSet {
 	var (
 		runPrivileged = false
@@ -2432,6 +2480,12 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMc() error {
 func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 	// Create the CAA daemonset
 	ds := r.processDaemonsetForCAA()
+	if err := r.processProviderConfigCAA(ds); err != nil {
+		r.Log.Error(err, "Failed setting cloud provider specific configuration for cloud-api-adaptor DS")
+		return err
+	}
+	r.Log.Info("Got CAA ds manifest", "ds", ds)
+
 	if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
 		r.Log.Error(err, "Failed setting ControllerReference for cloud-api-adaptor DS")
 		return err
