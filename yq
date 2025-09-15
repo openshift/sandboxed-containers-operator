@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# This is a hack to enable hermetic builds for the operator.
+# Rather than installing yq, we declare it as a dependency in the
+# go.mod file. Cachi2/Hermeto will then get the sources as part of the prefetch
+# phase.
+# Once the sources are in, we can use "go run" to build and run the tool from
+# its sources, without needing access to the network.
+
+go run github.com/mikefarah/yq/v4 "$@"
