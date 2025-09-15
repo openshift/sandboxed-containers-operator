@@ -29,7 +29,7 @@ spec:
   - name: dockerfile
     value: bundle.Dockerfile
   - name: prefetch-input
-    value: '{"type": "gomod", "path": "."}'
+    value: '[{"type": "gomod", "path": "."},{"type": "generic", "path": "."}]'
   pipelineSpec:
     description: |
       This pipeline is ideal for building container images from a Containerfile while reducing network traffic.

@@ -1,0 +1,8 @@
+---
+metadata:
+  version: "1.0"
+artifacts:
+# NOTE: it should be in sync with OPERATOR_SDK_VERSION in the Makefile
+  - download_url: "https://github.com/operator-framework/operator-sdk/releases/download/v1.39.1/operator-sdk_linux_amd64"
+    checksum: "sha256:d062d21621ea39e956daa2cdc1bb211c05aca01382c6ec9f325401721a3abfca"
+    filename: "operator-sdk"
