@@ -353,9 +353,13 @@ generate-clean: ## Clean generated DeepCopy code
 test-clean: ## Clean generated test files
 	$(RM) cover.out
 
+.PHONY: bundle-clean
+bundle-clean: ## Clean generated bundle files
+	$(RM) -r bundle
+
 .PHONY: bin-clean
 bin-clean: ## Clean downloaded binaries
 	$(RM) -r bin
 
 .PHONY: clean
-clean: generate-clean test-clean bin-clean ## Clean all generated files
+clean: generate-clean test-clean bundle-clean bin-clean ## Clean all generated files
