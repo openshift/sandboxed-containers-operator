@@ -24,7 +24,7 @@ COPY node-gather/node-gather-ds.yaml /etc/
 # Red Hat labels
 LABEL name="openshift-sandboxed-containers/osc-must-gather-rhel9" \
 cpe="cpe:/a:redhat:confidential_compute_attestation:1.10::el9" \
-version="1.10" \
+version="1.11" \
 com.redhat.component="osc-must-gather-container" \
 summary="osc-must-gather collects information about the sandboxed containers operator and the kata runtime" \
 maintainer="support@redhat.com" \
