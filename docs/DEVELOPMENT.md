@@ -113,7 +113,7 @@ When adding a new container definition in some pod yaml, make sure to tag the `i
 field with `  ## OSC_VERSION`, e.g.
 
 ```
-image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.10.1  ## OSC_VERSION
+image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.11.0  ## OSC_VERSION
 ```
 
 Do the same when adding new `RELATED_IMAGE` entries in the environment of the controller
@@ -121,7 +121,7 @@ in `config/manager/manager.yaml`, e.g.
 
 ```
             - name: RELATED_IMAGE_KATA_MONITOR
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.10.1  ## OSC_VERSION
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.11.0  ## OSC_VERSION
 ```
 
 This is a best effort to track locations where OSC version bumps should happen.
