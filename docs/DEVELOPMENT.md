@@ -129,14 +129,13 @@ This is a best effort to track locations where OSC version bumps should happen.
 ### Updating versions
 
 When starting a new version, several locations should be updated with the new version number :
-- all the locations tagged with `  ## OSC_VERSION`, e.g.
-```
-sed -Ei 's/[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+  ## OSC_VERSION/1.10.1  ## OSC_VERSION/g' $(git grep -El '[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+[[:blank:]]+## OSC_VERSION')
-```
-- the `spec.version` field in `config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml`
-- the `olm.skipRange` annotation in the `spec.metadata` field in `config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml`
+- all the locations tagged with `  ## OSC_VERSION`
+- version labels in `Dockerfile`,  `config/peerpods/podvm/Dockerfile.podvm-builder` and `must-gather/Dockerfile`
+- the `olm.skipRange` annotation in `config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml`
 
-The `spec.replaces` field in `config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml` should be updated with the number
-of the latest officialy released version.
+The `spec.replaces` field in `config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml` should
+be updated with the number of the latest officialy released version.
 
-Finally, run `make bundle` : this should propagate the version bump to the rest of the tree.
+
+You can use this [script](../scripts/bump-osc-version.sh) to bump the version and to regenerate bundle (check usage
+with `-h`).
