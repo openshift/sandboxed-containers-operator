@@ -2415,39 +2415,10 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPods() error {
 		}
 	}
 
-	mc := mcfgv1.MachineConfig{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "machineconfiguration.openshift.io/v1",
-			Kind:       "MachineConfig",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: peerpodsKataRemoteMachineConfig,
-		},
-	}
-
-	err = r.Client.Delete(context.TODO(), &mc)
-	if err != nil {
-		// error during removing mc. Just log the error and move on.
-		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
-			"mc", mc.Name, "err", err)
-	}
-
-	mc = mcfgv1.MachineConfig{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "machineconfiguration.openshift.io/v1",
-			Kind:       "MachineConfig",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: peerpodsCrioMachineConfig,
-		},
-	}
-
-	err = r.Client.Delete(context.TODO(), &mc)
-	if err != nil {
-		// error during removing mc. Just log the error and move on.
-		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
-			"mc", mc.Name, "err", err)
-	}
+	// We are explicitly ignoring any errors in peerpodconfig and related machineconfigs removal as
+	// these can be removed manually if needed and this is not in the critical path
+	// of operator functionality
+	_ = r.deletePeerPodsMC()
 
 	// Delete mutating webhook deployment
 	err = r.deleteMutatingWebhookDeployment()
@@ -2698,4 +2669,42 @@ func (r *KataConfigOpenShiftReconciler) postKataInstallation() (*ctrl.Result, er
 		r.resetInProgressCondition()
 	}
 	return nil, nil
+}
+
+func (r *KataConfigOpenShiftReconciler) deletePeerPodsMC() error {
+	mc := mcfgv1.MachineConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "machineconfiguration.openshift.io/v1",
+			Kind:       "MachineConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: peerpodsKataRemoteMachineConfig,
+		},
+	}
+
+	err := r.Client.Delete(context.TODO(), &mc)
+	if err != nil {
+		// error during removing mc. Just log the error and move on.
+		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
+			"mc", mc.Name, "err", err)
+	}
+
+	mc = mcfgv1.MachineConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "machineconfiguration.openshift.io/v1",
+			Kind:       "MachineConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: peerpodsCrioMachineConfig,
+		},
+	}
+
+	err = r.Client.Delete(context.TODO(), &mc)
+	if err != nil {
+		// error during removing mc. Just log the error and move on.
+		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
+			"mc", mc.Name, "err", err)
+	}
+
+	return nil
 }
