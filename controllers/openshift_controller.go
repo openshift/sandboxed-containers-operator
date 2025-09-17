@@ -1172,15 +1172,9 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		}
 	}
 
-	ds := r.processDaemonsetForMonitor()
-	err = r.Client.Delete(context.TODO(), ds)
+	err = r.deleteDaemonsetForMonitor()
 	if err != nil {
-		if k8serrors.IsNotFound(err) {
-			r.Log.Info("monitor daemonset was already deleted")
-		} else {
-			r.Log.Error(err, "error when deleting monitor Daemonset, try again")
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
-		}
+		return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
 	}
 
 	if r.kataConfig.Spec.EnablePeerPods {
@@ -2656,4 +2650,18 @@ func (r *KataConfigOpenShiftReconciler) checkDeletionEligibility() (ctrl.Result,
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+func (r *KataConfigOpenShiftReconciler) deleteDaemonsetForMonitor() error {
+	ds := r.processDaemonsetForMonitor()
+	err := r.Client.Delete(context.TODO(), ds)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("monitor daemonset was already deleted")
+		} else {
+			r.Log.Error(err, "error when deleting monitor Daemonset, try again")
+			return err
+		}
+	}
+	return nil
 }
