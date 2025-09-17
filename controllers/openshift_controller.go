@@ -167,7 +167,17 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		// uninstallation commence if another operation (installation, update)
 		// is underway.
 		if r.kataConfig.GetDeletionTimestamp() != nil && !r.isInstalling() && !r.isUpdating() {
-			res, err := r.processKataConfigDeleteRequest()
+			var res ctrl.Result
+
+			switch r.DeploymentMode {
+			case MachineConfigMode:
+				res, err = r.processKataConfigDeleteRequest()
+			case DaemonSetMode:
+				res, err = r.processKataConfigDeleteRequestDaemonSet()
+			default:
+				res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+				err = fmt.Errorf("unknown deployment mode: %d", r.DeploymentMode)
+			}
 
 			updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
 			// The finalizer test is to get rid of the
@@ -183,7 +193,18 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 			return res, err
 		}
 
-		res, err := r.processKataConfigInstallRequest()
+		var res ctrl.Result
+
+		switch r.DeploymentMode {
+		case MachineConfigMode:
+			res, err = r.processKataConfigInstallRequest()
+		case DaemonSetMode:
+			res, err = r.processKataConfigInstallRequestDaemonSet()
+		default:
+			res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+			err = fmt.Errorf("unknown deployment mode: %d", r.DeploymentMode)
+		}
+
 		if err != nil {
 			return res, err
 		}
@@ -213,9 +234,14 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 			}
 		}
 
-		err = r.processLogLevel(r.kataConfig.Spec.LogLevel)
-		if err != nil {
-			res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+		// FIXME: Ideally, we should have a processLogLevelDaemonSet() function,
+		// or alternatively, call processLogLevel() from a location that isn't MCO-specific.
+		// Currently, log level is handled by the KataInstallDaemonSet in DaemonSetMode.
+		if r.DeploymentMode == MachineConfigMode {
+			err = r.processLogLevel(r.kataConfig.Spec.LogLevel)
+			if err != nil {
+				res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+			}
 		}
 
 		return res, err
@@ -1702,13 +1728,30 @@ func (eh *NodeEventHandler) Update(ctx context.Context, event event.UpdateEvent,
 
 	foundRelevantChange := false
 
-	// no need to check the second return value of the indexing operation
-	// as "" is not a valid machineconfiguration.openshift.io/state value
-	stateOld := nodeOld.GetAnnotations()["machineconfiguration.openshift.io/state"]
-	stateNew := nodeNew.GetAnnotations()["machineconfiguration.openshift.io/state"]
-	if stateOld != stateNew {
-		foundRelevantChange = true
-		log.Info("machineconfiguration.openshift.io/state changed", "old", stateOld, "new", stateNew)
+	if eh.reconciler.DeploymentMode == DaemonSetMode {
+		// "" is not a valid kataconfiguration.openshift.io/kata-ds-rpm-install value
+		kataStateOld := nodeOld.GetLabels()[kataInstallationDaemonSetLabel]
+		kataStateNew := nodeNew.GetLabels()[kataInstallationDaemonSetLabel]
+		if kataStateOld != kataStateNew {
+			foundRelevantChange = true
+			log.Info("kataconfiguration.openshift.io/kata-ds-rpm-install changed", "old", kataStateOld, "new", kataStateNew)
+		}
+
+		peerPodsStateOld := nodeOld.GetLabels()[peerPodsConfigDaemonSetLabel]
+		peerPodsStateNew := nodeNew.GetLabels()[peerPodsConfigDaemonSetLabel]
+		if peerPodsStateOld != peerPodsStateNew {
+			foundRelevantChange = true
+			log.Info("kataconfiguration.openshift.io/osc-config-sync changed", "old", peerPodsStateOld, "new", peerPodsStateNew)
+		}
+	} else {
+		// no need to check the second return value of the indexing operation
+		// as "" is not a valid machineconfiguration.openshift.io/state value
+		stateOld := nodeOld.GetAnnotations()["machineconfiguration.openshift.io/state"]
+		stateNew := nodeNew.GetAnnotations()["machineconfiguration.openshift.io/state"]
+		if stateOld != stateNew {
+			foundRelevantChange = true
+			log.Info("machineconfiguration.openshift.io/state changed", "old", stateOld, "new", stateNew)
+		}
 	}
 
 	labelsOld := nodeOld.GetLabels()
@@ -2415,10 +2458,21 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPods() error {
 		}
 	}
 
-	// We are explicitly ignoring any errors in peerpodconfig and related machineconfigs removal as
-	// these can be removed manually if needed and this is not in the critical path
-	// of operator functionality
-	_ = r.deletePeerPodsMC()
+	if r.DeploymentMode == MachineConfigMode {
+		// We are explicitly ignoring any errors in peerpodconfig and related machineconfigs removal as
+		// these can be removed manually if needed and this is not in the critical path
+		// of operator functionality
+		_ = r.deletePeerPodsMC()
+	}
+
+	if r.DeploymentMode == DaemonSetMode {
+		// We want to make sure that the osc-config-sync ds removal successfully started
+		// So we will try again in case of an error
+		err = r.deletePeedPodsConfigDaemonSet()
+		if err != nil {
+			return err
+		}
+	}
 
 	// Delete mutating webhook deployment
 	err = r.deleteMutatingWebhookDeployment()
