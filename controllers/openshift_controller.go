@@ -1056,18 +1056,9 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
 
-	if contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
-		// Get the list of pods that might be running using kata runtime
-		err := r.listKataPods()
-		if err != nil {
-			r.setInProgressConditionToBlockedByExistingKataPods(err.Error())
-			updErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
-			if updErr != nil {
-				return ctrl.Result{}, updErr
-			}
-			r.Log.Info("Kata PODs are present. Requeue for reconciliation ")
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-		}
+	res, err := r.checkDeletionEligibility()
+	if err != nil {
+		return res, err
 	}
 
 	kataNodeSelector, err := r.getKataConfigNodeSelectorAsSelector()
@@ -2648,4 +2639,21 @@ func (r *KataConfigOpenShiftReconciler) createMcFromFile(machineConfigYamlFile s
 		}
 	}
 	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) checkDeletionEligibility() (ctrl.Result, error) {
+	if contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
+		// Get the list of pods that might be running using kata runtime
+		err := r.listKataPods()
+		if err != nil {
+			r.setInProgressConditionToBlockedByExistingKataPods(err.Error())
+			updErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
+			if updErr != nil {
+				return ctrl.Result{}, updErr
+			}
+			r.Log.Info("Kata pods are present. Requeue for reconciliation ")
+			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
+	}
+	return ctrl.Result{}, nil
 }
