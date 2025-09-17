@@ -1194,15 +1194,9 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		}
 	}
 
-	scc := GetScc()
-	err = r.Client.Delete(context.TODO(), scc)
+	err = r.deleteScc()
 	if err != nil {
-		if k8serrors.IsNotFound(err) {
-			r.Log.Info("SCC was already deleted")
-		} else {
-			r.Log.Error(err, "error when deleting SCC, retrying")
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
-		}
+		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
 
 	err = r.removeLogLevel()
@@ -2674,4 +2668,18 @@ func (r *KataConfigOpenShiftReconciler) deletePodVMImage() (*ctrl.Result, error)
 		r.Log.Info("PodVM Image deletion status and error", "status", status, "error", err)
 	}
 	return nil, nil
+}
+
+func (r *KataConfigOpenShiftReconciler) deleteScc() error {
+	scc := GetScc()
+	err := r.Client.Delete(context.TODO(), scc)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("SCC was already deleted")
+		} else {
+			r.Log.Error(err, "error when deleting SCC, retrying")
+			return err
+		}
+	}
+	return nil
 }
