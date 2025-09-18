@@ -401,7 +401,7 @@ spec:
                 - name: RELATED_IMAGE_PODVM_PAYLOAD
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:c321535760ffc6f6b1529e31a3ccc56a890199076ceeb1ba24492b125ab01dcb
                 - name: RELATED_IMAGE_PODVM_OCI
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:04d1ea8935ff2572d0732d2cd130d833c4044f5b28e82c4e7220f227194283b1
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:7c5693a994c8e0dfe4f62360f4b3b14dca906487eab4d00951bd45967e910f0e
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -558,7 +558,7 @@ spec:
     name: podvm-builder
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:c321535760ffc6f6b1529e31a3ccc56a890199076ceeb1ba24492b125ab01dcb
     name: podvm-payload
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:04d1ea8935ff2572d0732d2cd130d833c4044f5b28e82c4e7220f227194283b1
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:7c5693a994c8e0dfe4f62360f4b3b14dca906487eab4d00951bd45967e910f0e
     name: podvm-oci
   replaces: sandboxed-containers-operator.v1.10.0
   version: 1.10.1
