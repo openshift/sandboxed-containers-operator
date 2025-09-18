@@ -52,6 +52,20 @@ func (r *KataConfig) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 var _ webhook.CustomValidator = &KataConfig{}
 
+func (r *KataConfig) validateOverhead() error {
+	if r.Spec.MemoryOverheadMB != nil {
+		// The Linux kernel was tested not to boot reliably with less than 60MB
+		if *r.Spec.MemoryOverheadMB < 60 {
+			return fmt.Errorf("memoryOverheadMB must be at least 60MB")
+		}
+		// Kata configures the VM with 2G by default, so overhead twice as big is likely an error
+		if *r.Spec.MemoryOverheadMB > 4096*1024 {
+			return fmt.Errorf("memoryOverheadMB must be at most 4GB")
+		}
+	}
+	return nil
+}
+
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *KataConfig) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	kataconfig, ok := obj.(*KataConfig)
@@ -61,19 +75,23 @@ func (r *KataConfig) ValidateCreate(ctx context.Context, obj runtime.Object) (ad
 
 	kataconfiglog.Info("validate create", "name", kataconfig.Name)
 
-	kataConfigList := &KataConfigList{}
-	listOpts := []client.ListOption{
-		client.InNamespace(corev1.NamespaceAll),
-	}
-	if err := clientInst.List(ctx, kataConfigList, listOpts...); err != nil {
-		return nil, fmt.Errorf("Failed to list KataConfig custom resources: %v", err)
+	// Skip client-dependent validation if clientInst is nil (e.g., during testing)
+	if clientInst != nil {
+		kataConfigList := &KataConfigList{}
+		listOpts := []client.ListOption{
+			client.InNamespace(corev1.NamespaceAll),
+		}
+		if err := clientInst.List(ctx, kataConfigList, listOpts...); err != nil {
+			return nil, fmt.Errorf("Failed to list KataConfig custom resources: %v", err)
+		}
+
+		if len(kataConfigList.Items) == 1 {
+			return nil, fmt.Errorf("A KataConfig instance already exists, refusing to create a duplicate")
+		}
 	}
 
-	if len(kataConfigList.Items) == 1 {
-		return nil, fmt.Errorf("A KataConfig instance already exists, refusing to create a duplicate")
-	}
-
-	return nil, nil
+	overheadErr := r.validateOverhead()
+	return nil, overheadErr
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
@@ -84,9 +102,10 @@ func (r *KataConfig) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.
 	}
 
 	kataconfiglog.Info("validate update", "name", kataconfig.Name)
+	overheadErr := r.validateOverhead()
 
 	// TODO(user): fill in your validation logic upon object update.
-	return nil, nil
+	return nil, overheadErr
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
