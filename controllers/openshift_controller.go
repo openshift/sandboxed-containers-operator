@@ -930,6 +930,40 @@ func (r *KataConfigOpenShiftReconciler) createScc() error {
 	return nil
 }
 
+func (r *KataConfigOpenShiftReconciler) createDaemonsetForMonitor() error {
+	ds := r.processDaemonsetForMonitor()
+	// Set KataConfig instance as the owner and controller
+	if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
+		r.Log.Error(err, "failed to set controller reference on the monitor daemonset")
+		return err
+	}
+	r.Log.Info("controller reference set for the monitor daemonset")
+
+	foundDS := &appsv1.DaemonSet{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDS)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
+			err = r.Client.Create(context.TODO(), ds)
+			if err != nil {
+				r.Log.Error(err, "error when creating monitor daemonset")
+				return err
+			}
+		} else {
+			r.Log.Error(err, "could not get monitor daemonset, try again")
+			return err
+		}
+	} else {
+		r.Log.Info("Updating monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
+		err = r.Client.Update(context.TODO(), ds)
+		if err != nil {
+			r.Log.Error(err, "error when updating monitor daemonset")
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName string, cpuOverhead string, memoryOverhead string) error {
 
 	rc := func() *nodeapi.RuntimeClass {
@@ -1345,120 +1379,14 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	}
 
 	if !isMcoUpdating {
-		r.Log.Info("create runtime class")
-		r.resetInProgressCondition()
-		err := r.createRuntimeClass(kataRuntimeClassName, kataRuntimeClassCpuOverhead, kataRuntimeClassMemOverhead)
+		res, err := r.postKataInstallation()
+		if res != nil {
+			return *res, err
+		}
+		// FIXME : dead code, revisit postKataInstallation() return paths
 		if err != nil {
-			// Give sometime for the error to go away before reconciling again
-			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 		}
-		r.Log.Info("create Scc")
-		err = r.createScc()
-		if err != nil {
-			// Give sometime for the error to go away before reconciling again
-			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-		}
-
-		ds := r.processDaemonsetForMonitor()
-		// Set KataConfig instance as the owner and controller
-		if err = controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
-			r.Log.Error(err, "failed to set controller reference on the monitor daemonset")
-			return ctrl.Result{}, err
-		}
-		r.Log.Info("controller reference set for the monitor daemonset")
-
-		foundDs := &appsv1.DaemonSet{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDs)
-		if err != nil {
-			if k8serrors.IsNotFound(err) {
-				r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-				err = r.Client.Create(context.TODO(), ds)
-				if err != nil {
-					r.Log.Error(err, "error when creating monitor daemonset")
-					return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-				}
-			} else {
-				r.Log.Error(err, "could not get monitor daemonset, try again")
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-			}
-		} else {
-			r.Log.Info("Updating monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-			err = r.Client.Update(context.TODO(), ds)
-			if err != nil {
-				r.Log.Error(err, "error when updating monitor daemonset")
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-			}
-		}
-
-		// create Pod VM image CRD and runtimeclass for peerpods
-		if r.kataConfig.Spec.EnablePeerPods {
-			//Get pull-secret from openshift-config ns and save it as auth-json-secret in our ns
-			//This will be used by the podvm image provider to pull the pause image for embedding
-			err = r.createAuthJsonSecret()
-			if err != nil {
-				r.Log.Info("Error in creating auth-json-secret", "err", err)
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-			}
-
-			// Create the podvm image
-			// Since we want to declaratively reach the final state, we need to reconcile when there are errors
-			// as we want the system to give a chance of fixing the error.
-			// For cases we don't want to reconcile, ie for ImageCreatedSuccessfully and UnsupportedPodVMImageProvider
-			// we should just log the message and let the code continue without explicitly returning from the method
-
-			// Following are the returned statuses:
-			// ImageCreatedSuccessfully
-			// UnsupportedPodVMImageProvider
-			// ImageCreationFailed
-			// RequeueNeeded
-			// ImageCreationStatusUnknown
-
-			status, err := ImageCreate(r.Client)
-			switch status {
-			case ImageCreatedSuccessfully:
-				r.setInProgressConditionToPodVMImageCreated()
-				r.Log.Info("PodVM Image created successfully")
-
-			case UnsupportedPodVMImageProvider:
-				r.setInProgressConditionToPodVMImageUnsupportedProvider()
-				r.Log.Info("unsupported cloud provider, skipping image creation")
-
-			case RequeueNeeded:
-				r.setInProgressConditionToPodVMImageCreating()
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-
-			case ImageCreationFailed:
-				r.setInProgressConditionToPodVMImageCreationFailed()
-				if err != nil {
-					// We requeue only if there is an error.
-					return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-				}
-				// If there's no error, log and continue
-				r.Log.Info("Image creation failed. Check logs for more details")
-
-			case ImageCreationStatusUnknown:
-				r.setInProgressConditionToPodVMImageCreationUnknown()
-
-				// Reconcile with error
-				return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
-
-			default:
-				// For all other statuses, just log and continue
-				r.Log.Info("PodVM Image creation status and error", "status", status, "error", err)
-			}
-
-			err = r.enablePeerPodsMiscConfigs()
-			if err != nil {
-				r.Log.Info("Enabling peerpodconfig CR, runtimeclass etc", "err", err)
-				// Give sometime for the error to go away before reconciling again
-				return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-
-			}
-
-			// Reset the in progress condition
-			r.resetInProgressCondition()
-		}
-
 	} else {
 		// We don't requeue - we're waiting for an MCP to go
 		// Updating->Updated which will trigger reconciliation
@@ -2682,4 +2610,92 @@ func (r *KataConfigOpenShiftReconciler) deleteScc() error {
 		}
 	}
 	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) postKataInstallation() (*ctrl.Result, error) {
+	r.Log.Info("create runtime class")
+	r.resetInProgressCondition()
+	err := r.createRuntimeClass(kataRuntimeClassName, kataRuntimeClassCpuOverhead, kataRuntimeClassMemOverhead)
+	if err != nil {
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+	}
+	r.Log.Info("create Scc")
+	err = r.createScc()
+	if err != nil {
+		// Give sometime for the error to go away before reconciling again
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+	}
+
+	err = r.createDaemonsetForMonitor()
+	if err != nil {
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+	}
+
+	// create Pod VM image CRD and runtimeclass for peerpods
+	if r.kataConfig.Spec.EnablePeerPods {
+		//Get pull-secret from openshift-config ns and save it as auth-json-secret in our ns
+		//This will be used by the podvm image provider to pull the pause image for embedding
+		err = r.createAuthJsonSecret()
+		if err != nil {
+			r.Log.Info("Error in creating auth-json-secret", "err", err)
+			return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
+
+		// Create the podvm image
+		// Since we want to declaratively reach the final state, we need to reconcile when there are errors
+		// as we want the system to give a chance of fixing the error.
+		// For cases we don't want to reconcile, ie for ImageCreatedSuccessfully and UnsupportedPodVMImageProvider
+		// we should just log the message and let the code continue without explicitly returning from the method
+
+		// Following are the returned statuses:
+		// ImageCreatedSuccessfully
+		// UnsupportedPodVMImageProvider
+		// ImageCreationFailed
+		// RequeueNeeded
+		// ImageCreationStatusUnknown
+
+		status, err := ImageCreate(r.Client)
+		switch status {
+		case ImageCreatedSuccessfully:
+			r.setInProgressConditionToPodVMImageCreated()
+			r.Log.Info("PodVM Image created successfully")
+
+		case UnsupportedPodVMImageProvider:
+			r.setInProgressConditionToPodVMImageUnsupportedProvider()
+			r.Log.Info("unsupported cloud provider, skipping image creation")
+
+		case RequeueNeeded:
+			r.setInProgressConditionToPodVMImageCreating()
+			return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+
+		case ImageCreationFailed:
+			r.setInProgressConditionToPodVMImageCreationFailed()
+			if err != nil {
+				// We requeue only if there is an error.
+				return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			}
+			// If there's no error, log and continue
+			r.Log.Info("Image creation failed. Check logs for more details")
+
+		case ImageCreationStatusUnknown:
+			r.setInProgressConditionToPodVMImageCreationUnknown()
+
+			// Reconcile with error
+			return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+
+		default:
+			// For all other statuses, just log and continue
+			r.Log.Info("PodVM Image creation status and error", "status", status, "error", err)
+		}
+
+		err = r.enablePeerPodsMiscConfigs()
+		if err != nil {
+			r.Log.Info("Enabling peerpodconfig CR, runtimeclass etc", "err", err)
+			return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
+
+		// Reset the in progress condition
+		r.resetInProgressCondition()
+	}
+	return nil, nil
 }
