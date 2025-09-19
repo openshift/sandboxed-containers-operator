@@ -65,6 +65,8 @@ type KataConfigOpenShiftReconciler struct {
 	kataConfig *kataconfigurationv1.KataConfig
 
 	ImgMc *mcfgv1.MachineConfig
+
+	DeploymentMode DeploymentMode
 }
 
 const (
@@ -165,7 +167,17 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		// uninstallation commence if another operation (installation, update)
 		// is underway.
 		if r.kataConfig.GetDeletionTimestamp() != nil && !r.isInstalling() && !r.isUpdating() {
-			res, err := r.processKataConfigDeleteRequest()
+			var res ctrl.Result
+
+			switch r.DeploymentMode {
+			case MachineConfigMode:
+				res, err = r.processKataConfigDeleteRequest()
+			case DaemonSetMode:
+				res, err = r.processKataConfigDeleteRequestDaemonSet()
+			default:
+				res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+				err = fmt.Errorf("unknown deployment mode: %d", r.DeploymentMode)
+			}
 
 			updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
 			// The finalizer test is to get rid of the
@@ -181,7 +193,18 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 			return res, err
 		}
 
-		res, err := r.processKataConfigInstallRequest()
+		var res ctrl.Result
+
+		switch r.DeploymentMode {
+		case MachineConfigMode:
+			res, err = r.processKataConfigInstallRequest()
+		case DaemonSetMode:
+			res, err = r.processKataConfigInstallRequestDaemonSet()
+		default:
+			res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+			err = fmt.Errorf("unknown deployment mode: %d", r.DeploymentMode)
+		}
+
 		if err != nil {
 			return res, err
 		}
@@ -211,9 +234,14 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 			}
 		}
 
-		err = r.processLogLevel(r.kataConfig.Spec.LogLevel)
-		if err != nil {
-			res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+		// FIXME: Ideally, we should have a processLogLevelDaemonSet() function,
+		// or alternatively, call processLogLevel() from a location that isn't MCO-specific.
+		// Currently, log level is handled by the KataInstallDaemonSet in DaemonSetMode.
+		if r.DeploymentMode == MachineConfigMode {
+			err = r.processLogLevel(r.kataConfig.Spec.LogLevel)
+			if err != nil {
+				res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
+			}
 		}
 
 		return res, err
@@ -928,6 +956,40 @@ func (r *KataConfigOpenShiftReconciler) createScc() error {
 	return nil
 }
 
+func (r *KataConfigOpenShiftReconciler) createDaemonsetForMonitor() error {
+	ds := r.processDaemonsetForMonitor()
+	// Set KataConfig instance as the owner and controller
+	if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
+		r.Log.Error(err, "failed to set controller reference on the monitor daemonset")
+		return err
+	}
+	r.Log.Info("controller reference set for the monitor daemonset")
+
+	foundDS := &appsv1.DaemonSet{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDS)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
+			err = r.Client.Create(context.TODO(), ds)
+			if err != nil {
+				r.Log.Error(err, "error when creating monitor daemonset")
+				return err
+			}
+		} else {
+			r.Log.Error(err, "could not get monitor daemonset, try again")
+			return err
+		}
+	} else {
+		r.Log.Info("Updating monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
+		err = r.Client.Update(context.TODO(), ds)
+		if err != nil {
+			r.Log.Error(err, "error when updating monitor daemonset")
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName string, cpuOverhead string, memoryOverhead string) error {
 
 	rc := func() *nodeapi.RuntimeClass {
@@ -1054,18 +1116,9 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
 
-	if contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
-		// Get the list of pods that might be running using kata runtime
-		err := r.listKataPods()
-		if err != nil {
-			r.setInProgressConditionToBlockedByExistingKataPods(err.Error())
-			updErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
-			if updErr != nil {
-				return ctrl.Result{}, updErr
-			}
-			r.Log.Info("Kata PODs are present. Requeue for reconciliation ")
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-		}
+	res, err := r.checkDeletionEligibility()
+	if err != nil {
+		return res, err
 	}
 
 	kataNodeSelector, err := r.getKataConfigNodeSelectorAsSelector()
@@ -1179,15 +1232,9 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		}
 	}
 
-	ds := r.processDaemonsetForMonitor()
-	err = r.Client.Delete(context.TODO(), ds)
+	err = r.deleteDaemonsetForMonitor()
 	if err != nil {
-		if k8serrors.IsNotFound(err) {
-			r.Log.Info("monitor daemonset was already deleted")
-		} else {
-			r.Log.Error(err, "error when deleting monitor Daemonset, try again")
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
-		}
+		return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
 	}
 
 	if r.kataConfig.Spec.EnablePeerPods {
@@ -1197,62 +1244,19 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		_ = r.disablePeerPods()
 
 		// Handle podvm image deletion
-		// Since we want to declaratively reach the final state, we need to reconcile when there are errors
-		// as we want the system to give a chance of fixing the error.
-		// For cases we don't want to reconcile, ie for ImageDeletedSuccessfully and UnsupportedPodVMImageProvider
-		// we should just log the message and let the code continue without explicitly returning from the method
-
-		// Following are returned statuses:
-		// ImageDeletedSuccessfully
-		// UnsupportedPodVMImageProvider
-		// ImageDeletionFailed
-		// RequeueNeeded
-		// ImageDeletionStatusUnknown
-
-		// Handle podvm image deletion
-		status, err := ImageDelete(r.Client)
-		switch status {
-		case ImageDeletedSuccessfully:
-			r.setInProgressConditionToPodVMImageDeleted()
-			r.Log.Info("PodVM Image deleted successfully")
-
-		case UnsupportedPodVMImageProvider:
-			r.setInProgressConditionToPodVMImageUnsupportedProvider()
-			r.Log.Info("unsupported cloud provider, skipping image deletion")
-
-		case RequeueNeeded:
-			r.setInProgressConditionToPodVMImageDeleting()
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-
-		case ImageDeletionFailed:
-			r.setInProgressConditionToPodVMImageDeletionFailed()
-			if err != nil {
-				// We requeue only if there is an error.
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-			}
-			// If there's no error, log and continue
-			r.Log.Info("Image deletion failed. Check logs for more details")
-
-		case ImageDeletionStatusUnknown:
-			r.setInProgressConditionToPodVMImageDeletionUnknown()
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-
-		default:
-			// For all other statuses, just log and continue
-			r.Log.Info("PodVM Image deletion status and error", "status", status, "error", err)
+		res, err := r.deletePodVMImage()
+		if res != nil {
+			return *res, err
 		}
-
+		// FIXME : dead code, revisit deletePodVMImage() return paths
+		if err != nil {
+			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
 	}
 
-	scc := GetScc()
-	err = r.Client.Delete(context.TODO(), scc)
+	err = r.deleteScc()
 	if err != nil {
-		if k8serrors.IsNotFound(err) {
-			r.Log.Info("SCC was already deleted")
-		} else {
-			r.Log.Error(err, "error when deleting SCC, retrying")
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
-		}
+		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
 
 	err = r.removeLogLevel()
@@ -1401,120 +1405,14 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 	}
 
 	if !isMcoUpdating {
-		r.Log.Info("create runtime class")
-		r.resetInProgressCondition()
-		err := r.createRuntimeClass(kataRuntimeClassName, kataRuntimeClassCpuOverhead, kataRuntimeClassMemOverhead)
+		res, err := r.postKataInstallation()
+		if res != nil {
+			return *res, err
+		}
+		// FIXME : dead code, revisit postKataInstallation() return paths
 		if err != nil {
-			// Give sometime for the error to go away before reconciling again
-			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 		}
-		r.Log.Info("create Scc")
-		err = r.createScc()
-		if err != nil {
-			// Give sometime for the error to go away before reconciling again
-			return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-		}
-
-		ds := r.processDaemonsetForMonitor()
-		// Set KataConfig instance as the owner and controller
-		if err = controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
-			r.Log.Error(err, "failed to set controller reference on the monitor daemonset")
-			return ctrl.Result{}, err
-		}
-		r.Log.Info("controller reference set for the monitor daemonset")
-
-		foundDs := &appsv1.DaemonSet{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDs)
-		if err != nil {
-			if k8serrors.IsNotFound(err) {
-				r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-				err = r.Client.Create(context.TODO(), ds)
-				if err != nil {
-					r.Log.Error(err, "error when creating monitor daemonset")
-					return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-				}
-			} else {
-				r.Log.Error(err, "could not get monitor daemonset, try again")
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-			}
-		} else {
-			r.Log.Info("Updating monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-			err = r.Client.Update(context.TODO(), ds)
-			if err != nil {
-				r.Log.Error(err, "error when updating monitor daemonset")
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-			}
-		}
-
-		// create Pod VM image CRD and runtimeclass for peerpods
-		if r.kataConfig.Spec.EnablePeerPods {
-			//Get pull-secret from openshift-config ns and save it as auth-json-secret in our ns
-			//This will be used by the podvm image provider to pull the pause image for embedding
-			err = r.createAuthJsonSecret()
-			if err != nil {
-				r.Log.Info("Error in creating auth-json-secret", "err", err)
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-			}
-
-			// Create the podvm image
-			// Since we want to declaratively reach the final state, we need to reconcile when there are errors
-			// as we want the system to give a chance of fixing the error.
-			// For cases we don't want to reconcile, ie for ImageCreatedSuccessfully and UnsupportedPodVMImageProvider
-			// we should just log the message and let the code continue without explicitly returning from the method
-
-			// Following are the returned statuses:
-			// ImageCreatedSuccessfully
-			// UnsupportedPodVMImageProvider
-			// ImageCreationFailed
-			// RequeueNeeded
-			// ImageCreationStatusUnknown
-
-			status, err := ImageCreate(r.Client)
-			switch status {
-			case ImageCreatedSuccessfully:
-				r.setInProgressConditionToPodVMImageCreated()
-				r.Log.Info("PodVM Image created successfully")
-
-			case UnsupportedPodVMImageProvider:
-				r.setInProgressConditionToPodVMImageUnsupportedProvider()
-				r.Log.Info("unsupported cloud provider, skipping image creation")
-
-			case RequeueNeeded:
-				r.setInProgressConditionToPodVMImageCreating()
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-
-			case ImageCreationFailed:
-				r.setInProgressConditionToPodVMImageCreationFailed()
-				if err != nil {
-					// We requeue only if there is an error.
-					return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-				}
-				// If there's no error, log and continue
-				r.Log.Info("Image creation failed. Check logs for more details")
-
-			case ImageCreationStatusUnknown:
-				r.setInProgressConditionToPodVMImageCreationUnknown()
-
-				// Reconcile with error
-				return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
-
-			default:
-				// For all other statuses, just log and continue
-				r.Log.Info("PodVM Image creation status and error", "status", status, "error", err)
-			}
-
-			err = r.enablePeerPodsMiscConfigs()
-			if err != nil {
-				r.Log.Info("Enabling peerpodconfig CR, runtimeclass etc", "err", err)
-				// Give sometime for the error to go away before reconciling again
-				return reconcile.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-
-			}
-
-			// Reset the in progress condition
-			r.resetInProgressCondition()
-		}
-
 	} else {
 		// We don't requeue - we're waiting for an MCP to go
 		// Updating->Updated which will trigger reconciliation
@@ -1830,13 +1728,30 @@ func (eh *NodeEventHandler) Update(ctx context.Context, event event.UpdateEvent,
 
 	foundRelevantChange := false
 
-	// no need to check the second return value of the indexing operation
-	// as "" is not a valid machineconfiguration.openshift.io/state value
-	stateOld := nodeOld.GetAnnotations()["machineconfiguration.openshift.io/state"]
-	stateNew := nodeNew.GetAnnotations()["machineconfiguration.openshift.io/state"]
-	if stateOld != stateNew {
-		foundRelevantChange = true
-		log.Info("machineconfiguration.openshift.io/state changed", "old", stateOld, "new", stateNew)
+	if eh.reconciler.DeploymentMode == DaemonSetMode {
+		// "" is not a valid kataconfiguration.openshift.io/kata-ds-rpm-install value
+		kataStateOld := nodeOld.GetLabels()[kataInstallationDaemonSetLabel]
+		kataStateNew := nodeNew.GetLabels()[kataInstallationDaemonSetLabel]
+		if kataStateOld != kataStateNew {
+			foundRelevantChange = true
+			log.Info("kataconfiguration.openshift.io/kata-ds-rpm-install changed", "old", kataStateOld, "new", kataStateNew)
+		}
+
+		peerPodsStateOld := nodeOld.GetLabels()[peerPodsConfigDaemonSetLabel]
+		peerPodsStateNew := nodeNew.GetLabels()[peerPodsConfigDaemonSetLabel]
+		if peerPodsStateOld != peerPodsStateNew {
+			foundRelevantChange = true
+			log.Info("kataconfiguration.openshift.io/osc-config-sync changed", "old", peerPodsStateOld, "new", peerPodsStateNew)
+		}
+	} else {
+		// no need to check the second return value of the indexing operation
+		// as "" is not a valid machineconfiguration.openshift.io/state value
+		stateOld := nodeOld.GetAnnotations()["machineconfiguration.openshift.io/state"]
+		stateNew := nodeNew.GetAnnotations()["machineconfiguration.openshift.io/state"]
+		if stateOld != stateNew {
+			foundRelevantChange = true
+			log.Info("machineconfiguration.openshift.io/state changed", "old", stateOld, "new", stateNew)
+		}
 	}
 
 	labelsOld := nodeOld.GetLabels()
@@ -2543,38 +2458,20 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPods() error {
 		}
 	}
 
-	mc := mcfgv1.MachineConfig{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "machineconfiguration.openshift.io/v1",
-			Kind:       "MachineConfig",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: peerpodsKataRemoteMachineConfig,
-		},
+	if r.DeploymentMode == MachineConfigMode {
+		// We are explicitly ignoring any errors in peerpodconfig and related machineconfigs removal as
+		// these can be removed manually if needed and this is not in the critical path
+		// of operator functionality
+		_ = r.deletePeerPodsMC()
 	}
 
-	err = r.Client.Delete(context.TODO(), &mc)
-	if err != nil {
-		// error during removing mc. Just log the error and move on.
-		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
-			"mc", mc.Name, "err", err)
-	}
-
-	mc = mcfgv1.MachineConfig{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "machineconfiguration.openshift.io/v1",
-			Kind:       "MachineConfig",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: peerpodsCrioMachineConfig,
-		},
-	}
-
-	err = r.Client.Delete(context.TODO(), &mc)
-	if err != nil {
-		// error during removing mc. Just log the error and move on.
-		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
-			"mc", mc.Name, "err", err)
+	if r.DeploymentMode == DaemonSetMode {
+		// We want to make sure that the osc-config-sync ds removal successfully started
+		// So we will try again in case of an error
+		err = r.deletePeedPodsConfigDaemonSet()
+		if err != nil {
+			return err
+		}
 	}
 
 	// Delete mutating webhook deployment
@@ -2645,5 +2542,223 @@ func (r *KataConfigOpenShiftReconciler) createMcFromFile(machineConfigYamlFile s
 			return err
 		}
 	}
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) checkDeletionEligibility() (ctrl.Result, error) {
+	if contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
+		// Get the list of pods that might be running using kata runtime
+		err := r.listKataPods()
+		if err != nil {
+			r.setInProgressConditionToBlockedByExistingKataPods(err.Error())
+			updErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
+			if updErr != nil {
+				return ctrl.Result{}, updErr
+			}
+			r.Log.Info("Kata pods are present. Requeue for reconciliation ")
+			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
+	}
+	return ctrl.Result{}, nil
+}
+
+func (r *KataConfigOpenShiftReconciler) deleteDaemonsetForMonitor() error {
+	ds := r.processDaemonsetForMonitor()
+	err := r.Client.Delete(context.TODO(), ds)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("monitor daemonset was already deleted")
+		} else {
+			r.Log.Error(err, "error when deleting monitor Daemonset, try again")
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) deletePodVMImage() (*ctrl.Result, error) {
+	// Handle podvm image deletion
+	// Since we want to declaratively reach the final state, we need to reconcile when there are errors
+	// as we want the system to give a chance of fixing the error.
+	// For cases we don't want to reconcile, ie for ImageDeletedSuccessfully and UnsupportedPodVMImageProvider
+	// we should just log the message and let the code continue without explicitly returning from the method
+
+	// Following are returned statuses:
+	// ImageDeletedSuccessfully
+	// UnsupportedPodVMImageProvider
+	// ImageDeletionFailed
+	// RequeueNeeded
+	// ImageDeletionStatusUnknown
+	status, err := ImageDelete(r.Client)
+	switch status {
+	case ImageDeletedSuccessfully:
+		r.setInProgressConditionToPodVMImageDeleted()
+		r.Log.Info("PodVM Image deleted successfully")
+
+	case UnsupportedPodVMImageProvider:
+		r.setInProgressConditionToPodVMImageUnsupportedProvider()
+		r.Log.Info("unsupported cloud provider, skipping image deletion")
+
+	case RequeueNeeded:
+		r.setInProgressConditionToPodVMImageDeleting()
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+
+	case ImageDeletionFailed:
+		r.setInProgressConditionToPodVMImageDeletionFailed()
+		if err != nil {
+			// We requeue only if there is an error.
+			return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
+		// If there's no error, log and continue
+		r.Log.Info("Image deletion failed. Check logs for more details")
+
+	case ImageDeletionStatusUnknown:
+		r.setInProgressConditionToPodVMImageDeletionUnknown()
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+
+	default:
+		// For all other statuses, just log and continue
+		r.Log.Info("PodVM Image deletion status and error", "status", status, "error", err)
+	}
+	return nil, nil
+}
+
+func (r *KataConfigOpenShiftReconciler) deleteScc() error {
+	scc := GetScc()
+	err := r.Client.Delete(context.TODO(), scc)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("SCC was already deleted")
+		} else {
+			r.Log.Error(err, "error when deleting SCC, retrying")
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) postKataInstallation() (*ctrl.Result, error) {
+	r.Log.Info("create runtime class")
+	r.resetInProgressCondition()
+	err := r.createRuntimeClass(kataRuntimeClassName, kataRuntimeClassCpuOverhead, kataRuntimeClassMemOverhead)
+	if err != nil {
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+	}
+	r.Log.Info("create Scc")
+	err = r.createScc()
+	if err != nil {
+		// Give sometime for the error to go away before reconciling again
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+	}
+
+	err = r.createDaemonsetForMonitor()
+	if err != nil {
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+	}
+
+	// create Pod VM image CRD and runtimeclass for peerpods
+	if r.kataConfig.Spec.EnablePeerPods {
+		//Get pull-secret from openshift-config ns and save it as auth-json-secret in our ns
+		//This will be used by the podvm image provider to pull the pause image for embedding
+		err = r.createAuthJsonSecret()
+		if err != nil {
+			r.Log.Info("Error in creating auth-json-secret", "err", err)
+			return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
+
+		// Create the podvm image
+		// Since we want to declaratively reach the final state, we need to reconcile when there are errors
+		// as we want the system to give a chance of fixing the error.
+		// For cases we don't want to reconcile, ie for ImageCreatedSuccessfully and UnsupportedPodVMImageProvider
+		// we should just log the message and let the code continue without explicitly returning from the method
+
+		// Following are the returned statuses:
+		// ImageCreatedSuccessfully
+		// UnsupportedPodVMImageProvider
+		// ImageCreationFailed
+		// RequeueNeeded
+		// ImageCreationStatusUnknown
+
+		status, err := ImageCreate(r.Client)
+		switch status {
+		case ImageCreatedSuccessfully:
+			r.setInProgressConditionToPodVMImageCreated()
+			r.Log.Info("PodVM Image created successfully")
+
+		case UnsupportedPodVMImageProvider:
+			r.setInProgressConditionToPodVMImageUnsupportedProvider()
+			r.Log.Info("unsupported cloud provider, skipping image creation")
+
+		case RequeueNeeded:
+			r.setInProgressConditionToPodVMImageCreating()
+			return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+
+		case ImageCreationFailed:
+			r.setInProgressConditionToPodVMImageCreationFailed()
+			if err != nil {
+				// We requeue only if there is an error.
+				return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			}
+			// If there's no error, log and continue
+			r.Log.Info("Image creation failed. Check logs for more details")
+
+		case ImageCreationStatusUnknown:
+			r.setInProgressConditionToPodVMImageCreationUnknown()
+
+			// Reconcile with error
+			return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+
+		default:
+			// For all other statuses, just log and continue
+			r.Log.Info("PodVM Image creation status and error", "status", status, "error", err)
+		}
+
+		err = r.enablePeerPodsMiscConfigs()
+		if err != nil {
+			r.Log.Info("Enabling peerpodconfig CR, runtimeclass etc", "err", err)
+			return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
+
+		// Reset the in progress condition
+		r.resetInProgressCondition()
+	}
+	return nil, nil
+}
+
+func (r *KataConfigOpenShiftReconciler) deletePeerPodsMC() error {
+	mc := mcfgv1.MachineConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "machineconfiguration.openshift.io/v1",
+			Kind:       "MachineConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: peerpodsKataRemoteMachineConfig,
+		},
+	}
+
+	err := r.Client.Delete(context.TODO(), &mc)
+	if err != nil {
+		// error during removing mc. Just log the error and move on.
+		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
+			"mc", mc.Name, "err", err)
+	}
+
+	mc = mcfgv1.MachineConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "machineconfiguration.openshift.io/v1",
+			Kind:       "MachineConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: peerpodsCrioMachineConfig,
+		},
+	}
+
+	err = r.Client.Delete(context.TODO(), &mc)
+	if err != nil {
+		// error during removing mc. Just log the error and move on.
+		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
+			"mc", mc.Name, "err", err)
+	}
+
 	return nil
 }
