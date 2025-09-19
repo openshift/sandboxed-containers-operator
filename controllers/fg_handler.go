@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -12,15 +13,19 @@ const (
 	FgConfigMapName         = "osc-feature-gates"
 	ConfidentialFeatureGate = "confidential"
 	LayeredImageDeployment  = "layeredImageDeployment"
+	DeploymentModeConfig    = "deploymentMode"
 )
 
-var DefaultFeatureGates = map[string]bool{
-	ConfidentialFeatureGate: false,
-	LayeredImageDeployment:  false,
+var DefaultFeatureGates = FeatureGateStatus{
+	Confidential:           false,
+	LayeredImageDeployment: false,
+	DeploymentModeOption:   MachineConfigOption,
 }
 
 type FeatureGateStatus struct {
-	FeatureGates map[string]bool
+	Confidential           bool
+	LayeredImageDeployment bool
+	DeploymentModeOption   DeploymentModeOption
 }
 
 // Create enum to represent the state of the feature gates
@@ -40,22 +45,38 @@ const (
 // Return an error for any other reason, such as an API error.
 func (r *KataConfigOpenShiftReconciler) NewFeatureGateStatus() (*FeatureGateStatus, error) {
 	fgStatus := &FeatureGateStatus{
-		FeatureGates: make(map[string]bool),
+		Confidential:           DefaultFeatureGates.Confidential,
+		LayeredImageDeployment: DefaultFeatureGates.LayeredImageDeployment,
+		DeploymentModeOption:   DefaultFeatureGates.DeploymentModeOption,
 	}
 
 	cfgMap := &corev1.ConfigMap{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: FgConfigMapName,
 		Namespace: OperatorNamespace}, cfgMap)
 	if err == nil {
-		for feature, value := range cfgMap.Data {
-			fgStatus.FeatureGates[feature] = value == "true"
+		if value, ok := cfgMap.Data[ConfidentialFeatureGate]; ok {
+			confidential, err := strconv.ParseBool(value)
+			if err != nil {
+				r.Log.Info("Couldn't parse confidential status, using default value", "default", DefaultFeatureGates.Confidential, "error", err)
+			} else {
+				fgStatus.Confidential = confidential
+			}
 		}
-	}
-
-	// Add default values for missing feature gates
-	for feature, defaultValue := range DefaultFeatureGates {
-		if _, exists := fgStatus.FeatureGates[feature]; !exists {
-			fgStatus.FeatureGates[feature] = defaultValue
+		if value, ok := cfgMap.Data[LayeredImageDeployment]; ok {
+			layeredImageDeployment, err := strconv.ParseBool(value)
+			if err != nil {
+				r.Log.Info("Couldn't parse layeredImageDeployment status, using default value", "default", DefaultFeatureGates.LayeredImageDeployment, "error", err)
+			} else {
+				fgStatus.LayeredImageDeployment = layeredImageDeployment
+			}
+		}
+		if value, ok := cfgMap.Data[DeploymentModeConfig]; ok {
+			mode, err := ParseDeploymentModeOption(value)
+			if err != nil {
+				r.Log.Info("Couldn't parse deploymentMode status, using default value", "default", DefaultFeatureGates.DeploymentModeOption, "error", err)
+			} else {
+				fgStatus.DeploymentModeOption = mode
+			}
 		}
 	}
 
@@ -66,8 +87,16 @@ func (r *KataConfigOpenShiftReconciler) NewFeatureGateStatus() (*FeatureGateStat
 	}
 }
 
-func IsEnabled(fgStatus *FeatureGateStatus, feature string) bool {
-	return fgStatus.FeatureGates[feature]
+var statusChecker = map[string]func(fgstatus *FeatureGateStatus) bool{
+	ConfidentialFeatureGate: func(fgstatus *FeatureGateStatus) bool { return fgstatus.Confidential },
+	LayeredImageDeployment:  func(fgstatus *FeatureGateStatus) bool { return fgstatus.LayeredImageDeployment },
+}
+
+func (fgstatus *FeatureGateStatus) IsEnabled(key string) bool {
+	if checkStatus, ok := statusChecker[key]; ok {
+		return checkStatus(fgstatus)
+	}
+	return false
 }
 
 // Function to handle the feature gates
@@ -82,7 +111,7 @@ func (r *KataConfigOpenShiftReconciler) processFeatureGates() error {
 	// Check which feature gates are enabled in the FG ConfigMap and
 	// perform the necessary actions
 	if r.kataConfig.Spec.EnablePeerPods {
-		if IsEnabled(fgStatus, ConfidentialFeatureGate) {
+		if fgStatus.IsEnabled(ConfidentialFeatureGate) {
 			r.Log.Info("Feature gate is enabled", "featuregate", ConfidentialFeatureGate)
 			// Perform the necessary actions
 			if err := r.handleFeatureConfidential(Enabled); err != nil {
@@ -97,8 +126,17 @@ func (r *KataConfigOpenShiftReconciler) processFeatureGates() error {
 		}
 	}
 
+	if err := r.handleDeploymentModeFeature(fgStatus.DeploymentModeOption); err != nil {
+		return err
+	}
+
+	if r.DeploymentMode == DaemonSetMode {
+		r.Log.Info("Skipping layered image deployment feature, not using MCO")
+		return nil
+	}
+
 	// Check layered Image deployment FG
-	if IsEnabled(fgStatus, LayeredImageDeployment) {
+	if fgStatus.IsEnabled(LayeredImageDeployment) {
 		r.Log.Info("Feature gate is enabled", "featuregate", LayeredImageDeployment)
 		// Perform the necessary actions
 		return r.handleLayeredImageDeploymentFeature(Enabled)
