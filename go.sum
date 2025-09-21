@@ -80,8 +80,8 @@ github.com/blang/semver/v4 v4.0.0 h1:1PFHFE6yCCTv8C1TeyNNarDzntLi7wMI5i/pzqYIsAM
 github.com/blang/semver/v4 v4.0.0/go.mod h1:IbckMUScFkM3pff0VJDNKRiT6TG/YpiHIM2yvyW5YoQ=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
-github.com/chai2010/gettext-go v1.0.2 h1:1Lwwip6Q2QGsAdl/ZKPCwTe9fe0CjlUbqj5bFNSjIRk=
-github.com/chai2010/gettext-go v1.0.2/go.mod h1:y+wnP2cHYaVj19NZhYKAwEMH2CI1gNHeQQ+5AjwawxA=
+github.com/chai2010/gettext-go v1.0.3 h1:9liNh8t+u26xl5ddmWLmsOsdNLwkdRTg5AG+JnTiM80=
+github.com/chai2010/gettext-go v1.0.3/go.mod h1:y+wnP2cHYaVj19NZhYKAwEMH2CI1gNHeQQ+5AjwawxA=
 github.com/confidential-containers/cloud-api-adaptor/src/cloud-providers v0.12.0 h1:b3xsroOYAOQcO+GEhuI2fnGF1pIe9A5h+fRD7pmUDM4=
 github.com/confidential-containers/cloud-api-adaptor/src/cloud-providers v0.12.0/go.mod h1:24ItDuxO22J60bWE9kCvwoAYVl5GbZMiZF59mwZxorE=
 github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl v0.12.0 h1:39ejFzWaJgQR55AObVtbEu0efnUI9g1yW/nWWQNqE5U=
