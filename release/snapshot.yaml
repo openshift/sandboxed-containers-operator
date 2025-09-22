@@ -6,65 +6,65 @@ metadata:
 spec:
   application: openshift-sandboxed-containers-v1-10
   components:
-  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-monitor@sha256:9e297de3d963cb5ebd80a609f848ee716eb1dedb0ee6cc76f523d7fe9005a167
-    name: osc-monitor
+  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-monitor-v1-10@sha256:ce49124dc965c77cd93e9fa34b0392194761cc949543cf39d3a0ce7d33a64572
+    name: osc-monitor-v1-10
     source:
       git:
         dockerfileUrl: Dockerfile.monitor
-        revision: 956cc37ba2929245ee9784155501fcc3a3c115d6
+        revision: 4560d2b96839bcc8035a60348ecfe0b3a7c8a77d
         url: https://github.com/openshift/kata-containers
-  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator-bundle@sha256:a5db075a773eceebb63cb33033afad81baaaa108ce5acd533947eb21a1b16b58
-    name: osc-operator-bundle
+  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator-bundle-v1-10@sha256:dc75d0d32e24479e6cfb4042f6eda587f747b6e6aff25cdda1c1f8af859fbc0f
+    name: osc-operator-bundle-v1-10
     source:
       git:
-        revision: 17ee44df4589ee9efbb68d89cd736e42a68a35cf
+        revision: 47bb073abf9f88a24a77b0efb5dfa5a860db2154
         url: https://github.com/openshift/sandboxed-containers-operator
-  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-builder@sha256:c18fef762f36f294b9f0d9881696220df8774bff479dd13e779cb897583af194
-    name: osc-podvm-builder
+  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-builder-v1-10@sha256:21e810dd9d030c3835fadfc4c434e36a26ab57d9451dc955fc1625b48fac3815
+    name: osc-podvm-builder-v1-10
     source:
       git:
         context: config/peerpods/podvm
         dockerfileUrl: Dockerfile.podvm-builder
-        revision: 154f467dd6e55c0d1f93d0d9e58c5c9427cfeebd
+        revision: d36004f697731521faa9b1bc6acd94f9ca99dcd4
         url: https://github.com/openshift/sandboxed-containers-operator
-  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-payload@sha256:cd44044bdcee400f802b0ec74227467b2b860df8ff103079b10bc22ce06dfc0a
-    name: osc-podvm-payload
+  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-payload-v1-10@sha256:c9790aaa961f6976c14fc9cbef448fc48fcdfacf94f3af25fa2b1e31c72c8d9f
+    name: osc-podvm-payload-v1-10
     source:
       git:
         dockerfileUrl: podvm-payload/Dockerfile
-        revision: ebb979546fb136168122ac63b4aa83227847f5c3
+        revision: bdca2073285730b4fc5e8028b6ac4dd9a0256d13
         url: https://github.com/openshift/cloud-api-adaptor
-  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa@sha256:04e2982cf0a6a69a5dfe7549ca038ca5a2d60fa7ea4a15c98c80043212f79a40
-    name: osc-caa
+  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa-v1-10@sha256:7d1fa1e85af0d34c23e75868b1388eff17abe633c04a8dc55fbefcc470195c05
+    name: osc-caa-v1-10
     source:
       git:
         context: src
         dockerfileUrl: cloud-api-adaptor/Dockerfile.openshift
-        revision: ebb979546fb136168122ac63b4aa83227847f5c3
+        revision: bdca2073285730b4fc5e8028b6ac4dd9a0256d13
         url: https://github.com/openshift/cloud-api-adaptor
-  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-dm-verity-image@sha256:ad0503ae88cac7d2975f3fdf5bfc2eafe30d263f7d75d9fff7ba31a88947cc0f
-    name: osc-dm-verity-image
+  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-dm-verity-image-v1-10@sha256:9b32c441a08792374a8b681ed5733d8df77857ea96200630080fdd96012f8b55
+    name: osc-dm-verity-image-v1-10
     source:
       git:
-        revision: 91303a1882260587573fd04c395d49701c486b8d
+        revision: 3962471832c450387a0659432d057ce88443f16a
         url: https://github.com/confidential-devhub/coco-podvm-scripts
-  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator@sha256:4fb018ce03cfaa06b983e801508036352247d3f9fc09981949f85b7e8ab4520b
-    name: osc-operator
+  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator-v1-10@sha256:f35734f1ed34110193d0f38027f67c50c82dcb5110df2a1c388e8882ddc663d5
+    name: osc-operator-v1-10
     source:
       git:
-        revision: 43613b0f9f312b4b4e9e830927eb3c8718859026
+        revision: d36004f697731521faa9b1bc6acd94f9ca99dcd4
         url: https://github.com/openshift/sandboxed-containers-operator
-  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa-webhook@sha256:ef4a8efcfb74e3e6b68fe3c566b343ac5da0a4d1de203342c46defae60029a81
-    name: osc-caa-webhook
+  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa-webhook-v1-10@sha256:6802f00a939f24ecd6dad150433db5ea3fd72d171f0c410cb894d3af910fc7fd
+    name: osc-caa-webhook-v1-10
     source:
       git:
         context: src/webhook
-        revision: ebb979546fb136168122ac63b4aa83227847f5c3
+        revision: bdca2073285730b4fc5e8028b6ac4dd9a0256d13
         url: https://github.com/openshift/cloud-api-adaptor
-  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-must-gather@sha256:a33a8960c17aee79115934726006586e5c29c10413ff30ccea6844a2068164ae
-    name: osc-must-gather
+  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-must-gather-v1-10@sha256:a9dceee04f0a107c3c2a32838187c3bef7d54c7ad10ff75849e488009ed927e8
+    name: osc-must-gather-v1-10
     source:
       git:
         context: must-gather
-        revision: 43613b0f9f312b4b4e9e830927eb3c8718859026
+        revision: d36004f697731521faa9b1bc6acd94f9ca99dcd4
         url: https://github.com/openshift/sandboxed-containers-operator
