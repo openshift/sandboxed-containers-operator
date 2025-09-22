@@ -13,11 +13,11 @@ spec:
         dockerfileUrl: Dockerfile.monitor
         revision: 4560d2b96839bcc8035a60348ecfe0b3a7c8a77d
         url: https://github.com/openshift/kata-containers
-  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator-bundle-v1-10@sha256:dc75d0d32e24479e6cfb4042f6eda587f747b6e6aff25cdda1c1f8af859fbc0f
+  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator-bundle-v1-10@sha256:417ee37b223c39a06e8534fbe8b9f11e54e481df17977e4d4d62c62ccf8e63a4
     name: osc-operator-bundle-v1-10
     source:
       git:
-        revision: 47bb073abf9f88a24a77b0efb5dfa5a860db2154
+        revision: a894d05350ba200e176db6b09d49568eedb49b80
         url: https://github.com/openshift/sandboxed-containers-operator
   - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-podvm-builder-v1-10@sha256:21e810dd9d030c3835fadfc4c434e36a26ab57d9451dc955fc1625b48fac3815
     name: osc-podvm-builder-v1-10
@@ -48,11 +48,11 @@ spec:
       git:
         revision: 3962471832c450387a0659432d057ce88443f16a
         url: https://github.com/confidential-devhub/coco-podvm-scripts
-  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator-v1-10@sha256:f35734f1ed34110193d0f38027f67c50c82dcb5110df2a1c388e8882ddc663d5
+  - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator-v1-10@sha256:1ffb432d9a8833854fa5e5262dcbf42530dfbaadfddf6978f7bc7804b84d2e3f
     name: osc-operator-v1-10
     source:
       git:
-        revision: d36004f697731521faa9b1bc6acd94f9ca99dcd4
+        revision: d317b15b575172392731b2c00876846ebc45922d
         url: https://github.com/openshift/sandboxed-containers-operator
   - containerImage: quay.io/redhat-user-workloads/ose-osc-tenant/osc-caa-webhook-v1-10@sha256:6802f00a939f24ecd6dad150433db5ea3fd72d171f0c410cb894d3af910fc7fd
     name: osc-caa-webhook-v1-10
