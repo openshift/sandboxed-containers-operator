@@ -1,0 +1,10 @@
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Release
+metadata:
+  labels:
+    release.appstudio.openshift.io/author: jrope
+  name: osc-stage-release-v1-10-3-build1
+  namespace: ose-osc-tenant
+spec:
+  releasePlan: osc-prod-release-plan-v1-10
+  snapshot: osc-release-snapshot-1

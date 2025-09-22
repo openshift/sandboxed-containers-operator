@@ -1,0 +1,44 @@
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Release
+metadata:
+  labels:
+    release.appstudio.openshift.io/author: jrope
+  name: osc-prod-release-v1-10-2-take3
+  namespace: ose-osc-tenant
+spec:
+  releasePlan: osc-prod-release-plan-v1-10
+  snapshot: openshift-sandboxed-containers-v1-10-7gp4c
+  data:
+    releaseNotes:
+      cves:
+      - component: osc-podvm-builder-v1-10
+        key: CVE-2025-6020
+      - component: osc-podvm-payload-v1-10
+        key: CVE-2025-6020
+      - component: osc-caa-v1-10
+        key: CVE-2025-6020
+      - component: osc-monitor-v1-10
+        key: CVE-2025-6020
+      - component: osc-monitor-v1-10
+        key: CVE-2025-8941
+      - component: osc-podvm-payload-v1-10
+        key: CVE-2025-8941
+      - component: osc-podvm-builder-v1-10
+        key: CVE-2025-8941
+      - component: osc-caa-v1-10
+        key: CVE-2025-8941
+      - component: osc-caa-v1-10
+        key: CVE-2025-5914
+      - component: osc-caa-webhook-v1-10
+        key: CVE-2025-5914
+      - component: osc-monitor-v1-10
+        key: CVE-2025-5914
+      - component: osc-must-gather-v1-10
+        key: CVE-2025-5914
+      - component: osc-operator-v1-10
+        key: CVE-2025-5914
+      - component: osc-podvm-builder-v1-10
+        key: CVE-2025-5914
+      - component: osc-podvm-payload-v1-10
+        key: CVE-2025-5914
+
