@@ -1,3 +1,23 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tdx-qgs-sa
+  namespace: intel-dcap
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: use-privileged-scc
+  namespace: intel-dcap
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:privileged
+subjects:
+  - kind: ServiceAccount
+    name: tdx-qgs-sa
+    namespace: intel-dcap
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -19,6 +39,7 @@ spec:
         intel.feature.node.kubernetes.io/tdx: 'true'
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
+      serviceAccountName: tdx-qgs-sa
       initContainers:
         - name: platform-registration
           image: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:308d66da94d3116cc16530a4a2cd60a995458f331e1cb3487c6ea3fdae60545b
@@ -48,7 +69,7 @@ spec:
         - name: tdx-qgs
           image: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:308d66da94d3116cc16530a4a2cd60a995458f331e1cb3487c6ea3fdae60545b
           args:
-            - -p=4050
+            - -p=0
             - -n=4
           securityContext:
             readOnlyRootFilesystem: true
@@ -72,6 +93,8 @@ spec:
             - name: qcnl-config
               mountPath: /run/dcap/
               readOnly: true
+            - name: qgs-socket
+              mountPath: /var/run/tdx-qgs
       volumes:
         - name: dcap-qcnl-cache
           emptyDir:
@@ -85,3 +108,7 @@ spec:
         - name: efivars
           hostPath:
             path: /sys/firmware/efi/efivars/
+        - name: qgs-socket
+          hostPath:
+            path: /var/run/tdx-qgs
+            type: DirectoryOrCreate
