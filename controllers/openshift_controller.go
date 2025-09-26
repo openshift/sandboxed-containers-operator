@@ -127,6 +127,12 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
+	err = r.ensureRuntimeClassFinalizers()
+	if err != nil {
+		r.Log.Info("Failed to ensure runtime class finalizers", "err", err)
+		return ctrl.Result{}, err
+	}
+
 	err = r.processFeatureGates()
 	if err != nil {
 		r.Log.Info("Unable to process feature gates", "err", err)
