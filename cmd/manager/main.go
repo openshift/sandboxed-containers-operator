@@ -167,6 +167,15 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Credentials")
 		os.Exit(1)
 	}
+
+	if err = (&controllers.RuntimeClassReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Log:    ctrl.Log.WithName("controllers").WithName("RuntimeClass"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "RuntimeClass")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	setupLog.Info("starting manager")
