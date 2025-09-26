@@ -16,10 +16,13 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
+	nodeapi "k8s.io/api/node/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // migratePeerPodsLimit moves the PeerPodConfig "Limit" value to peer-pods-cm
@@ -79,5 +82,34 @@ func (r *KataConfigOpenShiftReconciler) migratePeerPodsLimit() error {
 	}
 
 	r.Log.Info("Successfully migrated PeerPodConfig Limit to peer-pods-cm and deleted PeerPodConfig")
+	return nil
+}
+
+// ensureRuntimeClassFinalizers adds finalizers to existing runtime classes that don't have them
+func (r *KataConfigOpenShiftReconciler) ensureRuntimeClassFinalizers() error {
+	runtimeClasses := []string{
+		kataCCRuntimeClassName,
+		peerpodsRuntimeClassName,
+		kataRuntimeClassName,
+	}
+
+	for _, name := range runtimeClasses {
+		rc := &nodeapi.RuntimeClass{}
+		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: name}, rc)
+		if k8serrors.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+
+		if !controllerutil.ContainsFinalizer(rc, runtimeClassFinalizerName) {
+			r.Log.Info("Adding finalizer to existing runtime class", "runtimeClass", name)
+			controllerutil.AddFinalizer(rc, runtimeClassFinalizerName)
+			if err := r.Client.Update(context.TODO(), rc); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
