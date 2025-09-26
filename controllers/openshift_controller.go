@@ -781,7 +781,8 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName stri
 				Kind:       "RuntimeClass",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name: runtimeClassName,
+				Name:       runtimeClassName,
+				Finalizers: []string{runtimeClassFinalizerName},
 			},
 			Handler: handler,
 			Overhead: &nodeapi.Overhead{
