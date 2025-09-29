@@ -13,6 +13,6 @@ entries:
     name: stable
     package: sandboxed-containers-operator
     schema: olm.channel
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:0661ab3a3abe208d28ccf4b1c42ddb8438c067a622f749d2a4546fe67bf6095a
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:4477810692429ac498b6ec1b295e6ead0f8fea25e91f6ddf17255d7e349b82e1
     schema: olm.bundle
 schema: olm.template.basic
