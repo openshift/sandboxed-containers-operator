@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/skopeo:9.6-1756959203
+FROM registry.access.redhat.com/ubi9/skopeo:9.6-1759106102
 
 RUN mkdir -p /files
 
