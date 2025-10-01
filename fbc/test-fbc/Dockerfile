@@ -12,7 +12,7 @@ ADD render.sh icon.png ./
 COPY test-fbc ./test-fbc
 
 RUN dnf install -y go git jq skopeo && go install github.com/mikefarah/yq/v4@v4.35.1
-RUN PATH=/root/go/bin:$PATH ./render.sh test-fbc
+RUN mkdir -p test-fbc/catalog/sandboxed-containers-operator && PATH=/root/go/bin:$PATH ./render.sh test-fbc
 
 # Copy FBC root into image at /configs and pre-populate serve cache
 RUN cp -r test-fbc/catalog/ /configs
