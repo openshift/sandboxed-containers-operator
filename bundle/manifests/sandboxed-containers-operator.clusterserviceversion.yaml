@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2025-09-26T17:03:45Z"
+    createdAt: "2025-10-06T16:02:13Z"
     features.operators.openshift.io/cnf: "false"
     features.operators.openshift.io/cni: "false"
     features.operators.openshift.io/csi: "false"
@@ -402,6 +402,8 @@ spec:
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:9c07280746952c7bd4ea811cd15e6dc2e35e0f6c2015e21436dfeaa418ec5799
                 - name: RELATED_IMAGE_PODVM_OCI
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:bd7adef18fc781d48ccf47c1beeeb9ef8bef4ff00f9d38e49ffcadfc75084abd
+                - name: RELATED_IMAGE_MUST_GATHER
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:1c1583f56bf5788f21e8e0d6441831dab4caf4ec6d74518d2b471f50b923f354
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -560,6 +562,8 @@ spec:
     name: podvm-payload
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:bd7adef18fc781d48ccf47c1beeeb9ef8bef4ff00f9d38e49ffcadfc75084abd
     name: podvm-oci
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:1c1583f56bf5788f21e8e0d6441831dab4caf4ec6d74518d2b471f50b923f354
+    name: must-gather
   replaces: sandboxed-containers-operator.v1.10.2
   version: 1.11.0
   webhookdefinitions:
