@@ -514,7 +514,7 @@ EOF
 #handler: kata-$TEE_TYPE
 #kind: RuntimeClass
 #metadata:
-#  name: kata-$TEE_TYPE
+#  name: kata-cc
 #scheduling:
 #  nodeSelector:
 #    $label
@@ -865,7 +865,7 @@ function uninstall() {
     wait_for_mcp worker || return 1
 
     # Delete the runtimeClass
-    oc delete runtimeclass kata-"$TEE_TYPE" &>/dev/null
+    oc delete runtimeclass kata-cc &>/dev/null
 
     echo "Uninstall completed successfully"
 }
