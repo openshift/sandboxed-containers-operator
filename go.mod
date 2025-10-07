@@ -59,7 +59,7 @@ require (
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/chai2010/gettext-go v1.0.2 // indirect
+	github.com/chai2010/gettext-go v1.0.3 // indirect
 	github.com/confidential-containers/cloud-api-adaptor/src/cloud-providers v0.12.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containers/image/v5 v5.35.0 // indirect
