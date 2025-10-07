@@ -411,7 +411,7 @@ spec:
                 - configMapRef:
                     name: peer-pods-cm
                     optional: true
-                image: registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:86984fb0d3e58a4464937c7b4408c2039c7dd97c04c0fca7e4e1936ddd398f32
+                image: registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:b2462b9d8e1de6e1378235245310bf3927e7b1282765bdbd8d79022fd53ba43a
                 imagePullPolicy: Always
                 name: manager
                 ports:
@@ -484,7 +484,7 @@ spec:
               containers:
               - command:
                 - /metrics-server
-                image: registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:86984fb0d3e58a4464937c7b4408c2039c7dd97c04c0fca7e4e1936ddd398f32
+                image: registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:b2462b9d8e1de6e1378235245310bf3927e7b1282765bdbd8d79022fd53ba43a
                 name: metrics-server
                 ports:
                 - containerPort: 8091
