@@ -12,4 +12,4 @@
 # to find controller-gen.
 # Makefile will then NOT install the tool, and just run the script instead.
 
-go run sigs.k8s.io/controller-tools/cmd/controller-gen $@
+go tool sigs.k8s.io/controller-tools/cmd/controller-gen $@

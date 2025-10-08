@@ -20,7 +20,7 @@ COPY controllers controllers/
 COPY controller-gen bin/
 
 # get the version of controller-gen in an env variable for reusing
-RUN echo "export CONTROLLER_TOOLS_VERSION=$(grep controller-tools go.mod | awk '{print $2}')" > controller-tools-ver
+RUN echo "export CONTROLLER_TOOLS_VERSION=$(grep -m 1 controller-tools go.mod | awk '{print $2}')" > controller-tools-ver
 
 # rename the script to use the same version as defined in our go.mod file
 RUN . ./controller-tools-ver && mv bin/controller-gen bin/controller-gen-$CONTROLLER_TOOLS_VERSION
