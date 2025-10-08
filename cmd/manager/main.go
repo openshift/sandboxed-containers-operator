@@ -41,14 +41,6 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	// These imports are unused but required in go.mod
-	// for caching during manifest generation by controller-gen
-	_ "github.com/spf13/cobra"
-	_ "sigs.k8s.io/controller-tools/pkg/crd"
-	_ "sigs.k8s.io/controller-tools/pkg/genall"
-	_ "sigs.k8s.io/controller-tools/pkg/genall/help/pretty"
-	_ "sigs.k8s.io/controller-tools/pkg/loader"
-
 	peerpod "github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl/api/v1alpha1"
 	ccov1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 
