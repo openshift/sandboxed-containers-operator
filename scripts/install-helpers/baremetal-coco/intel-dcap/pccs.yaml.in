@@ -1,46 +1,4 @@
 apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: pccs-config
-  namespace: intel-dcap
-data:
-  default.json: |
-    {
-      "HTTPS_PORT" : 8042,
-      "hosts" : "0.0.0.0",
-      "uri": "https://api.trustedservices.intel.com/sgx/certification/v4/",
-      "ApiKey" : "${PCCS_API_KEY}",
-      "proxy" : "${CLUSTER_HTTPS_PROXY}",
-      "RefreshSchedule": "0 0 1 * * *",
-      "UserTokenHash" : "${PCCS_USER_TOKEN_HASH}",
-      "AdminTokenHash" : "${PCCS_ADMIN_TOKEN_HASH}",
-      "CachingFillMode" : "LAZY",
-      "OPENSSL_FIPS_MODE" : false,
-      "LogLevel" : "info",
-      "DB_CONFIG" : "sqlite",
-      "sqlite" : {
-        "database" : "${PCCS_DB_NAME}",
-        "username" : "${PCCS_DB_USERNAME}",
-        "password" : "${PCCS_DB_PASSWORD}",
-        "options" : {
-          "host": "localhost",
-          "dialect": "sqlite",
-          "pool": {
-            "max": 5,
-            "min": 0,
-            "acquire": 30000,
-            "idle": 10000
-          },
-          "define": {
-            "freezeTableName": true
-          },
-          "logging" : true,
-          "storage": "/var/cache/pccs/pckcache.db"
-        }
-      }
-    }
----
-apiVersion: v1
 kind: Secret
 metadata:
   name: pccs-tls
@@ -99,16 +57,23 @@ spec:
             privileged: true  # Required for chcon to work on host files
       containers:
         - name: pccs
-          image: quay.io/openshift_sandboxed_containers/dcap/pccs:0.2.0
+          image: quay.io/openshift_sandboxed_containers/dcap/pccs:0.2.4
+          envFrom:
+            - secretRef:
+                name: pccs-secrets
+          env:
+            - name: "PCCS_LOG_LEVEL"
+              value: "info"
+            - name: "CLUSTER_HTTPS_PROXY"
+              value: "${CLUSTER_HTTPS_PROXY}"
+            - name: "PCCS_FILL_MODE"
+              value: "LAZY"
           ports:
             - containerPort: 8042
               name: pccs-port
           volumeMounts:
             - name: pccs-tls
               mountPath: /opt/intel/pccs/ssl_key
-              readOnly: true
-            - name: pccs-config
-              mountPath: /opt/intel/pccs/config
               readOnly: true
             - name: host-database
               mountPath: /var/cache/pccs/
@@ -118,9 +83,6 @@ spec:
         - name: pccs-tls
           secret:
             secretName: pccs-tls
-        - name: pccs-config
-          configMap:
-            name: pccs-config
         - name: host-database
           hostPath:
             path: /var/cache/pccs/
