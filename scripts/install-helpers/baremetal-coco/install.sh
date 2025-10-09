@@ -359,6 +359,19 @@ function deploy_intel_dcap() {
     export PCCS_NODE
     export CLUSTER_HTTPS_PROXY
     envsubst <pccs.yaml.in >pccs.yaml
+
+    oc create secret generic pccs-secrets \
+      --namespace intel-dcap \
+      --from-literal=PCCS_API_KEY="$PCCS_API_KEY" \
+      --from-literal=PCCS_USER_TOKEN_HASH="$PCCS_USER_TOKEN_HASH" \
+      --from-literal=PCCS_ADMIN_TOKEN_HASH="$PCCS_ADMIN_TOKEN_HASH" \
+      --from-literal=PCCS_DB_NAME="$PCCS_DB_NAME" \
+      --from-literal=PCCS_DB_USERNAME="$PCCS_DB_USERNAME" \
+      --from-literal=PCCS_DB_PASSWORD="$PCCS_DB_PASSWORD" \
+      --dry-run=client -o yaml | oc apply -f -
+
+    echo "Secrets for PCCS applied."
+
     oc apply -f pccs.yaml || return 1
     wait_for_deployment pccs intel-dcap || return 1
 
@@ -732,6 +745,7 @@ function uninstall_intel_dcap() {
     oc delete -f qgs.yaml || return 1
     oc delete -f registration-ds.yaml || return 1
     oc delete -f pccs.yaml || return 1
+    oc delete secret pccs-secrets -n intel-dcap || return 1
     oc delete -f ns.yaml || return 1
     popd || return 1
 
