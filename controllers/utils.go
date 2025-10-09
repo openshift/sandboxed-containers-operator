@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/oc/pkg/cli/admin/release"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -307,4 +308,42 @@ func labelNodes(c client.Client, nodeSelector labels.Selector, newLabels map[str
 
 func HostPathTypePtr(hostPathType corev1.HostPathType) *corev1.HostPathType {
 	return &hostPathType
+}
+
+func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
+	var err error
+
+	pullSecret := &corev1.Secret{}
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: "pull-secret", Namespace: "openshift-config"}, pullSecret)
+	if err != nil {
+		r.Log.Info("Error fetching pull-secret", "err", err)
+		return err
+	}
+
+	authJsonSecret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "auth-json-secret",
+			Namespace: OperatorNamespace,
+		},
+		Data: map[string][]byte{
+			"auth.json": pullSecret.Data[".dockerconfigjson"],
+		},
+		Type: corev1.SecretTypeOpaque,
+	}
+
+	err = r.Client.Create(context.TODO(), &authJsonSecret)
+	if err != nil {
+		if k8serrors.IsAlreadyExists(err) {
+			err = r.Client.Update(context.TODO(), &authJsonSecret)
+			if err != nil {
+				r.Log.Info("Error updating auth-json-secret", "err", err)
+				return err
+			}
+		} else {
+			r.Log.Info("Error creating auth-json-secret", "err", err)
+			return err
+		}
+	}
+
+	return err
 }
