@@ -475,10 +475,10 @@ kernel_params=\"$kernel_params\""
 
     case $tee_type in
     tdx)
-        filepath=/etc/kata-containers/tdx/config.d/96-kata-kernel-config
+        filepath=/etc/kata-containers/kata-tdx/config.d/96-kata-kernel-config
         ;;
     snp)
-        filepath=/etc/kata-containers/snp/config.d/96-kata-kernel-config
+        filepath=/etc/kata-containers/kata-snp/config.d/96-kata-kernel-config
         ;;
     esac
 
