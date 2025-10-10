@@ -110,19 +110,17 @@ func (r *KataConfigOpenShiftReconciler) processFeatureGates() error {
 
 	// Check which feature gates are enabled in the FG ConfigMap and
 	// perform the necessary actions
-	if r.kataConfig.Spec.EnablePeerPods {
-		if fgStatus.IsEnabled(ConfidentialFeatureGate) {
-			r.Log.Info("Feature gate is enabled", "featuregate", ConfidentialFeatureGate)
-			// Perform the necessary actions
-			if err := r.handleFeatureConfidential(Enabled); err != nil {
-				return err
-			}
-		} else {
-			r.Log.Info("Feature gate is disabled", "featuregate", ConfidentialFeatureGate)
-			// Perform the necessary actions
-			if err := r.handleFeatureConfidential(Disabled); err != nil {
-				return err
-			}
+	if fgStatus.IsEnabled(ConfidentialFeatureGate) {
+		r.Log.Info("Feature gate is enabled", "featuregate", ConfidentialFeatureGate)
+		// Perform the necessary actions
+		if err := r.handleFeatureConfidential(Enabled); err != nil {
+			return err
+		}
+	} else {
+		r.Log.Info("Feature gate is disabled", "featuregate", ConfidentialFeatureGate)
+		// Perform the necessary actions
+		if err := r.handleFeatureConfidential(Disabled); err != nil {
+			return err
 		}
 	}
 

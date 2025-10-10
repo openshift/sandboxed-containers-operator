@@ -127,6 +127,12 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
+	err = r.ensureRuntimeClassFinalizers()
+	if err != nil {
+		r.Log.Info("Failed to ensure runtime class finalizers", "err", err)
+		return ctrl.Result{}, err
+	}
+
 	err = r.processFeatureGates()
 	if err != nil {
 		r.Log.Info("Unable to process feature gates", "err", err)
@@ -772,7 +778,7 @@ func (r *KataConfigOpenShiftReconciler) createDaemonsetForMonitor() error {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName string, cpuOverhead string, memoryOverhead string) error {
+func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName string, cpuOverhead string, memoryOverhead string, handler string, additionalNodeLabel string) error {
 
 	rc := func() *nodeapi.RuntimeClass {
 		rc := &nodeapi.RuntimeClass{
@@ -781,9 +787,10 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName stri
 				Kind:       "RuntimeClass",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name: runtimeClassName,
+				Name:       runtimeClassName,
+				Finalizers: []string{runtimeClassFinalizerName},
 			},
-			Handler: runtimeClassName,
+			Handler: handler,
 			Overhead: &nodeapi.Overhead{
 				PodFixed: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse(cpuOverhead),
@@ -793,6 +800,11 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName stri
 		}
 
 		nodeSelector := r.getNodeSelectorAsMap()
+
+		// Add additional node label if provided
+		if additionalNodeLabel != "" {
+			nodeSelector[additionalNodeLabel] = "true"
+		}
 
 		rc.Scheduling = &nodeapi.Scheduling{
 			NodeSelector: nodeSelector,
@@ -824,6 +836,34 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName stri
 
 	if !contains(r.kataConfig.Status.RuntimeClasses, runtimeClassName) {
 		r.kataConfig.Status.RuntimeClasses = append(r.kataConfig.Status.RuntimeClasses, runtimeClassName)
+	}
+
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) deleteRuntimeClass(runtimeClassName string) error {
+
+	foundRc := &nodeapi.RuntimeClass{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: runtimeClassName}, foundRc)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+
+	if err := r.Client.Delete(context.TODO(), foundRc); err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+
+	for i, name := range r.kataConfig.Status.RuntimeClasses {
+		if name == runtimeClassName {
+			r.kataConfig.Status.RuntimeClasses = append(r.kataConfig.Status.RuntimeClasses[:i], r.kataConfig.Status.RuntimeClasses[i+1:]...)
+			break
+		}
 	}
 
 	return nil
@@ -2197,7 +2237,7 @@ func (r *KataConfigOpenShiftReconciler) deleteScc() error {
 func (r *KataConfigOpenShiftReconciler) postKataInstallation() (*ctrl.Result, error) {
 	r.Log.Info("create runtime class")
 	r.resetInProgressCondition()
-	err := r.createRuntimeClass(kataRuntimeClassName, kataRuntimeClassCpuOverhead, kataRuntimeClassMemOverhead)
+	err := r.createRuntimeClass(kataRuntimeClassName, kataRuntimeClassCpuOverhead, kataRuntimeClassMemOverhead, kataRuntimeClassName, "")
 	if err != nil {
 		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
