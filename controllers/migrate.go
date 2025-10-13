@@ -32,7 +32,7 @@ func (r *KataConfigOpenShiftReconciler) migratePeerPodsLimit() error {
 	peerPodConfig.SetKind("PeerPodConfig")
 
 	err := r.Client.Get(context.TODO(), client.ObjectKey{
-		Name:      peerpodConfigCrdName,
+		Name:      "peerpodconfig-openshift",
 		Namespace: OperatorNamespace,
 	}, peerPodConfig)
 
