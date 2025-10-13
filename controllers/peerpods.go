@@ -33,7 +33,6 @@ import (
 )
 
 const (
-	DEFAULT_PEER_PODS                   = "10"
 	peerpodConfigCrdName                = "peerpodconfig-openshift"
 	peerpodsMachineConfigPathLocation   = "/config/peerpods"
 	peerpodsCrioMachineConfig           = "50-kata-remote"
