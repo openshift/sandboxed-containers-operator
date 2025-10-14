@@ -150,7 +150,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/opencontainers/runtime-spec v1.2.1 // indirect
 	github.com/openshift/client-go v0.0.0-20251010083004-63fa63caf7d0 // indirect
-	github.com/openshift/library-go v0.0.0-20250711143941-47604345e7ea // indirect
+	github.com/openshift/library-go v0.0.0-20251009131428-6c2d3d0d6f05 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
