@@ -1,0 +1,69 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: osc-test-fbc-integration
+spec:
+  description: >-
+    Run Prow jobs for testing the osc-test-fbc catalog.
+  params:
+    - name: GANGWAY_TOKEN
+      type: string
+      description: Token to authenticate with gangway
+      default: gangway-token
+    - description: 'Snapshot of the application'
+      name: SNAPSHOT
+      default: '{"components": [{"name":"osc-test-fbc", "containerImage": "quay.io/redhat-user-workloads/ose-osc-tenant/osc-test-fbc:latest"}]}'
+      type: string
+  tasks:
+    - name: get-catalog-image
+      params:
+      - name: SNAPSHOT
+        value: $(params.SNAPSHOT)
+      taskSpec:
+        params:
+          - name: SNAPSHOT
+        results:
+          - name: CATALOG_IMAGE
+            description: "The catalog image extracted from the SNAPSHOT"
+        steps:
+          - name: get-catalog-image
+            image: registry.redhat.io/openshift4/ose-cli:latest
+            env:
+              - name: SNAPSHOT
+                value: $(params.SNAPSHOT)
+            script: |
+              #!/bin/bash
+              set -e
+              dnf -y install jq
+              echo "Snapshot: ${SNAPSHOT}"
+              catalogImage=$(jq -r '.components[] | select(.name=="osc-test-fbc") | .containerImage' <<< "${SNAPSHOT}")
+              echo "Catalog image: ${catalogImage}"
+              echo "${catalogImage}" > $(results.CATALOG_IMAGE.path)
+    - name: prow-job
+      displayName: "Running prow job $(params.PROWJOB_NAME)"
+      timeout: "4h"
+      runAfter:
+        - get-catalog-image
+      taskRef:
+        resolver: git
+        params:
+        - name: url
+          value: https://github.com/openshift/konflux-tasks
+        - name: revision
+          value: 26d8e981a7d1d035f05c4accd30b38d07f8f02b5
+        - name: pathInRepo
+          value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: VARIANT
+          value: downstream-candidate
+        - name: ENVS
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE)"
+      matrix:
+        params:
+          - name: PROWJOB_NAME
+            value:
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-azure-ipi-kata
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-azure-ipi-peerpods
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-aws-ipi-peerpods
