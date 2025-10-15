@@ -186,4 +186,5 @@ patches:
 #         delimiter: '/'
 #         index: 0
 #         create: true
+# +kubebuilder:scaffold:crdkustomizecainjectionns
 
