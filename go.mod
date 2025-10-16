@@ -9,8 +9,8 @@ require (
 	github.com/coreos/ignition/v2 v2.20.0
 	github.com/ghodss/yaml v1.0.1-0.20220118164431-d8423dcdf344
 	github.com/go-logr/logr v1.4.3
-	github.com/onsi/ginkgo/v2 v2.22.2
-	github.com/onsi/gomega v1.36.2
+	github.com/onsi/ginkgo/v2 v2.23.3
+	github.com/onsi/gomega v1.37.0
 	github.com/openshift/api v0.0.0-20251016080153-44baf885fd37
 	github.com/openshift/cloud-credential-operator v0.0.0-20250630222159-c2641839cffa
 	github.com/openshift/machine-config-operator v0.0.1-0.20250730172805-468599a9ae73
@@ -33,7 +33,7 @@ require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.5.0 // indirect
 	github.com/BurntSushi/toml v1.5.0 // indirect
-	github.com/IBM/go-sdk-core/v5 v5.18.5 // indirect
+	github.com/IBM/go-sdk-core/v5 v5.21.0 // indirect
 	github.com/IBM/vpc-go-sdk v0.35.0 // indirect
 	github.com/MakeNowJust/heredoc v1.0.0 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
