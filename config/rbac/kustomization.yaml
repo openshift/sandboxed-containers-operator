@@ -17,3 +17,5 @@ resources:
 # the following is custom rbac manifests required for
 # cloud-api-adaptor when peerpod-ctrl is used
 - caa_rbac.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
