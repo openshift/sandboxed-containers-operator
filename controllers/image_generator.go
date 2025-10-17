@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -37,6 +38,7 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 /*
@@ -139,7 +141,7 @@ func GetImageGenerator() *ImageGenerator {
 }
 
 // ImageCreate creates a podvm image for a cloud provider if not present
-func ImageCreate(c client.Client) (int, error) {
+func ImageCreate(c client.Client, kataConfig *kataconfigurationv1.KataConfig) (int, error) {
 	if err := InitializeImageGenerator(c); err != nil {
 		igLogger.Info("error initializing ImageGenerator instance", "err", err)
 		return ImageCreationFailed, ErrInitializingImageGenerator
@@ -157,7 +159,7 @@ func ImageCreate(c client.Client) (int, error) {
 	}
 
 	// Create required podvm image configMap
-	if err := ig.createImageConfigMapFromFile(); err != nil {
+	if err := ig.createImageConfigMapFromFile(kataConfig); err != nil {
 		igLogger.Info("error creating podvm image configMap from file", "err", err)
 		return ImageCreationFailed, ErrCreatingImageConfigMap
 	}
@@ -772,7 +774,7 @@ func (r *ImageGenerator) getImageConfigMapName() string {
 // ibmcloud-podvm-image-cm.yaml for IBM Cloud
 // Returns error if the ConfigMap creation fails
 
-func (r *ImageGenerator) createImageConfigMapFromFile() error {
+func (r *ImageGenerator) createImageConfigMapFromFile(kataConfig *kataconfigurationv1.KataConfig) error {
 	// file format: [azure|aws|libvirt]-podvm-image-cm.yaml
 	// ConfigMap name: [azure|aws|libvirt]-podvm-image-cm
 
@@ -846,6 +848,11 @@ func (r *ImageGenerator) createImageConfigMapFromFile() error {
 		imageVersion = strings.ReplaceAll(imageVersion, ".", "-")
 		cm.Data["IMAGE_VERSION"] = imageVersion
 		igLogger.Info("Setting IMAGE_VERSION", "image_version", imageVersion)
+	}
+
+	// To ensure that it gets deleted along with the KataConfig
+	if err := controllerutil.SetControllerReference(kataConfig, cm, r.client.Scheme()); err != nil {
+		return err
 	}
 
 	if err := r.client.Create(context.TODO(), cm); err != nil {
