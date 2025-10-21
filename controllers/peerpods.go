@@ -488,7 +488,7 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPods() (*ctrl.Result, error) {
 	// RequeueNeeded
 	// ImageCreationStatusUnknown
 
-	status, err := ImageCreate(r.Client)
+	status, err := ImageCreate(r.Client, r.kataConfig)
 	switch status {
 	case ImageCreatedSuccessfully:
 		r.setInProgressConditionToPodVMImageCreated()

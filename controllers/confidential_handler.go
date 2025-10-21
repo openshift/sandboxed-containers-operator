@@ -61,7 +61,7 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialPeerPods(state Feature
 		} else {
 			if state == Enabled {
 				// Create ImageConfigMap, if it doesn't exist already.
-				if err := ig.createImageConfigMapFromFile(); err != nil {
+				if err := ig.createImageConfigMapFromFile(r.kataConfig); err != nil {
 					return err
 				}
 
