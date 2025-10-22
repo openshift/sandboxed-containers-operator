@@ -167,8 +167,8 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.mongodb.org/mongo-driver v1.17.4 // indirect
-	go.opentelemetry.io/otel v1.35.0 // indirect
-	go.opentelemetry.io/otel/trace v1.35.0 // indirect
+	go.opentelemetry.io/otel v1.38.0 // indirect
+	go.opentelemetry.io/otel/trace v1.38.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
