@@ -778,9 +778,19 @@ func (r *KataConfigOpenShiftReconciler) createDaemonsetForMonitor() error {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName string, cpuOverhead string, memoryOverhead string, handler string, additionalNodeLabel string) error {
+func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName string, cpuOverhead string, memoryOverhead string, extResOverhead string, handler string, additionalNodeLabel string) error {
 
 	rc := func() *nodeapi.RuntimeClass {
+		podFixed := corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(cpuOverhead),
+			corev1.ResourceMemory: resource.MustParse(memoryOverhead),
+		}
+
+		// Add extended resource if provided
+		if extResOverhead != "" {
+			podFixed[corev1.ResourceName(extResOverhead)] = resource.MustParse("1")
+		}
+
 		rc := &nodeapi.RuntimeClass{
 			TypeMeta: metav1.TypeMeta{
 				APIVersion: "node.k8s.io/v1",
@@ -792,10 +802,7 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName stri
 			},
 			Handler: handler,
 			Overhead: &nodeapi.Overhead{
-				PodFixed: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse(cpuOverhead),
-					corev1.ResourceMemory: resource.MustParse(memoryOverhead),
-				},
+				PodFixed: podFixed,
 			},
 		}
 
@@ -2237,7 +2244,7 @@ func (r *KataConfigOpenShiftReconciler) deleteScc() error {
 func (r *KataConfigOpenShiftReconciler) postKataInstallation() (*ctrl.Result, error) {
 	r.Log.Info("create runtime class")
 	r.resetInProgressCondition()
-	err := r.createRuntimeClass(kataRuntimeClassName, kataRuntimeClassCpuOverhead, kataRuntimeClassMemOverhead, kataRuntimeClassName, "")
+	err := r.createRuntimeClass(kataRuntimeClassName, kataRuntimeClassCpuOverhead, kataRuntimeClassMemOverhead, "", kataRuntimeClassName, "")
 	if err != nil {
 		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
