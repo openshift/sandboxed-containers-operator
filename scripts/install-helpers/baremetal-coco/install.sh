@@ -1045,7 +1045,12 @@ snp)
 esac
 
 # Create runtimeClass kata-tdx or kata-snp based on TEE_TYPE
-create_runtimeclasses "$TEE_TYPE" || exit 1
+# Check if kata-cc runtimeclass already exists
+if oc get runtimeclass kata-cc &>/dev/null; then
+    echo "RuntimeClass kata-cc already exists, skipping creation"
+else
+    create_runtimeclasses "$TEE_TYPE" || exit 1
+fi
 
 # set the aa_kbc_params config for the kata agent to be used CoCo attestation
 set_kernel_params_for_kata_agent "$TEE_TYPE" "$TRUSTEE_URL" "$CLUSTER_HTTPS_PROXY" "$CLUSTER_NO_PROXY" || exit 1
