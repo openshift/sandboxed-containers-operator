@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-# Print what you're doing, exit on error.
+# Print what you're doing, exit on error
 set -xe
 
 # Which OCP versions are we running this for.
