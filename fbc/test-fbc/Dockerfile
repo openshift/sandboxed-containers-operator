@@ -1,5 +1,5 @@
 # The builder image is expected to contain
-# /bin/opm (with serve subcommand)
+# /bin/opm (with serve subcommand).
 FROM brew.registry.redhat.io/rh-osbs/openshift-ose-operator-registry-rhel9:v4.19 as builder
 USER root
 
