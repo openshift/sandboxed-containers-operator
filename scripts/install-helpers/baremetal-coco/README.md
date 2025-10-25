@@ -71,7 +71,7 @@ The deployment sequence is described below:
 
 - If not using SNO or converged cluster then label at least a single worker node for deployment
   and export the label via the 1BM_NODE_LABEL1 env variable
-  
+
   ```sh
   export NODENAME=<node>
   oc label node $NODENAME coco_bm=true
@@ -100,25 +100,10 @@ The deployment sequence is described below:
 
 ## Install OSC operator pre-GA release
 
-- Update osc_catalog.yaml to point to the pre-GA catalog
-  For example if you want to install the pre-GA 0.0.1-24 build, then change the
-  image entry to the following
-
-  ```sh
-  image: quay.io/openshift_sandboxed_containers/openshift-sandboxed-containers-operator-catalog:0.0.1-22
-  ```
-
-- The pre-GA build images are in an authenticated registry, so you'll need to
-  set the `PULL_SECRET_JSON` variable with the registry credentials. Following is an example:
-
-  ```sh
-  export PULL_SECRET_JSON='{"brew.registry.redhat.io": {"auth": "abcd1234"}, "registry.redhat.io": {"auth": "abcd1234"}}'
-  ```
-
 - Kickstart the installation by running the following:
 
   ```sh
-  ./install.sh -t tdx -m -s -b
+  ./install.sh -t tdx -m -b
   ```
 
   This will deploy the pre-GA release of OSC operator on TDX hosts.
@@ -127,6 +112,15 @@ After successful install, the following runtimeclasses will be created:
   - `kata` for non-confidential workloads
   - `kata-cc` for confidential workloads (with handler `kata-tdx` for Intel TDX or `kata-snp` for AMD SNP)
 
+
+## Adding custom container registry secrets
+
+  To add custom registry secrets, you'll need to set the `PULL_SECRET_JSON` variable with the registry credentials.
+  Following is an example:
+
+  ```sh
+  export PULL_SECRET_JSON='{"my.custom.registry.io": {"auth": "abcd1234"}, "registry.mydom.io": {"auth": "abcd1234"}}'
+  ```
 
 ## Un-installation
 

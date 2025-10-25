@@ -7,3 +7,4 @@ data:
   # layeredImageDeployment allows deploying Kata using RHCOS layered image
   # This feature gate needs a ConfigMap named layered-image-deploy-cm
   layeredImageDeployment: "true"
+  confidential: "false"
