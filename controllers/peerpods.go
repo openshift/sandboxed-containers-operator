@@ -19,10 +19,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -33,13 +31,6 @@ import (
 )
 
 const (
-	DEFAULT_PEER_PODS                   = "10"
-	peerpodConfigCrdName                = "peerpodconfig-openshift"
-	peerpodsMachineConfigPathLocation   = "/config/peerpods"
-	peerpodsCrioMachineConfig           = "50-kata-remote"
-	peerpodsCrioMachineConfigYaml       = "mc-50-crio-config.yaml"
-	peerpodsKataRemoteMachineConfig     = "40-worker-kata-remote-config"
-	peerpodsKataRemoteMachineConfigYaml = "mc-40-kata-remote-config.yaml"
 	// https://github.com/kata-containers/kata-containers/blob/main/tools/packaging/kata-deploy/runtimeclasses/kata-remote.yaml#L7
 	peerpodsRuntimeClassName        = "kata-remote"
 	peerpodsRuntimeClassCpuOverhead = "0.25"
@@ -251,29 +242,6 @@ func (r *KataConfigOpenShiftReconciler) processProviderConfigCAA(ds *appsv1.Daem
 	}
 }
 
-// Create the MachineConfigs for PeerPod
-// We do it before kata-oc creation to optimise the reboots required for MC creation
-func (r *KataConfigOpenShiftReconciler) enablePeerPodsMc() error {
-
-	//Create MachineConfig for kata-remote hyp CRIO config
-	crioMachineConfigFilePath := filepath.Join(peerpodsMachineConfigPathLocation, peerpodsCrioMachineConfigYaml)
-	err := r.createMcFromFile(crioMachineConfigFilePath)
-	if err != nil {
-		r.Log.Info("Error in creating CRIO MachineConfig", "err", err)
-		return err
-	}
-
-	//Create MachineConfig for kata-remote hyp config toml
-	kataConfigMachineConfigFilePath := filepath.Join(peerpodsMachineConfigPathLocation, peerpodsKataRemoteMachineConfigYaml)
-	err = r.createMcFromFile(kataConfigMachineConfigFilePath)
-	if err != nil {
-		r.Log.Info("Error in creating kata remote configuration.toml MachineConfig", "err", err)
-		return err
-	}
-
-	return nil
-}
-
 // Create the PeerPodConfig CRDs and misc configs required for peer-pods
 func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 	// Create the CAA daemonset
@@ -339,13 +307,6 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPodsMiscConfigs() error {
 			r.Log.Error(err, "error when deleting cloud-api-adaptor Daemonset, try again")
 			return err
 		}
-	}
-
-	if r.DeploymentMode == MachineConfigMode {
-		// We are explicitly ignoring any errors in peerpodconfig and related machineconfigs removal as
-		// these can be removed manually if needed and this is not in the critical path
-		// of operator functionality
-		_ = r.deletePeerPodsMC()
 	}
 
 	if r.DeploymentMode == DaemonSetMode {
@@ -428,44 +389,6 @@ func (r *KataConfigOpenShiftReconciler) deletePodVMImage() (*ctrl.Result, error)
 	return nil, nil
 }
 
-func (r *KataConfigOpenShiftReconciler) deletePeerPodsMC() error {
-	mc := mcfgv1.MachineConfig{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "machineconfiguration.openshift.io/v1",
-			Kind:       "MachineConfig",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: peerpodsKataRemoteMachineConfig,
-		},
-	}
-
-	err := r.Client.Delete(context.TODO(), &mc)
-	if err != nil {
-		// error during removing mc. Just log the error and move on.
-		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
-			"mc", mc.Name, "err", err)
-	}
-
-	mc = mcfgv1.MachineConfig{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "machineconfiguration.openshift.io/v1",
-			Kind:       "MachineConfig",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: peerpodsCrioMachineConfig,
-		},
-	}
-
-	err = r.Client.Delete(context.TODO(), &mc)
-	if err != nil {
-		// error during removing mc. Just log the error and move on.
-		r.Log.Info("Error found deleting mc. If the MachineConfig object exists after uninstallation it can be safely deleted manually",
-			"mc", mc.Name, "err", err)
-	}
-
-	return nil
-}
-
 func (r *KataConfigOpenShiftReconciler) enablePeerPods() (*ctrl.Result, error) {
 	//Get pull-secret from openshift-config ns and save it as auth-json-secret in our ns
 	//This will be used by the podvm image provider to pull the pause image for embedding
@@ -537,8 +460,8 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPods() (*ctrl.Result, error) {
 }
 
 func (r *KataConfigOpenShiftReconciler) disablePeerPods() (*ctrl.Result, error) {
-	// We are explicitly ignoring any errors in peerpodconfig and related machineconfigs removal as
-	// these can be removed manually if needed and this is not in the critical path
+	// We are explicitly ignoring any errors as the various involved resources
+	// can be removed manually if needed and this is not in the critical path
 	// of operator functionality
 	_ = r.disablePeerPodsMiscConfigs()
 
