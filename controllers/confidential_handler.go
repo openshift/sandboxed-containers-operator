@@ -20,8 +20,8 @@ const (
 	amdSNPNodeLabel   = "amd.feature.node.kubernetes.io/snp"
 
 	// RuntimeClass handlers for TEE
-	kataCCIntelHandler = "kata-cc-intel"
-	kataCCAmdHandler   = "kata-cc-amd"
+	kataCCIntelHandler = "kata-tdx"
+	kataCCAmdHandler   = "kata-snp"
 
 	// Extended resources for TEE
 	intelTDXExtendedResource = "tdx.intel.com/keys"
