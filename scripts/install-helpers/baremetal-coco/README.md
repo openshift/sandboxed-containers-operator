@@ -123,7 +123,10 @@ The deployment sequence is described below:
 
   This will deploy the pre-GA release of OSC operator on TDX hosts.
 
-After successful install `kata`, `kata-tdx` or `kata-snp` runtimeclasses will be created based on the TEE type.
+After successful install, the following runtimeclasses will be created:
+  - `kata` for non-confidential workloads
+  - `kata-cc` for confidential workloads (with handler `kata-tdx` for Intel TDX or `kata-snp` for AMD SNP)
+
 
 ## Un-installation
 
