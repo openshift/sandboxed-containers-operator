@@ -121,6 +121,8 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
+	oldObjStatus := r.kataConfig.Status.DeepCopy()
+
 	err = r.migratePeerPodsLimit()
 	if err != nil {
 		r.Log.Info("Failed to migrate PeerPodConfig limit", "err", err)
@@ -199,9 +201,13 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		if err != nil {
 			return res, err
 		}
-		updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
-		if updateErr != nil {
-			return ctrl.Result{}, updateErr
+
+		if r.IsKataConfigStatusChanged(oldObjStatus, &r.kataConfig.Status) {
+			r.Log.Info("KataConfig's status changed, updating...")
+			updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
+			if updateErr != nil {
+				return ctrl.Result{}, updateErr
+			}
 		}
 
 		cMap := r.processDashboardConfigMap()
