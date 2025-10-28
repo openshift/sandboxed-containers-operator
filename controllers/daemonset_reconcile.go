@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -865,6 +866,13 @@ func (r *KataConfigOpenShiftReconciler) updateStatusDaemonSet(action KataDaemonS
 			err = e
 		}
 	}
+
+	sort.Strings(r.kataConfig.Status.KataNodes.WaitingToInstall)
+	sort.Strings(r.kataConfig.Status.KataNodes.Installing)
+	sort.Strings(r.kataConfig.Status.KataNodes.Installed)
+	sort.Strings(r.kataConfig.Status.KataNodes.WaitingToUninstall)
+	sort.Strings(r.kataConfig.Status.KataNodes.Uninstalling)
+	sort.Strings(r.kataConfig.Status.KataNodes.FailedToInstall)
 
 	r.kataConfig.Status.KataNodes.ReadyNodeCount = len(r.kataConfig.Status.KataNodes.Installed)
 
