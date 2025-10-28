@@ -59,10 +59,10 @@ spec:
   selector:
     trustedservices.intel.com/cache: pccs
   ports:
-  - name: pccs
-    protocol: TCP
-    port: 8042
-    targetPort: pccs-port
+    - name: pccs
+      protocol: TCP
+      port: 8042
+      targetPort: pccs-port
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -81,22 +81,22 @@ spec:
         trustedservices.intel.com/cache: pccs
     spec:
       tolerations:
-      - effect: NoSchedule
-        key: node-role.kubernetes.io/master
-        operator: Exists
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/master
+          operator: Exists
       nodeSelector:
         kubernetes.io/hostname: ${PCCS_NODE}
       initContainers:
-       - name: init-seclabel
-         image: registry.access.redhat.com/ubi9/ubi:latest
-         command: ["sh", "-c", "chcon -Rt container_file_t /var/cache/pccs"]
-         volumeMounts:
-         - name: host-database
-           mountPath: /var/cache/pccs
-         securityContext:
-           runAsUser: 0
-           runAsGroup: 0
-           privileged: true  # Required for chcon to work on host files
+        - name: init-seclabel
+          image: registry.access.redhat.com/ubi9/ubi:latest
+          command: [ "sh", "-c", "chcon -Rt container_file_t /var/cache/pccs" ]
+          volumeMounts:
+            - name: host-database
+              mountPath: /var/cache/pccs
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            privileged: true  # Required for chcon to work on host files
       containers:
         - name: pccs
           image: quay.io/openshift_sandboxed_containers/dcap/pccs:0.2.0
