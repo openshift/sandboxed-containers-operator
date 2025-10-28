@@ -239,6 +239,20 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 	}()
 }
 
+func (r *KataConfigOpenShiftReconciler) IsKataConfigStatusChanged(oldStatus, newStatus *kataconfigurationv1.KataConfigStatus) bool {
+	oldStatusCopy := oldStatus.DeepCopy()
+	newStatusCopy := newStatus.DeepCopy()
+
+	for i := range oldStatusCopy.Conditions {
+		oldStatusCopy.Conditions[i].LastTransitionTime = metav1.Time{}
+	}
+	for i := range newStatusCopy.Conditions {
+		newStatusCopy.Conditions[i].LastTransitionTime = metav1.Time{}
+	}
+
+	return !reflect.DeepEqual(oldStatusCopy, newStatusCopy)
+}
+
 func makeContainerRuntimeConfig(desiredLogLevel string, mcpSelector *metav1.LabelSelector) *mcfgv1.ContainerRuntimeConfig {
 	return &mcfgv1.ContainerRuntimeConfig{
 		TypeMeta: metav1.TypeMeta{
