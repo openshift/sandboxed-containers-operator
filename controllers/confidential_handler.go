@@ -18,10 +18,12 @@ const (
 	// TEE node labels
 	intelTDXNodeLabel = "intel.feature.node.kubernetes.io/tdx"
 	amdSNPNodeLabel   = "amd.feature.node.kubernetes.io/snp"
+	ibmSENodeLabel    = "ibm.feature.node.kubernetes.io/se"
 
 	// RuntimeClass handlers for TEE
 	kataCCIntelHandler = "kata-tdx"
 	kataCCAmdHandler   = "kata-snp"
+	kataCCIbmHandler   = "kata-se"
 
 	// Extended resources for TEE
 	intelTDXExtendedResource = "tdx.intel.com/keys"
@@ -31,7 +33,7 @@ const (
 // When the feature is enabled, handleFeatureConfidential configures confidential computing support.
 //
 // For peer pods: sets ImageConfigMap and peer pods configMap to enable confidential images and CVM support.
-// For baremetal: creates kata-cc runtime classes with TEE-specific handlers (Intel TDX or AMD SNP).
+// For baremetal: creates kata-cc runtime classes with TEE-specific handlers (Intel TDX, AMD SNP or IBM SE).
 //
 // When the feature is disabled, handleFeatureConfidential resets config maps and deletes runtime classes.
 func (r *KataConfigOpenShiftReconciler) handleFeatureConfidential(state FeatureGateState) error {
@@ -108,7 +110,7 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialPeerPods(state Feature
 }
 
 // handleConfidentialBaremetal configures confidential computing for baremetal deployments.
-// It manages kata-cc runtime classes with TEE-specific handlers (Intel TDX or AMD SNP).
+// It manages kata-cc runtime classes with TEE-specific handlers (Intel TDX, AMD SNP or IBM SE).
 func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state FeatureGateState) error {
 	if state == Enabled {
 		r.Log.Info("Creating " + kataCCRuntimeClassName + " runtime class for confidential containers")
@@ -168,8 +170,8 @@ func (r *KataConfigOpenShiftReconciler) computeTEEHandlerAndLabel() (string, str
 		return "", "", fmt.Errorf("failed to list nodes: %w", err)
 	}
 
-	var hasIntelTDX bool
-	var hasAmdSNP bool
+	var hasIntelTDX, hasAmdSNP, hasIbmSE bool
+
 	for _, n := range nodes.Items {
 		if v, ok := n.Labels[intelTDXNodeLabel]; ok && v == "true" {
 			hasIntelTDX = true
@@ -177,9 +179,23 @@ func (r *KataConfigOpenShiftReconciler) computeTEEHandlerAndLabel() (string, str
 		if v, ok := n.Labels[amdSNPNodeLabel]; ok && v == "true" {
 			hasAmdSNP = true
 		}
+		if v, ok := n.Labels[ibmSENodeLabel]; ok && v == "true" {
+			hasIbmSE = true
+		}
 	}
 
-	if hasIntelTDX && hasAmdSNP {
+	count := 0
+	if hasIntelTDX {
+		count++
+	}
+	if hasAmdSNP {
+		count++
+	}
+	if hasIbmSE {
+		count++
+	}
+
+	if count >= 2 {
 		return "", "", fmt.Errorf("multiple TEE platforms detected; only one per cluster supported")
 	}
 
@@ -189,6 +205,9 @@ func (r *KataConfigOpenShiftReconciler) computeTEEHandlerAndLabel() (string, str
 	if hasAmdSNP {
 		return kataCCAmdHandler, amdSNPNodeLabel, nil
 	}
+	if hasIbmSE {
+		return kataCCIbmHandler, ibmSENodeLabel, nil
+	}
 
-	return "", "", fmt.Errorf("no TEE platform labels found (expected %s or %s)", intelTDXNodeLabel, amdSNPNodeLabel)
+	return "", "", fmt.Errorf("no TEE platform labels found (expected %s, %s or %s)", intelTDXNodeLabel, amdSNPNodeLabel, ibmSENodeLabel)
 }
