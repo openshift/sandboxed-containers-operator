@@ -183,6 +183,11 @@ main() {
 		exit 1
 	}
 
+	[[ -z "${NODE_LABEL:-}" ]] && {
+		echo "ERROR: NODE_LABEL env var must be set."
+		exit 1
+	}
+
 	#[[ -z "${LOG_LEVEL}" ]] || {
 	#        echo "ERROR: LOG_LEVEL env var must be set."
 	#        exit 1
