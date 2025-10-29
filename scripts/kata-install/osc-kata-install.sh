@@ -10,6 +10,59 @@ set -xeuo pipefail
 
 PACKAGES="capstone daxctl-libs edk2-ovmf ipxe-roms-qemu kata-containers libfdt libpmem libpng librdmacm ndctl-libs pixman qemu-img qemu-kvm-common qemu-kvm-core seabios-bin seavgabios-bin virtiofsd"
 
+# Format: "absolute_source_path:absolute_dest_path:octal_mode"
+FILES=(
+	"/files/50-kata-remote:/host/etc/crio/crio.conf.d/50-kata-remote:0644"
+	"/files/configuration-remote.toml:/host/opt/kata/configuration-remote.toml:0420"
+)
+
+copy_file() {
+	local src="$1" dest="$2" perm="$3"
+	if [[ -f "$src" ]]; then
+		if [[ -e "$dest" ]]; then
+			echo "$dest already exists, skipping"
+		else
+			# GNU coreutils install: create parents (-D) and set mode (-m)
+			install -D -m "$perm" "$src" "$dest"
+			echo "Installed $(basename "$src") -> $dest (mode $perm)"
+		fi
+	else
+		echo "Warning: $(basename "$src") not found"
+	fi
+}
+
+remove_file() {
+	local dest="$1"
+	if [[ -e "$dest" ]]; then
+		rm -f "$dest"
+		echo "Removed $dest"
+	else
+		echo "Info: $dest not present; skipping"
+	fi
+}
+
+copy_kata_remote_config_files() {
+	echo "Starting configuration copy..."
+
+	for entry in "${FILES[@]}"; do
+		IFS=: read -r src dest perm <<<"$entry"
+		copy_file "$src" "$dest" "$perm"
+	done
+
+	echo "Configuration copy completed"
+}
+
+remove_kata_remote_config_files() {
+	echo "Starting configuration removal..."
+
+	for entry in "${FILES[@]}"; do
+		IFS=: read -r _src dest _perm <<<"$entry"
+		remove_file "$dest"
+	done
+
+	echo "Configuration removal completed"
+}
+
 # label the node with the passed state
 label_node() {
 	local state="$1"
@@ -67,7 +120,7 @@ set_status_uninstalled() {
 	label_node "uninstalled"
 }
 
-install() {
+install_kata() {
 	# Initial wait: avoid doing anything if a previous staged update is pending
 	wait_for_reboot_clear
 
@@ -143,11 +196,14 @@ install() {
 	# Clean up temp dir
 	rm -rf /host/tmp/extensions/
 
+	# Copy configs
+	copy_kata_remote_config_files
+
 	# Wait again: rpm-ostree install stages changes, requiring a reboot
 	wait_for_reboot_clear
 }
 
-uninstall() {
+uninstall_kata() {
 	# Initial wait: avoid doing anything if a previous staged update is pending
 	wait_for_reboot_clear
 
@@ -167,6 +223,9 @@ uninstall() {
 
 	# Uninstall extensions from the node
 	chroot /host /bin/bash -c "rpm-ostree uninstall $PACKAGES"
+
+	# Remove Config
+	remove_kata_remote_config_files
 
 	# Wait again: rpm-ostree uninstall stages changes, requiring a reboot
 	wait_for_reboot_clear
@@ -213,18 +272,14 @@ main() {
 
 		#/osc-log-level.sh "$action" "$LOG_LEVEL"
 
-		#/osc-configs-script.sh "$action"
-
-		install
+		install_kata
 		;;
 	uninstall)
 		client_tools
 
 		#/osc-log-level.sh "$action"
 
-		#/osc-configs-script.sh "$action"
-
-		uninstall
+		uninstall_kata
 		;;
 	*)
 		echo "Usage: $0 {install|uninstall}"
