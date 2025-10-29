@@ -4,6 +4,7 @@ metadata:
   creationTimestamp: null
   labels:
     app: operator-metrics-server
+    app.kubernetes.io/name: sandboxed-containers-operator
   name: operator-metrics-service
 spec:
   ports:

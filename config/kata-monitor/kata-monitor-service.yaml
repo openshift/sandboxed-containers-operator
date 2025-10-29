@@ -4,6 +4,7 @@ metadata:
   name: metrics
   namespace: openshift-sandboxed-containers-operator
   labels:
+    app.kubernetes.io/name: sandboxed-containers-operator
     name: openshift-sandboxed-containers-monitor
 spec:
   selector:

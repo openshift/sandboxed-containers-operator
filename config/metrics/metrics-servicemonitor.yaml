@@ -4,6 +4,7 @@ metadata:
   name: operator-metrics-monitor
   namespace: openshift-sandboxed-containers-operator
   labels:
+    app.kubernetes.io/name: sandboxed-containers-operator
     release: prometheus-operator
 spec:
   selector:
