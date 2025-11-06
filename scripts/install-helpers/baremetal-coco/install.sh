@@ -364,6 +364,7 @@ function deploy_intel_dcap() {
       --namespace intel-dcap \
       --from-literal=PCCS_API_KEY="$PCCS_API_KEY" \
       --from-literal=PCCS_USER_TOKEN_HASH="$PCCS_USER_TOKEN_HASH" \
+      --from-literal=USER_TOKEN="$PCCS_USER_TOKEN" \
       --from-literal=PCCS_ADMIN_TOKEN_HASH="$PCCS_ADMIN_TOKEN_HASH" \
       --from-literal=PCCS_DB_NAME="$PCCS_DB_NAME" \
       --from-literal=PCCS_DB_USERNAME="$PCCS_DB_USERNAME" \
@@ -374,16 +375,6 @@ function deploy_intel_dcap() {
 
     oc apply -f pccs.yaml || return 1
     wait_for_deployment pccs intel-dcap || return 1
-
-    PCCS_URL=$(echo -n "https://pccs-service:8042" | base64 -w 0)
-    SECURE_CERT=$(echo -n "false" | base64 -w 0)
-    USER_TOKEN=$(echo -n "$PCCS_USER_TOKEN" | base64 -w 0)
-    export PCCS_URL
-    export SECURE_CERT
-    export USER_TOKEN
-    envsubst <registration-ds.yaml.in >registration-ds.yaml
-    oc apply -f registration-ds.yaml || return 1
-    wait_for_daemonset intel-dcap-registration-flow intel-dcap || return 1
 
     oc apply -f qgs.yaml || return 1
     wait_for_daemonset tdx-qgs intel-dcap || return 1
@@ -743,7 +734,6 @@ function uninstall_intel_dcap() {
 
     pushd intel-dcap || return 1
     oc delete -f qgs.yaml || return 1
-    oc delete -f registration-ds.yaml || return 1
     oc delete -f pccs.yaml || return 1
     oc delete secret pccs-secrets -n intel-dcap || return 1
     oc delete -f ns.yaml || return 1
