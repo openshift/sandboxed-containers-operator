@@ -73,13 +73,13 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialPeerPods(state Feature
 
 				// Patch ImageConfigMap.
 				imageConfigMapData := map[string]string{"CONFIDENTIAL_COMPUTE_ENABLED": "yes"}
-				if err := updateConfigMap(r.Client, r.Log, ig.getImageConfigMapName(), OperatorNamespace, imageConfigMapData); err != nil {
+				if err := updateConfigMap(r.Client, r.Log, ig.getImageConfigMapName(), OperatorNamespace, imageConfigMapData, nil); err != nil {
 					return err
 				}
 			} else {
 				// Patch ImageConfigMap.
 				imageConfigMapData := map[string]string{"CONFIDENTIAL_COMPUTE_ENABLED": "no"}
-				if err := updateConfigMap(r.Client, r.Log, ig.getImageConfigMapName(), OperatorNamespace, imageConfigMapData); err != nil {
+				if err := updateConfigMap(r.Client, r.Log, ig.getImageConfigMapName(), OperatorNamespace, imageConfigMapData, nil); err != nil {
 					if k8serrors.IsNotFound(err) {
 						// Nothing to do, feature is disabled and configMap doesn't exist.
 					} else {
@@ -97,7 +97,7 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialPeerPods(state Feature
 	} else {
 		peerpodsCMData = map[string]string{"DISABLECVM": "true"}
 	}
-	if err := updateConfigMap(r.Client, r.Log, peerpodsCMName, OperatorNamespace, peerpodsCMData); err != nil {
+	if err := updateConfigMap(r.Client, r.Log, peerpodsCMName, OperatorNamespace, peerpodsCMData, nil); err != nil {
 		if k8serrors.IsNotFound(err) {
 			// When feature is Enabled: ConfigMap doesn't exist yet, will try again at the next reconcile run.
 			// Else: Nothing to do, feature is disabled and configMap doesn't exist.
