@@ -201,7 +201,7 @@ func getClusterID(c client.Client) (string, error) {
 	return string(clusterVersion.Spec.ClusterID[:8]), nil
 }
 
-func updateConfigMap(client client.Client, logger logr.Logger, cmName string, namespace string, newData map[string]string) error {
+func updateConfigMap(client client.Client, logger logr.Logger, cmName string, namespace string, newData map[string]string, keysToRemove map[string]string) error {
 	// Get current configMap.
 	configMap := &corev1.ConfigMap{}
 	if err := client.Get(context.TODO(), types.NamespacedName{
@@ -220,6 +220,15 @@ func updateConfigMap(client client.Client, logger logr.Logger, cmName string, na
 		if configMap.Data[key] != newValue {
 			logger.Info("updateConfigMap", "namespace", namespace, "name", cmName, "key", key, "value", newValue)
 			configMap.Data[key] = newValue
+			update = true
+		}
+	}
+
+	// Remove keys that match the values in keysToRemove map
+	for key, valueToMatch := range keysToRemove {
+		if currentValue, exists := configMap.Data[key]; exists && currentValue == valueToMatch {
+			logger.Info("updateConfigMap - removing key", "namespace", namespace, "name", cmName, "key", key)
+			delete(configMap.Data, key)
 			update = true
 		}
 	}
