@@ -21,6 +21,7 @@ import (
 	"flag"
 	"os"
 
+	provider "github.com/confidential-containers/cloud-api-adaptor/src/cloud-providers"
 	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl/controllers"
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgapi "github.com/openshift/api/machineconfiguration/v1"
@@ -144,9 +145,9 @@ func main() {
 		if err = (&peerpodcontrollers.PeerPodReconciler{
 			Client: mgr.GetClient(),
 			Scheme: mgr.GetScheme(),
-			// setting nil will delegate Provider creation to reconcile time, make sure RBAC permits:
+			// setting an empty array will delegate Provider creation to reconcile time, make sure RBAC permits:
 			//+kubebuilder:rbac:groups="",resourceNames=peer-pods-cm;peer-pods-secret,resources=configmaps;secrets,verbs=get
-			Provider: nil,
+			Providers: map[string]provider.Provider{},
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create peerpod resources controller", "controller", "PeerPod")
 			os.Exit(1)
