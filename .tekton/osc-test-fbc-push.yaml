@@ -226,6 +226,8 @@ spec:
       - name: BUILD_ARGS
         value:
         - $(params.build-args[*])
+        - "GIT_URL=$(params.git-url)"
+        - "GIT_REVISION=$(params.revision)"
       - name: BUILD_ARGS_FILE
         value: $(params.build-args-file)
       - name: SOURCE_ARTIFACT
