@@ -137,8 +137,14 @@ do
             se_tag=$(python3 $PWD/static-files/se_parse_hdr.py $PWD/output-files/hdr.bin $PWD/static-files/HKD.crt | grep se.tag | awk -F ":" '{ print $2 }')
             se_image_phkh=$(python3 $PWD/static-files/se_parse_hdr.py $PWD/output-files/hdr.bin $PWD/static-files/HKD.crt | grep se.image_phkh | awk -F ":" '{ print $2 }')
 
+            # copy attestation phkh if image phkh is unavailable ex. without machine specific HKD
+            if [ -z "${se_image_phkh}" ]; then
+               se_image_phkh=$(python3 $PWD/static-files/se_parse_hdr.py $PWD/output-files/hdr.bin $PWD/static-files/HKD.crt | grep se.attestation_phkh | awk -F ":" '{ print $2 }')
+            fi
+
             echo "se.tag: $se_tag"
             echo "se.image_phkh: $se_image_phkh"
+
 
             generate_policy_files $se_tag $se_image_phkh
 
@@ -184,6 +190,11 @@ EOF
             # Extract necessary values
             se_tag=$(python3 $PWD/static-files/se_parse_hdr.py $PWD/output-files/hdr.bin $PWD/static-files/HKD.crt | grep se.tag | awk -F ":" '{ print $2 }')
             se_image_phkh=$(python3 $PWD/static-files/se_parse_hdr.py $PWD/output-files/hdr.bin $PWD/static-files/HKD.crt | grep se.image_phkh | awk -F ":" '{ print $2 }')
+
+             # copy attestation phkh if image phkh is unavailable ex. without machine specific HKD
+            if [ -z "${se_image_phkh}" ]; then
+               se_image_phkh=$(python3 $PWD/static-files/se_parse_hdr.py $PWD/output-files/hdr.bin $PWD/static-files/HKD.crt | grep se.attestation_phkh | awk -F ":" '{ print $2 }')
+            fi
 
             echo "se.tag: $se_tag"
             echo "se.image_phkh: $se_image_phkh"
