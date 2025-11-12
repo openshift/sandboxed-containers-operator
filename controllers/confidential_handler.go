@@ -28,6 +28,11 @@ const (
 	// Extended resources for TEE
 	intelTDXExtendedResource = "tdx.intel.com/keys"
 	amdSNPExtendedResource   = "sev-snp.amd.com/esids"
+
+	// INITDATA value for non-confidential peer pods, this is required in order
+	// to override the default restrictive CoCo agent policy
+	// created from sourced plaintxt: cat config/peerpods/default-non-cc-initdata.toml | gzip | base64 -w0
+	defaultNonCCInitdata = "H4sIAAAAAAAAA42UwW7bMAyG734KwT3ktKDDehgG9NAl2VZgWQw7bQ7DMDAWYxOVRU+i03pPP7lGhx0muwddyE8U+ZPUhdrX5BVZEg0C6kQG1SN4VToEQa2OvZIaFfvyDbfoQNglYCp2JHWjrlXqa3j3/ipNzug8sR1Ml8u3y8s0Sb4PIX8kKcBSuDFp8C0Wi2Q4SdqyobJfOqz4xdFC+QAVqnCs/ByBJNF4gs6IutH6Js++IVX1kZ3P8VeHXtSHayWuw3+x4hHamHtl2GMhmmyU4Lb/FGSI+p+VWbEVIItuGivA6iM/xaB1MDruZ6jNE5aZ4xJ9tOrPKFsUR+UUsdttN+cgbRQZrGsMdZlomK/k5dYKuhOEfKaonDuJE1tsvrC0pqs+9qG2Y1TunTVB5lV2F27EmAw6P9+RrDPmtgnDFQNyBF1I6Fv0oRwbPs+/NGKFgMF7ckJ88kUNDrfcWYlKkqNH1HmYBW7WeJ7AumY+hwJl7GeYwj010aIDlz1vWhSgyoKZmb9Qq5P5nAZq76AkW00w4l8RiduZQHvpD8OWe/odLf6u1a/Z5RHbtDU24Qs0020c4b87Mo1NL8kBSGaEP4SPGP8/tMOX+geD8J3Z4AUAAA=="
 )
 
 // When the feature is enabled, handleFeatureConfidential configures confidential computing support.
@@ -73,13 +78,13 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialPeerPods(state Feature
 
 				// Patch ImageConfigMap.
 				imageConfigMapData := map[string]string{"CONFIDENTIAL_COMPUTE_ENABLED": "yes"}
-				if err := updateConfigMap(r.Client, r.Log, ig.getImageConfigMapName(), OperatorNamespace, imageConfigMapData); err != nil {
+				if err := updateConfigMap(r.Client, r.Log, ig.getImageConfigMapName(), OperatorNamespace, imageConfigMapData, nil); err != nil {
 					return err
 				}
 			} else {
 				// Patch ImageConfigMap.
 				imageConfigMapData := map[string]string{"CONFIDENTIAL_COMPUTE_ENABLED": "no"}
-				if err := updateConfigMap(r.Client, r.Log, ig.getImageConfigMapName(), OperatorNamespace, imageConfigMapData); err != nil {
+				if err := updateConfigMap(r.Client, r.Log, ig.getImageConfigMapName(), OperatorNamespace, imageConfigMapData, nil); err != nil {
 					if k8serrors.IsNotFound(err) {
 						// Nothing to do, feature is disabled and configMap doesn't exist.
 					} else {
@@ -92,12 +97,19 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialPeerPods(state Feature
 
 	// Patch peer pods configMap, if it exists.
 	var peerpodsCMData map[string]string
+	var keysToRemove map[string]string
 	if state == Enabled {
 		peerpodsCMData = map[string]string{"DISABLECVM": "false"}
+		// Remove INITDATA if it matches the default value
+		keysToRemove = map[string]string{"INITDATA": defaultNonCCInitdata}
 	} else {
-		peerpodsCMData = map[string]string{"DISABLECVM": "true"}
+		peerpodsCMData = map[string]string{
+			"DISABLECVM": "true",
+			"INITDATA": defaultNonCCInitdata,
+		}
+		keysToRemove = nil
 	}
-	if err := updateConfigMap(r.Client, r.Log, peerpodsCMName, OperatorNamespace, peerpodsCMData); err != nil {
+	if err := updateConfigMap(r.Client, r.Log, peerpodsCMName, OperatorNamespace, peerpodsCMData, keysToRemove); err != nil {
 		if k8serrors.IsNotFound(err) {
 			// When feature is Enabled: ConfigMap doesn't exist yet, will try again at the next reconcile run.
 			// Else: Nothing to do, feature is disabled and configMap doesn't exist.
