@@ -5,6 +5,7 @@ go 1.24.0
 toolchain go1.24.6
 
 require (
+	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/confidential-containers/cloud-api-adaptor/src/cloud-providers v0.16.0
 	github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl v0.16.0
 	github.com/coreos/ignition/v2 v2.20.0
@@ -39,7 +40,6 @@ require (
 	github.com/IBM/platform-services-go-sdk v0.89.0 // indirect
 	github.com/IBM/vpc-go-sdk v0.74.1 // indirect
 	github.com/MakeNowJust/heredoc v1.0.0 // indirect
-	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/alibabacloud-go/alibabacloud-gateway-spi v0.0.5 // indirect
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.0.10 // indirect
 	github.com/alibabacloud-go/debug v1.0.1 // indirect

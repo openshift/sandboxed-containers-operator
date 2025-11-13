@@ -125,6 +125,22 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialPeerPods(state Feature
 // It manages kata-cc runtime classes with TEE-specific handlers (Intel TDX, AMD SNP or IBM SE).
 func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state FeatureGateState) error {
 	if state == Enabled {
+		if !r.kataConfig.Spec.EnablePeerPods {
+			isLess, version, err := r.isOCPVersionLessThan("4.20")
+			if err != nil {
+				// Return error to trigger reconcile retry (cluster version not available yet or API error)
+				return err
+			}
+			if isLess {
+				r.Log.Info("WARNING: OpenShift version does not support CoCo bare metal", "version", version, "minVersion", "4.20")
+				cond := r.retrieveInProgressConditionForChange()
+				cond.Status = corev1.ConditionFalse
+				cond.Reason = "UnsupportedOCPVersion"
+				cond.Message = fmt.Sprintf("OpenShift version %s does not support CoCo bare metal (minimum required: 4.20)", version)
+				return nil
+			}
+		}
+
 		r.Log.Info("Creating " + kataCCRuntimeClassName + " runtime class for confidential containers")
 
 		handler, nodeLabel, err := r.computeTEEHandlerAndLabel()

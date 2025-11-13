@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	semver "github.com/Masterminds/semver/v3"
 	appsv1 "k8s.io/api/apps/v1"
 
 	"k8s.io/apimachinery/pkg/labels"
@@ -568,6 +569,34 @@ func (r *KataConfigOpenShiftReconciler) getExtensionName() (string, error) {
 
 	// As RHCOS is rather special variant, use "kata-containers" by default, which also applies to FCOS/SCOS
 	return "kata-containers", nil
+}
+
+// isOCPVersionLessThan checks if the current OpenShift cluster version is less than the specified minimum version.
+// Returns (true, version, nil) if current version < minVersion, (false, version, nil) if current >= minVersion.
+// Returns error if cluster version is not available or cannot be retrieved.
+func (r *KataConfigOpenShiftReconciler) isOCPVersionLessThan(minVersion string) (bool, string, error) {
+	clusterVersion := &configv1.ClusterVersion{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
+	if err != nil {
+		return false, "", err
+	}
+
+	currentVersion := clusterVersion.Status.Desired.Version
+	if currentVersion == "" {
+		return false, "", fmt.Errorf("cluster version not available yet")
+	}
+
+	current, err := semver.NewVersion(currentVersion)
+	if err != nil {
+		return false, currentVersion, fmt.Errorf("unable to parse current OCP version %s: %w", currentVersion, err)
+	}
+
+	min, err := semver.NewVersion(minVersion)
+	if err != nil {
+		return false, currentVersion, fmt.Errorf("invalid minimum version format %s: %w", minVersion, err)
+	}
+
+	return current.LessThan(min), currentVersion, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
