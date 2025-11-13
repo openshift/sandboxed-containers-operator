@@ -40,6 +40,12 @@ spec:
         - quay.io/redhat-user-workloads/ose-osc-tenant/osc-dm-verity-image
         - quay.io/redhat-user-workloads/ose-osc-tenant/osc-dm-verity-image-v1-10
       source: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image
+    - mirrors:
+        - quay.io/redhat-user-workloads/ose-osc-tenant/osc-pccs
+      source: registry.redhat.io/openshift-sandboxed-containers/osc-pccs
+    - mirrors:
+        - quay.io/redhat-user-workloads/ose-osc-tenant/osc-tdx-qgs
+      source: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs
 ---
 apiVersion: config.openshift.io/v1
 kind: ImageDigestMirrorSet
@@ -83,3 +89,9 @@ spec:
         - quay.io/redhat-user-workloads/ose-osc-tenant/osc-dm-verity-image
         - quay.io/redhat-user-workloads/ose-osc-tenant/osc-dm-verity-image-v1-10
       source: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image
+    - mirrors:
+        - quay.io/redhat-user-workloads/ose-osc-tenant/osc-pccs
+      source: registry.redhat.io/openshift-sandboxed-containers/osc-pccs
+    - mirrors:
+        - quay.io/redhat-user-workloads/ose-osc-tenant/osc-tdx-qgs
+      source: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs
