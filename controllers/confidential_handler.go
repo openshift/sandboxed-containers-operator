@@ -105,7 +105,7 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialPeerPods(state Feature
 	} else {
 		peerpodsCMData = map[string]string{
 			"DISABLECVM": "true",
-			"INITDATA": defaultNonCCInitdata,
+			"INITDATA":   defaultNonCCInitdata,
 		}
 		keysToRemove = nil
 	}
