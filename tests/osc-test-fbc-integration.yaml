@@ -50,7 +50,7 @@ spec:
         - name: url
           value: https://github.com/openshift/konflux-tasks
         - name: revision
-          value: 26d8e981a7d1d035f05c4accd30b38d07f8f02b5
+          value: b5c2ace84d1de50a016bb319f0ebd3ad4dd0aba9
         - name: pathInRepo
           value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
       params:
