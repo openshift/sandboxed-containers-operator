@@ -39,7 +39,7 @@ require (
 	github.com/IBM/go-sdk-core/v5 v5.21.0 // indirect
 	github.com/IBM/platform-services-go-sdk v0.89.0 // indirect
 	github.com/IBM/vpc-go-sdk v0.74.1 // indirect
-	github.com/MakeNowJust/heredoc v1.0.0 // indirect
+	github.com/MakeNowJust/heredoc/v2 v2.0.1 // indirect
 	github.com/alibabacloud-go/alibabacloud-gateway-spi v0.0.5 // indirect
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.0.10 // indirect
 	github.com/alibabacloud-go/debug v1.0.1 // indirect
