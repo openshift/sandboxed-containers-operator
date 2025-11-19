@@ -56,6 +56,8 @@ function get_commit_for_image() {
                 fi
             done
         fi
+        HAS_MORE=$(echo "$RESPONSE" | jq -r '.has_additional')
+        [[ "$HAS_MORE" != "true" ]] && break
         PAGE=$((PAGE + 1))
     done
 }
