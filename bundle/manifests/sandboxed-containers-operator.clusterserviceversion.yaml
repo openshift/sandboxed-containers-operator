@@ -33,6 +33,7 @@ metadata:
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/openshift/sandboxed-containers-operator
   labels:
+    app.kubernetes.io/name: sandboxed-containers-operator
     operatorframework.io/arch.amd64: supported
     operatorframework.io/arch.s390x: supported
     operatorframework.io/os.linux: supported
@@ -372,6 +373,7 @@ spec:
         serviceAccountName: default
       deployments:
       - label:
+          app.kubernetes.io/name: sandboxed-containers-operator
           control-plane: controller-manager
         name: controller-manager
         spec:
@@ -393,6 +395,8 @@ spec:
               - args:
                 - --metrics-bind-address=127.0.0.1:8080
                 - --leader-elect
+                - --health-probe-bind-address=:8081
+                - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
                 command:
                 - /manager
                 env:
@@ -445,11 +449,11 @@ spec:
                     drop:
                     - ALL
                 volumeMounts:
-                - mountPath: /tmp/k8s-webhook-server/serving-certs
-                  name: cert
-                  readOnly: true
                 - mountPath: /root/.ssh/
                   name: ssh
+                  readOnly: true
+                - mountPath: /tmp/k8s-webhook-server/serving-certs
+                  name: webhook-certs
                   readOnly: true
               securityContext:
                 runAsNonRoot: true
@@ -472,17 +476,17 @@ spec:
                 key: node.kubernetes.io/memory-pressure
                 operator: Exists
               volumes:
-              - name: cert
-                secret:
-                  defaultMode: 420
-                  secretName: webhook-server-cert
               - name: ssh
                 secret:
                   defaultMode: 384
                   optional: true
                   secretName: ssh-key-secret
+              - name: webhook-certs
+                secret:
+                  secretName: webhook-server-cert
       - label:
           app: operator-metrics-server
+          app.kubernetes.io/name: sandboxed-containers-operator
         name: operator-metrics-server
         spec:
           replicas: 1

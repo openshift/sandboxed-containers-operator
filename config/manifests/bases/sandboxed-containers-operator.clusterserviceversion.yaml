@@ -32,6 +32,7 @@ metadata:
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/sandboxed-containers-operator
   labels:
+    app.kubernetes.io/name: sandboxed-containers-operator
     operatorframework.io/arch.amd64: supported
     operatorframework.io/arch.s390x: supported
     operatorframework.io/os.linux: supported

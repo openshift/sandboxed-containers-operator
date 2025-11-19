@@ -1,6 +1,8 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
+  labels:
+    app.kubernetes.io/name: sandboxed-containers-operator
   creationTimestamp: null
   name: monitor
   namespace: openshift-sandboxed-containers-operator

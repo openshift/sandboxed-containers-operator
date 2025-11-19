@@ -1645,6 +1645,7 @@ func (eh *NodeEventHandler) Generic(ctx context.Context, event event.GenericEven
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
+		Named("sandboxed-containers").
 		Watches(
 			&mcfgv1.MachineConfigPool{},
 			&McpEventHandler{r}).

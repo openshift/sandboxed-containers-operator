@@ -1,5 +1,9 @@
 resources:
-- certificate.yaml
+- certificate-metrics.yaml
+- certificate-webhook.yaml
+- issuer.yaml
 
 configurations:
 - kustomizeconfig.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization

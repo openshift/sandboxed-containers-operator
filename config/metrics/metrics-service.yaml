@@ -4,6 +4,7 @@ metadata:
   name: operator-metrics-service
   namespace: openshift-sandboxed-containers-operator
   labels:
+    app.kubernetes.io/name: sandboxed-containers-operator
     app: operator-metrics-server
 spec:
   selector:

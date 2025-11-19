@@ -71,6 +71,7 @@ var _ = BeforeSuite(func() {
 	}
 
 	testEnv = &envtest.Environment{
+		BinaryAssetsDirectory: getFirstFoundEnvTestBinaryDir(),
 		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases"),
 			filepath.Join("..", "config", "extension-crds", "machineconfig.crd.yaml"),
 			filepath.Join("..", "config", "extension-crds", "machineconfigpool.crd.yaml"),
@@ -143,3 +144,18 @@ var _ = AfterSuite(func() {
 	err := testEnv.Stop()
 	Expect(err).ToNot(HaveOccurred())
 })
+
+func getFirstFoundEnvTestBinaryDir() string {
+	basePath := filepath.Join("..", "..", "..", "bin", "k8s")
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		logf.Log.Error(err, "Failed to read directory", "path", basePath)
+		return ""
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			return filepath.Join(basePath, entry.Name())
+		}
+	}
+	return ""
+}

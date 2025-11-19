@@ -135,5 +135,6 @@ func (r *RuntimeClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					rc.DeletionTimestamp != nil
 			},
 		})).
+		Named("runtimeclass-controller").
 		Complete(r)
 }

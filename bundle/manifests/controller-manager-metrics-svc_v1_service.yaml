@@ -3,6 +3,7 @@ kind: Service
 metadata:
   creationTimestamp: null
   labels:
+    app.kubernetes.io/name: sandboxed-containers-operator
     control-plane: controller-manager
   name: controller-manager-metrics-svc
 spec:
