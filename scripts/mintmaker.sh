@@ -91,7 +91,7 @@ fi
 # list open PRs and filter titles & exact base branch locally
 echo "Querying PRs from gh and filtering titles and base branch..."
 # request headRefOid so we can check commit status
-ALL_PRS_JSON=$(gh pr list --repo "$REPO" --state open --author "$AUTHOR" --json number,title,headRefName,headRefOid,baseRefName,labels 2>/dev/null) || {
+ALL_PRS_JSON=$(gh pr list --repo "$REPO" --state open --author "$AUTHOR" --limit 1000 --json number,title,headRefName,headRefOid,baseRefName,labels 2>/dev/null | jq 'sort_by(.number)') || {
   echo "gh pr list failed"; exit 3
 }
 # keep PR objects where
