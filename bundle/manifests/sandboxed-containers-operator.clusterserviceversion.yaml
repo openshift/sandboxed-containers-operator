@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2025-11-13T15:21:40Z"
+    createdAt: "2025-11-21T13:55:55Z"
     features.operators.openshift.io/cnf: "false"
     features.operators.openshift.io/cni: "false"
     features.operators.openshift.io/csi: "false"
@@ -584,7 +584,7 @@ spec:
     name: tdx-qgs
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:637070fdb65a11bd1089c4c76a620a53f02e92ddebd6e1cc1ec4279de779eef9
     name: storage-helper
-  replaces: sandboxed-containers-operator.v1.10.2
+  replaces: sandboxed-containers-operator.v1.10.3
   version: 1.11.0
   webhookdefinitions:
   - admissionReviewVersions:
