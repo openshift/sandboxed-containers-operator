@@ -364,7 +364,7 @@ spec:
   minKubeVersion: 1.28.0
   provider:
     name: Red Hat
-  replaces: sandboxed-containers-operator.v1.10.2
+  replaces: sandboxed-containers-operator.v1.10.3
   version: 1.11.0  ## OSC_VERSION
   webhookdefinitions:
   - admissionReviewVersions:
