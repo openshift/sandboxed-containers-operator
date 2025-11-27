@@ -112,39 +112,38 @@ install() {
 	# If nothing to install, exit early
 	if [[ ${#install_rpms[@]} -eq 0 ]]; then
 		set_status_installed
-		sleep infinity
+	else
+		# Set installation status to installing
+		set_status_installing
+
+		# Prepare working directory
+		mkdir -p /host/tmp/extensions/
+
+		# Copy only needed RPMs
+		for rpm_path in "${install_rpms[@]}"; do
+			cp "$rpm_path" /host/tmp/extensions/
+		done
+
+		# Build install command
+		install_cmd="rpm-ostree install"
+		for pkg in "${uninstall_list[@]}"; do
+			install_cmd+=" --uninstall=$pkg"
+		done
+		for rpm_path in "${install_rpms[@]}"; do
+			rpm_filename=$(basename "$rpm_path")
+			install_cmd+=" /tmp/extensions/$rpm_filename"
+		done
+
+		# Run install inside chroot
+		echo "Running in chroot: $install_cmd"
+		chroot /host bash -c "$install_cmd"
+
+		# Clean up temp dir
+		rm -rf /host/tmp/extensions/
+
+		# Wait again: rpm-ostree install stages changes, requiring a reboot
+		wait_for_reboot_clear
 	fi
-
-	# Set installation status to installing
-	set_status_installing
-
-	# Prepare working directory
-	mkdir -p /host/tmp/extensions/
-
-	# Copy only needed RPMs
-	for rpm_path in "${install_rpms[@]}"; do
-		cp "$rpm_path" /host/tmp/extensions/
-	done
-
-	# Build install command
-	install_cmd="rpm-ostree install"
-	for pkg in "${uninstall_list[@]}"; do
-		install_cmd+=" --uninstall=$pkg"
-	done
-	for rpm_path in "${install_rpms[@]}"; do
-		rpm_filename=$(basename "$rpm_path")
-		install_cmd+=" /tmp/extensions/$rpm_filename"
-	done
-
-	# Run install inside chroot
-	echo "Running in chroot: $install_cmd"
-	chroot /host bash -c "$install_cmd"
-
-	# Clean up temp dir
-	rm -rf /host/tmp/extensions/
-
-	# Wait again: rpm-ostree install stages changes, requiring a reboot
-	wait_for_reboot_clear
 }
 
 uninstall() {
@@ -211,6 +210,8 @@ main() {
 		#/osc-configs-script.sh "$action"
 
 		install
+
+		sleep infinity
 		;;
 	uninstall)
 		client_tools
