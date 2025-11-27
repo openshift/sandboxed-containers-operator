@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
@@ -22,9 +23,6 @@ import (
 )
 
 const (
-	peerPodsConfigInstallDaemonSetName = "osc-config-sync"
-	peerPodsConfigDaemonSetLabel       = "kataconfiguration.openshift.io/osc-config-sync"
-
 	kataInstallDaemonSetName       = "osc-rpm"
 	kataInstallationDaemonSetLabel = "kataconfiguration.openshift.io/kata-ds-rpm-install"
 )
@@ -33,7 +31,7 @@ const (
 	rhelCoreOsExtensionsImageName = "rhel-coreos-extensions"
 	cliImageName                  = "cli"
 
-	daemonSetImage = "quay.io/openshift_sandboxed_containers/osc-daemonset:1.10.3"
+	daemonSetImage = "quay.io/openshift_sandboxed_containers/osc-daemonset:1.10.3" // TODO: Update image, you can test the current version with "quay.io/fodorpatrikprot/openshift-sandboxed-containers-kata-install:v0.0.20"
 )
 
 // KataInstallationDaemonSetState defines the possible states of the Kata installation DaemonSet.
@@ -48,13 +46,6 @@ const (
 	KataWaitingToUninstall KataInstallationDaemonSetState = "waiting_to_uninstall"
 	KataUninstalling       KataInstallationDaemonSetState = "uninstalling"
 	KataUninstalled        KataInstallationDaemonSetState = "uninstalled"
-)
-
-type PeerPodsConfigDaemonSetState string
-
-const (
-	PeerPodsConfigRemoving PeerPodsConfigDaemonSetState = "removing"
-	PeerPodsConfigRemoved  PeerPodsConfigDaemonSetState = "removed"
 )
 
 // KataDaemonSetAction defines the possible actions that can be performed by Kata installation DaemonSet.
@@ -151,6 +142,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 		for _, node := range nodes {
 			r.Log.Info("node must be rebooted", "node", node.Name)
 		}
+		//r.scheduleInstallation(UninstallKata)
 		return ctrl.Result{}, nil
 	}
 
@@ -167,18 +159,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 		err = r.disablePeerPodsMiscConfigs()
 		if err != nil {
 			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
-		}
-
-		// Wait for the osc-config-sync to delete the configuration files
-		// The daemonset will change the node label when the removal is completed and will trigger reconciliation
-		removalInProgress, err := r.isPeerPodsConfigRemovalInProgress()
-		if err != nil {
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-		}
-
-		if removalInProgress {
-			r.Log.Info("Waiting for OSC Config sync DaemonSet to finish PeerPods Config removal")
-			return ctrl.Result{}, nil
 		}
 
 		// Handle podvm image deletion
@@ -218,70 +198,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 	return ctrl.Result{}, nil
 }
 
-func (r *KataConfigOpenShiftReconciler) isPeerPodsConfigRemovalInProgress() (bool, error) {
-	removed, err := r.isKataNodePoolInState(peerPodsConfigDaemonSetLabel, string(PeerPodsConfigRemoved))
-	if err != nil {
-		return false, err
-	}
-
-	return !removed, nil
-}
-
-func (r *KataConfigOpenShiftReconciler) deletePeedPodsConfigDaemonSet() error {
-	// Delete osc-config-sync-install daemonset
-	copyPeerPodsConfigDaemonSet, err := r.daemonSetForPeerPodsConfig(InstallKata)
-	if err != nil {
-		r.Log.Error(err, "failed getting DaemonSet for peerpods config copy")
-		return err
-	}
-
-	err = r.Client.Delete(context.TODO(), copyPeerPodsConfigDaemonSet)
-	if err != nil {
-		if k8serrors.IsNotFound(err) {
-			r.Log.Info("peerpods config copy daemonset was already deleted")
-		} else {
-			r.Log.Error(err, "error when deleting peerpods config copy Daemonset, try again")
-			return err
-		}
-	}
-
-	// Create osc-config-sync-uninstall daemonset
-	removePeerPodsConfigDaemonSet, err := r.daemonSetForPeerPodsConfig(UninstallKata)
-	if err != nil {
-		r.Log.Error(err, "failed getting DaemonSet for peerpods config removal")
-		return err
-	}
-
-	if err := controllerutil.SetControllerReference(r.kataConfig, removePeerPodsConfigDaemonSet, r.Scheme); err != nil {
-		r.Log.Error(err, "Failed setting ControllerReference for peer-pods configuration removal DaemonSet")
-		return err
-	}
-
-	foundPeerPodsConfigDaemonSet := &appsv1.DaemonSet{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: removePeerPodsConfigDaemonSet.Name, Namespace: removePeerPodsConfigDaemonSet.Namespace}, foundPeerPodsConfigDaemonSet)
-	if err != nil {
-		if k8serrors.IsNotFound(err) {
-			r.Log.Info("Creating a new peer-pods configuration removal daemonset", "removePeerPodsConfigDaemonSet.Namespace", removePeerPodsConfigDaemonSet.Namespace, "removePeerPodsConfigDaemonSet.Name", removePeerPodsConfigDaemonSet.Name)
-			err = r.Client.Create(context.TODO(), removePeerPodsConfigDaemonSet)
-			if err != nil {
-				r.Log.Error(err, "error when creating peer-pods configuration daemonset")
-				return err
-			}
-		} else {
-			r.Log.Error(err, "could not get peer-pods configuration daemonset, try again")
-			return err
-		}
-	} else {
-		r.Log.Info("Updating peer-pods configuration daemonset", "removePeerPodsConfigDaemonSet.Namespace", removePeerPodsConfigDaemonSet.Namespace, "removePeerPodsConfigDaemonSet.Name", removePeerPodsConfigDaemonSet.Name)
-		err = r.Client.Update(context.TODO(), removePeerPodsConfigDaemonSet)
-		if err != nil {
-			r.Log.Error(err, "error when updating peer-pods configuration daemonset")
-			return err
-		}
-	}
-	return nil
-}
-
 func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet() (ctrl.Result, error) {
 	r.Log.Info("Kata installation in progress")
 
@@ -312,15 +228,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 	if err != nil {
 		r.Log.Info("Error in creating auth-json-secret", "err", err)
 		return ctrl.Result{}, err
-	}
-
-	// If peerpods are enabled create the daemonset that will copy the related config files
-	if r.kataConfig.Spec.EnablePeerPods {
-		err := r.addPeerPodsConfigDaemonSet()
-		if err != nil {
-			r.Log.Error(err, "Adding peerpods configs daemonset failed")
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
-		}
 	}
 
 	// Add finalizer for this CR
@@ -408,140 +315,10 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 		// NodeEventHandler should trigger reconciliation on label changes
 		// so no need for that.
 		r.Log.Info("Waiting for kata installation DaemonSet to finish", "daemonSet", kataInstallDaemonSet.Name)
-		nodes, _ := r.isNodeRebootRequired()
-		for _, node := range nodes {
-			r.Log.Info("node must be rebooted", "node", node.Name)
-		}
+		r.scheduleInstallation(InstallKata)
 	}
 
 	return ctrl.Result{}, nil
-}
-
-func (r *KataConfigOpenShiftReconciler) addPeerPodsConfigDaemonSet() error {
-	peerPodsConfigDaemonSet, err := r.daemonSetForPeerPodsConfig(InstallKata)
-	if err != nil {
-		return err
-	}
-
-	if err := controllerutil.SetControllerReference(r.kataConfig, peerPodsConfigDaemonSet, r.Scheme); err != nil {
-		r.Log.Error(err, "Failed setting ControllerReference for peer-pods configuration DaemonSet")
-		return err
-	}
-
-	foundPeerPodsConfigDaemonSet := &appsv1.DaemonSet{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: peerPodsConfigDaemonSet.Name, Namespace: peerPodsConfigDaemonSet.Namespace}, foundPeerPodsConfigDaemonSet)
-	if err != nil {
-		if k8serrors.IsNotFound(err) {
-			r.Log.Info("Creating a new peer-pods configuration installation daemonset", "peerPodsConfigDaemonSet.Namespace", peerPodsConfigDaemonSet.Namespace, "peerPodsConfigDaemonSet.Name", peerPodsConfigDaemonSet.Name)
-			err = r.Client.Create(context.TODO(), peerPodsConfigDaemonSet)
-			if err != nil {
-				r.Log.Error(err, "error when creating peer-pods configuration daemonset")
-				return err
-			}
-		} else {
-			r.Log.Error(err, "could not get peer-pods configuration daemonset, try again")
-			return err
-		}
-	} else {
-		r.Log.Info("Updating peer-pods configuration daemonset", "peerPodsConfigDaemonSet.Namespace", peerPodsConfigDaemonSet.Namespace, "peerPodsConfigDaemonSet.Name", peerPodsConfigDaemonSet.Name)
-		err = r.Client.Update(context.TODO(), peerPodsConfigDaemonSet)
-		if err != nil {
-			r.Log.Error(err, "error when updating peer-pods configuration daemonset")
-			return err
-		}
-	}
-
-	// TODO: Check for errors
-
-	return nil
-}
-
-// daemonSetForPeerPodsConfig creates a DaemonSet for peer-pods configuration.
-// The Daemonset will copy or remove the peer-pods configuration files based on the given action.
-func (r *KataConfigOpenShiftReconciler) daemonSetForPeerPodsConfig(action KataDaemonSetAction) (*appsv1.DaemonSet, error) {
-	cliImageString, err := GetImageForComponent(cliImageName, r.Client)
-	if err != nil {
-		r.Log.Info("couldn't get image", "err", err)
-		return nil, err
-	}
-
-	var (
-		runPrivileged       = true
-		runAsUser     int64 = 0
-		nodeSelector        = r.getNodeSelectorAsMap()
-	)
-
-	name := peerPodsConfigInstallDaemonSetName + "-" + string(action)
-	daemonsetLabelSelectors := map[string]string{
-		"name": name,
-	}
-
-	volumeMounts := r.volumeMountsForRegistries()
-	volumes := r.volumesForRegistries()
-
-	return &appsv1.DaemonSet{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "apps/v1",
-			Kind:       "DaemonSet",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: OperatorNamespace,
-		},
-		Spec: appsv1.DaemonSetSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: daemonsetLabelSelectors,
-			},
-			UpdateStrategy: appsv1.DaemonSetUpdateStrategy{
-				Type: "RollingUpdate",
-				RollingUpdate: &appsv1.RollingUpdateDaemonSet{
-					MaxUnavailable: &intstr.IntOrString{
-						Type:   intstr.Int,
-						IntVal: 1,
-					},
-				},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: daemonsetLabelSelectors,
-				},
-				Spec: corev1.PodSpec{
-					ServiceAccountName: "default",
-					NodeSelector:       nodeSelector,
-					HostPID:            true,
-					Containers: []corev1.Container{
-						{
-							Name:            "config-sync",
-							Image:           daemonSetImage,
-							ImagePullPolicy: corev1.PullIfNotPresent,
-							SecurityContext: &corev1.SecurityContext{
-								Privileged: &runPrivileged,
-								RunAsUser:  &runAsUser,
-							},
-							Command: []string{"/bin/bash", "/scripts/osc-configs-script.sh"},
-							Args:    []string{string(action)},
-							Env: []corev1.EnvVar{
-								{
-									Name: "NODE_NAME",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "spec.nodeName",
-										},
-									},
-								},
-								{
-									Name:  "CLI_IMAGE",
-									Value: cliImageString,
-								},
-							},
-							VolumeMounts: volumeMounts,
-						},
-					},
-					Volumes: volumes,
-				},
-			},
-		},
-	}, nil
 }
 
 // daemonSetForKataInstall creates a DaemonSet for installing or uninstalling Kata based on the specified action.
@@ -888,9 +665,6 @@ func (r *KataConfigOpenShiftReconciler) putNodeOnStatusListDaemonSetInstall(node
 		r.kataConfig.Status.KataNodes.WaitingToInstall = append(r.kataConfig.Status.KataNodes.WaitingToInstall, node.GetName())
 	case string(KataInstalling):
 		r.kataConfig.Status.KataNodes.Installing = append(r.kataConfig.Status.KataNodes.Installing, node.GetName())
-		// rpm-ostree changes applied after reboot
-	case string(KataWaitingForReboot):
-		r.kataConfig.Status.KataNodes.Installing = append(r.kataConfig.Status.KataNodes.Installing, node.GetName())
 	case string(KataInstalled):
 		r.kataConfig.Status.KataNodes.Installed = append(r.kataConfig.Status.KataNodes.Installed, node.GetName())
 	default:
@@ -934,7 +708,6 @@ func (r *KataConfigOpenShiftReconciler) unlabelNodesDaemonSet(nodeSelector label
 		if _, ok := node.Labels["node-role.kubernetes.io/kata-oc"]; ok {
 			delete(node.Labels, "node-role.kubernetes.io/kata-oc")
 			delete(node.Labels, kataInstallationDaemonSetLabel)
-			delete(node.Labels, peerPodsConfigDaemonSetLabel)
 			err := r.Client.Update(context.TODO(), &node)
 			if err != nil {
 				r.Log.Error(err, "Error when removing labels from node", "node", node)
@@ -942,5 +715,53 @@ func (r *KataConfigOpenShiftReconciler) unlabelNodesDaemonSet(nodeSelector label
 			}
 		}
 	}
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) scheduleInstallation(action KataDaemonSetAction) error {
+	var nodeNames []string
+	var labelValue string
+	
+	switch action {
+	case InstallKata:
+		// Make sure only trigger the next installation if there is no ongoing one
+		if len(r.kataConfig.Status.KataNodes.Installing) > 0 {
+			return nil
+		}
+		nodeNames = r.kataConfig.Status.KataNodes.WaitingToInstall
+		labelValue = string(KataInstalling)
+	case UninstallKata:
+		// Make sure only trigger the next uninstallation if there is no ongoing one
+		if len(r.kataConfig.Status.KataNodes.Uninstalling) > 0 {
+			return nil
+		}
+		nodeNames = r.kataConfig.Status.KataNodes.WaitingToUninstall
+		labelValue = string(KataUninstalling)
+	}
+
+	if len(nodeNames) == 0 {
+		return nil
+	}
+
+	nodeName := nodeNames[0]
+
+	r.Log.Info(fmt.Sprintf("Schedule next node to start kata %s", action), "nodeName", nodeName)
+
+	var node corev1.Node
+
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: nodeName}, &node)
+	if err != nil {
+		r.Log.Info("Getting node failed")
+		return err
+	}
+
+	node.Labels[kataInstallationDaemonSetLabel] = labelValue
+
+	err = r.Client.Update(context.TODO(), &node) 
+	if err != nil {
+		r.Log.Info("Updating node labels failed")
+		return err
+	}
+
 	return nil
 }

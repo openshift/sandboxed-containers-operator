@@ -1595,13 +1595,6 @@ func (eh *NodeEventHandler) Update(ctx context.Context, event event.UpdateEvent,
 			foundRelevantChange = true
 			log.Info("kataconfiguration.openshift.io/kata-ds-rpm-install changed", "old", kataStateOld, "new", kataStateNew)
 		}
-
-		peerPodsStateOld := nodeOld.GetLabels()[peerPodsConfigDaemonSetLabel]
-		peerPodsStateNew := nodeNew.GetLabels()[peerPodsConfigDaemonSetLabel]
-		if peerPodsStateOld != peerPodsStateNew {
-			foundRelevantChange = true
-			log.Info("kataconfiguration.openshift.io/osc-config-sync changed", "old", peerPodsStateOld, "new", peerPodsStateNew)
-		}
 	} else {
 		// no need to check the second return value of the indexing operation
 		// as "" is not a valid machineconfiguration.openshift.io/state value
