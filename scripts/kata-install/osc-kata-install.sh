@@ -227,6 +227,9 @@ main() {
 
 		install
 
+		# Install addon artifacts, if ADDON_IMAGE is present
+		[ -n "${ADDON_IMAGE:-}" ] && /scripts/osc-kata-addons-install.sh install
+
 		sleep infinity
 		;;
 	uninstall)
@@ -235,6 +238,9 @@ main() {
 		#/osc-log-level.sh "$action"
 
 		#/osc-configs-script.sh "$action"
+
+		# Call addon uninstaller if configured
+		[ -n "${ADDON_IMAGE:-}" ] && /scripts/osc-kata-addons-install.sh uninstall
 
 		uninstall
 		;;
