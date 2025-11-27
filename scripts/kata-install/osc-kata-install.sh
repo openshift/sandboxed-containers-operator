@@ -8,7 +8,23 @@ source "$(dirname "$0")"/lib.sh
 
 set -xeuo pipefail
 
-PACKAGES="capstone daxctl-libs edk2-ovmf ipxe-roms-qemu kata-containers libfdt libpmem libpng librdmacm ndctl-libs pixman qemu-img qemu-kvm-common qemu-kvm-core seabios-bin seavgabios-bin virtiofsd"
+ARCH=$(chroot /host uname -m)
+
+case "$ARCH" in
+    x86_64)
+        PACKAGES="capstone daxctl-libs edk2-ovmf ipxe-roms-qemu kata-containers libfdt libpmem libpng librdmacm ndctl-libs pixman qemu-img qemu-kvm-common qemu-kvm-core seabios-bin seavgabios-bin virtiofsd"
+        ;;
+
+    s390x)
+        PACKAGES="capstone kata-containers libfdt libpng pixman qemu-img qemu-kvm-common qemu-kvm-core virtiofsd"
+        ;;
+
+    *)
+        echo "ERROR: unsupported architecture: $ARCH" >&2
+        exit 1
+        ;;
+esac
+
 
 # label the node with the passed state
 label_node() {
