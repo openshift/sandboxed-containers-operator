@@ -106,7 +106,7 @@ entries:
     schema: olm.bundle
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:4477810692429ac498b6ec1b295e6ead0f8fea25e91f6ddf17255d7e349b82e1
     schema: olm.bundle
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:f63fe210b7c83db08358ae3696e95d27aadd079f3f1cc6c5b0c89c1959eadffc
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:076d07149d81abb4a7a85d330113b22e5fa0ab414cd6ae62065814814cb4e2d0
     schema: olm.bundle
   - schema: olm.deprecations
     package: sandboxed-containers-operator
