@@ -35,7 +35,8 @@ spec:
     value: fbc/v4.18/Dockerfile
   pipelineRef:
     name: fbc-pipeline
-  taskRunTemplate: {}
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-osc-fbc-4-18
   workspaces:
   - name: git-auth
     secret:
