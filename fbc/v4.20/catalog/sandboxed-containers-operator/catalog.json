@@ -942,7 +942,7 @@
     "schema": "olm.bundle",
     "name": "sandboxed-containers-operator.v1.11.0",
     "package": "sandboxed-containers-operator",
-    "image": "registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:f63fe210b7c83db08358ae3696e95d27aadd079f3f1cc6c5b0c89c1959eadffc",
+    "image": "registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:076d07149d81abb4a7a85d330113b22e5fa0ab414cd6ae62065814814cb4e2d0",
     "properties": [
         {
             "type": "olm.gvk",
@@ -1060,7 +1060,7 @@
     "relatedImages": [
         {
             "name": "",
-            "image": "registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:f63fe210b7c83db08358ae3696e95d27aadd079f3f1cc6c5b0c89c1959eadffc"
+            "image": "registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:076d07149d81abb4a7a85d330113b22e5fa0ab414cd6ae62065814814cb4e2d0"
         },
         {
             "name": "caa",
@@ -1076,7 +1076,7 @@
         },
         {
             "name": "kata-monitor",
-            "image": "registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:1998f4784df01e87c2ad425908d6aea455f6a01c0bfc6c711365463d888650cf"
+            "image": "registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:96955b231e2fb9d1c35983bf5c58f54d8c35cb19a61b05b361135837a1f04180"
         },
         {
             "name": "must-gather",
