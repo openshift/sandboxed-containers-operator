@@ -2,7 +2,7 @@ module github.com/openshift/sandboxed-containers-operator
 
 go 1.24.0
 
-toolchain go1.24.6
+toolchain go1.25.5
 
 require (
 	github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl v0.12.0
