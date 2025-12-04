@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24.6-1762373805 as builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.25.3-1764620329 as builder
 
 # Required by the ubi based go-toolset image
 USER root
@@ -29,7 +29,7 @@ RUN . ./controller-tools-ver && mv bin/controller-gen bin/controller-gen-$CONTRO
 RUN . ./controller-tools-ver && make build
 
 # Use OpenShift base image
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.6-1760515502
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1764578379
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
 COPY --from=builder /workspace/bin/metrics-server .
