@@ -38,7 +38,7 @@ spec:
               echo "Snapshot: ${SNAPSHOT}"
               catalogImage=$(jq -r '.components[] | select(.name=="osc-test-fbc") | .containerImage' <<< "${SNAPSHOT}")
               echo "Catalog image: ${catalogImage}"
-              echo "${catalogImage}" > $(results.CATALOG_IMAGE.path)
+              echo -n "${catalogImage}" > $(results.CATALOG_IMAGE.path)
     - name: prow-job
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
