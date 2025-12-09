@@ -36,6 +36,7 @@ This follows the [Konflux documentation](https://konflux.pages.redhat.com/docs/u
   - applications
   - components
   - image repositories
+  - integration tests
   
   All those definitions must have parameterized names, so that we can use it to
   create separate pipelines by giving it a different parameter (version typically).
@@ -54,14 +55,22 @@ This follows the [Konflux documentation](https://konflux.pages.redhat.com/docs/u
 
 - create the ReleasePlan/ReleasePlanAdmission (can be done at a later time)
 
-> **Note:** Once the `Project` and `ProjectDevelopmentStreamTemplate` are set in our Konflux instance, we can just do the creation step. However, ensure that the existing template is up to date with our latest "main pipeline" definition, as it may evolve over time.
+> **Note:**
 >
-> The files in this folder reflect the status of our pipelines as of OSC release 1.10.1.
+> - Once the `Project` and `ProjectDevelopmentStreamTemplate` are set in
+> our Konflux instance, we can just do the creation step as many times as needed.
+> However, ensure that  the existing template is up to date with our latest "main
+> pipeline" definition, as it may evolve over time.
+> - The `ProjectDevelopmentStream` object controls the creation and
+> deletion of the pipeline. Trying to delete the Applciations/Components/etc
+> from the Konflux UI or CLI is useless: they will be re-created by the project
+> manager.
 
 ## Prerequisite
 
 - Have a CLI access to the konflux instance we use.
   See [documentation](https://konflux.pages.redhat.com/docs/users/getting-started/getting-access-new.html)
+- Make sure you're using our namespace (ose-osc-tenant)
 
 ## template.yaml
 
@@ -76,6 +85,7 @@ In order to have a full build of Sandboxed Containers, we need:
 - a ReleasePlan allowing the release of the images built with the new pipeline
 
 For each of them, we extract the yaml definition found on the Konflux instance:
+
 ```bash
 $ oc get application openshift-sandboxed-containers -o yaml > osc-app.yaml
 $ oc get component osc-operator -o yaml > osc-operator-comp.yaml
@@ -96,9 +106,10 @@ This way, when we prepare the devstream.yaml file, we can provide the version
 we need (e.g: "v1.10") to create the pipelines that will build from the
 `osc-release-v1.10` branch of all our repositories.
 
-### Note about versions
+### Note about versions
 
 We have two parameters in the pipeline def (see "variables" in template.yaml):
+
 - .version
 - .versionName
 
@@ -133,6 +144,16 @@ the same result as `build-dm-verity-image-task` and `osc-dm-verity-image` share
 the same repository.
 >
 >If this nudge really needs to happen, we'll need to duplicate the build task too.
+
+>[NOTE (Julien - 2025/12/09)] the experience from the 1.10.x releases is that we
+>need to get the build-dm-verity-image-task duplicated too. The reason for that
+>is that otherwise, if the task diverge because of changes in the next dev cycle
+>the previous branch for dm-verity can't be built anymore, as the task doesn't
+>stay available.
+>Having two tasks and publishing them separately should help with that.
+>Now the problem is that they also need to be versioned, otherwise only one task
+>image will be kept (I think?).
+>This may require more info / help from the Konflux support.
 
 ## Branching
 
