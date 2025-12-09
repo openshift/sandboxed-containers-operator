@@ -187,9 +187,99 @@ uninstall() {
 	wait_for_reboot_clear
 }
 
+get_cloud_provider() {
+	local provider
+
+	# Run kubectl: capture rc and stdout
+	if ! provider="$(kubectl get configmap/peer-pods-cm \
+		-n openshift-sandboxed-containers-operator \
+		-o jsonpath='{.data.CLOUD_PROVIDER}')"; then
+		error "get_cloud_provider: kubectl failed to query peer-pods-cm"
+		return
+	fi
+
+	# Reject empty/whitespace-only results
+	if [[ -z "${provider//[[:space:]]/}" ]]; then
+		error "get_cloud_provider: CLOUD_PROVIDER not set in configmap/peer-pods-cm"
+		return
+	fi
+
+	echo "${provider}"
+}
+
+# Reads worker version label and extracts the OpenShift version (prefix before '_').
+get_worker_node_version_ibmcloud() {
+	local version
+	local raw_version
+
+	if ! raw_version="$(kubectl get "nodes/${NODE_NAME}" \
+		-o jsonpath='{.metadata.labels.ibm-cloud\.kubernetes\.io/worker-version}')"; then
+		error "get_worker_node_version_ibmcloud: kubectl failed to read worker-version label on node ${NODE_NAME}"
+		return
+	fi
+
+	if [[ -z "${raw_version//[[:space:]]/}" ]]; then
+		error "get_worker_node_version_ibmcloud: worker-version label is empty on node ${NODE_NAME}"
+		return
+	fi
+
+	# Extract the part before the first underscore
+	version="${raw_version%%_*}"
+
+	if [[ -z "${version//[[:space:]]/}" ]]; then
+		error "get_worker_node_version_ibmcloud: cannot parse '${raw_version}' as an OpenShift version"
+		return
+	fi
+
+	echo "${version}"
+}
+
+# get_extension_image VERSION
+# Resolves the rhel-coreos-extensions image for a given release VERSION.
+get_extension_image() {
+	[[ -n ${1-} ]] || {
+		error "get_extension_image: usage: get_extension_image VERSION"
+		return
+	}
+
+	local version=$1
+	local image
+
+	if ! image="$(oc adm release info --image-for rhel-coreos-extensions "$version")"; then
+		error "get_extension_image: 'oc adm release info' failed for version: $version"
+		return
+	fi
+
+	if [[ -z "${image//[[:space:]]/}" ]]; then
+		error "get_extension_image: empty image string for version: $version"
+		return
+	fi
+
+	echo "${image}"
+}
+
+# FIXME : This logic should be moved into the Operator
 rpm-extensions() {
+	local provider
+	local extension_image
+
+	provider="$(get_cloud_provider)"
+
+	case "${provider}" in
+	ibmcloud)
+		local version
+		version="$(get_worker_node_version_ibmcloud)"
+		extension_image="$(get_extension_image $version)"
+		;;
+
+	*)
+		extension_image=$EXTENSION_IMAGE
+		;;
+
+	esac
+
 	mkdir -p "/usr/share/rpm-ostree/extensions"
-	extract_container_image "$EXTENSION_IMAGE" "/usr/share/rpm-ostree/extensions" "/usr/share/rpm-ostree" "/tmp/regauth/auth.json"
+	extract_container_image "$extension_image" "/usr/share/rpm-ostree/extensions" "/usr/share/rpm-ostree" "/tmp/regauth/auth.json"
 }
 
 main() {
