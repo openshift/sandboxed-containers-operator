@@ -46,6 +46,10 @@ function get_commit_for_image() {
             break
         fi
         TAGS=$(echo "$RESPONSE" | jq -r '.tags[] | select(.manifest_digest=="'"$IMAGE_DIGEST"'") | .name')
+        if [ $? -ne 0 ]; then
+            echo "Error: Failed to parse JSON response from quay.io for image $IMAGE_NAME" >&2
+            break
+        fi
         if [ -n "$TAGS" ]; then
             # found some tags for our image
             for TAG in $TAGS; do
