@@ -115,7 +115,17 @@ for COMMIT in $COMMIT_LIST; do
     OLD_IMAGE=$(git show $COMMIT | grep "image:" | grep -E '^-' -m 1 | awk '{print $NF}')
     NEW_IMAGE=$(git show $COMMIT | grep "image:" | grep -E '^\+' -m 1 | awk '{print $NF}')
 
+    # Display the commit message first
     echo "Changes in commit $COMMIT:" | tee -a CHANGELOG
+    git show --no-patch --format="%s" $COMMIT | tee -a CHANGELOG
+
+    # if there is no NEW_IMAGES, we can't proceed with image's changelog.
+    # Just continue to the next commit.
+    if [ -z "$NEW_IMAGE" ]; then
+        echo "" | tee -a CHANGELOG
+        continue
+    fi
+
     echo "From image: $OLD_IMAGE" | tee -a CHANGELOG
     echo "To image:   $NEW_IMAGE" | tee -a CHANGELOG
 
