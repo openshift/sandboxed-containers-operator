@@ -91,7 +91,7 @@ fi
 # list open PRs and filter titles & exact base branch locally
 echo "Querying PRs from gh and filtering titles and base branch..."
 # request headRefOid so we can check commit status
-ALL_PRS_JSON=$(gh pr list --repo "$REPO" --state open --author "$AUTHOR" --json number,title,headRefName,headRefOid,baseRefName,labels 2>/dev/null) || {
+ALL_PRS_JSON=$(gh pr list --repo "$REPO" --state open --author "$AUTHOR" --limit 1000 --json number,title,headRefName,headRefOid,baseRefName,labels 2>/dev/null | jq 'sort_by(.number)') || {
   echo "gh pr list failed"; exit 3
 }
 # keep PR objects where
@@ -204,6 +204,21 @@ for pr in $PR_NUMS; do
     # attempt cherry-pick
     if git cherry-pick "$sha"; then
       echo "    cherry-pick succeeded."
+      CHANGES=$(git show --pretty=format:"" --name-only "${sha}" -- go.{mod,sum} */go.{mod,sum})
+      if [[ -n "${CHANGES}" ]]; then
+        # run go mod tidy where applicable
+        for gomod in $(echo ${CHANGES} | xargs -n1 dirname | uniq); do
+          (cd "${gomod}" && go mod tidy)
+        done
+        if [[ -n "$(git diff --ignore-submodules)" ]]; then
+          echo "   go modules are not tidy :"
+          git diff --ignore-submodules
+          echo "   skipping."
+          git reset --hard --quiet HEAD^
+          skipped+=("${pr}|${sha}|${pr_title}")
+          continue
+        fi
+      fi
       picked+=("${pr}|${sha}|${pr_title}")
     else
       echo "    conflict or error during cherry-pick; aborting this cherry-pick and skipping commit."
