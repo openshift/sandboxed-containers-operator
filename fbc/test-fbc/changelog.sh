@@ -32,6 +32,11 @@ function get_commit_for_image() {
     # remove "-rhel9" from image names
     IMAGE_REF=$(echo $IMAGE_REF | sed 's/-rhel9//')
 
+    # Special processing: we have a mismatch between the image name in our registry
+    # and the quay.io repository name for cloud-api-adaptor and cloud-api-adaptor-webhook.
+    # Fix it to that we can get the right image info from quay.io
+    IMAGE_REF=$(echo $IMAGE_REF | sed 's/osc-cloud-api-adaptor/osc-caa/' | sed 's/osc-cloud-api-adaptor-webhook/osc-caa-webhook/')
+
     IMAGE_NAME=$(echo "$IMAGE_REF" | cut -d "@" -f 1)
     IMAGE_DIGEST=$(echo "$IMAGE_REF" | cut -d "@" -f 2)
 
@@ -72,7 +77,7 @@ function get_repo_for_image() {
         "osc-operator" | "osc-must-gather" | "osc-podvm-builder")
             echo "https://github.com/openshift/sandboxed-containers-operator"
             ;;
-        "osc-caa" | "osc-caa-webhook" | "osc-podvm-payload")
+        "osc-cloud-api-adaptor" | "osc-cloud-api-adaptor-webhook" | "osc-podvm-payload")
             echo "https://github.com/openshift/cloud-api-adaptor"
             ;;
         "osc-monitor")
