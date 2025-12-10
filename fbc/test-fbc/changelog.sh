@@ -115,10 +115,9 @@ COMMIT_LIST=$(git log --oneline "${OLD_BUNDLE_COMMIT}..${NEW_BUNDLE_COMMIT}" ../
 
 echo "Generating changelog between bundle commits $OLD_BUNDLE_COMMIT and $NEW_BUNDLE_COMMIT" | tee CHANGELOG
 for COMMIT in $COMMIT_LIST; do
-    # each bundle commit should have exactly one image change
     # extract old and new image references, and get their commit hashes
-    OLD_IMAGE=$(git show $COMMIT | grep "image:" | grep -E '^-' -m 1 | awk '{print $NF}')
-    NEW_IMAGE=$(git show $COMMIT | grep "image:" | grep -E '^\+' -m 1 | awk '{print $NF}')
+    OLD_IMAGES=$(git show $COMMIT | grep "image:" | grep -E '^-' | uniq | awk '{print $NF}')
+    NEW_IMAGES=$(git show $COMMIT | grep "image:" | grep -E '^\+' | uniq | awk '{print $NF}')
 
     # Display the commit message first
     echo "Changes in commit $COMMIT:" | tee -a CHANGELOG
@@ -126,10 +125,25 @@ for COMMIT in $COMMIT_LIST; do
 
     # if there is no NEW_IMAGES, we can't proceed with image's changelog.
     # Just continue to the next commit.
-    if [ -z "$NEW_IMAGE" ]; then
+    if [ -z "$NEW_IMAGES" ]; then
         echo "" | tee -a CHANGELOG
         continue
     fi
+
+    # if there is no OLD_IMAGES, it means some image was added.
+    if [ -z "$OLD_IMAGES" ]; then
+        echo "Added one or more image(s):" | tee -a CHANGELOG
+        echo "-----" | tee -a CHANGELOG
+        echo "$NEW_IMAGES" | tee -a CHANGELOG
+        echo "-----" | tee -a CHANGELOG
+        echo "" | tee -a CHANGELOG
+        continue
+    fi
+
+    # from this point, we assume we have only one image changed per commit
+    # take the first one, if there are more
+    OLD_IMAGE=$(echo "$OLD_IMAGES" | head -n1)
+    NEW_IMAGE=$(echo "$NEW_IMAGES" | head -n1)
 
     echo "From image: $OLD_IMAGE" | tee -a CHANGELOG
     echo "To image:   $NEW_IMAGE" | tee -a CHANGELOG
