@@ -116,8 +116,9 @@ COMMIT_LIST=$(git log --oneline "${OLD_BUNDLE_COMMIT}..${NEW_BUNDLE_COMMIT}" ../
 echo "Generating changelog between bundle commits $OLD_BUNDLE_COMMIT and $NEW_BUNDLE_COMMIT" | tee CHANGELOG
 for COMMIT in $COMMIT_LIST; do
     # extract old and new image references, and get their commit hashes
-    OLD_IMAGES=$(git show $COMMIT | grep "image:" | grep -E '^-' | uniq | awk '{print $NF}')
-    NEW_IMAGES=$(git show $COMMIT | grep "image:" | grep -E '^\+' | uniq | awk '{print $NF}')
+    # Ignore lines with OSC_VERSION: those are just version string updates
+    OLD_IMAGES=$(git show $COMMIT | grep "image:" | grep -v OSC_VERSION | grep -E '^-' | uniq | awk '{print $NF}')
+    NEW_IMAGES=$(git show $COMMIT | grep "image:" | grep -v OSC_VERSION | grep -E '^\+' | uniq | awk '{print $NF}')
 
     # Display the commit message first
     echo "Changes in commit $COMMIT:" | tee -a CHANGELOG
