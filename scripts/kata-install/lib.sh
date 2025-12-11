@@ -55,3 +55,9 @@ client_tools() {
 	chmod +x /usr/bin/oc
 	chmod +x /usr/bin/kubectl
 }
+
+error() {
+	local msg="$*"
+	printf 'ERROR: %s\n' "$msg" >&2
+	return 1
+}
