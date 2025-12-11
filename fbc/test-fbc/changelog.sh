@@ -164,7 +164,13 @@ for COMMIT in $COMMIT_LIST; do
         PATH_PREFIX="../"
     fi
 
-    git log --oneline $OLD_IMAGE_COMMIT..$NEW_IMAGE_COMMIT | tee -a ${PATH_PREFIX}CHANGELOG
+    CHANGES=$(git log --oneline $OLD_IMAGE_COMMIT..$NEW_IMAGE_COMMIT)
+
+    # Filter out nudge PR commits. They have the format:
+    #   "<hash> chore(deps): update osc-<component> to <hash>"
+    CHANGES=$(echo "$CHANGES" | grep -vE '^[0-9a-f]{8} chore\(deps\): update osc-[a-zA-Z0-9-]+ to [0-9a-f]{7}$')
+
+    echo "$CHANGES" | tee -a ${PATH_PREFIX}CHANGELOG
     if [ "$REPO" != "https://github.com/openshift/sandboxed-containers-operator" ]; then
         popd
         rm -rf $(basename $REPO)
