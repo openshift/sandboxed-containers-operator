@@ -4,8 +4,13 @@
 # You can call it locally with 2 commit hashes to see the changes between them.
 # e.g:
 #  ./changelog.sh <old-commit> <new-commit>
-#  Where <old-commit> and <new-commit> are git commit hashes for changes to the
-#  catalog-template.yaml file.
+#  Where <old-commit> and <new-commit> are git commit hashes from the
+#  sandboxed-containers-operator repository.
+#
+# The script will look at the catalog-template.yaml file changes in those commits
+# to find the bundle image references, then look at the bundle manifests to find
+# the component images updated in the bundle, and finally retrieve the changelog
+# for those image updates.
 #
 # If no arguments are provided, it will retrieve the latest built image's git tag
 # and generate the changelog since that tag up to HEAD.
@@ -101,6 +106,11 @@ else
     OLD_COMMIT=$(skopeo inspect "docker://quay.io/redhat-user-workloads/ose-osc-tenant/osc-test-fbc:latest" | jq -r '.Labels["org.opencontainers.image.revision"]')
     NEW_COMMIT=HEAD
 fi
+
+# Make sure OLD_COMMIT and NEW_COMMIT reference changes to catalog-template.yaml
+# Find the first and last commit that references it in the range OLD_COMMIT..NEW_COMMIT
+OLD_COMMIT=$(git rev-list "${OLD_COMMIT}..${NEW_COMMIT}" -- catalog-template.yaml | tail -n1)
+NEW_COMMIT=$(git rev-list "${OLD_COMMIT}..${NEW_COMMIT}" -- catalog-template.yaml | head -n1)
 
 # Get the bundle references for old and new commits
 OLD_BUNDLE=$(git show "${OLD_COMMIT}" catalog-template.yaml | grep -E '^\+  - image:'| awk '{print $NF}')
