@@ -1,0 +1,7 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": [
+        "https://github.com/konflux-ci/mintmaker/blob/main/config/renovate/renovate.json?raw=true",
+        "github>konflux-ci/mintmaker-presets:disable-minor-updates"
+    ]
+}
