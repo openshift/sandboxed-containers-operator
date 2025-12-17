@@ -29,16 +29,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func TestPodMutator_getMemoryOverheadFromKataConfig(t *testing.T) {
+func TestPodMutator_getMemoryOverheadForKataPod(t *testing.T) {
 	tests := []struct {
 		name          string
 		pod           *corev1.Pod
 		kataConfigs   []kataconfigurationv1.KataConfig
+		configMap     *corev1.ConfigMap
 		expectedValue int32
 		expectError   bool
 	}{
 		{
-			name: "Pod with Kata runtime class and KataConfig with MemoryOverheadMB",
+			name: "Pod with Kata runtime class and ConfigMap with memoryOverheadMB",
 			pod: &corev1.Pod{
 				Spec: corev1.PodSpec{
 					RuntimeClassName: stringPtr("kata"),
@@ -49,12 +50,18 @@ func TestPodMutator_getMemoryOverheadFromKataConfig(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-kataconfig",
 					},
-					Spec: kataconfigurationv1.KataConfigSpec{
-						MemoryOverheadMB: int32Ptr(512),
-					},
 					Status: kataconfigurationv1.KataConfigStatus{
 						RuntimeClasses: []string{"kata", "kata-remote"},
 					},
+				},
+			},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      FgConfigMapName,
+					Namespace: OperatorNamespace,
+				},
+				Data: map[string]string{
+					MemoryOverheadMBConfig: "512",
 				},
 			},
 			expectedValue: 512,
@@ -72,19 +79,25 @@ func TestPodMutator_getMemoryOverheadFromKataConfig(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-kataconfig",
 					},
-					Spec: kataconfigurationv1.KataConfigSpec{
-						MemoryOverheadMB: int32Ptr(256),
-					},
 					Status: kataconfigurationv1.KataConfigStatus{
 						RuntimeClasses: []string{"kata", "kata-remote"},
 					},
+				},
+			},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      FgConfigMapName,
+					Namespace: OperatorNamespace,
+				},
+				Data: map[string]string{
+					MemoryOverheadMBConfig: "256",
 				},
 			},
 			expectedValue: 256,
 			expectError:   false,
 		},
 		{
-			name: "Pod with Kata runtime class and KataConfig without MemoryOverheadMB should use default",
+			name: "Pod with Kata runtime class and no ConfigMap should use default",
 			pod: &corev1.Pod{
 				Spec: corev1.PodSpec{
 					RuntimeClassName: stringPtr("kata"),
@@ -95,15 +108,43 @@ func TestPodMutator_getMemoryOverheadFromKataConfig(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-kataconfig",
 					},
-					Spec: kataconfigurationv1.KataConfigSpec{
-						// No MemoryOverheadMB specified
+					Status: kataconfigurationv1.KataConfigStatus{
+						RuntimeClasses: []string{"kata"},
+					},
+				},
+			},
+			configMap:     nil, // No ConfigMap
+			expectedValue: MemoryOverheadMBDefault,
+			expectError:   false,
+		},
+		{
+			name: "Pod with Kata runtime class and ConfigMap without memoryOverheadMB key should use default",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					RuntimeClassName: stringPtr("kata"),
+				},
+			},
+			kataConfigs: []kataconfigurationv1.KataConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-kataconfig",
 					},
 					Status: kataconfigurationv1.KataConfigStatus{
 						RuntimeClasses: []string{"kata"},
 					},
 				},
 			},
-			expectedValue: KataMemoryOverheadDefault,
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      FgConfigMapName,
+					Namespace: OperatorNamespace,
+				},
+				Data: map[string]string{
+					// No memoryOverheadMB key
+					"confidential": "true",
+				},
+			},
+			expectedValue: MemoryOverheadMBDefault,
 			expectError:   false,
 		},
 		{
@@ -116,12 +157,18 @@ func TestPodMutator_getMemoryOverheadFromKataConfig(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-kataconfig",
 					},
-					Spec: kataconfigurationv1.KataConfigSpec{
-						MemoryOverheadMB: int32Ptr(512),
-					},
 					Status: kataconfigurationv1.KataConfigStatus{
 						RuntimeClasses: []string{"kata"},
 					},
+				},
+			},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      FgConfigMapName,
+					Namespace: OperatorNamespace,
+				},
+				Data: map[string]string{
+					MemoryOverheadMBConfig: "512",
 				},
 			},
 			expectedValue: 0,
@@ -139,12 +186,18 @@ func TestPodMutator_getMemoryOverheadFromKataConfig(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-kataconfig",
 					},
-					Spec: kataconfigurationv1.KataConfigSpec{
-						MemoryOverheadMB: int32Ptr(512),
-					},
 					Status: kataconfigurationv1.KataConfigStatus{
 						RuntimeClasses: []string{"kata"},
 					},
+				},
+			},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      FgConfigMapName,
+					Namespace: OperatorNamespace,
+				},
+				Data: map[string]string{
+					MemoryOverheadMBConfig: "512",
 				},
 			},
 			expectedValue: 0,
@@ -157,7 +210,16 @@ func TestPodMutator_getMemoryOverheadFromKataConfig(t *testing.T) {
 					RuntimeClassName: stringPtr("kata"),
 				},
 			},
-			kataConfigs:   []kataconfigurationv1.KataConfig{},
+			kataConfigs: []kataconfigurationv1.KataConfig{},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      FgConfigMapName,
+					Namespace: OperatorNamespace,
+				},
+				Data: map[string]string{
+					MemoryOverheadMBConfig: "512",
+				},
+			},
 			expectedValue: 0,
 			expectError:   false,
 		},
@@ -173,19 +235,25 @@ func TestPodMutator_getMemoryOverheadFromKataConfig(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-kataconfig",
 					},
-					Spec: kataconfigurationv1.KataConfigSpec{
-						MemoryOverheadMB: int32Ptr(512),
-					},
 					Status: kataconfigurationv1.KataConfigStatus{
 						RuntimeClasses: []string{}, // Empty - not yet populated
 					},
+				},
+			},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      FgConfigMapName,
+					Namespace: OperatorNamespace,
+				},
+				Data: map[string]string{
+					MemoryOverheadMBConfig: "512",
 				},
 			},
 			expectedValue: 0,
 			expectError:   false,
 		},
 		{
-			name: "Multiple KataConfigs - first matching one wins",
+			name: "ConfigMap with invalid memoryOverheadMB value should use default",
 			pod: &corev1.Pod{
 				Spec: corev1.PodSpec{
 					RuntimeClassName: stringPtr("kata"),
@@ -194,41 +262,39 @@ func TestPodMutator_getMemoryOverheadFromKataConfig(t *testing.T) {
 			kataConfigs: []kataconfigurationv1.KataConfig{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: "kataconfig-1",
-					},
-					Spec: kataconfigurationv1.KataConfigSpec{
-						MemoryOverheadMB: int32Ptr(256),
-					},
-					Status: kataconfigurationv1.KataConfigStatus{
-						RuntimeClasses: []string{"kata"},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "kataconfig-2",
-					},
-					Spec: kataconfigurationv1.KataConfigSpec{
-						MemoryOverheadMB: int32Ptr(1024),
+						Name: "test-kataconfig",
 					},
 					Status: kataconfigurationv1.KataConfigStatus{
 						RuntimeClasses: []string{"kata"},
 					},
 				},
 			},
-			expectedValue: 256, // First one found
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      FgConfigMapName,
+					Namespace: OperatorNamespace,
+				},
+				Data: map[string]string{
+					MemoryOverheadMBConfig: "invalid",
+				},
+			},
+			expectedValue: MemoryOverheadMBDefault,
 			expectError:   false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create fake client with KataConfigs
+			// Create fake client with KataConfigs and optionally ConfigMap
 			scheme := scheme.Scheme
 			kataconfigurationv1.AddToScheme(scheme)
 
 			objects := make([]client.Object, 0)
 			for i := range tt.kataConfigs {
 				objects = append(objects, &tt.kataConfigs[i])
+			}
+			if tt.configMap != nil {
+				objects = append(objects, tt.configMap)
 			}
 
 			fakeClient := fake.NewClientBuilder().
@@ -241,7 +307,7 @@ func TestPodMutator_getMemoryOverheadFromKataConfig(t *testing.T) {
 				Log:    logr.Discard(),
 			}
 
-			result, err := mutator.getMemoryOverheadFromKataConfig(context.Background(), tt.pod)
+			result, err := mutator.getMemoryOverheadForKataPod(context.Background(), tt.pod)
 
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error but got none")
@@ -349,12 +415,13 @@ func TestPodMutator_Default(t *testing.T) {
 		name               string
 		obj                runtime.Object
 		kataConfigs        []kataconfigurationv1.KataConfig
+		configMap          *corev1.ConfigMap
 		expectAnnotation   bool
 		expectedAnnotation string
 		expectError        bool
 	}{
 		{
-			name: "Pod with Kata runtime class should get annotation",
+			name: "Pod with Kata runtime class should get annotation from ConfigMap",
 			obj: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
@@ -372,12 +439,18 @@ func TestPodMutator_Default(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-kataconfig",
 					},
-					Spec: kataconfigurationv1.KataConfigSpec{
-						MemoryOverheadMB: int32Ptr(512),
-					},
 					Status: kataconfigurationv1.KataConfigStatus{
 						RuntimeClasses: []string{"kata", "kata-remote"},
 					},
+				},
+			},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      FgConfigMapName,
+					Namespace: OperatorNamespace,
+				},
+				Data: map[string]string{
+					MemoryOverheadMBConfig: "512",
 				},
 			},
 			expectAnnotation:   true,
@@ -385,7 +458,7 @@ func TestPodMutator_Default(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name: "Pod with Kata runtime class and no MemoryOverheadMB should use default",
+			name: "Pod with Kata runtime class and no ConfigMap should use default",
 			obj: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
@@ -403,16 +476,14 @@ func TestPodMutator_Default(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-kataconfig",
 					},
-					Spec: kataconfigurationv1.KataConfigSpec{
-						// No MemoryOverheadMB
-					},
 					Status: kataconfigurationv1.KataConfigStatus{
 						RuntimeClasses: []string{"kata"},
 					},
 				},
 			},
+			configMap:          nil,
 			expectAnnotation:   true,
-			expectedAnnotation: fmt.Sprintf("%d", KataMemoryOverheadDefault),
+			expectedAnnotation: fmt.Sprintf("%d", MemoryOverheadMBDefault),
 			expectError:        false,
 		},
 		{
@@ -424,6 +495,7 @@ func TestPodMutator_Default(t *testing.T) {
 				},
 			},
 			kataConfigs:      []kataconfigurationv1.KataConfig{},
+			configMap:        nil,
 			expectAnnotation: false,
 			expectError:      true,
 		},
@@ -446,12 +518,18 @@ func TestPodMutator_Default(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-kataconfig",
 					},
-					Spec: kataconfigurationv1.KataConfigSpec{
-						MemoryOverheadMB: int32Ptr(512),
-					},
 					Status: kataconfigurationv1.KataConfigStatus{
 						RuntimeClasses: []string{"kata"},
 					},
+				},
+			},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      FgConfigMapName,
+					Namespace: OperatorNamespace,
+				},
+				Data: map[string]string{
+					MemoryOverheadMBConfig: "512",
 				},
 			},
 			expectAnnotation: false,
@@ -475,12 +553,18 @@ func TestPodMutator_Default(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-kataconfig",
 					},
-					Spec: kataconfigurationv1.KataConfigSpec{
-						MemoryOverheadMB: int32Ptr(512),
-					},
 					Status: kataconfigurationv1.KataConfigStatus{
 						RuntimeClasses: []string{"kata"},
 					},
+				},
+			},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      FgConfigMapName,
+					Namespace: OperatorNamespace,
+				},
+				Data: map[string]string{
+					MemoryOverheadMBConfig: "512",
 				},
 			},
 			expectAnnotation: false,
@@ -490,13 +574,16 @@ func TestPodMutator_Default(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create fake client with KataConfigs
+			// Create fake client with KataConfigs and optionally ConfigMap
 			scheme := scheme.Scheme
 			kataconfigurationv1.AddToScheme(scheme)
 
 			objects := make([]client.Object, 0)
 			for i := range tt.kataConfigs {
 				objects = append(objects, &tt.kataConfigs[i])
+			}
+			if tt.configMap != nil {
+				objects = append(objects, tt.configMap)
 			}
 
 			fakeClient := fake.NewClientBuilder().
@@ -555,17 +642,25 @@ func BenchmarkPodMutator_Default(b *testing.B) {
 
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(&kataconfigurationv1.KataConfig{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-kataconfig",
+		WithObjects(
+			&kataconfigurationv1.KataConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-kataconfig",
+				},
+				Status: kataconfigurationv1.KataConfigStatus{
+					RuntimeClasses: []string{"kata", "kata-remote"},
+				},
 			},
-			Spec: kataconfigurationv1.KataConfigSpec{
-				MemoryOverheadMB: int32Ptr(512),
+			&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      FgConfigMapName,
+					Namespace: OperatorNamespace,
+				},
+				Data: map[string]string{
+					MemoryOverheadMBConfig: "512",
+				},
 			},
-			Status: kataconfigurationv1.KataConfigStatus{
-				RuntimeClasses: []string{"kata", "kata-remote"},
-			},
-		}).
+		).
 		Build()
 
 	mutator := &PodMutator{

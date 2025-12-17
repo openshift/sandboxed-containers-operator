@@ -31,91 +31,14 @@ func TestKataConfig_ValidateCreate(t *testing.T) {
 		errorMsg    string
 	}{
 		{
-			name: "Valid KataConfig with MemoryOverheadMB within range",
+			name: "Valid KataConfig with default values",
 			kataConfig: KataConfig{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-kataconfig",
 				},
-				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(512),
-				},
+				Spec: KataConfigSpec{},
 			},
 			expectError: false,
-		},
-		{
-			name: "Valid KataConfig with MemoryOverheadMB at minimum value",
-			kataConfig: KataConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-kataconfig",
-				},
-				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(60),
-				},
-			},
-			expectError: false,
-		},
-		{
-			name: "Valid KataConfig with MemoryOverheadMB at maximum value",
-			kataConfig: KataConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-kataconfig",
-				},
-				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(4096 * 1024), // 4GB
-				},
-			},
-			expectError: false,
-		},
-		{
-			name: "Valid KataConfig without MemoryOverheadMB",
-			kataConfig: KataConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-kataconfig",
-				},
-				Spec: KataConfigSpec{
-					// No MemoryOverheadMB specified
-				},
-			},
-			expectError: false,
-		},
-		{
-			name: "Invalid KataConfig with MemoryOverheadMB below minimum",
-			kataConfig: KataConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-kataconfig",
-				},
-				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(0),
-				},
-			},
-			expectError: true,
-			errorMsg:    "memoryOverheadMB must be at least 60MB",
-		},
-		{
-			name: "Invalid KataConfig with MemoryOverheadMB above maximum",
-			kataConfig: KataConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-kataconfig",
-				},
-				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(4096*1024 + 1), // Just over 4GB
-				},
-			},
-			expectError: true,
-			errorMsg:    "memoryOverheadMB must be at most 4GB",
-		},
-		{
-			name: "Invalid KataConfig with negative MemoryOverheadMB",
-			kataConfig: KataConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-kataconfig",
-				},
-				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(-1),
-				},
-			},
-			expectError: true,
-			errorMsg:    "memoryOverheadMB must be at least 60MB",
 		},
 		{
 			name: "Valid KataConfig with all fields",
@@ -127,7 +50,30 @@ func TestKataConfig_ValidateCreate(t *testing.T) {
 					CheckNodeEligibility: true,
 					LogLevel:             "debug",
 					EnablePeerPods:       true,
-					MemoryOverheadMB:     int32Ptr(1024),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Valid KataConfig with CheckNodeEligibility",
+			kataConfig: KataConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-kataconfig",
+				},
+				Spec: KataConfigSpec{
+					CheckNodeEligibility: true,
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Valid KataConfig with EnablePeerPods",
+			kataConfig: KataConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-kataconfig",
+				},
+				Spec: KataConfigSpec{
+					EnablePeerPods: true,
 				},
 			},
 			expectError: false,
@@ -167,13 +113,13 @@ func TestKataConfig_ValidateUpdate(t *testing.T) {
 		errorMsg    string
 	}{
 		{
-			name: "Valid update with MemoryOverheadMB within range",
+			name: "Valid update changing LogLevel",
 			oldConfig: KataConfig{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-kataconfig",
 				},
 				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(256),
+					LogLevel: "info",
 				},
 			},
 			newConfig: KataConfig{
@@ -181,19 +127,19 @@ func TestKataConfig_ValidateUpdate(t *testing.T) {
 					Name: "test-kataconfig",
 				},
 				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(512),
+					LogLevel: "debug",
 				},
 			},
 			expectError: false,
 		},
 		{
-			name: "Valid update removing MemoryOverheadMB",
+			name: "Valid update enabling CheckNodeEligibility",
 			oldConfig: KataConfig{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-kataconfig",
 				},
 				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(512),
+					CheckNodeEligibility: false,
 				},
 			},
 			newConfig: KataConfig{
@@ -201,75 +147,13 @@ func TestKataConfig_ValidateUpdate(t *testing.T) {
 					Name: "test-kataconfig",
 				},
 				Spec: KataConfigSpec{
-					// No MemoryOverheadMB specified
+					CheckNodeEligibility: true,
 				},
 			},
 			expectError: false,
 		},
 		{
-			name: "Valid update adding MemoryOverheadMB",
-			oldConfig: KataConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-kataconfig",
-				},
-				Spec: KataConfigSpec{
-					// No MemoryOverheadMB specified
-				},
-			},
-			newConfig: KataConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-kataconfig",
-				},
-				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(1024),
-				},
-			},
-			expectError: false,
-		},
-		{
-			name: "Invalid update with MemoryOverheadMB below minimum",
-			oldConfig: KataConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-kataconfig",
-				},
-				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(512),
-				},
-			},
-			newConfig: KataConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-kataconfig",
-				},
-				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(0),
-				},
-			},
-			expectError: true,
-			errorMsg:    "memoryOverheadMB must be at least 60MB",
-		},
-		{
-			name: "Invalid update with MemoryOverheadMB above maximum",
-			oldConfig: KataConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-kataconfig",
-				},
-				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(512),
-				},
-			},
-			newConfig: KataConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-kataconfig",
-				},
-				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(4096*1024 + 1), // Just over 4GB
-				},
-			},
-			expectError: true,
-			errorMsg:    "memoryOverheadMB must be at most 4GB",
-		},
-		{
-			name: "Valid update with other fields unchanged",
+			name: "Valid update with multiple field changes",
 			oldConfig: KataConfig{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-kataconfig",
@@ -278,7 +162,6 @@ func TestKataConfig_ValidateUpdate(t *testing.T) {
 					CheckNodeEligibility: true,
 					LogLevel:             "info",
 					EnablePeerPods:       false,
-					MemoryOverheadMB:     int32Ptr(256),
 				},
 			},
 			newConfig: KataConfig{
@@ -287,9 +170,8 @@ func TestKataConfig_ValidateUpdate(t *testing.T) {
 				},
 				Spec: KataConfigSpec{
 					CheckNodeEligibility: true,
-					LogLevel:             "debug", // Changed
-					EnablePeerPods:       false,
-					MemoryOverheadMB:     int32Ptr(512), // Changed
+					LogLevel:             "debug",
+					EnablePeerPods:       true,
 				},
 			},
 			expectError: false,
@@ -327,25 +209,25 @@ func TestKataConfig_ValidateDelete(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name: "Valid delete with MemoryOverheadMB",
+			name: "Valid delete with default KataConfig",
 			kataConfig: KataConfig{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-kataconfig",
 				},
-				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(512),
-				},
+				Spec: KataConfigSpec{},
 			},
 			expectError: false,
 		},
 		{
-			name: "Valid delete without MemoryOverheadMB",
+			name: "Valid delete with fully configured KataConfig",
 			kataConfig: KataConfig{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-kataconfig",
 				},
 				Spec: KataConfigSpec{
-					// No MemoryOverheadMB specified
+					CheckNodeEligibility: true,
+					LogLevel:             "debug",
+					EnablePeerPods:       true,
 				},
 			},
 			expectError: false,
@@ -359,87 +241,6 @@ func TestKataConfig_ValidateDelete(t *testing.T) {
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("Expected error but got none")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no error but got: %v", err)
-				}
-			}
-
-			// Check warnings if any
-			if warnings != nil {
-				t.Logf("Warnings: %v", warnings)
-			}
-		})
-	}
-}
-
-// Test edge cases and boundary conditions
-func TestKataConfig_MemoryOverheadMB_EdgeCases(t *testing.T) {
-	tests := []struct {
-		name             string
-		memoryOverheadMB *int32
-		expectError      bool
-		errorMsg         string
-	}{
-		{
-			name:             "nil MemoryOverheadMB should be valid",
-			memoryOverheadMB: nil,
-			expectError:      false,
-		},
-		{
-			name:             "MemoryOverheadMB = 60 should be valid",
-			memoryOverheadMB: int32Ptr(60),
-			expectError:      false,
-		},
-		{
-			name:             "MemoryOverheadMB = 4096*1024 should be valid",
-			memoryOverheadMB: int32Ptr(4096 * 1024),
-			expectError:      false,
-		},
-		{
-			name:             "MemoryOverheadMB = 0 should be invalid",
-			memoryOverheadMB: int32Ptr(0),
-			expectError:      true,
-			errorMsg:         "memoryOverheadMB must be at least 60MB",
-		},
-		{
-			name:             "MemoryOverheadMB = -1 should be invalid",
-			memoryOverheadMB: int32Ptr(-1),
-			expectError:      true,
-			errorMsg:         "memoryOverheadMB must be at least 60MB",
-		},
-		{
-			name:             "MemoryOverheadMB = 4096*1024+1 should be invalid",
-			memoryOverheadMB: int32Ptr(4096*1024 + 1),
-			expectError:      true,
-			errorMsg:         "memoryOverheadMB must be at most 4GB",
-		},
-		{
-			name:             "MemoryOverheadMB = 10000 should be valid",
-			memoryOverheadMB: int32Ptr(10000),
-			expectError:      false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			kataConfig := KataConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-kataconfig",
-				},
-				Spec: KataConfigSpec{
-					MemoryOverheadMB: tt.memoryOverheadMB,
-				},
-			}
-
-			warnings, err := kataConfig.ValidateCreate(context.Background(), &kataConfig)
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error but got none")
-				} else if tt.errorMsg != "" && err.Error() != tt.errorMsg {
-					t.Errorf("Expected error message '%s', got '%s'", tt.errorMsg, err.Error())
 				}
 			} else {
 				if err != nil {
@@ -470,7 +271,7 @@ func TestKataConfig_ValidateUpdate_DifferentObjectTypes(t *testing.T) {
 					Name: "test-kataconfig",
 				},
 				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(256),
+					LogLevel: "info",
 				},
 			},
 			newConfig: KataConfig{
@@ -478,7 +279,7 @@ func TestKataConfig_ValidateUpdate_DifferentObjectTypes(t *testing.T) {
 					Name: "test-kataconfig",
 				},
 				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(512),
+					LogLevel: "debug",
 				},
 			},
 			expectError: false,
@@ -495,7 +296,7 @@ func TestKataConfig_ValidateUpdate_DifferentObjectTypes(t *testing.T) {
 					Name: "test-kataconfig",
 				},
 				Spec: KataConfigSpec{
-					MemoryOverheadMB: int32Ptr(512),
+					LogLevel: "debug",
 				},
 			},
 			expectError: false,
@@ -531,7 +332,8 @@ func BenchmarkKataConfig_ValidateCreate(b *testing.B) {
 			Name: "test-kataconfig",
 		},
 		Spec: KataConfigSpec{
-			MemoryOverheadMB: int32Ptr(512),
+			CheckNodeEligibility: true,
+			LogLevel:             "debug",
 		},
 	}
 
@@ -547,7 +349,7 @@ func BenchmarkKataConfig_ValidateUpdate(b *testing.B) {
 			Name: "test-kataconfig",
 		},
 		Spec: KataConfigSpec{
-			MemoryOverheadMB: int32Ptr(256),
+			LogLevel: "info",
 		},
 	}
 
@@ -556,7 +358,7 @@ func BenchmarkKataConfig_ValidateUpdate(b *testing.B) {
 			Name: "test-kataconfig",
 		},
 		Spec: KataConfigSpec{
-			MemoryOverheadMB: int32Ptr(512),
+			LogLevel: "debug",
 		},
 	}
 
@@ -564,9 +366,4 @@ func BenchmarkKataConfig_ValidateUpdate(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		newConfig.ValidateUpdate(context.Background(), &oldConfig, &newConfig)
 	}
-}
-
-// Helper function
-func int32Ptr(i int32) *int32 {
-	return &i
 }

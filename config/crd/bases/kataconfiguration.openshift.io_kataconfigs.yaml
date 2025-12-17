@@ -125,12 +125,6 @@ spec:
                 description: Sets log level on kata-equipped nodes.  Valid values
                   are the same as for `crio --log-level`.
                 type: string
-              memoryOverheadMB:
-                default: 350
-                format: int32
-                maximum: 4096
-                minimum: 60
-                type: integer
             required:
             - checkNodeEligibility
             type: object

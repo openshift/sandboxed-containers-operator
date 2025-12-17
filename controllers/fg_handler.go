@@ -14,18 +14,22 @@ const (
 	ConfidentialFeatureGate = "confidential"
 	LayeredImageDeployment  = "layeredImageDeployment"
 	DeploymentModeConfig    = "deploymentMode"
+	MemoryOverheadMBConfig  = "memoryOverheadMB"
+	MemoryOverheadMBDefault = 350
 )
 
 var DefaultFeatureGates = FeatureGateStatus{
 	Confidential:           false,
 	LayeredImageDeployment: false,
 	DeploymentModeOption:   MachineConfigOption,
+	MemoryOverheadMB:       MemoryOverheadMBDefault,
 }
 
 type FeatureGateStatus struct {
 	Confidential           bool
 	LayeredImageDeployment bool
 	DeploymentModeOption   DeploymentModeOption
+	MemoryOverheadMB       int32
 }
 
 // Create enum to represent the state of the feature gates
@@ -48,6 +52,7 @@ func (r *KataConfigOpenShiftReconciler) NewFeatureGateStatus() (*FeatureGateStat
 		Confidential:           DefaultFeatureGates.Confidential,
 		LayeredImageDeployment: DefaultFeatureGates.LayeredImageDeployment,
 		DeploymentModeOption:   DefaultFeatureGates.DeploymentModeOption,
+		MemoryOverheadMB:       DefaultFeatureGates.MemoryOverheadMB,
 	}
 
 	cfgMap := &corev1.ConfigMap{}
@@ -76,6 +81,14 @@ func (r *KataConfigOpenShiftReconciler) NewFeatureGateStatus() (*FeatureGateStat
 				r.Log.Info("Couldn't parse deploymentMode status, using default value", "default", DefaultFeatureGates.DeploymentModeOption, "error", err)
 			} else {
 				fgStatus.DeploymentModeOption = mode
+			}
+		}
+		if value, ok := cfgMap.Data[MemoryOverheadMBConfig]; ok {
+			memoryOverhead, err := strconv.ParseInt(value, 10, 32)
+			if err != nil {
+				r.Log.Info("Couldn't parse memoryOverheadMB, using default value", "default", DefaultFeatureGates.MemoryOverheadMB, "error", err)
+			} else {
+				fgStatus.MemoryOverheadMB = int32(memoryOverhead)
 			}
 		}
 	}

@@ -45,12 +45,6 @@ type KataConfigSpec struct {
 	// +optional
 	// +kubebuilder:default:=false
 	EnablePeerPods bool `json:"enablePeerPods"`
-
-	// +optional
-	// +kubebuilder:default:=350
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=2048
-	MemoryOverheadMB *int32 `json:"memoryOverheadMB,omitempty"`
 }
 
 // KataConfigStatus defines the observed state of KataConfig
