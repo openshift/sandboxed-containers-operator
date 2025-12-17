@@ -1,0 +1,9 @@
+# Local settings
+settings.local.json
+
+# Temporary plan files
+*_PLAN.md
+
+# Python cache
+__pycache__/
+*.pyc
