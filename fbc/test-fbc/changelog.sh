@@ -4,8 +4,13 @@
 # You can call it locally with 2 commit hashes to see the changes between them.
 # e.g:
 #  ./changelog.sh <old-commit> <new-commit>
-#  Where <old-commit> and <new-commit> are git commit hashes for changes to the
-#  catalog-template.yaml file.
+#  Where <old-commit> and <new-commit> are git commit hashes from the
+#  sandboxed-containers-operator repository.
+#
+# The script will look at the catalog-template.yaml file changes in those commits
+# to find the bundle image references, then look at the bundle manifests to find
+# the component images updated in the bundle, and finally retrieve the changelog
+# for those image updates.
 #
 # If no arguments are provided, it will retrieve the latest built image's git tag
 # and generate the changelog since that tag up to HEAD.
@@ -32,6 +37,11 @@ function get_commit_for_image() {
     # remove "-rhel9" from image names
     IMAGE_REF=$(echo $IMAGE_REF | sed 's/-rhel9//')
 
+    # Special processing: we have a mismatch between the image name in our registry
+    # and the quay.io repository name for cloud-api-adaptor and cloud-api-adaptor-webhook.
+    # Fix it to that we can get the right image info from quay.io
+    IMAGE_REF=$(echo $IMAGE_REF | sed 's/osc-cloud-api-adaptor/osc-caa/' | sed 's/osc-cloud-api-adaptor-webhook/osc-caa-webhook/')
+
     IMAGE_NAME=$(echo "$IMAGE_REF" | cut -d "@" -f 1)
     IMAGE_DIGEST=$(echo "$IMAGE_REF" | cut -d "@" -f 2)
 
@@ -46,6 +56,10 @@ function get_commit_for_image() {
             break
         fi
         TAGS=$(echo "$RESPONSE" | jq -r '.tags[] | select(.manifest_digest=="'"$IMAGE_DIGEST"'") | .name')
+        if [ $? -ne 0 ]; then
+            echo "Error: Failed to parse JSON response from quay.io for image $IMAGE_NAME" >&2
+            break
+        fi
         if [ -n "$TAGS" ]; then
             # found some tags for our image
             for TAG in $TAGS; do
@@ -56,6 +70,8 @@ function get_commit_for_image() {
                 fi
             done
         fi
+        HAS_MORE=$(echo "$RESPONSE" | jq -r '.has_additional')
+        [[ "$HAS_MORE" != "true" ]] && break
         PAGE=$((PAGE + 1))
     done
 }
@@ -66,7 +82,7 @@ function get_repo_for_image() {
         "osc-operator" | "osc-must-gather" | "osc-podvm-builder")
             echo "https://github.com/openshift/sandboxed-containers-operator"
             ;;
-        "osc-caa" | "osc-caa-webhook" | "osc-podvm-payload")
+        "osc-cloud-api-adaptor" | "osc-cloud-api-adaptor-webhook" | "osc-podvm-payload")
             echo "https://github.com/openshift/cloud-api-adaptor"
             ;;
         "osc-monitor")
@@ -91,6 +107,11 @@ else
     NEW_COMMIT=HEAD
 fi
 
+# Make sure OLD_COMMIT and NEW_COMMIT reference changes to catalog-template.yaml
+# Find the first and last commit that references it in the range OLD_COMMIT..NEW_COMMIT
+OLD_COMMIT=$(git rev-list "${OLD_COMMIT}..${NEW_COMMIT}" -- catalog-template.yaml | tail -n1)
+NEW_COMMIT=$(git rev-list "${OLD_COMMIT}..${NEW_COMMIT}" -- catalog-template.yaml | head -n1)
+
 # Get the bundle references for old and new commits
 OLD_BUNDLE=$(git show "${OLD_COMMIT}" catalog-template.yaml | grep -E '^\+  - image:'| awk '{print $NF}')
 NEW_BUNDLE=$(git show "${NEW_COMMIT}" catalog-template.yaml | grep -E '^\+  - image:'| awk '{print $NF}')
@@ -104,12 +125,37 @@ COMMIT_LIST=$(git log --oneline "${OLD_BUNDLE_COMMIT}..${NEW_BUNDLE_COMMIT}" ../
 
 echo "Generating changelog between bundle commits $OLD_BUNDLE_COMMIT and $NEW_BUNDLE_COMMIT" | tee CHANGELOG
 for COMMIT in $COMMIT_LIST; do
-    # each bundle commit should have exactly one image change
     # extract old and new image references, and get their commit hashes
-    OLD_IMAGE=$(git show $COMMIT | grep "image:" | grep -E '^-' -m 1 | awk '{print $NF}')
-    NEW_IMAGE=$(git show $COMMIT | grep "image:" | grep -E '^\+' -m 1 | awk '{print $NF}')
+    # Ignore lines with OSC_VERSION: those are just version string updates
+    OLD_IMAGES=$(git show $COMMIT | grep "image:" | grep -v OSC_VERSION | grep -E '^-' | uniq | awk '{print $NF}')
+    NEW_IMAGES=$(git show $COMMIT | grep "image:" | grep -v OSC_VERSION | grep -E '^\+' | uniq | awk '{print $NF}')
 
+    # Display the commit message first
     echo "Changes in commit $COMMIT:" | tee -a CHANGELOG
+    git show --no-patch --format="%s" $COMMIT | tee -a CHANGELOG
+
+    # if there is no NEW_IMAGES, we can't proceed with image's changelog.
+    # Just continue to the next commit.
+    if [ -z "$NEW_IMAGES" ]; then
+        echo "" | tee -a CHANGELOG
+        continue
+    fi
+
+    # if there is no OLD_IMAGES, it means some image was added.
+    if [ -z "$OLD_IMAGES" ]; then
+        echo "Added one or more image(s):" | tee -a CHANGELOG
+        echo "-----" | tee -a CHANGELOG
+        echo "$NEW_IMAGES" | tee -a CHANGELOG
+        echo "-----" | tee -a CHANGELOG
+        echo "" | tee -a CHANGELOG
+        continue
+    fi
+
+    # from this point, we assume we have only one image changed per commit
+    # take the first one, if there are more
+    OLD_IMAGE=$(echo "$OLD_IMAGES" | head -n1)
+    NEW_IMAGE=$(echo "$NEW_IMAGES" | head -n1)
+
     echo "From image: $OLD_IMAGE" | tee -a CHANGELOG
     echo "To image:   $NEW_IMAGE" | tee -a CHANGELOG
 
@@ -128,7 +174,13 @@ for COMMIT in $COMMIT_LIST; do
         PATH_PREFIX="../"
     fi
 
-    git log --oneline $OLD_IMAGE_COMMIT..$NEW_IMAGE_COMMIT | tee -a ${PATH_PREFIX}CHANGELOG
+    CHANGES=$(git log --oneline $OLD_IMAGE_COMMIT..$NEW_IMAGE_COMMIT)
+
+    # Filter out nudge PR commits. They have the format:
+    #   "<hash> chore(deps): update osc-<component> to <hash>"
+    CHANGES=$(echo "$CHANGES" | grep -vE '^[0-9a-f]{8} chore\(deps\): update osc-[a-zA-Z0-9-]+ to [0-9a-f]{7}$')
+
+    echo "$CHANGES" | tee -a ${PATH_PREFIX}CHANGELOG
     if [ "$REPO" != "https://github.com/openshift/sandboxed-containers-operator" ]; then
         popd
         rm -rf $(basename $REPO)

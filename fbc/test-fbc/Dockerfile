@@ -3,6 +3,8 @@
 FROM brew.registry.redhat.io/rh-osbs/openshift-ose-operator-registry-rhel9:v4.19 as builder
 ARG GIT_URL=""
 ARG GIT_REVISION=""
+ARG OLDCOMMIT=""
+ARG NEWCOMMIT=""
 USER root
 
 WORKDIR /workdir
@@ -17,22 +19,23 @@ RUN cp -r test-fbc/catalog/ /configs
 RUN ["/bin/opm", "serve", "/configs", "--cache-dir=/tmp/cache", "--cache-only"]
 
 # Optionally clone the git repo and generate changelog from it
-#
-# FIXME : temporarily unplug changelog generation until changelog.sh is fixed
-#         see https://github.com/openshift/sandboxed-containers-operator/pull/1381
-#
-# ENV GIT_URL=${GIT_URL}
-# ENV GIT_REVISION=${GIT_REVISION}
-# RUN if [[ -n "${GIT_URL}" && -n "${GIT_REVISION}" ]]; then \
-#         echo GIT_URL="${GIT_URL}" ; \
-#         echo GIT_REVISION="${GIT_REVISION}" ; \
-#         git clone "${GIT_URL}" repo && \
-#         pushd repo && \
-#         git checkout "${GIT_REVISION}" && \
-#         cd fbc/test-fbc && \
-#         ./changelog.sh && \
-#         popd ; \
-#     fi
+ENV GIT_URL=${GIT_URL}
+ENV GIT_REVISION=${GIT_REVISION}
+ENV OLDCOMMIT=${OLDCOMMIT}
+ENV NEWCOMMIT=${NEWCOMMIT}
+RUN if [[ -n "${GIT_URL}" && -n "${GIT_REVISION}" ]]; then \
+        echo GIT_URL="${GIT_URL}" ; \
+        echo GIT_REVISION="${GIT_REVISION}" ; \
+        git clone "${GIT_URL}" repo && \
+        pushd repo && \
+        git checkout "${GIT_REVISION}" && \
+        cd fbc/test-fbc && \
+        ./changelog.sh ${OLDCOMMIT} ${NEWCOMMIT} 2>&1 | tee CHANGELOG.err || true && \
+        mv CHANGELOG CHANGELOG.err /workdir/ && \
+        popd ; \
+    fi
+# Create empty changelog files if they do not exist
+RUN touch CHANGELOG && touch CHANGELOG.err
 
 FROM brew.registry.redhat.io/rh-osbs/openshift-ose-operator-registry-rhel9:v4.19
 # The base image is expected to contain
@@ -44,11 +47,8 @@ CMD ["serve", "/configs", "--cache-dir=/tmp/cache"]
 
 COPY --from=builder /configs /configs
 COPY --from=builder /tmp/cache /tmp/cache
-#
-# FIXME : temporarily unplug changelog generation until changelog.sh is fixed
-#         see https://github.com/openshift/sandboxed-containers-operator/pull/1381
-#
-#COPY --from=builder /workdir/repo/fbc/test-fbc/CHANGELOG /CHANGELOG
+COPY --from=builder /workdir/CHANGELOG /CHANGELOG
+COPY --from=builder /workdir/CHANGELOG.err /CHANGELOG.err
 
 # Set FBC-specific label for the location of the FBC root directory
 # in the image
