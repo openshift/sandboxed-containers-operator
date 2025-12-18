@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 
 	semver "github.com/Masterminds/semver/v3"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/oc/pkg/cli/admin/release"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 	"k8s.io/client-go/rest"
@@ -21,6 +23,7 @@ import (
 )
 
 const defaultGraphURL = "https://api.openshift.com/api/upgrades_info/v1/graph"
+const IBMCloudWorkerVersionLabel = "ibm-cloud.kubernetes.io/worker-version"
 
 // Cache for the loaded images
 var (
@@ -57,6 +60,67 @@ type versionGraph struct {
 type versionNode struct {
 	Version string `json:"version"`
 	Payload string `json:"payload"`
+}
+
+// GetNodeImages builds a map from node-derived keys to container image strings
+// for the specified componentName, applying cloud-provider-specific logic.
+func (r *KataConfigOpenShiftReconciler) GetNodeImages(componentName string, prefix string) (map[string]string, error) {
+	provider, err := getCloudProviderFromInfra(r.Client)
+	if err != nil {
+		return nil, err
+	}
+
+	nodes, err := r.getNodesWithLabels(r.getNodeSelectorAsMap())
+	if err != nil {
+		return nil, err
+	}
+
+	images := make(map[string]string)
+
+	var getImage func(corev1.Node) (string, error)
+
+	switch provider {
+	case IBMCloudProvider:
+		getImage = func(node corev1.Node) (string, error) {
+			rawVersion, ok := node.Labels[IBMCloudWorkerVersionLabel]
+			if !ok {
+				return "", fmt.Errorf("worker node does not have %s label, not able to determine worker node version", IBMCloudWorkerVersionLabel)
+			}
+			version, _, _ := strings.Cut(rawVersion, "_")
+
+			image, err := GetImageForComponent(componentName, version, defaultGraphURL, r.Client)
+			if err != nil {
+				return "", fmt.Errorf("failed to get component image for provider %s: %w", provider, err)
+			}
+
+			return image, nil
+		}
+	default:
+		getImage = func(_ corev1.Node) (string, error) {
+			image, err := GetImageForComponent(componentName, "", "", r.Client)
+			if err != nil {
+				return "", fmt.Errorf("failed to get component image for provider %s: %w", provider, err)
+			}
+			return image, nil
+		}
+	}
+
+	for _, node := range nodes.Items {
+		image, err := getImage(node)
+		if err != nil {
+			return nil, err
+		}
+		images[formatImageKey(prefix, node.GetName())] = image
+	}
+	return images, nil
+}
+
+// formatImageKey builds a stable, uppercase node key in the format:
+// "<prefix>_<NODE_NAME_UPPER>", where hyphens in the node name are replaced with underscores.
+// Example: prefix="CLI_IMAGE", nodeName="worker-1" => "CLI_IMAGE_WORKER_1".
+func formatImageKey(prefix, nodeName string) string {
+	replaced := strings.ReplaceAll(nodeName, "-", "_")
+	return prefix + "_" + strings.ToUpper(replaced)
 }
 
 // GetImageForComponent returns the container image for componentName from a specified
