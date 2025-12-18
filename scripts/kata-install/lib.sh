@@ -51,7 +51,10 @@ function extract_container_image() {
 
 client_tools() {
 	mkdir -p "/usr/bin"
-	extract_container_image "$CLI_IMAGE" "/usr/bin/oc /usr/bin/kubectl" "/usr/bin" "/tmp/regauth/auth.json"
+	local upper_node_name="${NODE_NAME^^}"
+	upper_node_name="${upper_node_name//-/_}"
+	local envarName="CLI_IMAGE_$upper_node_name"
+	extract_container_image "$(printenv -- "$envarName")" "/usr/bin/oc /usr/bin/kubectl" "/usr/bin" "/tmp/regauth/auth.json"
 	chmod +x /usr/bin/oc
 	chmod +x /usr/bin/kubectl
 }

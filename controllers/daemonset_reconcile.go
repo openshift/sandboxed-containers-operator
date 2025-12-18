@@ -2,7 +2,9 @@ package controllers
 
 import (
 	"context"
+	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -460,7 +462,7 @@ func (r *KataConfigOpenShiftReconciler) addPeerPodsConfigDaemonSet() error {
 // daemonSetForPeerPodsConfig creates a DaemonSet for peer-pods configuration.
 // The Daemonset will copy or remove the peer-pods configuration files based on the given action.
 func (r *KataConfigOpenShiftReconciler) daemonSetForPeerPodsConfig(action KataDaemonSetAction) (*appsv1.DaemonSet, error) {
-	cliImageString, err := GetImageForComponent(cliImageName, r.Client)
+	cliImages, err := r.GetNodeImages(cliImageName, "CLI_IMAGE")
 	if err != nil {
 		r.Log.Info("couldn't get image", "err", err)
 		return nil, err
@@ -479,6 +481,29 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForPeerPodsConfig(action KataDa
 
 	volumeMounts := r.volumeMountsForRegistries()
 	volumes := r.volumesForRegistries()
+
+	envVars := []corev1.EnvVar{
+		{
+			Name: "NODE_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "spec.nodeName",
+				},
+			},
+		},
+	}
+
+	for name, value := range cliImages {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  name,
+			Value: value,
+		})
+	}
+
+	// Sort the envvars, so the order is always the same, otherwise kubernetes thinks the DaemonSet changed and rollout new Pods
+	slices.SortStableFunc[[]corev1.EnvVar, corev1.EnvVar](envVars, func(a corev1.EnvVar, b corev1.EnvVar) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 
 	return &appsv1.DaemonSet{
 		TypeMeta: metav1.TypeMeta{
@@ -519,22 +544,9 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForPeerPodsConfig(action KataDa
 								Privileged: &runPrivileged,
 								RunAsUser:  &runAsUser,
 							},
-							Command: []string{"/bin/bash", "/scripts/osc-configs-script.sh"},
-							Args:    []string{string(action)},
-							Env: []corev1.EnvVar{
-								{
-									Name: "NODE_NAME",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "spec.nodeName",
-										},
-									},
-								},
-								{
-									Name:  "CLI_IMAGE",
-									Value: cliImageString,
-								},
-							},
+							Command:      []string{"/bin/bash", "/scripts/osc-configs-script.sh"},
+							Args:         []string{string(action)},
+							Env:          envVars,
 							VolumeMounts: volumeMounts,
 						},
 					},
@@ -550,14 +562,14 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForPeerPodsConfig(action KataDa
 // The DaemonSet's Pod contains three containers: one installs the binaries, one modifies the node labels, and one sets the runtime log level.
 func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemonSetAction) (*appsv1.DaemonSet, error) {
 	// This image contains the binaries for kata-containers
-	extensionImageString, err := GetImageForComponent(rhelCoreOsExtensionsImageName, r.Client)
+	extensionImages, err := r.GetNodeImages(rhelCoreOsExtensionsImageName, "EXTENSION_IMAGE")
 	if err != nil {
 		r.Log.Error(err, "couldn't get extension image")
 		return nil, err
 	}
 
 	// This image contains kubectl and makes changing the node labels easier
-	cliImageString, err := GetImageForComponent(cliImageName, r.Client)
+	cliImages, err := r.GetNodeImages(cliImageName, "CLI_IMAGE")
 	if err != nil {
 		r.Log.Error(err, "couldn't get cli image")
 		return nil, err
@@ -593,17 +605,23 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 			},
 		},
 		{
-			Name:  "EXTENSION_IMAGE",
-			Value: extensionImageString,
-		},
-		{
-			Name:  "CLI_IMAGE",
-			Value: cliImageString,
-		},
-		{
 			Name:  "NODE_LABEL",
 			Value: kataInstallationDaemonSetLabel,
 		},
+	}
+
+	for name, value := range extensionImages {
+		kataInstallEnv = append(kataInstallEnv, corev1.EnvVar{
+			Name:  name,
+			Value: value,
+		})
+	}
+
+	for name, value := range cliImages {
+		kataInstallEnv = append(kataInstallEnv, corev1.EnvVar{
+			Name:  name,
+			Value: value,
+		})
 	}
 
 	// Add addon environment variables if ConfigMap exists
@@ -611,6 +629,11 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 	if addonEnvVars != nil {
 		kataInstallEnv = append(kataInstallEnv, addonEnvVars...)
 	}
+
+	// Sort the envvars, so the order is always the same, otherwise kubernetes thinks the DaemonSet changed and rollout new Pods
+	slices.SortStableFunc[[]corev1.EnvVar, corev1.EnvVar](kataInstallEnv, func(a corev1.EnvVar, b corev1.EnvVar) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 
 	return &appsv1.DaemonSet{
 		TypeMeta: metav1.TypeMeta{
