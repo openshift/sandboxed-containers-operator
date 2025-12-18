@@ -10,6 +10,199 @@ set -xeuo pipefail
 
 PACKAGES="capstone daxctl-libs edk2-ovmf ipxe-roms-qemu kata-containers libfdt libpmem libpng librdmacm ndctl-libs pixman qemu-img qemu-kvm-common qemu-kvm-core seabios-bin seavgabios-bin virtiofsd"
 
+# find_affected_local_paths pkg1 pkg2 ...
+#
+# Runs on the host (via exec_on_host) and prints /etc paths (one per line) that are:
+#   - "Added" in ostree admin config-diff (local-only, not in /usr/etc)
+#   - under directories that:
+#       * contain files from the given packages, AND
+#       * contain no files owned by any other package
+#     → those directories may disappear when these packages are removed.
+find_affected_local_paths() {
+	(($# > 0)) || {
+		echo "find_affected_local_paths: need at least one package" >&2
+		return 1
+	}
+
+	# All packages as a single space-separated string for exec_on_host
+	local pkgs="$*"
+
+	#
+	# 1) Local-only /etc files (Added vs base) on host
+	#
+	local added_paths=()
+	mapfile -t added_paths < <(
+		exec_on_host "
+      ostree admin config-diff \
+        | awk '\$1==\"A\" && \$2!=\"\" {print \"/etc/\"\$2}' \
+        | sort -u
+    "
+	)
+	((${#added_paths[@]} > 0)) || return 0
+
+	#
+	# 2) /etc files from packages being removed (on host)
+	#
+	local pkg_paths=()
+	mapfile -t pkg_paths < <(
+		exec_on_host "
+      rpm -ql $pkgs 2>/dev/null \
+        | grep '^/etc/' \
+        | sort -u
+    "
+	)
+	((${#pkg_paths[@]} > 0)) || return 0
+
+	#
+	# 3) Directories that have both local-only files and removal-package files
+	#
+	local added_dirs=() pkg_dirs=()
+	mapfile -t added_dirs < <(printf '%s\n' "${added_paths[@]}" | xargs -r dirname | sort -u)
+	mapfile -t pkg_dirs < <(printf '%s\n' "${pkg_paths[@]}" | xargs -r dirname | sort -u)
+
+	local dirs_both=()
+	mapfile -t dirs_both < <(
+		comm -12 \
+			<(printf '%s\n' "${added_dirs[@]}") \
+			<(printf '%s\n' "${pkg_dirs[@]}") |
+			grep -vE '^/etc$'
+	)
+	((${#dirs_both[@]} > 0)) || return 0
+
+	#
+	# 4) Full NEVR names for packages being removed (on host)
+	#
+	local removing_pkgs=()
+	mapfile -t removing_pkgs < <(
+		exec_on_host "rpm -q $pkgs 2>/dev/null | sort -u"
+	)
+	((${#removing_pkgs[@]} > 0)) || return 0
+
+	#
+	# 5) Filter dirs_both → risky_dirs:
+	#    A dir is risky if:
+	#      - it has no owned files at all (only unowned stuff), OR
+	#      - all owned files in its subtree are from packages being removed.
+	#
+	local risky_dirs=()
+	local dir
+
+	for dir in "${dirs_both[@]}"; do
+		local is_risky=true
+
+		# Collect owners of:
+		#   - the directory itself
+		#   - all files under it recursively
+		local owners=()
+		local tmp=()
+
+		# Owner(s) of the directory itself (if any)
+		mapfile -t tmp < <(
+			exec_on_host "rpm -qf '$dir' 2>/dev/null || true"
+		)
+		owners+=("${tmp[@]}")
+
+		# Owner(s) of all regular files under the directory (recursive)
+		mapfile -t tmp < <(
+			exec_on_host "
+        find '$dir' -type f -print0 2>/dev/null \
+          | xargs -0 -r rpm -qf 2>/dev/null || true
+      "
+		)
+		owners+=("${tmp[@]}")
+
+		# Deduplicate owners and drop empties
+		if ((${#owners[@]} > 0)); then
+			mapfile -t owners < <(
+				printf '%s\n' "${owners[@]}" |
+					grep -v '^$' |
+					sort -u
+			)
+		fi
+
+		# If there are no owners at all, no package keeps this dir, the directory is risky
+		if ((${#owners[@]} == 0)); then
+			risky_dirs+=("$dir")
+			continue
+		fi
+
+		# If ANY owner is not in removing_pkgs, the directory is safe
+		local owner rem
+		for owner in "${owners[@]}"; do
+			local owner_in_removal=false
+			for rem in "${removing_pkgs[@]}"; do
+				if [[ "$owner" == "$rem" ]]; then
+					owner_in_removal=true
+					break
+				fi
+			done
+
+			if [[ "$owner_in_removal" == false ]]; then
+				# some surviving package owns something under this dir, the directory is safe
+				is_risky=false
+				break
+			fi
+		done
+
+		[[ "$is_risky" == true ]] && risky_dirs+=("$dir")
+	done
+
+	((${#risky_dirs[@]} > 0)) || return 0
+
+	#
+	# 6) Local-only files that live under risky directories
+	#
+	local affected=() path
+	for path in "${added_paths[@]}"; do
+		for dir in "${risky_dirs[@]}"; do
+			[[ "$path" == "$dir"/* ]] && affected+=("$path")
+		done
+	done
+
+	printf '%s\n' "${affected[@]}" | sort -u
+}
+
+# restore_backup_and_cleanup BACKUP_ROOT
+# Restores and deletes backup on the HOST.
+restore_backup_and_cleanup() {
+	local backup_root="${1:-}"
+	[[ -n "$backup_root" ]] || {
+		echo "restore_backup_and_cleanup: backup_root is required" >&2
+		return 1
+	}
+
+	exec_on_host "if [ -d '$backup_root' ]; then cp -a '$backup_root'/\. /; rm -rf '$backup_root'; fi"
+}
+
+# backup_paths BACKUP_ROOT PATH...
+#
+# Copies all existing PATHs into BACKUP_ROOT, preserving structure.
+#
+# Example:
+#   mapfile -t affected < <(find_affected_local_paths cri-o kata-containers)
+#   backup_paths /var/backups/foo "${affected[@]}"
+# backup_paths BACKUP_ROOT PATH...
+# Runs all filesystem operations on the HOST.
+backup_paths() {
+	local backup_root="${1:-}"
+	shift || true
+
+	[[ -n "$backup_root" ]] || {
+		echo "backup_paths: backup_root is required" >&2
+		return 1
+	}
+
+	exec_on_host "mkdir -p '$backup_root'"
+
+	local p dir
+	for p in "$@"; do
+		[[ -z "$p" ]] && continue
+		# Compute dirname in the container (same string on host)
+		dir=$(dirname "$p")
+		exec_on_host "if [ -e '$p' ]; then mkdir -p '$backup_root$dir'; cp -a '$p' '$backup_root$p'; fi"
+	done
+}
+
 # Format: "absolute_source_path:absolute_dest_path:octal_mode"
 FILES=(
 	"/files/50-kata-remote:/host/etc/crio/crio.conf.d/50-kata-remote:0644"
@@ -69,37 +262,6 @@ label_node() {
 	kubectl label node "${NODE_NAME}" "${NODE_LABEL}=${state}" --overwrite
 }
 
-# Check whether a package has staged updates
-check_package_updated() {
-	local pkg="$1"
-	local booted staged
-
-	booted=$(chroot /host /bin/bash -c "rpm-ostree status --json | jq -r '.deployments[] | select(.booted==true) | .checksum'")
-	staged=$(chroot /host /bin/bash -c "rpm-ostree status --json | jq -r '.deployments[] | select(.staged==true) | .checksum'")
-
-	if [ -n "$staged" ]; then
-		if chroot /host rpm-ostree db diff "$booted" "$staged" | grep -q "$pkg"; then
-			return 0 # Package was updated
-		fi
-	fi
-
-	return 1 # Package not updated or no staged deployment
-}
-
-# Function to check if a reboot is required by looking for "Staged: yes"
-is_reboot_required() {
-	check_package_updated "kata-containers"
-}
-
-# Loop until reboot is no longer required
-wait_for_reboot_clear() {
-	while is_reboot_required; do
-		echo "Reboot required"
-		set_status_waiting_for_reboot
-		sleep 60
-	done
-}
-
 set_status_waiting_to_install() {
 	label_node "waiting_to_install"
 }
@@ -110,10 +272,6 @@ set_status_waiting_to_uninstall() {
 
 set_status_installed() {
 	label_node "installed"
-}
-
-set_status_waiting_for_reboot() {
-	label_node "waiting_for_reboot"
 }
 
 set_status_uninstalled() {
@@ -167,6 +325,26 @@ restart_crio() {
 
 	# Wait for crio and kubelet
 	wait_for_kubelet_cri_recovery
+}
+
+reload_crio() {
+	exec_on_host "systemctl reload crio"
+
+	wait_for_kubelet_cri_recovery
+}
+
+# check crio's runtime list using crictl
+# check whether it contains kata-remote or not
+is_kata_loaded() {
+	# TODO: Check for normal kata shim
+	local kata_remote_exists
+	kata_remote_exists=$(chroot /host /bin/bash -c "crictl info | jq 'any(.runtimeHandlers[]; .name == \"kata-remote\")'")
+
+	if [[ "$kata_remote_exists" == "true" ]]; then
+		return 0
+	fi
+
+	return 1
 }
 
 check_node_label() {
@@ -249,9 +427,12 @@ install_kata() {
 		fi
 	done
 
-	# TODO: Check whether crio's loaded the kata config or not
 	# If nothing to install, exit early
 	if [[ ${#install_rpms[@]} -eq 0 ]]; then
+		#if ! is_kata_loaded; then
+		#	restart_crio
+		#fi
+
 		set_status_installed
 
 		return 0
@@ -291,49 +472,30 @@ install_kata() {
 	copy_kata_remote_config_files
 
 	# Install SELinux policy
-	semodule -i /usr/share/kata-containers/defaults/osc_monitor.cil
+	exec_on_host "semodule -i /usr/share/kata-containers/defaults/osc_monitor.cil"
 
-	# Restart crio
+	# Debug
+	#sleep infinity
+
+	sleep 5
+
+	# Reload crio
+	#reload_crio
 	restart_crio
 
 	set_status_installed
 }
 
 uninstall_kata() {
-	# Initial wait: avoid doing anything if a previous staged update is pending
-	wait_for_reboot_clear
-
 	# Check if kata-containers is installed
 	# If kata-containers is not installed we are done
 	# Sleep infinity to prevent pod restart (DaemonSets always restart exited pods)
 	installed_version=$(chroot /host rpm -q kata-containers 2>/dev/null || true)
 	if [[ "$installed_version" == "package kata-containers is not installed" ]]; then
-		echo "Package already uninstalled"
-		set_status_uninstalled
-		return 0
-	fi
+		#if is_kata_loaded; then
+		#	reload_crio
+		#fi
 
-	# Set installation status to uninstalling
-	set_status_uninstalling
-
-	# Uninstall extensions from the node
-	chroot /host /bin/bash -c "rpm-ostree uninstall $PACKAGES"
-
-	# Remove Config
-	remove_kata_remote_config_files
-
-	# Wait again: rpm-ostree uninstall stages changes, requiring a reboot
-	wait_for_reboot_clear
-
-	### Uninstall without reboot
-	### Does not work currently
-	### This won’t execute because the wait_for_reboot_clear function blocks it
-
-	# Check if kata-containers is installed
-	# If kata-containers is not installed we are done
-	# Sleep infinity to prevent pod restart (DaemonSets always restart exited pods)
-	installed_version=$(chroot /host rpm -q kata-containers 2>/dev/null || true)
-	if [[ "$installed_version" == "package kata-containers is not installed" ]]; then
 		echo "Package already uninstalled"
 		set_status_uninstalled
 		return 0
@@ -343,19 +505,38 @@ uninstall_kata() {
 	set_status_waiting_to_uninstall
 	waiting_for_uninstall_schedule
 
+	# Backup files that are not owned by any packages and would be removed by apply-live
+	affected=()
+	mapfile -t affected < <(find_affected_local_paths $PACKAGES)
+
+	if ((${#affected[@]} > 0)); then
+		backup_root="/var/backups/rpm-ostree-etc-$(date +%s)"
+		backup_paths "$backup_root" "${affected[@]}"
+	fi
+
 	# Uninstall extensions from the node
 	chroot /host /bin/bash -c "rpm-ostree uninstall $PACKAGES"
 	chroot /host bash -c "rpm-ostree apply-live --allow-replacement"
+
+	# Restore files that were backed up
+	if ((${#affected[@]} > 0)); then
+		restore_backup_and_cleanup "$backup_root"
+	fi
 
 	# Remove Config
 	remove_kata_remote_config_files
 
 	# Remove SELinux policy
-	semodule -r osc_monitor
+	exec_on_host "semodule -r osc_monitor"
 
-	# Restart crio
-	# TODO: Maybe reload is enough after removal
-	restart_crio
+	# Debug
+	#sleep infinity
+
+	# Let crio and other services realize that the filesystem changed
+	sleep 5
+
+	# Reload crio
+	reload_crio
 
 	set_status_uninstalled
 }

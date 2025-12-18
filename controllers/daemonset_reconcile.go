@@ -31,7 +31,7 @@ const (
 	rhelCoreOsExtensionsImageName = "rhel-coreos-extensions"
 	cliImageName                  = "cli"
 
-	daemonSetImage = "quay.io/openshift_sandboxed_containers/osc-daemonset:1.10.3" // TODO: Update image, you can test the current version with "quay.io/fodorpatrikprot/openshift-sandboxed-containers-kata-install:v0.0.20"
+	daemonSetImage = "quay.io/fodorpatrikprot/openshift-sandboxed-containers-kata-install:v0.0.32-reboot" // TODO: Update image, you can test the current version with "quay.io/fodorpatrikprot/openshift-sandboxed-containers-kata-install:v0.0.32-reboot"
 )
 
 // KataInstallationDaemonSetState defines the possible states of the Kata installation DaemonSet.
@@ -42,7 +42,6 @@ const (
 	KataWaitingToInstall   KataInstallationDaemonSetState = "waiting_to_install"
 	KataInstalled          KataInstallationDaemonSetState = "installed"
 	KataInstalling         KataInstallationDaemonSetState = "installing"
-	KataWaitingForReboot   KataInstallationDaemonSetState = "waiting_for_reboot" // rpm-ostree changes applied after reboot
 	KataWaitingToUninstall KataInstallationDaemonSetState = "waiting_to_uninstall"
 	KataUninstalling       KataInstallationDaemonSetState = "uninstalling"
 	KataUninstalled        KataInstallationDaemonSetState = "uninstalled"
@@ -135,14 +134,10 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 	}
 
 	// Wait for the Kata uninstall DaemonSet to uninstall the kata-containers rpm package and its dependencies
-	// The daemonset will change the node label when the uninstallation is completed or reboot is required and will trigger reconciliation
+	// The daemonset will change the node label when the uninstallation is completed and will trigger reconciliation
 	if isUninstallDaemonSetJustCreated || uninstallInProgress {
 		r.Log.Info("Waiting for KataUninstall DaemonSet to finish")
-		nodes, _ := r.isNodeRebootRequired()
-		for _, node := range nodes {
-			r.Log.Info("node must be rebooted", "node", node.Name)
-		}
-		//r.scheduleInstallation(UninstallKata)
+		r.scheduleInstallation(UninstallKata)
 		return ctrl.Result{}, nil
 	}
 
@@ -223,7 +218,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 	}
 
 	//Get pull-secret from openshift-config ns and save it as auth-json-secret in our ns
-	//This will be used by the podvm image provider to pull the pause image for embedding
+	//This will be used by the DaemonSet to pull the cli and extension images
 	err = r.createAuthJsonSecret()
 	if err != nil {
 		r.Log.Info("Error in creating auth-json-secret", "err", err)
@@ -591,29 +586,6 @@ func (r *KataConfigOpenShiftReconciler) isKataInstallDaemonSetInstalling() (bool
 	return !allNodeInstalled, nil
 }
 
-// isNodeRebootRequired checks if any nodes require a reboot based on their labels.
-// It returns a list of nodes that need a reboot and an error if any occurs.
-func (r *KataConfigOpenShiftReconciler) isNodeRebootRequired() ([]corev1.Node, error) {
-	nodes, err := r.getNodesWithLabels(r.getNodeSelectorAsMap())
-	if err != nil {
-		r.Log.Error(err, "Getting Node List failed")
-		return nil, err
-	}
-
-	result := make([]corev1.Node, 0)
-
-	for _, node := range nodes.Items {
-		currentState, ok := node.Labels[kataInstallationDaemonSetLabel]
-		if ok {
-			if currentState == string(KataWaitingForReboot) {
-				result = append(result, node)
-			}
-		}
-	}
-
-	return result, nil
-}
-
 // updateStatusDaemonSet updates the status of DaemonSet based on the given action.
 // It fetches nodes with appropriate labels, clears existing node status lists,
 // updates node count, and move nodes in the status list based on the action.
@@ -681,9 +653,6 @@ func (r *KataConfigOpenShiftReconciler) putNodeOnStatusListDaemonSetUninstall(no
 	case string(KataWaitingToUninstall):
 		r.kataConfig.Status.KataNodes.WaitingToUninstall = append(r.kataConfig.Status.KataNodes.WaitingToUninstall, node.GetName())
 	case string(KataUninstalling):
-		r.kataConfig.Status.KataNodes.Uninstalling = append(r.kataConfig.Status.KataNodes.Uninstalling, node.GetName())
-		// rpm-ostree changes applied after reboot
-	case string(KataWaitingForReboot):
 		r.kataConfig.Status.KataNodes.Uninstalling = append(r.kataConfig.Status.KataNodes.Uninstalling, node.GetName())
 	case string(KataUninstalled):
 	default:
