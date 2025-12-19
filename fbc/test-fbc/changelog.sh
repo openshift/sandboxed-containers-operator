@@ -109,8 +109,9 @@ fi
 
 # Make sure OLD_COMMIT and NEW_COMMIT reference changes to catalog-template.yaml
 # Find the first and last commit that references it in the range OLD_COMMIT..NEW_COMMIT
-OLD_COMMIT=$(git rev-list "${OLD_COMMIT}..${NEW_COMMIT}" -- catalog-template.yaml | tail -n1)
-NEW_COMMIT=$(git rev-list "${OLD_COMMIT}..${NEW_COMMIT}" -- catalog-template.yaml | head -n1)
+# NOTE: we use ~1 to include the OLD_COMMIT itself in the search
+OLD_COMMIT=$(git rev-list "${OLD_COMMIT}~1..${NEW_COMMIT}" -- catalog-template.yaml | tail -n1)
+NEW_COMMIT=$(git rev-list "${OLD_COMMIT}~1..${NEW_COMMIT}" -- catalog-template.yaml | head -n1)
 
 # Get the bundle references for old and new commits
 OLD_BUNDLE=$(git show "${OLD_COMMIT}" catalog-template.yaml | grep -E '^\+  - image:'| awk '{print $NF}')
