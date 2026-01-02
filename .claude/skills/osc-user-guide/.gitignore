@@ -1,0 +1,3 @@
+# Downloaded documentation (stored in per-version subdirectories, e.g. 1.12/*.pdf)
+*.pdf
+[0-9]*/
