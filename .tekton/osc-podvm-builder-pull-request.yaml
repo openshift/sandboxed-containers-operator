@@ -12,7 +12,7 @@ metadata:
       target_branch == "devel" &&
       ( "config/peerpods/podvm/***".pathChanged() ||
         ".tekton/osc-podvm-builder-pull-request.yaml".pathChanged() ||
-        ".tekton/build-pipeline.yaml$".pathChanged()
+        ".tekton/build-pipeline.yaml".pathChanged()
       )
   creationTimestamp:
   labels:

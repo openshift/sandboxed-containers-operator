@@ -11,7 +11,7 @@ metadata:
       target_branch == "devel" &&
       ( "must-gather/***".pathChanged() ||
         ".tekton/osc-must-gather-push.yaml".pathChanged() ||
-        ".tekton/build-pipeline.yaml$".pathChanged()
+        ".tekton/build-pipeline.yaml".pathChanged()
       )
   creationTimestamp:
   labels:
