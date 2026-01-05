@@ -38,7 +38,7 @@ spec:
               echo "Snapshot: ${SNAPSHOT}"
               catalogImage=$(jq -r '.components[] | select(.name=="osc-test-fbc") | .containerImage' <<< "${SNAPSHOT}")
               echo "Catalog image: ${catalogImage}"
-              echo "${catalogImage}" > $(results.CATALOG_IMAGE.path)
+              echo -n "${catalogImage}" > $(results.CATALOG_IMAGE.path)
     - name: prow-job
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
@@ -50,7 +50,7 @@ spec:
         - name: url
           value: https://github.com/openshift/konflux-tasks
         - name: revision
-          value: 26d8e981a7d1d035f05c4accd30b38d07f8f02b5
+          value: b5c2ace84d1de50a016bb319f0ebd3ad4dd0aba9
         - name: pathInRepo
           value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
       params:
@@ -59,7 +59,7 @@ spec:
         - name: VARIANT
           value: downstream-candidate
         - name: ENVS
-          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE)"
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),EXPECTED_OPERATOR_VERSION=1.11.1,FORCE_SUCCESS_EXIT=no"
       matrix:
         params:
           - name: PROWJOB_NAME
