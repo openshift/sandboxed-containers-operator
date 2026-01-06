@@ -78,7 +78,7 @@ spec:
             - name: PEERPODS_NAMESPACE
               value: "openshift-sandboxed-containers-operator"
             - name: RELATED_IMAGE_KATA_MONITOR
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:3c1434943628c01f102615115e89e384b4d46ccf2fd6c0abd5205917afc4d05a
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:af10f44b5976fdbf3609323a25e6b9fdc44f6f78e35aad39ed19e0ee6c9a6e34
             - name: RELATED_IMAGE_CAA
               value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:408eaaac58d01892aa2087153eda6f451788c02b8b719dca8e710a8916b2e081
             - name: RELATED_IMAGE_PEERPODS_WEBHOOK
