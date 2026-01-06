@@ -683,42 +683,42 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 
 // getAddonEnvVars retrieves addon configuration from ConfigMap and returns environment variables
 func (r *KataConfigOpenShiftReconciler) getAddonEnvVars() []corev1.EnvVar {
-    var cm corev1.ConfigMap
-    if err := r.Client.Get(context.Background(),
-        types.NamespacedName{Name: "kata-addon-artifacts", Namespace: OperatorNamespace},
-        &cm,
-    ); err != nil {
-        if !errors.IsNotFound(err) {
-            r.Log.Error(err, "Failed to get addon ConfigMap")
-        }
-        return nil
-    }
+	var cm corev1.ConfigMap
+	if err := r.Client.Get(context.Background(),
+		types.NamespacedName{Name: "kata-addon-artifacts", Namespace: OperatorNamespace},
+		&cm,
+	); err != nil {
+		if !errors.IsNotFound(err) {
+			r.Log.Error(err, "Failed to get addon ConfigMap")
+		}
+		return nil
+	}
 
-    data := cm.Data
+	data := cm.Data
 
-    // --- Mandatory variables ---
-    mandatory := []struct {
-        key, env string
-    }{
-        {"addonImage", "ADDON_IMAGE"},
-        {"kernelPath", "ADDON_KERNEL_PATH"},
-    }
+	// --- Mandatory variables ---
+	mandatory := []struct {
+		key, env string
+	}{
+		{"addonImage", "ADDON_IMAGE"},
+		{"kernelPath", "ADDON_KERNEL_PATH"},
+	}
 
-    var envs []corev1.EnvVar
-    for _, v := range mandatory {
-        val := data[v.key]
-        if val == "" {
+	var envs []corev1.EnvVar
+	for _, v := range mandatory {
+		val := data[v.key]
+		if val == "" {
 			continue
-        }
-        envs = append(envs, corev1.EnvVar{Name: v.env, Value: val})
-    }
+		}
+		envs = append(envs, corev1.EnvVar{Name: v.env, Value: val})
+	}
 
-    r.Log.Info("Addon artifacts configured",
-        "image", data["addonImage"],
-        "kernelPath", data["kernelPath"],
-    )
+	r.Log.Info("Addon artifacts configured",
+		"image", data["addonImage"],
+		"kernelPath", data["kernelPath"],
+	)
 
-    return envs
+	return envs
 }
 
 func (r *KataConfigOpenShiftReconciler) volumesForRegistries() []corev1.Volume {
