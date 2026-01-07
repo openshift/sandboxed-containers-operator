@@ -5,4 +5,4 @@ arches:
   - x86_64
   - s390x
 context:
-  image: registry.access.redhat.com/ubi9/ubi-minimal:9.5-1741850109
+  image: registry.access.redhat.com/ubi9/ubi-minimal:9.7-1764794109
