@@ -460,10 +460,10 @@ github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJw
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
 github.com/opencontainers/runtime-spec v1.3.0 h1:YZupQUdctfhpZy3TM39nN9Ika5CBWT5diQ8ibYCRkxg=
 github.com/opencontainers/runtime-spec v1.3.0/go.mod h1:jwyrGlmzljRJv/Fgzds9SsS/C5hL+LL3ko9hs6T5lQ0=
-github.com/openshift/api v0.0.0-20251104141128-d13e8c65d30f h1:xiSyW0ZZ0XWBiZ2ko7e/jI6N0m2DuwZqsSO4NHh/4T8=
-github.com/openshift/api v0.0.0-20251104141128-d13e8c65d30f/go.mod h1:d5uzF0YN2nQQFA0jIEWzzOZ+edmo6wzlGLvx5Fhz4uY=
-github.com/openshift/client-go v0.0.0-20251015124057-db0dee36e235 h1:9JBeIXmnHlpXTQPi7LPmu1jdxznBhAE7bb1K+3D8gxY=
-github.com/openshift/client-go v0.0.0-20251015124057-db0dee36e235/go.mod h1:L49W6pfrZkfOE5iC1PqEkuLkXG4W0BX4w8b+L2Bv7fM=
+github.com/openshift/api v0.0.0-20260107103503-6d35063ca179 h1:5gMFMmuVLAcEnBAjNFql/8L2ZRPBDOxl7nmbjO5klvk=
+github.com/openshift/api v0.0.0-20260107103503-6d35063ca179/go.mod h1:d5uzF0YN2nQQFA0jIEWzzOZ+edmo6wzlGLvx5Fhz4uY=
+github.com/openshift/client-go v0.0.0-20260108185524-48f4ccfc4e13 h1:6rd4zSo2UaWQcAPZfHK9yzKVqH0BnMv1hqMzqXZyTds=
+github.com/openshift/client-go v0.0.0-20260108185524-48f4ccfc4e13/go.mod h1:YvOmPmV7wcJxpfhTDuFqqs2Xpb3M3ovsM6Qs/i2ptq4=
 github.com/openshift/cloud-credential-operator v0.0.0-20251111201545-92207a875916 h1:55KfmD2/iRPRGF1vHNgIvVYBeyKMQzUrX4TXQEIADlY=
 github.com/openshift/cloud-credential-operator v0.0.0-20251111201545-92207a875916/go.mod h1:gLsKKp1Dl5fyG26t+JUkiO8uy4+CzdyJ7TzMYGF5N48=
 github.com/openshift/library-go v0.0.0-20251029104758-277736d6f195 h1:ZozpYEJoTPoTkTueAmDZEXOMs9Av8bbqNkeGBiM/XhU=
