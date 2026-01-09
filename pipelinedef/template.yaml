@@ -27,6 +27,13 @@ spec:
       displayName: "osc-test-catalog-{{.versionName}}"
 
   - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Application
+    metadata:
+      name: "build-definitions-{{.versionName}}"
+    spec:
+      displayName: "build-definitions-{{.versionName}}"
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
     kind: Component
     metadata:
       annotations:
@@ -244,6 +251,28 @@ spec:
           revision: "osc-release-{{.version}}"
           url: https://github.com/openshift/sandboxed-containers-operator
 
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Component
+    metadata:
+      annotations:
+        build.appstudio.openshift.io/pipeline: '{"name":"tekton-bundle-builder-oci-ta","bundle":"latest"}'
+        build.appstudio.openshift.io/status: '{"pac":{"state":"enabled","merge-url":"https://github.com/confidential-devhub/coco-podvm-scripts/pull/15","configuration-time":"Thu,
+          17 Jul 2025 11:00:35 UTC"},"message":"done"}'
+        git-provider: github
+        git-provider-url: https://github.com
+      name: "build-dm-verity-image-task-{{.versionName}}"
+    spec:
+      application: "build-definitions-{{.versionName}}"
+      build-nudges-ref:
+      - "osc-dm-verity-image-{{.versionName}}"
+      componentName: "build-dm-verity-image-task-{{.versionName}}"
+      resources: {}
+      source:
+        git:
+          context: task/build-dm-verity-image/0.1
+          revision: "osc-release-{{.version}}"
+          url: https://github.com/confidential-devhub/coco-podvm-scripts/
+
     # ImageRepository is the object that links the component to a location on quay.io
     # where the built images will be stored.
     # We need to have a dedicated place for each component where its images will be placed,
@@ -441,6 +470,26 @@ spec:
     spec:
       image:
         name: "ose-osc-tenant/osc-test-fbc-{{.versionName}}"
+        visibility: public
+      notifications:
+      - config:
+          url: https://bombino.api.redhat.com/v1/sbom/quay/push
+        event: repo_push
+        method: webhook
+        title: SBOM-event-to-Bombino
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: ImageRepository
+    metadata:
+      annotations:
+        image-controller.appstudio.redhat.com/update-component-image: 'true'
+      labels:
+        appstudio.redhat.com/application: "build-definitions-{{.versionName}}"
+        appstudio.redhat.com/component: "build-dm-verity-image-task-{{.versionName}}"
+      name: "build-dm-verity-image-task-{{.versionName}}"
+    spec:
+      image:
+        name: "ose-osc-tenant/build-dm-verity-image-task-{{.versionName}}"
         visibility: public
       notifications:
       - config:

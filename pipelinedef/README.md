@@ -79,6 +79,8 @@ In order to have a full build of Sandboxed Containers, we need:
 
 - the "openshift-sandboxed-containers" application, and all its components
 - the "osc-test-catalog" application, and the associated "osc-test-fbc" component
+- the "build-definitions" application, and the associated
+  "build-dm-verity-image-task" component
 - the integration tests associated with those two applications.
   Note that the Enterprise Contract doesn't need to be in the template, as it is
   created automatically for all components in Konflux.
@@ -128,22 +130,6 @@ to use that rather than the hyphenized version.
 
 We have that application and component that is used to create the build task
 we use for building the dm-verity image.
-This task is not duplicated for now, as we expect the same task can be used
-for multiple versions of the dm-verity build.
-
-If we require specific versions of the tasks for specific versions of dm-verity,
-we may need to duplicate that too.
-
->[NOTE (Julien - 2025/08/19)] the existing pipeline define a nudge from
-`osc-podvm-payload` to the `build-dm-verity-image-task`. But the resulting PRs
-are changing the `osc-podvm-payload` image reference in the `build-pipeline.yaml`
-file used by the `osc-dm-verity-image` component. And only that component gets rebuilt with it.
->
->I think the right nudge should target the `osc-dm-verity-image` component, with
-the same result as `build-dm-verity-image-task` and `osc-dm-verity-image` share
-the same repository.
->
->If this nudge really needs to happen, we'll need to duplicate the build task too.
 
 >[NOTE (Julien - 2025/12/09)] the experience from the 1.10.x releases is that we
 >need to get the build-dm-verity-image-task duplicated too. The reason for that
@@ -154,6 +140,8 @@ the same repository.
 >Now the problem is that they also need to be versioned, otherwise only one task
 >image will be kept (I think?).
 >This may require more info / help from the Konflux support.
+
+[TODO] Need to confirm the behavior of duplicated task builds
 
 ## Branching
 
@@ -176,8 +164,13 @@ We need to add some changes of our own in this first PR, or right after:
 - update the cloud-api-adaptor submodule in sandboxed-containers, to point to the
   HEAD of the new branch (after it's been updated with the right submodules)
 
-We also need to pay attention to the nudge PRs from podvm-payload to dm-verity,
-from all components to the bundle, and from the bundle to the test-fbc.
+We also need to pay attention to the nudge PRs:
+
+- from podvm-payload to dm-verity
+- from all components to the bundle
+- from the bundle to the test-fbc
+- from the build-dm-verity-image-task to dm-verity
+
 Make sure the PRs are all created as expected, for the right component on the
 right branch.
 
