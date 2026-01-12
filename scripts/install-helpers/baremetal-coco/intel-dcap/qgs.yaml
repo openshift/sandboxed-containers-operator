@@ -21,7 +21,7 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       initContainers:
         - name: platform-registration
-          image: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:f1f263b5ae8304a701b8d9b95f6c3decdaf1b97c3f54ee390da67d4aabd0c44f
+          image: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:337c8ec67d90e06a38e6cb187146da783aad1db3fddeb100d475fad95f8402b4
           restartPolicy: Always
           command: [ '/usr/bin/dcap-registration-flow' ]
           env:
@@ -46,7 +46,7 @@ spec:
               mountPath: /sys/firmware/efi/efivars
       containers:
         - name: tdx-qgs
-          image: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:f1f263b5ae8304a701b8d9b95f6c3decdaf1b97c3f54ee390da67d4aabd0c44f
+          image: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:337c8ec67d90e06a38e6cb187146da783aad1db3fddeb100d475fad95f8402b4
           args:
             - -p=4050
             - -n=4
