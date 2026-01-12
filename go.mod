@@ -14,7 +14,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
 	github.com/openshift/api v0.0.0-20251104141128-d13e8c65d30f
-	github.com/openshift/cloud-credential-operator v0.0.0-20251111201545-92207a875916
+	github.com/openshift/cloud-credential-operator v0.0.0-20260112034250-ec9d4a0a81d2
 	github.com/openshift/machine-config-operator v0.0.1-0.20250730172805-468599a9ae73
 	github.com/openshift/oc v0.0.0-alpha.0.0.20250901133649-a43428189603
 	github.com/prometheus/client_golang v1.23.2
