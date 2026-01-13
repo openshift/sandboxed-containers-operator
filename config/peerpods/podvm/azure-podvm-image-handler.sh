@@ -510,6 +510,10 @@ function create_azure_image_from_prebuilt_artifact() {
 
     # Clean up
     rm "${podvm_image_path}"
+
+    # Delete private endpoint before deleting storage account
+    delete_storage_private_endpoint
+
     az storage account delete \
         --name "${STORAGE_ACCOUNT_NAME}" \
         --resource-group "${AZURE_RESOURCE_GROUP}" \
@@ -517,6 +521,91 @@ function create_azure_image_from_prebuilt_artifact() {
         error_exit "Failed to delete the storage account"
 
     echo "Azure image created successfully from prebuilt artifact"
+}
+
+# Function to create a private endpoint for the storage account
+# This allows access to the storage account when public network access is disabled
+# Uses AZURE_SUBNET_ID from peer-pods-cm configmap
+
+function create_storage_private_endpoint() {
+    echo "Creating/getting private endpoint for storage account ${STORAGE_ACCOUNT_NAME}"
+
+    PRIVATE_ENDPOINT_NAME="${STORAGE_ACCOUNT_NAME}-pe"
+
+    # Check if private endpoint already exists
+    if az network private-endpoint show \
+        --name "${PRIVATE_ENDPOINT_NAME}" \
+        --resource-group "${AZURE_RESOURCE_GROUP}" &>/dev/null; then
+        echo "Private endpoint ${PRIVATE_ENDPOINT_NAME} already exists, reusing"
+    else
+        local storage_account_id
+        storage_account_id=$(az storage account show \
+            --name "${STORAGE_ACCOUNT_NAME}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --query "id" -o tsv) ||
+            error_exit "Failed to get storage account ID"
+
+        az network private-endpoint create \
+            --name "${PRIVATE_ENDPOINT_NAME}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --subnet "${AZURE_SUBNET_ID}" \
+            --private-connection-resource-id "${storage_account_id}" \
+            --group-id blob \
+            --connection-name "${STORAGE_ACCOUNT_NAME}-connection" ||
+            error_exit "Failed to create private endpoint"
+    fi
+
+    # Get the private endpoint IP address for blob operations
+    PRIVATE_ENDPOINT_IP=$(az network private-endpoint show \
+        --name "${PRIVATE_ENDPOINT_NAME}" \
+        --resource-group "${AZURE_RESOURCE_GROUP}" \
+        --query "customDnsConfigs[0].ipAddresses[0]" -o tsv) ||
+        error_exit "Failed to get private endpoint IP"
+
+    # The SSL certificate is issued for *.blob.core.windows.net, not for IP addresses.
+    # We need to use the storage account's FQDN and resolve it to the private IP.
+    # Add a hosts entry to resolve the storage account FQDN to the private endpoint IP.
+    STORAGE_BLOB_FQDN="${STORAGE_ACCOUNT_NAME}.blob.core.windows.net"
+
+    # Add hosts entry only if not already present
+    if ! grep -q "${STORAGE_BLOB_FQDN}" /etc/hosts; then
+        echo "${PRIVATE_ENDPOINT_IP} ${STORAGE_BLOB_FQDN}" >> /etc/hosts
+        echo "Added hosts entry: ${PRIVATE_ENDPOINT_IP} ${STORAGE_BLOB_FQDN}"
+    fi
+
+    # Use the proper FQDN for the blob endpoint
+    BLOB_ENDPOINT="https://${STORAGE_BLOB_FQDN}"
+
+    export PRIVATE_ENDPOINT_NAME
+    export PRIVATE_ENDPOINT_IP
+    export BLOB_ENDPOINT
+    export STORAGE_BLOB_FQDN
+
+    echo "Private endpoint ready: ${PRIVATE_ENDPOINT_NAME} (IP: ${PRIVATE_ENDPOINT_IP})"
+}
+
+# Function to delete the storage private endpoint
+
+function delete_storage_private_endpoint() {
+    echo "Deleting private endpoint ${PRIVATE_ENDPOINT_NAME}"
+
+    if [[ -z "${PRIVATE_ENDPOINT_NAME}" ]]; then
+        echo "No private endpoint to delete"
+        return
+    fi
+
+    # Remove the hosts entry for the storage account FQDN
+    if [[ -n "${STORAGE_BLOB_FQDN}" ]]; then
+        sed -i "/${STORAGE_BLOB_FQDN}/d" /etc/hosts || true
+        echo "Removed hosts entry for ${STORAGE_BLOB_FQDN}"
+    fi
+
+    az network private-endpoint delete \
+        --name "${PRIVATE_ENDPOINT_NAME}" \
+        --resource-group "${AZURE_RESOURCE_GROUP}" ||
+        echo "Warning: Failed to delete private endpoint ${PRIVATE_ENDPOINT_NAME}"
+
+    echo "Private endpoint deleted"
 }
 
 # Function to upload the vhd to the volume
@@ -529,15 +618,40 @@ function upload_vhd_image() {
 
     [[ -z "${vhd_path}" ]] && error_exit "VHD path is empty"
 
-    # Create a storage account if it doesn't exist
-    STORAGE_ACCOUNT_NAME="podvmartifacts$(date +%s)"
-    az storage account create \
-        --name "${STORAGE_ACCOUNT_NAME}" \
-        --resource-group "${AZURE_RESOURCE_GROUP}" \
-        --location "${AZURE_REGION}" \
-        --sku Standard_LRS \
-        --encryption-services blob ||
-        error_exit "Failed to create the storage account"
+    # Create deterministic storage account name based on IMAGE_NAME
+    # Storage account names: 3-24 chars, lowercase alphanumeric only
+    STORAGE_ACCOUNT_NAME="oscsa${IMAGE_NAME//[^a-zA-Z0-9]/}"
+    STORAGE_ACCOUNT_NAME="${STORAGE_ACCOUNT_NAME,,}"
+    STORAGE_ACCOUNT_NAME="${STORAGE_ACCOUNT_NAME:0:24}"
+
+    # Check if storage account already exists
+    if az storage account show --name "${STORAGE_ACCOUNT_NAME}" \
+        --resource-group "${AZURE_RESOURCE_GROUP}" &>/dev/null; then
+        echo "Storage account ${STORAGE_ACCOUNT_NAME} already exists, reusing"
+    else
+        # Create a storage account with security best practices:
+        # - Minimum TLS version 1.2
+        # - Cross-tenant replication disabled
+        # - Public network access disabled
+        # - HTTPS-only enforced
+        # - Public blob access disabled
+        echo "Creating storage account ${STORAGE_ACCOUNT_NAME}"
+        az storage account create \
+            --name "${STORAGE_ACCOUNT_NAME}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --location "${AZURE_REGION}" \
+            --sku Standard_LRS \
+            --encryption-services blob \
+            --min-tls-version TLS1_2 \
+            --allow-cross-tenant-replication false \
+            --public-network-access Disabled \
+            --allow-blob-public-access false \
+            --https-only true ||
+            error_exit "Failed to create the storage account"
+    fi
+
+    # Create private endpoint to access storage account (public access is disabled)
+    create_storage_private_endpoint
 
     # Get storage account key
     STORAGE_ACCOUNT_KEY=$(az storage account keys list \
@@ -547,29 +661,29 @@ function upload_vhd_image() {
         -o tsv) ||
         error_exit "Failed to get the storage account key"
 
-    # Create a container in the storage account
+    # Create a container in the storage account using private endpoint
     CONTAINER_NAME="podvm-artifacts"
     az storage container create \
         --name "${CONTAINER_NAME}" \
         --account-name "${STORAGE_ACCOUNT_NAME}" \
-        --account-key "${STORAGE_ACCOUNT_KEY}" ||
+        --account-key "${STORAGE_ACCOUNT_KEY}" \
+        --blob-endpoint "${BLOB_ENDPOINT}" ||
         error_exit "Failed to create the storage container"
 
-    # Upload the VHD to the storage container
+    # Upload the VHD to the storage container using private endpoint
+    # Use --overwrite to make this idempotent for retries
     az storage blob upload --account-name "${STORAGE_ACCOUNT_NAME}" \
         --account-key "${STORAGE_ACCOUNT_KEY}" \
         --container-name "${CONTAINER_NAME}" \
         --file "${vhd_path}" \
-        --name "${image_name}" ||
+        --name "${image_name}" \
+        --blob-endpoint "${BLOB_ENDPOINT}" \
+        --overwrite true ||
         error_exit "Failed to upload the VHD to the storage container"
 
     # Get the URL of the uploaded VHD
-    VHD_URL=$(az storage blob url \
-        --account-name "${STORAGE_ACCOUNT_NAME}" \
-        --account-key "${STORAGE_ACCOUNT_KEY}" \
-        --container-name "${CONTAINER_NAME}" \
-        --name "${image_name}" -o tsv) ||
-        error_exit "Failed to get the URL of the uploaded VHD"
+    # URL follows a well-defined format, so we needn't use az cli to query the URL
+    VHD_URL="https://${STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${CONTAINER_NAME}/${image_name}"
 
     export VHD_URL
 
