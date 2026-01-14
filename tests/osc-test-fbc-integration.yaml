@@ -59,7 +59,7 @@ spec:
         - name: VARIANT
           value: downstream-candidate
         - name: ENVS
-          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),EXPECTED_OPERATOR_VERSION=1.11.1,FORCE_SUCCESS_EXIT=no"
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),EXPECTED_OPERATOR_VERSION=1.11.2,FORCE_SUCCESS_EXIT=no"
       matrix:
         params:
           - name: PROWJOB_NAME
