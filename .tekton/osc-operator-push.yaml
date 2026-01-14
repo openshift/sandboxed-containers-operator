@@ -9,17 +9,17 @@ metadata:
     pipelinesascode.tekton.dev/max-keep-runs: '3'
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "push" &&
-      target_branch == "devel" &&
+      target_branch == "osc-release-v1.11" &&
       files.all.exists(path, !path.matches('bundle/.*|.tekton/.*bundle.*yaml$|config/manager/.*')) &&
       files.all.exists(path, !path.matches('must-gather/.*|.tekton/.*must-gather.*yaml$')) &&
       files.all.exists(path, !path.matches('config/peerpods/podvm/.*|.tekton/.*podvm-builder.*yaml$')) &&
       files.all.exists(path, !path.matches('.tekton/.*fbc-.*|fbc/.*'))
   creationTimestamp:
   labels:
-    appstudio.openshift.io/application: openshift-sandboxed-containers
-    appstudio.openshift.io/component: osc-operator
+    appstudio.openshift.io/application: openshift-sandboxed-containers-v1-11
+    appstudio.openshift.io/component: osc-operator-v1-11
     pipelines.appstudio.openshift.io/type: build
-  name: osc-operator-on-push
+  name: osc-operator-v1-11-on-push
   namespace: ose-osc-tenant
 spec:
   params:
@@ -28,7 +28,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator:{{revision}}
+    value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator-v1-11:{{revision}}
   - name: build-platforms
     value:
     - linux/x86_64
@@ -40,7 +40,7 @@ spec:
   pipelineRef:
     name: build-pipeline
   taskRunTemplate:
-    serviceAccountName: build-pipeline-osc-operator
+    serviceAccountName: build-pipeline-osc-operator-v1-11
   workspaces:
   - name: git-auth
     secret:

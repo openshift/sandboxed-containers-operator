@@ -8,13 +8,13 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/cancel-in-progress: 'false'
     pipelinesascode.tekton.dev/max-keep-runs: '3'
-    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch == "devel" && files.all.exists(path, path.matches('bundle*|.tekton/*bundle*'))
+    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch == "osc-release-v1.11" && files.all.exists(path, path.matches('bundle*|.tekton/*bundle*'))
   creationTimestamp:
   labels:
-    appstudio.openshift.io/application: openshift-sandboxed-containers
-    appstudio.openshift.io/component: osc-operator-bundle
+    appstudio.openshift.io/application: openshift-sandboxed-containers-v1-11
+    appstudio.openshift.io/component: osc-operator-bundle-v1-11
     pipelines.appstudio.openshift.io/type: build
-  name: osc-operator-bundle-on-push
+  name: osc-operator-bundle-v1-11-on-push
   namespace: ose-osc-tenant
 spec:
   params:
@@ -23,7 +23,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator-bundle:{{revision}}
+    value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator-bundle-v1-11:{{revision}}
   - name: dockerfile
     value: bundle.Dockerfile
   pipelineSpec:
@@ -609,7 +609,7 @@ spec:
     - name: netrc
       optional: true
   taskRunTemplate:
-    serviceAccountName: build-pipeline-osc-operator-bundle
+    serviceAccountName: build-pipeline-osc-operator-bundle-v1-11
   workspaces:
   - name: workspace
     volumeClaimTemplate:
