@@ -39,7 +39,65 @@ spec:
               catalogImage=$(jq -r '.components[] | select(.name=="osc-test-fbc") | .containerImage' <<< "${SNAPSHOT}")
               echo "Catalog image: ${catalogImage}"
               echo -n "${catalogImage}" > $(results.CATALOG_IMAGE.path)
-    - name: prow-job
+    - name: prowjob_ocp417
+      displayName: "Running prow job $(params.PROWJOB_NAME)"
+      timeout: "4h"
+      runAfter:
+        - get-catalog-image
+      taskRef:
+        resolver: git
+        params:
+        - name: url
+          value: https://github.com/openshift/konflux-tasks
+        - name: revision
+          value: b5c2ace84d1de50a016bb319f0ebd3ad4dd0aba9
+        - name: pathInRepo
+          value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: VARIANT
+          value: downstream-candidate
+        - name: ENVS
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),EXPECTED_OPERATOR_VERSION=1.11.2,FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.21.0-5.rhaos4.17.el9"
+      matrix:
+        params:
+          - name: PROWJOB_NAME
+            value:
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate417-azure-ipi-kata
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate417-azure-ipi-peerpods
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate417-aro-ipi-peerpods
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate417-aws-ipi-peerpods
+    - name: prowjob_ocp418
+      displayName: "Running prow job $(params.PROWJOB_NAME)"
+      timeout: "4h"
+      runAfter:
+        - get-catalog-image
+      taskRef:
+        resolver: git
+        params:
+        - name: url
+          value: https://github.com/openshift/konflux-tasks
+        - name: revision
+          value: b5c2ace84d1de50a016bb319f0ebd3ad4dd0aba9
+        - name: pathInRepo
+          value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: VARIANT
+          value: downstream-candidate
+        - name: ENVS
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),EXPECTED_OPERATOR_VERSION=1.11.2,FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.21.0-5.rhaos4.18.el9"
+      matrix:
+        params:
+          - name: PROWJOB_NAME
+            value:
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate418-azure-ipi-kata
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate418-azure-ipi-peerpods
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate418-aro-ipi-peerpods
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate418-aws-ipi-peerpods
+    - name: prowjob_ocp419
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
       runAfter:
@@ -64,6 +122,34 @@ spec:
         params:
           - name: PROWJOB_NAME
             value:
-              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-azure-ipi-kata
-              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-azure-ipi-peerpods
-              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-aws-ipi-peerpods
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate419-azure-ipi-kata
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate419-azure-ipi-peerpods
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate419-aws-ipi-peerpods
+    - name: prowjob_ocp420
+      displayName: "Running prow job $(params.PROWJOB_NAME)"
+      timeout: "4h"
+      runAfter:
+        - get-catalog-image
+      taskRef:
+        resolver: git
+        params:
+        - name: url
+          value: https://github.com/openshift/konflux-tasks
+        - name: revision
+          value: b5c2ace84d1de50a016bb319f0ebd3ad4dd0aba9
+        - name: pathInRepo
+          value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: VARIANT
+          value: downstream-candidate
+        - name: ENVS
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),EXPECTED_OPERATOR_VERSION=1.11.2,FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.21.0-5.rhaos4.20.el9"
+      matrix:
+        params:
+          - name: PROWJOB_NAME
+            value:
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-azure-ipi-kata
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-azure-ipi-peerpods
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-aws-ipi-peerpods
