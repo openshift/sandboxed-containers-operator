@@ -941,7 +941,7 @@ oc cluster-info || exit 1
 # If MIRRORING is true, then create the image mirroring config
 if [ "$MIRRORING" = true ]; then
     echo "Creating image mirroring config"
-    oc apply -f image_mirroring.yaml || exit 1
+    oc apply -f images-mirror-set.yaml || exit 1
 
     echo "Waiting for MCP to be ready"
     wait_for_mcp master || exit 1
@@ -1045,7 +1045,12 @@ snp)
 esac
 
 # Create runtimeClass kata-tdx or kata-snp based on TEE_TYPE
-create_runtimeclasses "$TEE_TYPE" || exit 1
+# Check if kata-cc runtimeclass already exists
+if oc get runtimeclass kata-cc &>/dev/null; then
+    echo "RuntimeClass kata-cc already exists, skipping creation"
+else
+    create_runtimeclasses "$TEE_TYPE" || exit 1
+fi
 
 # set the aa_kbc_params config for the kata agent to be used CoCo attestation
 set_kernel_params_for_kata_agent "$TEE_TYPE" "$TRUSTEE_URL" "$CLUSTER_HTTPS_PROXY" "$CLUSTER_NO_PROXY" || exit 1
@@ -1058,6 +1063,24 @@ if is_single_node_or_converged_ocp; then
 else
     wait_for_mcp kata-oc || exit 1
 fi
+
+# Update osc-feature-gates ConfigMap to enable confidential feature
+
+# We need to do this after all the other setup as otherwise the OSC operator (version 1.11+) will delete the CC runtimeClasses
+# if confidential is not enabled in the feature-gates ConfigMap
+# Ideally enabling the confidential feature should be enabled before creating the kataconfig, however OSC operator depends on the NFD
+# labels to detect the TEE nodes. Now NFD has a dependency on the kernel with the required TEE capabilities. Standard RHCOS builds don't
+# have the required kernel for TDX. Hence we need to first install an RHCOS layer with right kernel etc,
+# post which NFD will be installed and labels created. So we enable the confidential feature in the end.
+
+# The ideal flow is
+# Install NFD -> Create NFD CR -> Create Intel/AMD rules -> Install OSC -> Update feature-gates ConfigMap -> Create kataconfig
+# However NFD depends on the kernel with TDX/SNP support which is installed via the layered image by OSC operator
+# So the flow we have is
+# Install OSC -> Create kataconfig -> Install NFD -> Create NFD CR -> Create Intel/AMD rules -> Update feature-gates ConfigMap
+# Once the standard RHCOS builds have the required TDX/SNP support, we will change the flow
+
+oc patch configmap osc-feature-gates -n openshift-sandboxed-containers-operator --type merge -p '{"data":{"confidential":"true"}}' || exit 1
 
 echo "Sandboxed containers operator with CoCo support is installed successfully"
 
