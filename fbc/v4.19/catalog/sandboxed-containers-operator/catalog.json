@@ -1292,7 +1292,7 @@
     "schema": "olm.bundle",
     "name": "sandboxed-containers-operator.v1.11.2",
     "package": "sandboxed-containers-operator",
-    "image": "registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:1cfc8fed959fb609765a75e0490649b858c17eb23f88b4065596d8920e71b513",
+    "image": "registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:33ed98ca0a02d5a99a09b1d232c0ba31ec5ec0f7990828c1896c876902e213f3",
     "properties": [
         {
             "type": "olm.gvk",
@@ -1410,7 +1410,7 @@
     "relatedImages": [
         {
             "name": "",
-            "image": "registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:1cfc8fed959fb609765a75e0490649b858c17eb23f88b4065596d8920e71b513"
+            "image": "registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:33ed98ca0a02d5a99a09b1d232c0ba31ec5ec0f7990828c1896c876902e213f3"
         },
         {
             "name": "caa",
@@ -1438,7 +1438,7 @@
         },
         {
             "name": "podvm-builder",
-            "image": "registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:9eff9a1752da204375f4c638e72d39b6984caa11ef0722fa94bf03488a1dde06"
+            "image": "registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:e5182207e2988d8a742d22632eb485ae402cb4c9b5102d1b9519e78933704866"
         },
         {
             "name": "podvm-payload",
@@ -1446,7 +1446,7 @@
         },
         {
             "name": "",
-            "image": "registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:b0403cf86583bb5ba54170140ba552295e4933c739cfd0bd25b76be5c7ded221"
+            "image": "registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:ca0031a86dc86a793f41a4722ae15b3e1acc46c5b87f6cf1745cd77d9679d1b7"
         },
         {
             "name": "storage-helper",
