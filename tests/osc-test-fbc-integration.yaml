@@ -50,7 +50,7 @@ spec:
         - name: url
           value: https://github.com/openshift/konflux-tasks
         - name: revision
-          value: b5c2ace84d1de50a016bb319f0ebd3ad4dd0aba9
+          value: 3adee771363d48fdb832582e5b9308923b7c8faa
         - name: pathInRepo
           value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
       params:
@@ -79,7 +79,7 @@ spec:
         - name: url
           value: https://github.com/openshift/konflux-tasks
         - name: revision
-          value: b5c2ace84d1de50a016bb319f0ebd3ad4dd0aba9
+          value: 3adee771363d48fdb832582e5b9308923b7c8faa
         - name: pathInRepo
           value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
       params:
@@ -108,7 +108,7 @@ spec:
         - name: url
           value: https://github.com/openshift/konflux-tasks
         - name: revision
-          value: b5c2ace84d1de50a016bb319f0ebd3ad4dd0aba9
+          value: 3adee771363d48fdb832582e5b9308923b7c8faa
         - name: pathInRepo
           value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
       params:
@@ -136,7 +136,7 @@ spec:
         - name: url
           value: https://github.com/openshift/konflux-tasks
         - name: revision
-          value: b5c2ace84d1de50a016bb319f0ebd3ad4dd0aba9
+          value: 3adee771363d48fdb832582e5b9308923b7c8faa
         - name: pathInRepo
           value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
       params:
