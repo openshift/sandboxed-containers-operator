@@ -28,11 +28,6 @@ update_config() {
         return 1
     fi
     
-    echo "Updating configuration: $config_file"
-    
-    # Backup config
-    chroot /host cp "$config_file" "${config_file}.backup-$(date +%s)"
-    
     # Update kernel if provided
 	chroot /host sed -i "s|^\(kernel[[:space:]]*=[[:space:]]*\)\".*\"|\1\"$kernel_path\"|g" "$config_file"
 	echo "  Updated kernel: $kernel_path"
@@ -110,11 +105,6 @@ uninstall_addons() {
     local kernel_src="${ADDON_KERNEL_PATH:?}"
     # Remove installed artifacts
     chroot /host rm -f "$install_dir/$(basename "$kernel_src")"
-     
-    # Restore config backup
-    local config_file="/etc/kata-containers/kata-se/configuration.toml"
-    local backup=$(ls -t "${config_file}.backup-"* 2>/dev/null | head -1)
-    [ -n "$backup" ] && [ -f "$backup" ] && chroot /host cp "$backup" "$config_file"
     
     echo "Addon artifacts uninstalled"
     return 0
