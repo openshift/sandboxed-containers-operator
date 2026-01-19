@@ -94,7 +94,7 @@ spec:
             - name: RELATED_IMAGE_PCCS
               value: registry.redhat.io/openshift-sandboxed-containers/osc-pccs@sha256:30c8e6178218fe0fb75c5f33ae2a0b6762fb894cfc037c5d3bafdea9e2b5e091
             - name: RELATED_IMAGE_TDX_QGS
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:337c8ec67d90e06a38e6cb187146da783aad1db3fddeb100d475fad95f8402b4
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:82c13a74193f50dbf22bdc64c8c86feccb80bf7d5e2ddd75eaf3f3a6bcc8ee7b
             - name: RELATED_IMAGE_STORAGE_HELPER
               value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:e6a085caccccde2129ca842713300829266abafb522155bc42fceb14f52966dd
           imagePullPolicy: Always
