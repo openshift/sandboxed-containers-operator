@@ -59,6 +59,9 @@ spec:
             - name: ssh-key-secret
               mountPath: "/root/.ssh/"
               readOnly: true
+            - name: bound-sa-token
+              mountPath: /var/run/secrets/openshift/serviceaccount
+              readOnly: true
       volumes:
         - name: ssh-key-secret
           secret:
@@ -68,5 +71,11 @@ spec:
               path: "id_rsa"
             defaultMode: 0400
             optional: true
+        - name: bound-sa-token
+          projected:
+            sources:
+            - serviceAccountToken:
+                path: token
+                audience: openshift
 
       restartPolicy: Never

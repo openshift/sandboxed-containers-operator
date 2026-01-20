@@ -97,11 +97,20 @@ spec:
             - name: containers-policy
               mountPath: /etc/containers/policy.json
               readOnly: true
+            - name: bound-sa-token
+              mountPath: /var/run/secrets/openshift/serviceaccount
+              readOnly: true
       # Default is 30s which is too less for the preStop hook to fully execute        
       terminationGracePeriodSeconds: 180
       volumes:
         - name: payload
           emptyDir: {}
+        - name: bound-sa-token
+          projected:
+            sources:
+            - serviceAccountToken:
+                path: token
+                audience: openshift
         - name: regauth
           secret:
             secretName: auth-json-secret

@@ -35,7 +35,10 @@ function verify_vars() {
 
     # Ensure that the Azure specific values are set
     [[ -z "${AZURE_CLIENT_ID}" ]] && error_exit "AZURE_CLIENT_ID is empty"
-    [[ -z "${AZURE_CLIENT_SECRET}" ]] && error_exit "AZURE_CLIENT_SECRET is empty"
+    # Either AZURE_CLIENT_SECRET or AZURE_FEDERATED_TOKEN_FILE must be set
+    if [[ -z "${AZURE_CLIENT_SECRET}" && -z "${AZURE_FEDERATED_TOKEN_FILE}" ]]; then
+        error_exit "Either AZURE_CLIENT_SECRET or AZURE_FEDERATED_TOKEN_FILE must be set"
+    fi
     [[ -z "${AZURE_SUBSCRIPTION_ID}" ]] && error_exit "AZURE_SUBSCRIPTION_ID is empty"
     [[ -z "${AZURE_TENANT_ID}" ]] && error_exit "AZURE_TENANT_ID is empty"
 
@@ -132,11 +135,32 @@ function login_to_azure() {
     echo "Logging in to Azure"
     # If any error occurs, exit the script with an error message
 
-    az login --service-principal \
-        --user="${AZURE_CLIENT_ID}" \
-        --password="${AZURE_CLIENT_SECRET}" \
-        --tenant="${AZURE_TENANT_ID}" ||
-        error_exit "Failed to login to Azure"
+    if [[ -n "${AZURE_CLIENT_SECRET}" ]]; then
+        # Use client secret authentication
+        echo "Using client secret authentication"
+        az login --service-principal \
+            --user="${AZURE_CLIENT_ID}" \
+            --password="${AZURE_CLIENT_SECRET}" \
+            --tenant="${AZURE_TENANT_ID}" ||
+            error_exit "Failed to login to Azure"
+    elif [[ -n "${AZURE_FEDERATED_TOKEN_FILE}" ]]; then
+        # Use federated token authentication
+        echo "Using federated token authentication"
+
+        # Read the token from the file
+        [[ ! -f "${AZURE_FEDERATED_TOKEN_FILE}" ]] && error_exit "Federated token file ${AZURE_FEDERATED_TOKEN_FILE} does not exist"
+
+        FEDERATED_TOKEN=$(cat "${AZURE_FEDERATED_TOKEN_FILE}") ||
+            error_exit "Failed to read federated token from ${AZURE_FEDERATED_TOKEN_FILE}"
+
+        [[ -z "${FEDERATED_TOKEN}" ]] && error_exit "Federated token is empty"
+
+        az login --service-principal \
+            --user="${AZURE_CLIENT_ID}" \
+            --federated-token="${FEDERATED_TOKEN}" \
+            --tenant="${AZURE_TENANT_ID}" ||
+            error_exit "Failed to login to Azure using federated token"
+    fi
 
     echo "Selecting subscription"
     az account set --subscription ${AZURE_SUBSCRIPTION_ID} ||

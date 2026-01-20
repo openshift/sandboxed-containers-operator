@@ -614,7 +614,9 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 	// aws ConfigMap Keys
 	awsConfigMapKeys := []string{"AWS_REGION", "AWS_SUBNET_ID", "AWS_VPC_ID", "AWS_SG_IDS", "CLOUD_PROVIDER"}
 	// azure Secret Keys
-	azureSecretKeys := []string{"AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_SUBSCRIPTION_ID"}
+	azureSecretKeys := []string{"AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_SUBSCRIPTION_ID", "AZURE_CLIENT_SECRET"}
+	// azure Secret Keys for Federated Token Authentication
+	azureSecretFederatedKeys := []string{"AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_SUBSCRIPTION_ID", "AZURE_FEDERATED_TOKEN_FILE"}
 	// azure ConfigMap Keys
 	azureConfigMapKeys := []string{"AZURE_RESOURCE_GROUP", "AZURE_REGION", "CLOUD_PROVIDER"}
 	// gcp Secret Keys
@@ -645,7 +647,7 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 
 	case "azure":
 		// Check if azure Secret Keys are present in the peerPodsSecret
-		if !checkKeysPresentAndNotEmpty(peerPodsSecret.Data, azureSecretKeys) {
+		if !(checkKeysPresentAndNotEmpty(peerPodsSecret.Data, azureSecretKeys) || checkKeysPresentAndNotEmpty(peerPodsSecret.Data, azureSecretFederatedKeys)) {
 			return fmt.Errorf("validatePeerPodsConfigs: cannot find the required keys in peer-pods-secret Secret")
 		}
 
