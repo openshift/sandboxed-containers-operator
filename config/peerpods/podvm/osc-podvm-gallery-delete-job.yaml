@@ -29,5 +29,15 @@ spec:
                 name: aws-podvm-image-cm
                 optional: true
           command: ["/podvm-builder.sh", "delete-gallery", "-f"]
-
+          volumeMounts:
+            - name: bound-sa-token
+              mountPath: /var/run/secrets/openshift/serviceaccount
+              readOnly: true
+      volumes:
+        - name: bound-sa-token
+          projected:
+            sources:
+            - serviceAccountToken:
+                path: token
+                audience: openshift
       restartPolicy: Never
