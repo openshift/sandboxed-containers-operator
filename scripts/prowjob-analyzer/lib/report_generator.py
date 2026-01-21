@@ -8,7 +8,7 @@ import json
 import logging
 from typing import Dict, List, Optional
 from datetime import datetime
-from .parser import format_duration
+from .parser import format_duration, get_test_failures_count, get_test_total_count
 from .fetcher import get_artifact_url
 
 logger = logging.getLogger(__name__)
@@ -34,12 +34,11 @@ def generate_test_results_section(test_results: Dict, failure_analysis: Dict) ->
         return "\n## Test Results\n\nNo test results available.\n"
 
     # Handle different test results formats
-    total = test_results.get('total', 0)
-    if total == 0:
-        # Fallback to 'tests' field or count of test list
-        total = test_results.get('tests', 0) if isinstance(test_results.get('tests'), int) else len(test_results.get('tests', []))
-    failures = test_results.get('failures', 0)
-    passed = total - failures
+    total = get_test_total_count(test_results)
+    failures = get_test_failures_count(test_results)
+    if total == 0 and failures > 0:
+        total = failures
+    passed = max(total - failures, 0)
     skipped = test_results.get('skipped', 0)
 
     section = "\n## Test Results\n\n"
@@ -352,15 +351,14 @@ def generate_json_report(
     # Test results summary
     if test_results:
         # Handle different test results formats
-        total = test_results.get('total', 0)
-        if total == 0:
-            # Fallback to 'tests' field or count of test list
-            total = test_results.get('tests', 0) if isinstance(test_results.get('tests'), int) else len(test_results.get('tests', []))
-        failures = test_results.get('failures', 0)
+        total = get_test_total_count(test_results)
+        failures = get_test_failures_count(test_results)
+        if total == 0 and failures > 0:
+            total = failures
 
         report['test_results'] = {
             'total': total,
-            'passed': total - failures,
+            'passed': max(total - failures, 0),
             'failed': failures,
             'skipped': test_results.get('skipped', 0),
         }
