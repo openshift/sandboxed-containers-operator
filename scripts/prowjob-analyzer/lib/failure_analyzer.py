@@ -106,8 +106,12 @@ def identify_failure_location(
     state = prowjob_data.get('state', '').lower()
 
     # Check if job timed out
-    if 'timeout' in state or state == 'aborted':
+    if 'timeout' in state:
         return 'timeout'
+
+    # Check if job was aborted
+    if state == 'aborted':
+        return 'aborted'
 
     # Check if it's a Prow infrastructure failure
     if state in ['error', 'errored']:

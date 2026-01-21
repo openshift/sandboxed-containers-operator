@@ -96,6 +96,8 @@ def generate_failure_analysis_section(failure_analysis: Dict, base_url: str, var
     # Add context based on special statuses
     if location == 'timeout':
         section += "The job exceeded its execution timeout.\n\n"
+    elif location == 'aborted':
+        section += "The job was aborted before completion.\n\n"
     elif location == 'infrastructure':
         section += "The job failed due to infrastructure issues.\n\n"
     elif location == 'unknown':
