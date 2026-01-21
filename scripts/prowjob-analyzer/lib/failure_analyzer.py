@@ -8,7 +8,7 @@ import re
 import logging
 from typing import Dict, List, Optional
 from collections import defaultdict
-from .parser import categorize_test_by_name, extract_failing_tests, add_execution_order_to_tests
+from .parser import categorize_test_by_name, extract_failing_tests, add_execution_order_to_tests, get_test_failures_count
 from .fetcher import fetch_artifact, get_failed_steps
 
 logger = logging.getLogger(__name__)
@@ -116,6 +116,11 @@ def identify_failure_location(
     # Check if it's a Prow infrastructure failure
     if state in ['error', 'errored']:
         return 'infrastructure'
+
+    # If test results show failures, assume test step failed even if we
+    # can't resolve step artifacts (e.g., unknown variant or listing issues).
+    if get_test_failures_count(test_results) > 0:
+        return 'openshift-extended-test'
 
     # Get actual failed steps from artifacts by checking each step's finished.json
     if variant and variant != 'unknown':
