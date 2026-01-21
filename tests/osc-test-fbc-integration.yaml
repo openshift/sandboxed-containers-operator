@@ -72,7 +72,8 @@ spec:
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
       runAfter:
-        - prowjob-sanity
+        - prowjob-ocp420
+        - prowjob-ocp419
       taskRef:
         resolver: git
         params:
