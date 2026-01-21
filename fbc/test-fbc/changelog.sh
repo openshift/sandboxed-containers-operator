@@ -45,6 +45,9 @@ function get_commit_for_image() {
     IMAGE_NAME=$(echo "$IMAGE_REF" | cut -d "@" -f 1)
     IMAGE_DIGEST=$(echo "$IMAGE_REF" | cut -d "@" -f 2)
 
+    # specific to the 1.11 branch: we need to add "-v1-11" to the image name
+    IMAGE_NAME=$(echo ${IMAGE_NAME}-v1-11)
+
     # As the quay.io API is paginated, we need to make a loop until we find
     # the image we're looking for.
     PAGE=1
