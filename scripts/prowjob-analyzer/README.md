@@ -246,7 +246,13 @@ When using `/prowjob-analyze` command, Claude follows this workflow:
 ### Installing Dependencies
 
 ```bash
-# Using pip
+# From the analyzer directory
+pip install -r requirements.txt
+
+# Or, from the repo root
+pip install -r scripts/prowjob-analyzer/requirements.txt
+
+# Direct install
 pip install pyyaml
 
 # Or using system package manager (Fedora/RHEL)

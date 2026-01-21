@@ -14,6 +14,11 @@ except ImportError:
     # Fallback if pyyaml not available
     yaml = None
 
+
+class MissingDependencyError(RuntimeError):
+    """Raised when a required dependency is not available."""
+    pass
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,8 +83,10 @@ def parse_test_results(test_results_content: bytes) -> Optional[Dict]:
         Parsed test results as dict, or None if parsing fails
     """
     if yaml is None:
-        logger.error("pyyaml not available, cannot parse test-results.yaml")
-        return None
+        raise MissingDependencyError(
+            "pyyaml not available, cannot parse test-results.yaml. "
+            "Install with: pip install -r scripts/prowjob-analyzer/requirements.txt"
+        )
 
     if not test_results_content:
         return None

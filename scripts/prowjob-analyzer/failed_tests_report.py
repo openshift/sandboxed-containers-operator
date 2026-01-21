@@ -33,6 +33,7 @@ from lib.parser import (
     parse_test_case_info,
     categorize_test_by_name,
     extract_test_execution_order,
+    MissingDependencyError,
 )
 
 # Configure logging
@@ -55,18 +56,18 @@ def extract_test_logs_from_build_log(build_log_content: str, test_name: str) -> 
         Dictionary with full_logs and failure_summary, or None if not found
     """
     lines = build_log_content.split('\n')
-    
+
     # Escape special regex characters in test name
     escaped_test = re.escape(test_name)
-    
+
     # Find start: started: ({stats}) "{test name}"
     start_pattern = rf'started:.*"{escaped_test}"'
     # Find end: failed: ({elapsed time}) {date} "{test name}"
     end_pattern = rf'failed:.*"{escaped_test}"'
-    
+
     start_idx = None
     end_idx = None
-    
+
     for i, line in enumerate(lines):
         if start_idx is None and re.search(start_pattern, line, re.IGNORECASE):
             start_idx = i
@@ -75,11 +76,11 @@ def extract_test_logs_from_build_log(build_log_content: str, test_name: str) -> 
             end_idx = i
             logger.debug(f"Found test end at line {i}: {line[:80]}")
             break
-    
+
     if start_idx is None:
         logger.warning(f"Could not find start of test logs for: {test_name}")
         return None
-    
+
     if end_idx is None:
         logger.warning(f"Could not find end of test logs for: {test_name}")
         # Use remaining content if we found the start
@@ -140,28 +141,32 @@ def analyze_failed_tests(
         List of dictionaries with detailed test information
     """
     results = []
-    
+
     # Fetch test-results.yaml to get list of failed tests
     logger.info("Fetching test results...")
     test_results_path = f"artifacts/{variant}/openshift-extended-test/artifacts/test-results.yaml"
     test_results_content = fetch_artifact(base_url, test_results_path)
-    
+
     if not test_results_content:
         logger.error("Could not fetch test-results.yaml")
         return results
-    
-    test_results = parse_test_results(test_results_content)
+
+    try:
+        test_results = parse_test_results(test_results_content)
+    except MissingDependencyError as e:
+        logger.error(str(e))
+        return results
     if not test_results:
         logger.error("Could not parse test-results.yaml")
         return results
-    
+
     # Get list of failed tests
     all_failed_tests = extract_failing_tests(test_results)
-    
+
     if not all_failed_tests:
         logger.info("No failed tests found in test-results.yaml")
         return results
-    
+
     # Filter to specific tests if requested
     if test_names:
         # Match by full name or by test case ID (C#####)
@@ -169,39 +174,39 @@ def analyze_failed_tests(
         for test in all_failed_tests:
             test_name = test['name']
             test_case_id = test.get('test_case_number', '')
-            
+
             # Check if this test matches any of the requested names/IDs
             for requested in test_names:
                 if requested in test_name or (test_case_id and requested in test_case_id):
                     tests_to_analyze.append(test)
                     break
-        
+
         if not tests_to_analyze:
             logger.warning(f"None of the requested tests found in failed tests list")
             logger.info(f"Available failed tests: {[t['name'] for t in all_failed_tests]}")
             return results
     else:
         tests_to_analyze = all_failed_tests
-    
+
     logger.info(f"Analyzing {len(tests_to_analyze)} failed test(s)...")
-    
+
     # Fetch build-log.txt
     build_log_path = f"artifacts/{variant}/openshift-extended-test/build-log.txt"
     logger.info(f"Fetching build log from {build_log_path}...")
-    
+
     build_log_content = fetch_artifact(base_url, build_log_path)
     if not build_log_content:
         logger.error("Could not fetch build-log.txt")
         return results
-    
+
     build_log_text = build_log_content.decode('utf-8', errors='ignore')
     logger.info(f"Build log size: {len(build_log_text)} characters")
-    
+
     # Process each test
     for test in tests_to_analyze:
         test_name = test['name']
         logger.info(f"Processing test: {test_name}")
-        
+
         # Extract test logs
         test_logs = extract_test_logs_from_build_log(build_log_text, test_name)
 
@@ -262,10 +267,10 @@ def generate_markdown_report(test_results: List[Dict], base_url: str) -> str:
     report += f"**Job URL**: {base_url}\n\n"
     report += f"**Tests Analyzed**: {len(test_results)}\n\n"
     report += "---\n\n"
-    
+
     for idx, test in enumerate(test_results, 1):
         report += f"## Test {idx}: {test['test_name']}\n\n"
-        
+
         # Metadata
         if test['test_case_number']:
             report += f"- **Test Case ID**: {test['test_case_number']}\n"
@@ -278,23 +283,23 @@ def generate_markdown_report(test_results: List[Dict], base_url: str) -> str:
         if test['priority']:
             report += f"- **Priority**: {test['priority']}\n"
         report += "\n"
-        
+
         # Failure summary
         if test['failure_summary']:
             report += "### Failure Summary\n\n"
             report += "```\n"
             report += test['failure_summary']
             report += "\n```\n\n"
-        
+
         # Full logs
         if test['full_logs']:
             report += "### Full Test Logs\n\n"
             report += "```\n"
             report += test['full_logs']
             report += "\n```\n\n"
-        
+
         report += "---\n\n"
-    
+
     return report
 
 
@@ -314,7 +319,7 @@ def generate_json_report(test_results: List[Dict], base_url: str) -> str:
         'tests_analyzed': len(test_results),
         'failed_tests': test_results,
     }
-    
+
     return json.dumps(report, indent=2)
 
 
@@ -327,42 +332,42 @@ def main():
     parser.add_argument('tests', nargs='*', help='Test names or IDs to analyze (omit to analyze all failed tests)')
     parser.add_argument('--json', action='store_true', help='Output JSON format instead of markdown')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
-    
+
     args = parser.parse_args()
-    
+
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
-    
+
     try:
         # Parse Prow URL
         logger.info("Parsing Prow job URL...")
         base_url, job_name, build_id = parse_prow_url(args.url)
         logger.info(f"Job: {job_name}")
         logger.info(f"Build ID: {build_id}")
-        
+
         # Extract variant from job name
         variant = extract_variant_from_job_name(job_name)
         if not variant:
             logger.error("Could not determine job variant from job name")
             sys.exit(1)
-        
+
         logger.info(f"Variant: {variant}")
-        
+
         # Analyze failed tests
         test_results = analyze_failed_tests(base_url, variant, args.tests if args.tests else None)
-        
+
         if not test_results:
             logger.error("No test results could be analyzed")
             sys.exit(1)
-        
+
         # Generate report
         if args.json:
             report = generate_json_report(test_results, base_url)
         else:
             report = generate_markdown_report(test_results, base_url)
-        
+
         print(report)
-    
+
     except KeyboardInterrupt:
         logger.info("\nInterrupted by user")
         sys.exit(1)
