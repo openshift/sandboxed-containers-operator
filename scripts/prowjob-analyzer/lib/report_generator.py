@@ -283,8 +283,7 @@ def generate_human_report(
         report += f"- **Expected Operator Version**: (not set)\n"
 
     # Test Results
-    if test_results:
-        report += generate_test_results_section(test_results, failure_analysis or {})
+    report += generate_test_results_section(test_results, failure_analysis or {})
 
     # Failure Analysis (if failed)
     if status != 'success' and failure_analysis:
@@ -363,6 +362,10 @@ def generate_json_report(
             'passed': max(total - failures, 0),
             'failed': failures,
             'skipped': test_results.get('skipped', 0),
+        }
+    else:
+        report['test_results'] = {
+            'available': False,
         }
 
     # Failure analysis
