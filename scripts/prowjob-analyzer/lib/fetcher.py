@@ -29,10 +29,13 @@ def parse_prow_url(url: str) -> Tuple[str, str, str]:
     Raises:
         ValueError: If URL format is invalid
     """
+    # Normalize URL by stripping query strings and fragments
+    normalized_url = url.split('?', 1)[0].split('#', 1)[0]
+
     # Try presubmit/PR pattern first (more specific)
     # Format: https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/{ORG}_{REPO}/{PR_NUMBER}/{JOB_NAME}/{BUILD_ID}
     pr_pattern = r'https://prow\.ci\.openshift\.org/view/gs/([^/]+)/pr-logs/pull/([^/]+)/([^/]+)/([^/]+)/([^/\?]+)'
-    match = re.match(pr_pattern, url)
+    match = re.match(pr_pattern, normalized_url)
 
     if match:
         bucket = match.group(1)
@@ -49,7 +52,7 @@ def parse_prow_url(url: str) -> Tuple[str, str, str]:
     # Try periodic/postsubmit pattern
     # Format: https://prow.ci.openshift.org/view/gs/test-platform-results/logs/{JOB_NAME}/{BUILD_ID}
     periodic_pattern = r'https://prow\.ci\.openshift\.org/view/gs/([^/]+)/([^/]+)/([^/]+)/([^/\?]+)'
-    match = re.match(periodic_pattern, url)
+    match = re.match(periodic_pattern, normalized_url)
 
     if match:
         bucket = match.group(1)
