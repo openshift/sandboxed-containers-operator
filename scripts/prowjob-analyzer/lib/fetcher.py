@@ -14,6 +14,9 @@ from urllib.error import HTTPError, URLError
 
 logger = logging.getLogger(__name__)
 
+# Cache for step directories to avoid repeated listings
+_STEP_DIR_CACHE: Dict[Tuple[str, str], List[str]] = {}
+
 
 def parse_prow_url(url: str) -> Tuple[str, str, str]:
     """
@@ -317,6 +320,10 @@ def get_step_directories(base_url: str, variant: str) -> List[str]:
     Returns:
         List of step directory names
     """
+    cache_key = (base_url, variant)
+    if cache_key in _STEP_DIR_CACHE:
+        return list(_STEP_DIR_CACHE[cache_key])
+
     artifacts_url = f"{base_url}/artifacts/{variant}/"
 
     try:
@@ -354,6 +361,7 @@ def get_step_directories(base_url: str, variant: str) -> List[str]:
                     seen.add(m)
 
             logger.debug(f"Found {len(step_dirs)} step directories in {variant}: {step_dirs[:5]}")
+            _STEP_DIR_CACHE[cache_key] = list(step_dirs)
             return step_dirs
 
     except Exception as e:
