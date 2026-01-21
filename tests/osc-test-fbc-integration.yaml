@@ -39,11 +39,40 @@ spec:
               catalogImage=$(jq -r '.components[] | select(.name=="osc-test-fbc") | .containerImage' <<< "${SNAPSHOT}")
               echo "Catalog image: ${catalogImage}"
               echo -n "${catalogImage}" > $(results.CATALOG_IMAGE.path)
-    - name: prowjob-ocp418
+    # Run a sanity check job first.
+    # Choose the kata workload test and newest supported OCP version.
+    - name: prowjob-sanity
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
       runAfter:
         - get-catalog-image
+      taskRef:
+        resolver: git
+        params:
+        - name: url
+          value: https://github.com/openshift/konflux-tasks
+        - name: revision
+          value: 4826f365057d22d0189fa0db00d953c151f90c77
+        - name: pathInRepo
+          value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: VARIANT
+          value: downstream-candidate420
+        - name: ENVS
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),EXPECTED_OPERATOR_VERSION=1.12.0,FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.25.0-2.rhaos4.20.el9"
+      matrix:
+        params:
+          - name: PROWJOB_NAME
+            value:
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-azure-ipi-kata
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-aws-ipi-peerpods
+    - name: prowjob-ocp418
+      displayName: "Running prow job $(params.PROWJOB_NAME)"
+      timeout: "4h"
+      runAfter:
+        - prowjob-sanity
       taskRef:
         resolver: git
         params:
@@ -76,7 +105,7 @@ spec:
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
       runAfter:
-        - get-catalog-image
+        - prowjob-sanity
       taskRef:
         resolver: git
         params:
@@ -108,7 +137,7 @@ spec:
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
       runAfter:
-        - get-catalog-image
+        - prowjob-sanity
       taskRef:
         resolver: git
         params:
@@ -133,6 +162,4 @@ spec:
         params:
           - name: PROWJOB_NAME
             value:
-              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-azure-ipi-kata
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-azure-ipi-peerpods
-              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-aws-ipi-peerpods
