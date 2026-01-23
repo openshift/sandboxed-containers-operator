@@ -194,7 +194,6 @@ get_cloud_provider() {
 	if ! provider="$(kubectl get configmap/peer-pods-cm \
 		-n openshift-sandboxed-containers-operator \
 		-o jsonpath='{.data.CLOUD_PROVIDER}')"; then
-		error "get_cloud_provider: kubectl failed to query peer-pods-cm"
 		return
 	fi
 
