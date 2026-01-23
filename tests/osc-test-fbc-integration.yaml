@@ -14,6 +14,13 @@ spec:
       name: SNAPSHOT
       default: '{"components": [{"name":"osc-test-fbc", "containerImage": "quay.io/redhat-user-workloads/ose-osc-tenant/osc-test-fbc:latest"}]}'
       type: string
+    - name: RUN_PROWJOBS
+      type: string
+      description: >-
+        Which prowjobs to run. Options: "sanity" (default, runs only sanity checks),
+        "all" (runs all prowjobs), or specific job names like "ocp419 ocp420"
+        (runs only those OCP version jobs, space-separated). Available job names: ocp418, ocp419, ocp420
+      default: "sanity"
   tasks:
     - name: get-catalog-image
       params:
@@ -39,13 +46,91 @@ spec:
               catalogImage=$(jq -r '.components[] | select(.name=="osc-test-fbc") | .containerImage' <<< "${SNAPSHOT}")
               echo "Catalog image: ${catalogImage}"
               echo -n "${catalogImage}" > $(results.CATALOG_IMAGE.path)
+    - name: determine-prowjobs
+      params:
+        - name: RUN_PROWJOBS
+          value: $(params.RUN_PROWJOBS)
+      taskSpec:
+        params:
+          - name: RUN_PROWJOBS
+            type: string
+        results:
+          - name: run_sanity
+            description: "Whether to run sanity check prowjobs"
+          - name: run_ocp418
+            description: "Whether to run OCP 4.18 prowjobs"
+          - name: run_ocp419
+            description: "Whether to run OCP 4.19 prowjobs"
+          - name: run_ocp420
+            description: "Whether to run OCP 4.20 prowjobs"
+        steps:
+          - name: determine
+            image: registry.redhat.io/ubi9/ubi-minimal:latest
+            env:
+              - name: RUN_PROWJOBS
+                value: $(params.RUN_PROWJOBS)
+            script: |
+              #!/bin/bash
+              set -e
+
+              # Supported OCP versions
+              OCP_VERSIONS="418 419 420"
+
+              # Function to check if a value is in the space-separated list
+              contains() {
+                local search="$1"
+                local list="$2"
+                for item in $list; do
+                  if [ "$item" = "$search" ]; then
+                    return 0
+                  fi
+                done
+                return 1
+              }
+
+              # Determine which jobs should run
+              if contains "all" "${RUN_PROWJOBS}"; then
+                # Run all jobs
+                echo -n "true" > $(results.run_sanity.path)
+                for version in ${OCP_VERSIONS}; do
+                  echo -n "true" > /tekton/results/run_ocp${version}
+                done
+              else
+                # Check sanity
+                if contains "sanity" "${RUN_PROWJOBS}"; then
+                  echo -n "true" > $(results.run_sanity.path)
+                else
+                  echo -n "false" > $(results.run_sanity.path)
+                fi
+
+                # Check each version individually
+                for version in ${OCP_VERSIONS}; do
+                  if contains "ocp${version}" "${RUN_PROWJOBS}"; then
+                    echo -n "true" > /tekton/results/run_ocp${version}
+                  else
+                    echo -n "false" > /tekton/results/run_ocp${version}
+                  fi
+                done
+              fi
+
+              # Print results for debugging
+              echo "RUN_PROWJOBS: ${RUN_PROWJOBS}"
+              echo "run_sanity: $$(cat $(results.run_sanity.path))"
+              for version in ${OCP_VERSIONS}; do
+                echo "run_ocp${version}: $$(cat /tekton/results/run_ocp${version})"
+              done
     # Run a sanity check job first.
     # Choose the kata workload test and newest supported OCP version.
     - name: prowjob-sanity
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
+      when:
+        - input: "$(tasks.determine-prowjobs.results.run_sanity)"
+          operator: in
+          values: ["true"]
       runAfter:
         - get-catalog-image
+        - determine-prowjobs
       taskRef:
         resolver: git
         params:
@@ -71,6 +156,10 @@ spec:
     - name: prowjob-ocp418
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
+      when:
+        - input: "$(tasks.determine-prowjobs.results.run_ocp418)"
+          operator: in
+          values: ["true"]
       runAfter:
         - prowjob-ocp420
         - prowjob-ocp419
@@ -105,6 +194,10 @@ spec:
     - name: prowjob-ocp419
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
+      when:
+        - input: "$(tasks.determine-prowjobs.results.run_ocp419)"
+          operator: in
+          values: ["true"]
       runAfter:
         - prowjob-sanity
       taskRef:
@@ -137,6 +230,10 @@ spec:
     - name: prowjob-ocp420
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
+      when:
+        - input: "$(tasks.determine-prowjobs.results.run_ocp420)"
+          operator: in
+          values: ["true"]
       runAfter:
         - prowjob-sanity
       taskRef:
