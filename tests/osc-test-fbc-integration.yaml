@@ -39,7 +39,7 @@ spec:
               catalogImage=$(jq -r '.components[] | select(.name=="osc-test-fbc") | .containerImage' <<< "${SNAPSHOT}")
               echo "Catalog image: ${catalogImage}"
               echo -n "${catalogImage}" > $(results.CATALOG_IMAGE.path)
-    - name: prowjob_ocp417
+    - name: prowjob-ocp417
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
       runAfter:
@@ -68,7 +68,7 @@ spec:
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate417-azure-ipi-peerpods
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate417-aro-ipi-peerpods
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate417-aws-ipi-peerpods
-    - name: prowjob_ocp418
+    - name: prowjob-ocp418
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
       runAfter:
@@ -97,7 +97,7 @@ spec:
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate418-azure-ipi-peerpods
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate418-aro-ipi-peerpods
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate418-aws-ipi-peerpods
-    - name: prowjob_ocp419
+    - name: prowjob-ocp419
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
       runAfter:
@@ -125,7 +125,7 @@ spec:
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate419-azure-ipi-kata
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate419-azure-ipi-peerpods
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate419-aws-ipi-peerpods
-    - name: prowjob_ocp420
+    - name: prowjob-ocp420
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       timeout: "4h"
       runAfter:
