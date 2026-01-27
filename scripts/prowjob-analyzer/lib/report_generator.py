@@ -97,13 +97,56 @@ def generate_failure_analysis_section(failure_analysis: Dict, base_url: str, var
     elif location == 'unknown':
         section += "Could not determine which step failed.\n\n"
 
+    # Add detected patterns
+    detected_patterns = failure_analysis.get('detected_patterns', [])
+    if detected_patterns:
+        # Handle both old format (list of strings) and new format (list of dicts)
+        if detected_patterns and isinstance(detected_patterns[0], dict):
+            pattern_display = []
+            for pattern_info in detected_patterns:
+                pattern_name = pattern_info['pattern']
+                source = pattern_info['source']
+                pattern_display.append(f"{pattern_name} ({source})")
+            section += f"**Detected Patterns**: {', '.join(pattern_display)}\n\n"
+        else:
+            # Fallback for old format
+            section += f"**Detected Patterns**: {', '.join(detected_patterns)}\n\n"
+
+    # Add root cause analysis
+    root_cause = failure_analysis.get('root_cause', {})
+    if root_cause.get('likely_cause'):
+        section += "### Root Cause Analysis\n\n"
+        primary_pattern = root_cause.get('primary_pattern', 'unknown')
+        pattern_source = root_cause.get('pattern_source')
+
+        if pattern_source:
+            section += f"**Primary Pattern**: {primary_pattern} (found in {pattern_source})\n"
+        else:
+            section += f"**Primary Pattern**: {primary_pattern}\n"
+
+        section += f"**Likely Cause**: {root_cause.get('likely_cause', 'Unknown')}\n"
+        section += f"**Confidence**: {root_cause.get('confidence', 'unknown')}\n\n"
+
+        # Add quota details for Azure quota issues
+        quota_details = root_cause.get('quota_details')
+        if quota_details and quota_details.get('total') is not None:
+            section += f"**Quota Utilization**: {quota_details['leased']}/{quota_details['total']} slots occupied ({quota_details['free']} free)\n\n"
+
+        suggested_actions = root_cause.get('suggested_actions', [])
+        if suggested_actions:
+            section += "**Suggested Actions**:\n"
+            for action in suggested_actions:
+                section += f"- {action}\n"
+            section += "\n"
+
     return section
 
 
-def generate_artifacts_section(base_url: str, variant: str, test_results_available: bool) -> str:
+def generate_artifacts_section(base_url: str, variant: str, test_results_available: bool, analyzed_files: List[Dict] = None) -> str:
     """Generate artifacts links section."""
     section = "\n## Artifacts\n\n"
 
+    # Standard artifacts
     section += f"- [Prow Job]({base_url})\n"
     section += f"- [prowjob.json]({get_artifact_url(base_url, 'prowjob.json')})\n"
     section += f"- [finished.json]({get_artifact_url(base_url, 'finished.json')})\n"
@@ -112,6 +155,20 @@ def generate_artifacts_section(base_url: str, variant: str, test_results_availab
         section += f"- [Test Results]({get_artifact_url(base_url, f'artifacts/{variant}/openshift-extended-test/artifacts/test-results.yaml')})\n"
         section += f"- [Extended Test Logs]({get_artifact_url(base_url, f'artifacts/{variant}/openshift-extended-test/artifacts/extended.log')})\n"
         section += f"- [Must-Gather]({get_artifact_url(base_url, f'artifacts/{variant}/sandboxed-containers-operator-gather-must-gather/artifacts/')})\n"
+
+    # Add section for files analyzed for pattern detection
+    if analyzed_files:
+        section += f"\n### Files Analyzed for Pattern Detection\n\n"
+        for file_info in analyzed_files:
+            file_name = file_info['name']
+            file_path = file_info['path']
+            patterns_found = file_info['patterns_found']
+            file_url = get_artifact_url(base_url, file_path)
+
+            if patterns_found > 0:
+                section += f"- [{file_name}]({file_url}) - **{patterns_found} pattern(s) detected** ⚠️\n"
+            else:
+                section += f"- [{file_name}]({file_url}) - no patterns detected\n"
 
     return section
 
@@ -228,7 +285,8 @@ def generate_human_report(
         report += generate_failure_analysis_section(failure_analysis, base_url, metadata.get('variant', ''))
 
     # Artifacts
-    report += generate_artifacts_section(base_url, metadata.get('variant', ''), test_results is not None)
+    analyzed_files = failure_analysis.get('analyzed_files', []) if failure_analysis else []
+    report += generate_artifacts_section(base_url, metadata.get('variant', ''), test_results is not None, analyzed_files)
 
     return report
 
@@ -320,6 +378,7 @@ def generate_json_report(
                 for test in failing_tests
             ],
             'detected_patterns': failure_analysis.get('detected_patterns', []),
+            'analyzed_files': failure_analysis.get('analyzed_files', []),
             'root_cause': failure_analysis.get('root_cause', {}),
         }
 
