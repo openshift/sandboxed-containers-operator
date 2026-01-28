@@ -79,7 +79,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	ccoSecret := &corev1.Secret{}
 	if err := r.Client.Get(context.TODO(), req.NamespacedName, ccoSecret); err != nil {
 		if k8serrors.IsNotFound(err) {
-			r.Log.Info("cco-secret not found")
+			r.Log.Info("no cco-secret has been found")
 			return ctrl.Result{}, nil
 		} else {
 			r.Log.Info("error in getting cco-secret", "err", err)
@@ -89,27 +89,23 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	peerPodsSecret, err := getPeerPodsSecret(r.Client)
 	if k8serrors.IsNotFound(err) {
-		peerPodsSecret = r.newOwnedPeerPodsSecret(ccoSecret)
+		r.Log.Info("peer-pods-secret is not found, trying to map cco-secret")
 	} else if err != nil {
 		r.Log.Info("error in getting peer-pods secret", "err", err)
 		return ctrl.Result{Requeue: true}, nil
-	}
-
-	// skip if peer-pods-secret was created by the user
-	if !isControllerGenerated(peerPodsSecret) {
-		r.Log.Info("peerPodsSecret has been created by the user, skipping...")
+	} else if !isSecretOwned(peerPodsSecret) { // Either STS workflow or user created secret
+		r.Log.Info("unowned peer-pods-secret exist, skipping CCO workflow...")
 		return ctrl.Result{}, nil
 	}
 
-	if _, err := controllerutil.CreateOrUpdate(context.TODO(), r.Client, peerPodsSecret, func() error {
-		r.secretMapping(peerPodsSecret, ccoSecret)
-		return nil
-	}); err != nil {
+	peerpodsData := r.ccoDataMapping(ccoSecret.Data)
+	labels := map[string]string{labelCredentialsRequest: labelCredentialsRequestValue}
+	if err := r.createOrUpdateSecret(context.TODO(), peerPodsSecretName, OperatorNamespace, peerpodsData, ccoSecret, labels); err != nil {
 		r.Log.Info("error in creating or updating peer-pods secret", "err", err)
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	r.Log.Info("cco-secret created and mapped to peer-pods secret", "CCO Secret", ccoSecret.GetName(), "Peer-Pods Secret", peerPodsSecret.GetName())
+	r.Log.Info("cco-secret created and mapped to peer-pods secret", "CCO Secret", ccoSecret.GetName(), "Peer-Pods Secret", peerPodsSecretName)
 	return ctrl.Result{}, nil
 }
 
@@ -144,8 +140,8 @@ func secretsFilterPredicate() predicate.Predicate {
 	}
 }
 
-// map ccoSecret fields to peer-pods compatible fields and set to peerPodsSecret
-func (r *SecretReconciler) secretMapping(peerPodsSecret *corev1.Secret, ccoSecret *corev1.Secret) {
+// map ccoSecret fields to peer-pods compatible fields
+func (r *SecretReconciler) ccoDataMapping(ccoSecretData map[string][]byte) map[string][]byte {
 	ccoToPp := map[string]string{
 		"aws_access_key_id":     "AWS_ACCESS_KEY_ID",
 		"aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
@@ -159,40 +155,72 @@ func (r *SecretReconciler) secretMapping(peerPodsSecret *corev1.Secret, ccoSecre
 		//"azure_resourcegroup":   "AZURE_RESOURCE_GROUP",
 	}
 
-	if peerPodsSecret.Data == nil {
-		r.Log.Info("secretMapping: peerPodsSecret data is uninitialized")
-		return
+	if len(ccoSecretData) == 0 {
+		r.Log.Info("ccoDataMapping: ccoSecret data is uninitialized or empty")
+		return nil
 	}
 
-	if len(ccoSecret.Data) == 0 {
-		r.Log.Info("secretMapping: ccoSecret data is uninitialized or empty")
-		return
-	}
+	peerPodsSecretData := make(map[string][]byte)
 
 	// mapping is done explicitly to avoid conversion mistakes
-	for ccoKey, ppKey := range ccoSecret.Data {
+	for ccoKey, ppKey := range ccoSecretData {
 		if ccoToPp[ccoKey] != "" {
-			peerPodsSecret.Data[ccoToPp[ccoKey]] = ppKey
+			peerPodsSecretData[ccoToPp[ccoKey]] = ppKey
 		}
 	}
+	return peerPodsSecretData
 }
 
-func (r *SecretReconciler) newOwnedPeerPodsSecret(ownedSecret *corev1.Secret) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            peerPodsSecretName,
-			Namespace:       OperatorNamespace,
-			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(ownedSecret, corev1.SchemeGroupVersion.WithKind("Secret"))},
-			Labels: map[string]string{
-				labelCredentialsRequest: labelCredentialsRequestValue, // used to mark it's owned by a secret (cco-secret) created by cloud-credentials-operator
-			},
-		},
-		Data: make(map[string][]byte),
+func isSecretOwned(secret *corev1.Secret) bool {
+	if secret == nil {
+		return false
 	}
+	// Check if owned by cco-secret with controller=true
+	owner := metav1.GetControllerOf(secret)
+	return owner != nil && owner.Kind == "Secret" && owner.Name == credentialsRequestSecretRefName
 }
 
-func isControllerGenerated(secret *corev1.Secret) bool {
-	return secret != nil && secret.Labels != nil && secret.Labels[labelCredentialsRequest] == labelCredentialsRequestValue
+// createOrUpdateSecret creates or updates a Secret with the given data, optional owner, and optional labels
+// Parameters:
+//   - ctx: context for the operation
+//   - name: name of the Secret
+//   - namespace: namespace of the Secret
+//   - data: map of secret data (key-value pairs)
+//   - owner: optional owner object for setting owner reference (can be nil)
+//   - labels: optional map of labels to add to the Secret (can be nil)
+func (r *SecretReconciler) createOrUpdateSecret(ctx context.Context, name, namespace string, data map[string][]byte, owner client.Object, labels map[string]string) error {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, secret, func() error {
+		// Set the data
+		secret.Data = data
+		secret.Type = corev1.SecretTypeOpaque
+
+		// Set labels if provided
+		if labels != nil {
+			if secret.Labels == nil {
+				secret.Labels = make(map[string]string)
+			}
+			for k, v := range labels {
+				secret.Labels[k] = v
+			}
+		}
+
+		// Set owner reference if provided
+		if owner != nil {
+			if err := controllerutil.SetOwnerReference(owner, secret, r.Scheme); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	return err
 }
 
 type KataConfigHandler struct {
