@@ -54,6 +54,7 @@ const (
 	peerpodsCredentialsRequestFileFormat    = "credentials_request_%s.yaml"
 
 	// labelCredentialsRequest is to mark Secrets as created using cloud-credentials-operator
+	labelSTS                     = "kataconfiguration.openshift.io/sts"
 	labelCredentialsRequest      = "kataconfiguration.openshift.io/credentials-request-based"
 	labelCredentialsRequestValue = "true"
 )
@@ -68,10 +69,8 @@ const (
 // the following is not required by this controller, it's required by the AWS podvm creation scripts (ami-helper.sh)
 //+kubebuilder:rbac:groups=cloudcredential.openshift.io,resources=credentialsrequests,verbs=create;delete;get;list
 
-// Reconciles cco-secret secret based on the secretsFilterPredicate and maps the cco-secret
-// created by the cloud-credentials-operator to peer-pods compatible secret
-// KataConfigs are handled by the KataConfigHandler to create/delete credentialRequests from cloud-credentials-operator
-// see: https://github.com/openshift/cloud-credential-operator/tree/master?tab=readme-ov-file#openshift-cloud-credential-operator
+// Reconcile watches the cco-secret only (filtered by secretsFilterPredicate), its only role is to map
+// CCO provisioned credentials to the peer-pods-secret format.
 func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 	r.Log.Info("reconciling Secret for OpenShift Sandboxed Containers", "secret", req.Name)
@@ -171,6 +170,10 @@ func (r *SecretReconciler) ccoDataMapping(ccoSecretData map[string][]byte) map[s
 	return peerPodsSecretData
 }
 
+func isSTSFlowSecret(secret *corev1.Secret) bool {
+	return secret != nil && secret.Labels != nil && len(secret.Labels[labelSTS]) > 0
+}
+
 func isCCOFlowSecret(secret *corev1.Secret) bool {
 	if secret == nil {
 		return false
@@ -223,6 +226,7 @@ func (r *SecretReconciler) createOrUpdateSecret(ctx context.Context, name, names
 	return err
 }
 
+// KataConfigHandler handles KataConfig events and manages peer-pods credentials lifecycle
 type KataConfigHandler struct {
 	reconciler *SecretReconciler
 }
@@ -231,68 +235,185 @@ func (kh *KataConfigHandler) Generic(context.Context, event.GenericEvent, workqu
 	kh.reconciler.Log.Info("KataConfig Generic event")
 }
 
-// kataConfig created, create credentialRequest if peerPods enabled
+// kataConfig created, if peerPods enabled, initiate peer-pods credentials setup
 func (kh *KataConfigHandler) Create(ctx context.Context, event event.CreateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	kh.reconciler.Log.Info("KataConfig Create event")
 	if !event.Object.(*kataconfigurationv1.KataConfig).Spec.EnablePeerPods {
 		return
 	}
 
-	// consider checking if user's secret exists
-	if err := kh.createCredentialsRequests(); err != nil {
-		kh.reconciler.Log.Info("error in creating credentialsRequests", "err", err) // invalid logging
+	if _, err := kh.setupPeerPodsCredentials(ctx); err != nil {
+		kh.reconciler.Log.Error(err, "error setting up peer-pods credentials")
 	}
-
 }
 
-// kataConfig updated, create/delete credentialRequest if peerPods enabled/disabled
+// kataConfig updated, if peerPods is enabled/disabled, initiate/teardown the peer-pods credentials setup
 func (kh *KataConfigHandler) Update(ctx context.Context, event event.UpdateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	kh.reconciler.Log.Info("KataConfig Update event")
 	if event.ObjectNew.(*kataconfigurationv1.KataConfig).Spec.EnablePeerPods {
-		if err := kh.createCredentialsRequests(); err != nil {
-			kh.reconciler.Log.Info("error in creating credentialsRequests", "err", err)
+		if _, err := kh.setupPeerPodsCredentials(ctx); err != nil {
+			kh.reconciler.Log.Error(err, "error setting up peer-pods credentials")
 		}
 	} else {
-		if err := kh.deleteCredentialsRequests(); err != nil {
-			kh.reconciler.Log.Info("error in deleting credentialsRequests", "err", err)
+		if _, err := kh.teardownPeerPodsCredentials(ctx); err != nil {
+			kh.reconciler.Log.Error(err, "error tearing down peer-pods credentials")
 		}
 	}
 }
 
-// kataConfig deleted, delete credentialRequest if peerPods enabled
+// kataConfig deleted, if peerPods enabled, teardown peer-pods credentials setup
 func (kh *KataConfigHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	kh.reconciler.Log.Info("KataConfig Delete event")
 	if !event.Object.(*kataconfigurationv1.KataConfig).Spec.EnablePeerPods {
 		return // try anyway?
 	}
-	if err := kh.deleteCredentialsRequests(); err != nil {
-		kh.reconciler.Log.Info("error in deleting credentialsRequests", "err", err)
+	if _, err := kh.teardownPeerPodsCredentials(ctx); err != nil {
+		kh.reconciler.Log.Info("error tearing down peer-pods credentials", "err", err)
 	}
 }
 
-// create credentialRequests for all supported providers
-func (kh *KataConfigHandler) createCredentialsRequests() error {
-	if kh.skipCredentialRequests() {
-		return nil
+// setupPeerPodsCredentials handles the complete credential setup flow for peer-pods.
+// Priority order: User-created -> STS workflow -> CCO workflow
+// Returns:
+//   - (true, nil) if credentials are set up successfully
+//   - (false, nil) if credentials already exist or no setup is needed
+//   - (false, error) if there's an error
+func (kh *KataConfigHandler) setupPeerPodsCredentials(ctx context.Context) (bool, error) {
+	// 1. Check if peer-pods-secret already exists
+	peerPodsSecret, err := getPeerPodsSecret(kh.reconciler.Client)
+	if err != nil && !k8serrors.IsNotFound(err) {
+		kh.reconciler.Log.Info("error checking for existing peer-pods-secret", "err", err)
+		return false, err
 	}
 
+	// 2. If secret exists, skip (regardless of who created it)
+	if peerPodsSecret != nil {
+		kh.reconciler.Log.Info("peer-pods-secret already exists, skipping credentials setup")
+		return false, nil
+	}
+
+	// 3. Try STS workflow first (check environment variables)
+	stsConfigured, err := kh.checkAndSetupSTSWorkflow(ctx)
+	if err != nil {
+		return false, err
+	}
+	if stsConfigured {
+		kh.reconciler.Log.Info("STS workflow configured successfully")
+		return true, nil
+	}
+
+	// 4. Fall back to CCO workflow (CredentialsRequest)
+	kh.reconciler.Log.Info("Attempting CCO workflow for credential setup")
+	if err := kh.createCredentialsRequests(); err != nil {
+		kh.reconciler.Log.Error(err, "error creating CredentialsRequest")
+		return false, err
+	}
+
+	return true, nil
+}
+
+// teardownPeerPodsCredentials handles the cleanup of credentials when peer-pods is disabled.
+// Priority order: Delete STS secrets -> Delete CCO CredentialsRequest (CCO secrets auto-deleted via owner reference)
+// Returns:
+//   - (true, nil) if credentials were cleaned up successfully
+//   - (false, nil) if no cleanup was needed
+//   - (false, error) if there's an error
+func (kh *KataConfigHandler) teardownPeerPodsCredentials(ctx context.Context) (bool, error) {
+	// 1. Check if peer-pods-secret exists
+	peerPodsSecret, err := getPeerPodsSecret(kh.reconciler.Client)
+	if err != nil && !k8serrors.IsNotFound(err) && !k8serrors.IsGone(err) {
+		kh.reconciler.Log.Info("error checking for peer-pods-secret", "err", err)
+	}
+
+	// 2. Handle STS flow secrets (they don't have owner references and need manual cleanup)
+	if peerPodsSecret != nil && isSTSFlowSecret(peerPodsSecret) {
+		kh.reconciler.Log.Info("Deleting STS flow peer-pods-secret")
+		if err := kh.reconciler.Client.Delete(ctx, peerPodsSecret); err != nil {
+			if !k8serrors.IsNotFound(err) && !k8serrors.IsGone(err) {
+				kh.reconciler.Log.Error(err, "Failed to delete STS flow peer-pods-secret")
+				return false, err
+			}
+		}
+		kh.reconciler.Log.Info("STS flow peer-pods-secret deleted successfully")
+	}
+
+	// 3. Delete CredentialsRequest (for CCO workflow)
+	kh.reconciler.Log.Info("Attempting to delete CredentialsRequest if exist")
+	if err := kh.deleteCredentialsRequests(); err != nil {
+		kh.reconciler.Log.Error(err, "error deleting CredentialsRequest")
+		return false, err
+	}
+
+	return true, nil
+}
+
+// checkAndSetupSTSWorkflow checks if STS (Security Token Service) workflow environment variables
+// are set and creates/updates the peer-pods-secret accordingly.
+// Currently supports Azure only.
+// Returns true if STS workflow is detected and secret was created/updated successfully.
+// Returns false if no STS environment variables are found or if there's an error.
+func (kh *KataConfigHandler) checkAndSetupSTSWorkflow(ctx context.Context) (bool, error) {
+	// STS environment variables (from OLM/web console installation)
+	// Reference: https://github.com/openshift/enhancements/pull/1800
+
+	// Azure
+	clientID := os.Getenv("CLIENTID")             // Azure client ID
+	tenantID := os.Getenv("TENANTID")             // Azure tenant ID
+	subscriptionID := os.Getenv("SUBSCRIPTIONID") // Azure subscription ID
+	tokenPath := "/var/run/secrets/openshift/serviceaccount/token"
+
+	// Check if Azure STS credentials are provided
+	hasAzureSTSCreds := len(clientID) > 0 && len(tenantID) > 0 && len(subscriptionID) > 0
+
+	// Label to mark this as an STS-based secret
+	labels := map[string]string{
+		labelSTS: "",
+	}
+	secretData := map[string][]byte{}
+	if hasAzureSTSCreds {
+		kh.reconciler.Log.Info("STS workflow detected, creating peer-pods-secret")
+		secretData["AZURE_CLIENT_ID"] = []byte(clientID)
+		secretData["AZURE_TENANT_ID"] = []byte(tenantID)
+		secretData["AZURE_SUBSCRIPTION_ID"] = []byte(subscriptionID)
+		secretData["AZURE_FEDERATED_TOKEN_FILE"] = []byte(tokenPath)
+		labels[labelSTS] = "azure"
+	} else {
+		// No STS credentials found
+		return false, nil
+	}
+
+	// Create or update the peer-pods-secret with STS credentials
+	if err := kh.reconciler.createOrUpdateSecret(ctx, peerPodsSecretName, OperatorNamespace, secretData, nil, labels); err != nil {
+		kh.reconciler.Log.Error(err, "Failed to create/update peer-pods-secret for STS workflow")
+		return false, err
+	}
+
+	kh.reconciler.Log.Info("Successfully created/updated peer-pods-secret for STS workflow")
+	return true, nil
+}
+
+// create credentialRequests for all supported providers
+// Note: Caller is responsible for checking if peer-pods-secret already exists
+func (kh *KataConfigHandler) createCredentialsRequests() error {
 	credentialsRequest, err := kh.getCredentialsRequest()
 	if err != nil {
 		return err
 	}
 
 	if credentialsRequest == nil {
-		return nil // skip silently
+		kh.reconciler.Log.Info("No CredentialsRequest YAML for this cloud provider")
+		return nil
 	}
 
 	if err := kh.reconciler.Client.Create(context.TODO(), credentialsRequest); err != nil {
 		if k8serrors.IsAlreadyExists(err) {
+			kh.reconciler.Log.Info("CredentialsRequest already exists", "name", credentialsRequest.Name)
 			return nil
-		} else {
-			return err
 		}
+		return err
 	}
-	kh.reconciler.Log.Info("credentialRequest created", "credentialsRequestName", credentialsRequest.Name)
+
+	kh.reconciler.Log.Info("CredentialsRequest created", "name", credentialsRequest.Name)
 	return nil
 }
 
@@ -343,27 +464,4 @@ func (kh *KataConfigHandler) getCredentialsRequest() (*v1.CredentialsRequest, er
 		return nil, err
 	}
 	return credentialsRequest, nil
-}
-
-func (kh *KataConfigHandler) skipCredentialRequests() bool {
-	// check if peer-pods secret was already created by the user
-	if peerPodsSecret, err := getPeerPodsSecret(kh.reconciler.Client); err != nil {
-		if !(k8serrors.IsNotFound(err) || k8serrors.IsGone(err)) {
-			kh.reconciler.Log.Info("failed to get peer-pods Secret skipping peer-pods Secret check", "error", err)
-		}
-	} else if !isCCOFlowSecret(peerPodsSecret) {
-		kh.reconciler.Log.Info("peerPodsSecret has already been created by the user, skipping...")
-		return true
-	}
-
-	// check if CredentialsRequest implementation exists for the cloud provider
-	if provider, err := getCloudProviderFromInfra(kh.reconciler.Client); err == nil {
-		fileName := fmt.Sprintf(peerpodsCredentialsRequestFileFormat, provider)
-		credentialsRequestsYamlFile := filepath.Join(peerpodsCredentialsRequestsPathLocation, fileName)
-		if _, err := readYamlFile(credentialsRequestsYamlFile); os.IsNotExist(err) {
-			kh.reconciler.Log.Info("no CredentialsRequest yaml file for provider, skipping", "provider", provider, "filename", fileName)
-			return true
-		}
-	}
-	return false
 }
