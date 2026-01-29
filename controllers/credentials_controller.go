@@ -93,8 +93,8 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	} else if err != nil {
 		r.Log.Info("error in getting peer-pods secret", "err", err)
 		return ctrl.Result{Requeue: true}, nil
-	} else if !isSecretOwned(peerPodsSecret) { // Either STS workflow or user created secret
-		r.Log.Info("unowned peer-pods-secret exist, skipping CCO workflow...")
+	} else if !isCCOFlowSecret(peerPodsSecret) { // not a CCO created secret, shouldn't reach here
+		r.Log.Info("unexpected unowned peer-pods-secret exist, skipping CCO secret mapping flow...")
 		return ctrl.Result{}, nil
 	}
 
@@ -171,7 +171,7 @@ func (r *SecretReconciler) ccoDataMapping(ccoSecretData map[string][]byte) map[s
 	return peerPodsSecretData
 }
 
-func isSecretOwned(secret *corev1.Secret) bool {
+func isCCOFlowSecret(secret *corev1.Secret) bool {
 	if secret == nil {
 		return false
 	}
@@ -351,7 +351,7 @@ func (kh *KataConfigHandler) skipCredentialRequests() bool {
 		if !(k8serrors.IsNotFound(err) || k8serrors.IsGone(err)) {
 			kh.reconciler.Log.Info("failed to get peer-pods Secret skipping peer-pods Secret check", "error", err)
 		}
-	} else if !isControllerGenerated(peerPodsSecret) {
+	} else if !isCCOFlowSecret(peerPodsSecret) {
 		kh.reconciler.Log.Info("peerPodsSecret has already been created by the user, skipping...")
 		return true
 	}
