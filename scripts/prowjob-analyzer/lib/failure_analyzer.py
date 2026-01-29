@@ -53,6 +53,14 @@ FAILURE_PATTERNS = {
         r'failed to provision',
         r'cluster installation failed',
     ],
+    'azure_quota': [
+        r'failed to acquire lease for.*azure.*quota.*slice',
+        r'current capacity: 0 free.*leased',
+        r'resources not found.*azure.*quota',
+        r'failed to acquire resource.*azure',
+        r'azure.*quota.*exhausted',
+        r'azure.*capacity.*exceeded',
+    ],
     'kata_init': [
         r'kata.*failed to start',
         r'runtime kata.*error',
@@ -115,22 +123,50 @@ def identify_failure_location(
 
 
 
-def check_log_for_patterns(log_content: str) -> List[str]:
+def extract_azure_quota_details(log_content: str) -> Dict[str, Optional[int]]:
     """
-    Check log content for known failure patterns.
+    Extract Azure quota capacity details from log content.
 
     Args:
         log_content: Log file content as string
 
     Returns:
-        List of detected pattern names
+        Dictionary with quota details: {free: int, leased: int, total: int}
+    """
+    quota_details = {'free': None, 'leased': None, 'total': None}
+
+    # Pattern: "current capacity: X free, Y leased"
+    capacity_pattern = r'current capacity:\s*(\d+)\s*free,\s*(\d+)\s*leased'
+    match = re.search(capacity_pattern, log_content, re.IGNORECASE)
+
+    if match:
+        quota_details['free'] = int(match.group(1))
+        quota_details['leased'] = int(match.group(2))
+        quota_details['total'] = quota_details['free'] + quota_details['leased']
+
+    return quota_details
+
+
+def check_log_for_patterns(log_content: str, source_name: str = "unknown") -> List[Dict[str, str]]:
+    """
+    Check log content for known failure patterns.
+
+    Args:
+        log_content: Log file content as string
+        source_name: Name of the log source (e.g., "build-log.txt", "extended.log")
+
+    Returns:
+        List of dictionaries with pattern name and source
     """
     detected_patterns = []
 
     for pattern_name, regexes in FAILURE_PATTERNS.items():
         for regex in regexes:
             if re.search(regex, log_content, re.IGNORECASE):
-                detected_patterns.append(pattern_name)
+                detected_patterns.append({
+                    'pattern': pattern_name,
+                    'source': source_name
+                })
                 break  # Only add each pattern once
 
     return detected_patterns
@@ -156,14 +192,15 @@ def categorize_failing_tests(test_results: Dict) -> Dict[str, List[Dict]]:
     return dict(categorized)
 
 
-def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[str], metadata: Dict) -> Dict:
+def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[Dict], metadata: Dict, build_log_text: Optional[str] = None) -> Dict:
     """
     Attempt to determine root cause of failure.
 
     Args:
         failing_tests: List of failing tests
-        detected_patterns: List of detected failure patterns
+        detected_patterns: List of detected failure patterns with sources
         metadata: Job metadata
+        build_log_text: Build log content for extracting additional details
 
     Returns:
         Dictionary with root cause analysis
@@ -175,9 +212,20 @@ def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[str]
         'suggested_actions': [],
     }
 
+    # Extract just pattern names for easier checking
+    pattern_names = [p['pattern'] for p in detected_patterns]
+
+    # Function to find source of a specific pattern
+    def find_pattern_source(pattern_name: str) -> Optional[str]:
+        for pattern_info in detected_patterns:
+            if pattern_info['pattern'] == pattern_name:
+                return pattern_info['source']
+        return None
+
     # Analyze patterns
-    if 'timeout' in detected_patterns:
+    if 'timeout' in pattern_names:
         root_cause['primary_pattern'] = 'timeout'
+        root_cause['pattern_source'] = find_pattern_source('timeout')
         root_cause['likely_cause'] = 'Test execution exceeded time limits'
         root_cause['confidence'] = 'medium'
         root_cause['suggested_actions'] = [
@@ -185,8 +233,9 @@ def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[str]
             'Review slow-running tests',
             'Consider increasing timeout if tests are valid',
         ]
-    elif 'oom' in detected_patterns:
+    elif 'oom' in pattern_names:
         root_cause['primary_pattern'] = 'oom'
+        root_cause['pattern_source'] = find_pattern_source('oom')
         root_cause['likely_cause'] = 'Out of memory condition'
         root_cause['confidence'] = 'high'
         root_cause['suggested_actions'] = [
@@ -194,8 +243,9 @@ def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[str]
             'Check for memory leaks in application',
             'Review cluster capacity',
         ]
-    elif 'kata_init' in detected_patterns:
+    elif 'kata_init' in pattern_names:
         root_cause['primary_pattern'] = 'kata_init'
+        root_cause['pattern_source'] = find_pattern_source('kata_init')
         root_cause['likely_cause'] = 'Kata runtime initialization failure'
         root_cause['confidence'] = 'high'
         root_cause['suggested_actions'] = [
@@ -203,8 +253,9 @@ def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[str]
             'Verify RPM compatibility',
             'Review node configuration',
         ]
-    elif 'network' in detected_patterns:
+    elif 'network' in pattern_names:
         root_cause['primary_pattern'] = 'network'
+        root_cause['pattern_source'] = find_pattern_source('network')
         root_cause['likely_cause'] = 'Network connectivity issues'
         root_cause['confidence'] = 'medium'
         root_cause['suggested_actions'] = [
@@ -212,14 +263,37 @@ def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[str]
             'Verify DNS resolution',
             'Review firewall rules',
         ]
-    elif 'image_pull' in detected_patterns:
+    elif 'image_pull' in pattern_names:
         root_cause['primary_pattern'] = 'image_pull'
+        root_cause['pattern_source'] = find_pattern_source('image_pull')
         root_cause['likely_cause'] = 'Failed to pull container images'
         root_cause['confidence'] = 'high'
         root_cause['suggested_actions'] = [
             'Verify image exists and is accessible',
             'Check image pull secrets',
             'Review registry connectivity',
+        ]
+    elif 'azure_quota' in pattern_names:
+        root_cause['primary_pattern'] = 'azure_quota'
+        root_cause['pattern_source'] = find_pattern_source('azure_quota')
+        root_cause['confidence'] = 'high'
+
+        # Extract quota details if build log is available
+        quota_details = None
+        if build_log_text:
+            quota_details = extract_azure_quota_details(build_log_text)
+
+        if quota_details and quota_details['total'] is not None:
+            root_cause['likely_cause'] = f"Azure quota slice exhausted - all {quota_details['total']} lease slots occupied ({quota_details['free']} free, {quota_details['leased']} leased)"
+            root_cause['quota_details'] = quota_details
+        else:
+            root_cause['likely_cause'] = 'Azure quota slice exhausted - all lease slots occupied'
+
+        root_cause['suggested_actions'] = [
+            'Retry the job when Azure capacity becomes available',
+            'No action needed - this is a transient infrastructure limitation',
+            'Consider distributing test load across multiple time periods',
+            'Monitor for recurring quota exhaustion patterns',
         ]
 
     # Check for version mismatch (OSC-specific)
@@ -281,6 +355,30 @@ def analyze_failure(
         analysis['failing_tests_by_category'] = categorize_failing_tests(test_results)
 
     # Fetch and analyze logs for patterns
+    detected_patterns = []
+    build_log_text = None
+    analyzed_files = []
+
+    # First check the main build log for infrastructure-level failures (e.g., Azure quota)
+    build_log_content = fetch_artifact(base_url, "build-log.txt")
+    if build_log_content:
+        try:
+            build_log_text = build_log_content.decode('utf-8', errors='ignore')
+            # Limit to last 100KB to avoid processing huge logs
+            if len(build_log_text) > 100000:
+                build_log_text = build_log_text[-100000:]
+            patterns_from_build_log = check_log_for_patterns(build_log_text, "build-log.txt")
+            detected_patterns.extend(patterns_from_build_log)
+            analyzed_files.append({
+                'name': 'build-log.txt',
+                'path': 'build-log.txt',
+                'patterns_found': len(patterns_from_build_log)
+            })
+            logger.debug(f"Patterns found in build-log.txt: {[p['pattern'] for p in patterns_from_build_log]}")
+        except Exception as e:
+            logger.warning(f"Failed to analyze build log: {e}")
+
+    # Also check extended test log if available
     variant = metadata.get('variant', '')
     if variant:
         # Try to fetch extended test log
@@ -293,15 +391,27 @@ def analyze_failure(
                 # Limit to last 100KB to avoid processing huge logs
                 if len(log_text) > 100000:
                     log_text = log_text[-100000:]
-                analysis['detected_patterns'] = check_log_for_patterns(log_text)
+                patterns_from_extended_log = check_log_for_patterns(log_text, "extended.log")
+                detected_patterns.extend(patterns_from_extended_log)
+                analyzed_files.append({
+                    'name': 'extended.log',
+                    'path': extended_log_path,
+                    'patterns_found': len(patterns_from_extended_log)
+                })
+                logger.debug(f"Additional patterns found in extended.log: {[p['pattern'] for p in patterns_from_extended_log]}")
             except Exception as e:
-                logger.warning(f"Failed to analyze log: {e}")
+                logger.warning(f"Failed to analyze extended log: {e}")
+
+    # Store detected patterns with sources and analyzed files info
+    analysis['detected_patterns'] = detected_patterns
+    analysis['analyzed_files'] = analyzed_files
 
     # Determine root cause
     analysis['root_cause'] = determine_root_cause(
         analysis['failing_tests'],
         analysis['detected_patterns'],
-        metadata
+        metadata,
+        build_log_text
     )
 
     return analysis
