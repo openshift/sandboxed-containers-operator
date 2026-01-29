@@ -83,7 +83,7 @@ set_status_uninstalled() {
 	label_node "uninstalled"
 }
 
-install() {
+install_kata() {
 	# Initial wait: avoid doing anything if a previous staged update is pending
 	wait_for_reboot_clear
 
@@ -162,7 +162,7 @@ install() {
 	fi
 }
 
-uninstall() {
+uninstall_kata() {
 	# Initial wait: avoid doing anything if a previous staged update is pending
 	wait_for_reboot_clear
 
@@ -312,9 +312,7 @@ main() {
 
 		#/osc-log-level.sh "$action" "$LOG_LEVEL"
 
-		#/osc-configs-script.sh "$action"
-
-		install
+		install_kata
 
 		# Install addon artifacts, if ADDON_IMAGE is present
 		[ -n "${ADDON_IMAGE:-}" ] && /scripts/osc-kata-addons-install.sh install
@@ -326,12 +324,10 @@ main() {
 
 		#/osc-log-level.sh "$action"
 
-		#/osc-configs-script.sh "$action"
-
 		# Call addon uninstaller if configured
 		[ -n "${ADDON_IMAGE:-}" ] && /scripts/osc-kata-addons-install.sh uninstall
 
-		uninstall
+		uninstall_kata
 		;;
 	*)
 		echo "Usage: $0 {install|uninstall}"

@@ -6,7 +6,7 @@ ADD 50-kata-remote configuration-remote.toml /files/
 
 RUN mkdir -p /scripts
 
-ADD osc-kata-install.sh osc-configs-script.sh osc-log-level.sh lib.sh osc-kata-addons-install.sh /scripts/
+ADD osc-kata-install.sh osc-log-level.sh lib.sh osc-kata-addons-install.sh /scripts/
 
 # Multi-arch umoci support (amd64 and s390x)
 ARG TARGETARCH=amd64

@@ -309,15 +309,6 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPodsMiscConfigs() error {
 		}
 	}
 
-	if r.DeploymentMode == DaemonSetMode {
-		// We want to make sure that the osc-config-sync ds removal successfully started
-		// So we will try again in case of an error
-		err = r.deletePeedPodsConfigDaemonSet()
-		if err != nil {
-			return err
-		}
-	}
-
 	// Delete mutating webhook deployment
 	err = r.deleteMutatingWebhookDeployment()
 	if err != nil {
