@@ -415,7 +415,9 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 		}
 	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{
+		RequeueAfter: 10 * time.Minute,
+	}, nil
 }
 
 func (r *KataConfigOpenShiftReconciler) addPeerPodsConfigDaemonSet() error {
