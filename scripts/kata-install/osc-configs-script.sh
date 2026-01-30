@@ -130,11 +130,6 @@ main() {
 		exit 1
 	}
 
-	[[ -z "${CLI_IMAGE:-}" ]] && {
-		echo "ERROR: CLI_IMAGE env var must be set."
-		exit 1
-	}
-
 	local action="${1:-}"
 	case "$action" in
 	install)
