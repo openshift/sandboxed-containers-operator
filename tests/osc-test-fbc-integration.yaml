@@ -50,7 +50,7 @@ spec:
         - name: url
           value: https://github.com/openshift/konflux-tasks
         - name: revision
-          value: 3adee771363d48fdb832582e5b9308923b7c8faa
+          value: 4826f365057d22d0189fa0db00d953c151f90c77
         - name: pathInRepo
           value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
       params:
@@ -60,6 +60,10 @@ spec:
           value: downstream-candidate417
         - name: ENVS
           value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),EXPECTED_OPERATOR_VERSION=1.11.2,FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.21.0-5.rhaos4.17.el9"
+        - name: RETRY_DELAY
+          value: "60"
+        - name: MAX_RETRIES
+          value: "5"
       matrix:
         params:
           - name: PROWJOB_NAME
@@ -79,7 +83,7 @@ spec:
         - name: url
           value: https://github.com/openshift/konflux-tasks
         - name: revision
-          value: 3adee771363d48fdb832582e5b9308923b7c8faa
+          value: 4826f365057d22d0189fa0db00d953c151f90c77
         - name: pathInRepo
           value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
       params:
@@ -89,6 +93,10 @@ spec:
           value: downstream-candidate418
         - name: ENVS
           value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),EXPECTED_OPERATOR_VERSION=1.11.2,FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.21.0-5.rhaos4.18.el9"
+        - name: RETRY_DELAY
+          value: "60"
+        - name: MAX_RETRIES
+          value: "5"
       matrix:
         params:
           - name: PROWJOB_NAME
@@ -108,7 +116,7 @@ spec:
         - name: url
           value: https://github.com/openshift/konflux-tasks
         - name: revision
-          value: 3adee771363d48fdb832582e5b9308923b7c8faa
+          value: 4826f365057d22d0189fa0db00d953c151f90c77
         - name: pathInRepo
           value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
       params:
@@ -118,6 +126,10 @@ spec:
           value: downstream-candidate419
         - name: ENVS
           value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),EXPECTED_OPERATOR_VERSION=1.11.2,FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.21.0-5.rhaos4.19.el9"
+        - name: RETRY_DELAY
+          value: "60"
+        - name: MAX_RETRIES
+          value: "5"
       matrix:
         params:
           - name: PROWJOB_NAME
@@ -136,7 +148,7 @@ spec:
         - name: url
           value: https://github.com/openshift/konflux-tasks
         - name: revision
-          value: 3adee771363d48fdb832582e5b9308923b7c8faa
+          value: 4826f365057d22d0189fa0db00d953c151f90c77
         - name: pathInRepo
           value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
       params:
@@ -146,6 +158,10 @@ spec:
           value: downstream-candidate420
         - name: ENVS
           value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),EXPECTED_OPERATOR_VERSION=1.11.2,FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.21.0-5.rhaos4.20.el9"
+        - name: RETRY_DELAY
+          value: "60"
+        - name: MAX_RETRIES
+          value: "5"
       matrix:
         params:
           - name: PROWJOB_NAME
