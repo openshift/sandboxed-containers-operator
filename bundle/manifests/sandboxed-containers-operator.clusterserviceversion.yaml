@@ -451,6 +451,9 @@ spec:
                 - mountPath: /root/.ssh/
                   name: ssh
                   readOnly: true
+                - mountPath: /var/run/secrets/openshift/serviceaccount
+                  name: bound-sa-token
+                  readOnly: true
               securityContext:
                 runAsNonRoot: true
                 seccompProfile:
@@ -481,6 +484,12 @@ spec:
                   defaultMode: 384
                   optional: true
                   secretName: ssh-key-secret
+              - name: bound-sa-token
+                projected:
+                  sources:
+                  - serviceAccountToken:
+                      audience: openshift
+                      path: token
       - label:
           app: operator-metrics-server
         name: operator-metrics-server
