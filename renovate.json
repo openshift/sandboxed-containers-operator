@@ -1,5 +1,6 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "schedule": ["* * * * 0,6"],
     "extends": [
         "https://github.com/konflux-ci/mintmaker/blob/main/config/renovate/renovate.json?raw=true"
     ],
