@@ -14,6 +14,7 @@ metadata:
       files.all.exists(path, !path.matches('bundle/.*|.tekton/.*bundle.*yaml$|config/manager/.*')) &&
       files.all.exists(path, !path.matches('must-gather/.*|.tekton/.*must-gather.*yaml$')) &&
       files.all.exists(path, !path.matches('config/peerpods/podvm/.*|.tekton/.*podvm-builder.*yaml$')) &&
+      files.all.exists(path, !path.matches('scripts/hermeto-image/.*|.tekton/osc-hermeto.*yaml$')) &&
       files.all.exists(path, !path.matches('.tekton/.*fbc-.*|fbc/.*'))
   creationTimestamp:
   labels:
