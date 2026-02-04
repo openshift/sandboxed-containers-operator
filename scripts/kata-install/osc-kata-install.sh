@@ -83,6 +83,42 @@ set_status_uninstalled() {
 	label_node "uninstalled"
 }
 
+extract_kata_version_from_rpm() {
+    local rpm="$1"
+    basename "$rpm" | sed -E 's/^kata-containers-([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/'
+}
+
+extract_kata_addon_image() {
+    local addon_image="$1"
+	local addon_stage_dir="/host/var/lib/kata/addons"
+
+	mkdir -p $addon_stage_dir
+
+    extract_container_image \
+        "$addon_image" \
+        "/artifacts" \
+        "$addon_stage_dir" \
+        "/tmp/regauth/auth.json" >/dev/null
+
+
+    if [[ ! -f "$addon_stage_dir/artifacts/version.json" ]]; then
+        echo "ERROR: version.json not found in addon image"
+        exit 1
+    fi
+
+	dnf install -y jq >/dev/null 2>&1
+
+    local kata_version
+	kata_version=$(jq -r '.kata_version' "$addon_stage_dir/artifacts/version.json")
+
+    if [[ -z "$kata_version" || "$kata_version" == "null" ]]; then
+        echo "ERROR: kata_version missing in version.json"
+        exit 1
+    fi
+
+    echo "$kata_version"
+}
+
 install() {
 	# Initial wait: avoid doing anything if a previous staged update is pending
 	wait_for_reboot_clear
@@ -102,6 +138,20 @@ install() {
 		if [[ -z "$rpm_path" ]]; then
 			echo "No RPM found for $package"
 			continue
+		fi
+
+		if [[ "$package" == "kata-containers" && -n "${ADDON_IMAGE:-}" ]]; then
+            rpm_kata_version=$(extract_kata_version_from_rpm "$rpm_path")
+			addon_kata_version=$(extract_kata_addon_image "$ADDON_IMAGE")
+
+			if [[ "$addon_kata_version" != "$rpm_kata_version" ]]; then
+				echo "ERROR: Kata version mismatch between addon image and host RPM"
+				echo "Addon image kata version: $addon_kata_version"
+				echo "Host kata RPM version:    $rpm_kata_version"
+				exit 1
+			fi
+
+			echo "Addon image kata version validated: $addon_kata_version"
 		fi
 
 		# Get available version
