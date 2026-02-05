@@ -59,11 +59,14 @@ def generate_test_results_section(test_results: Dict, failure_analysis: Dict) ->
                     test_case_num = test.get('test_case_number', '')
                     description = test.get('description', '')
                     test_name = test.get('name', 'Unknown')
+                    execution_order = test.get('execution_order')
 
                     # Display test case number and description if available
                     if test_case_num and description:
                         section += f"- **{test_case_num}**: {description}\n"
-                        # Add priority and author if available
+                        # Add execution order, priority and author if available
+                        if execution_order:
+                            section += f"  - Execution Order: {execution_order}\n"
                         if test.get('priority'):
                             section += f"  - Priority: {test['priority']}\n"
                         if test.get('author'):
@@ -73,6 +76,8 @@ def generate_test_results_section(test_results: Dict, failure_analysis: Dict) ->
                         if len(test_name) > 100:
                             test_name = test_name[:97] + "..."
                         section += f"- `{test_name}`\n"
+                        if execution_order:
+                            section += f"  - Execution Order: {execution_order}\n"
                 section += "\n"
 
     return section
@@ -374,6 +379,7 @@ def generate_json_report(
                     'priority': test.get('priority', ''),
                     'author': test.get('author', ''),
                     'duration': test.get('duration', 0),
+                    'execution_order': test.get('execution_order'),
                 }
                 for test in failing_tests
             ],

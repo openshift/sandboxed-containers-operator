@@ -29,9 +29,12 @@ python3 scripts/prowjob-analyzer/analyze.py --no-wait "$@"
 **Case A: Tests failed** (Failed Step is `openshift-extended-test` AND Failed Tests are listed)
 - This means the job ran through infrastructure setup and failed during test execution
 - **IMPORTANT**: Check the failure count:
-  - If **>90% of tests failed** (e.g., 10+ tests failed): Run analysis on **ONLY the FIRST test**
+  - If **>90% of tests failed** (e.g., 10+ tests failed):
+    - Each test in the "Failed Tests" section shows metadata including "Execution Order: N"
+    - Find the test with "Execution Order: 1" - this is the FIRST test that executed
+    - Use ONLY that test name for detailed analysis:
     ```bash
-    python3 scripts/prowjob-analyzer/failed_tests_report.py <PROW_JOB_URL> <FIRST_TEST_NAME>
+    python3 scripts/prowjob-analyzer/failed_tests_report.py <PROW_JOB_URL> "<TEST_NAME_WITH_EXECUTION_ORDER_1>"
     ```
     This is because when all/most tests fail, it indicates a setup failure. The first test contains the root cause, and subsequent tests show cascading errors.
 
