@@ -67,6 +67,16 @@ FAILURE_PATTERNS = {
         r'qemu.*failed',
         r'failed to create sandbox',
     ],
+    'rpm_install': [
+        r'error:.*Failed dependencies',
+        r'error:.*package.*is needed by kata',
+        r'rpm.*installation failed',
+        r'error:.*nothing provides.*needed by kata',
+    ],
+    'rpm_cascading': [
+        r'error:.*Deployment is already in unlocked state',
+        r'error:.*ostree.*unlocked state',
+    ],
 }
 
 
@@ -295,6 +305,22 @@ def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[Dict
             'Consider distributing test load across multiple time periods',
             'Monitor for recurring quota exhaustion patterns',
         ]
+    elif 'rpm_install' in pattern_names:
+        root_cause['primary_pattern'] = 'rpm_install'
+        root_cause['pattern_source'] = find_pattern_source('rpm_install')
+        root_cause['likely_cause'] = 'RPM installation failed due to missing dependencies'
+        root_cause['confidence'] = 'high'
+        root_cause['suggested_actions'] = [
+            'Check the first test logs for the specific missing dependency',
+            'Verify the Kata RPM package dependencies are available in the repository',
+            'Check if the RPM repository is accessible and configured correctly',
+            'Verify the RPM version compatibility with the target OS',
+        ]
+
+        # If rpm_cascading is also present, note it's a secondary error
+        if 'rpm_cascading' in pattern_names:
+            root_cause['cascading_errors'] = ['rpm_cascading']
+            root_cause['note'] = 'Multiple "Deployment is already in unlocked state" errors are cascading failures from the initial RPM dependency error'
 
     # Check for version mismatch (OSC-specific)
     if any('version' in test['name'].lower() for test in failing_tests):
@@ -306,9 +332,11 @@ def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[Dict
 
     # If many tests failed, might be infrastructure
     if len(failing_tests) > 10:
-        root_cause['likely_cause'] = 'Widespread test failures suggest infrastructure or configuration issue'
-        root_cause['confidence'] = 'medium'
+        if not root_cause['likely_cause']:  # Only set if no other cause was found
+            root_cause['likely_cause'] = 'Widespread test failures suggest infrastructure or configuration issue'
+            root_cause['confidence'] = 'medium'
         root_cause['suggested_actions'].append('Review cluster health and OSC installation logs')
+        root_cause['suggested_actions'].append('IMPORTANT: When most/all tests fail, examine the FIRST test\'s logs for the root cause - subsequent test errors are often cascading failures')
 
     return root_cause
 
