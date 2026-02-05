@@ -28,11 +28,18 @@ python3 scripts/prowjob-analyzer/analyze.py --no-wait "$@"
 
 **Case A: Tests failed** (Failed Step is `openshift-extended-test` AND Failed Tests are listed)
 - This means the job ran through infrastructure setup and failed during test execution
-- Run detailed test analysis:
-```bash
-python3 scripts/prowjob-analyzer/failed_tests_report.py <PROW_JOB_URL> <TEST_NAME_1> <TEST_NAME_2> ...
-```
-Use the exact test names from the "Failed Tests" section.
+- **IMPORTANT**: Check the failure count:
+  - If **>90% of tests failed** (e.g., 10+ tests failed): Run analysis on **ONLY the FIRST test**
+    ```bash
+    python3 scripts/prowjob-analyzer/failed_tests_report.py <PROW_JOB_URL> <FIRST_TEST_NAME>
+    ```
+    This is because when all/most tests fail, it indicates a setup failure. The first test contains the root cause, and subsequent tests show cascading errors.
+
+  - If **only a few tests failed** (e.g., <10 tests): Run analysis on all failing tests
+    ```bash
+    python3 scripts/prowjob-analyzer/failed_tests_report.py <PROW_JOB_URL> <TEST_NAME_1> <TEST_NAME_2> ...
+    ```
+    Use the exact test names from the "Failed Tests" section.
 
 **Case B: Infrastructure/setup step failed** (Failed Step is NOT `openshift-extended-test`)
 - Examples: `ipi-install-install`, `sandboxed-containers-operator-peerpods-param-cm`, etc.
@@ -134,6 +141,37 @@ OSC supports three distinct workload types, controlled by configuration:
   - Extremely long job execution times
   - Job timeouts (tests trying setup instead of running actual test logic)
 - This explains why infrastructure failures can cause the entire job to timeout
+
+**CRITICAL: Root Cause Analysis Strategy**:
+When ALL or MOST tests fail (>90%), this indicates a common root cause in the environment setup:
+
+1. **Focus on the FIRST test's logs ONLY**:
+   - The first test that runs will encounter the initial/real error during setup
+   - Subsequent tests will show cascading/secondary errors because setup already failed
+   - The FIRST test's logs contain the true root cause
+
+2. **RPM Installation Failures - Common Pattern**:
+   - **Real error** (appears in FIRST test): `error: Failed dependencies` - This is the ROOT CAUSE
+   - **Cascading error** (appears in MANY subsequent tests): `error: Deployment is already in unlocked state: hotfix`
+   - The cascading error appears frequently because every subsequent test tries to install the RPM and fails since the system is in a bad state
+   - DO NOT be misled by error frequency - the FIRST occurrence is what matters
+
+3. **Analysis Approach**:
+   - If 90%+ of tests failed, immediately look at the FIRST test's logs
+   - Identify what failed during setup (RPM install, KataConfig creation, operator installation, etc.)
+   - Ignore errors that appear in most/all tests - these are cascading failures
+   - The error that appears EARLIEST (in the first test) is the root cause
+
+4. **Example Scenario**:
+   ```
+   Test 1: Fails with "error: Failed dependencies: packageX is needed by kata"
+   Test 2: Fails with "error: Deployment is already in unlocked state: hotfix"
+   Test 3: Fails with "error: Deployment is already in unlocked state: hotfix"
+   ... (all remaining tests show the same "unlocked state" error)
+
+   ROOT CAUSE: Failed dependencies in Test 1
+   CASCADING ERRORS: "Deployment is already in unlocked state" in all subsequent tests
+   ```
 
 **Test Execution**:
 - Tests run sequentially due to `[Serial]` tag (shared cluster state)
