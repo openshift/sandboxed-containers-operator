@@ -32,6 +32,7 @@ from lib.parser import (
     extract_failing_tests,
     parse_test_case_info,
     categorize_test_by_name,
+    extract_test_execution_order,
 )
 
 # Configure logging
@@ -221,10 +222,28 @@ def analyze_failed_tests(
             'priority': test_info['priority'],
             'failure_summary': test_logs['failure_summary'],
             'full_logs': test_logs['full_logs'],
+            'execution_order': None,  # Will be set below
         }
-        
+
         results.append(result)
-    
+
+    # Add execution order to each test and sort by it
+    # This is critical for root cause analysis - the first test often contains the real error
+    execution_order = extract_test_execution_order(build_log_text)
+    if execution_order:
+        # Create a mapping of test name to execution order number (1-based)
+        order_map = {test_name: idx + 1 for idx, test_name in enumerate(execution_order)}
+
+        # Add execution order to each result
+        for result in results:
+            result['execution_order'] = order_map.get(result['test_name'])
+
+        # Sort results based on execution order
+        results.sort(key=lambda r: r['execution_order'] if r['execution_order'] else float('inf'))
+        logger.info("Added execution order and sorted test results")
+    else:
+        logger.warning("Could not extract execution order, tests shown in original order")
+
     return results
 
 
@@ -250,6 +269,8 @@ def generate_markdown_report(test_results: List[Dict], base_url: str) -> str:
         # Metadata
         if test['test_case_number']:
             report += f"- **Test Case ID**: {test['test_case_number']}\n"
+        if test.get('execution_order'):
+            report += f"- **Execution Order**: {test['execution_order']}\n"
         report += f"- **Elapsed Time**: {test['elapsed_time']}\n"
         report += f"- **Category**: {test['category']}\n"
         if test['author']:

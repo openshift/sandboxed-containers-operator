@@ -294,6 +294,83 @@ def categorize_test_by_name(test_name: str) -> str:
         return 'other'
 
 
+def extract_test_execution_order(log_content: str) -> List[str]:
+    """
+    Extract test execution order from build-log.txt or extended.log.
+
+    Tests are logged in execution order with pattern:
+    started: (x/y/z) "test name"
+    where x=failures so far, y=execution order (1-based), z=total tests
+
+    Example: started: (0/1/36) "[sig-kata] Kata Author:abhbaner-High-C00147..."
+
+    Args:
+        log_content: Content of build-log.txt or extended.log
+
+    Returns:
+        List of test names in execution order
+    """
+    import re
+
+    # Store tuples of (execution_order, test_name)
+    test_order_tuples = []
+
+    # Pattern to match: started: (x/y/z) "test_name"
+    # Capture groups: y (execution order) and test_name
+    pattern = r'started:\s*\(\d+/(\d+)/\d+\)\s*"(.+?)"'
+
+    for match in re.finditer(pattern, log_content):
+        execution_order = int(match.group(1))
+        test_name = match.group(2)
+        test_order_tuples.append((execution_order, test_name))
+        logger.debug(f"Found test #{execution_order}: {test_name}")
+
+    # Sort by execution order and return just the test names
+    test_order_tuples.sort(key=lambda x: x[0])
+    test_names = [test_name for _, test_name in test_order_tuples]
+
+    logger.info(f"Extracted execution order for {len(test_names)} tests")
+    return test_names
+
+
+def add_execution_order_to_tests(failing_tests: List[Dict], log_content: str) -> List[Dict]:
+    """
+    Add execution order number to each failing test.
+
+    Args:
+        failing_tests: List of failing test dictionaries from extract_failing_tests()
+        log_content: Content of build-log.txt or extended.log
+
+    Returns:
+        Updated list of failing tests with execution_order field added
+    """
+    if not failing_tests:
+        return failing_tests
+
+    # Get execution order from logs
+    execution_order = extract_test_execution_order(log_content)
+
+    if not execution_order:
+        logger.warning("Could not extract test execution order from logs")
+        # Return tests with execution_order = None
+        for test in failing_tests:
+            test['execution_order'] = None
+        return failing_tests
+
+    # Create mapping of test name to execution order
+    order_map = {test_name: idx + 1 for idx, test_name in enumerate(execution_order)}
+
+    # Add execution order to each failing test
+    for test in failing_tests:
+        test_name = test['name']
+        test['execution_order'] = order_map.get(test_name)
+        if test['execution_order']:
+            logger.debug(f"Test '{test_name}' execution order: {test['execution_order']}")
+
+    logger.info(f"Added execution order to {len(failing_tests)} failing tests")
+    return failing_tests
+
+
 def format_duration(seconds: int) -> str:
     """
     Format duration in seconds to human-readable format.
