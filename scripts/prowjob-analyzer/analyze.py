@@ -28,7 +28,7 @@ from lib.parser import (
 )
 from lib.metadata_extractor import extract_metadata
 from lib.failure_analyzer import analyze_failure
-from lib.report_generator import generate_human_report, generate_json_report
+from lib.report_generator import generate_human_report, generate_json_report, generate_csv_report
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -138,6 +138,9 @@ Examples:
 
   %(prog)s --json <URL> > report.json
 
+  %(prog)s --csv <URL> >> jobs.csv
+  %(prog)s --csv --no-header <URL>
+
   %(prog)s --verbose --no-wait <URL>
         '''
     )
@@ -151,6 +154,18 @@ Examples:
         '--json',
         action='store_true',
         help='Output machine-readable JSON format'
+    )
+
+    parser.add_argument(
+        '--csv',
+        action='store_true',
+        help='Output CSV format (one row: start_time, catalog_full_tag, catalog_build_date, provider, ocp_version, prowjob url, workload_type, kata_rpm_version, status, trigger, root_cause)'
+    )
+
+    parser.add_argument(
+        '--no-header',
+        action='store_true',
+        help='Omit CSV header row (only applies with --csv)'
     )
 
     parser.add_argument(
@@ -199,6 +214,17 @@ Examples:
             results['failure_analysis'],
             results['base_url']
         )
+    elif args.csv:
+        logger.info("Generating CSV report...")
+        report = generate_csv_report(
+            results['prowjob_data'],
+            results['metadata'],
+            results['status'],
+            results['test_results'],
+            results['failure_analysis'],
+            results['base_url'],
+            header=not args.no_header,
+        )
     else:
         logger.info("Generating human-readable report...")
         report = generate_human_report(
@@ -211,7 +237,8 @@ Examples:
         )
 
     # Output report
-    print("\n" + "="*80 + "\n")
+    if not args.csv:
+        print("\n" + "="*80 + "\n")
     print(report)
 
     # Exit code based on job status

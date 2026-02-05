@@ -1,9 +1,11 @@
 """
 Report Generator Module
 
-Generates human-readable markdown and machine-parsable JSON reports.
+Generates human-readable markdown, machine-parsable JSON, and CSV reports.
 """
 
+import csv
+import io
 import json
 import logging
 from typing import Dict, List, Optional
@@ -395,3 +397,81 @@ def generate_json_report(
         report['artifacts']['must_gather'] = get_artifact_url(base_url, f'artifacts/{variant}/sandboxed-containers-operator-gather-must-gather/artifacts/')
 
     return json.dumps(report, indent=2)
+
+
+def _get_root_cause_for_csv(status: str, failure_analysis: Optional[Dict]) -> str:
+    """Get root cause string for CSV: likely_cause if determined, else 'unknown' (or '' for success)."""
+    if status == 'success':
+        return ''
+    if not failure_analysis:
+        return 'unknown'
+    root_cause = failure_analysis.get('root_cause') or {}
+    likely = root_cause.get('likely_cause', '').strip()
+    return likely if likely else 'unknown'
+
+
+def generate_csv_report(
+    prowjob_data: Dict,
+    metadata: Dict,
+    status: str,
+    test_results: Optional[Dict],
+    failure_analysis: Optional[Dict],
+    base_url: str,
+    header: bool = True,
+) -> str:
+    """
+    Generate a single-row CSV report.
+
+    Column order: start_time, catalog_full_tag, catalog_build_date, provider,
+    ocp_version, prowjob url, workload_type, kata_rpm_version, prowjob status,
+    trigger, root_cause.
+
+    Args:
+        prowjob_data: Parsed prowjob data
+        metadata: Extracted metadata
+        status: Overall job status
+        test_results: Test results (if available)
+        failure_analysis: Failure analysis (if failed)
+        base_url: Base URL of Prow job
+        header: If True, include a header row with column names
+
+    Returns:
+        CSV formatted string (one data row, optionally preceded by header)
+    """
+    build_date = metadata.get('build_date', '') or 'unknown'
+    if build_date == 'invalid-timestamp':
+        build_date = 'unknown'
+
+    prowjob_status = status.upper() if status else ''
+    row = [
+        prowjob_data.get('start_time', ''),
+        metadata.get('full_tag', ''),
+        build_date,
+        metadata.get('provider', ''),
+        metadata.get('ocp_version', ''),
+        base_url,
+        metadata.get('workload_type', ''),
+        metadata.get('kata_rpm_version', 'unknown'),
+        prowjob_status,
+        metadata.get('trigger_source', ''),
+        _get_root_cause_for_csv(status, failure_analysis),
+    ]
+    columns = [
+        'start_time',
+        'catalog_full_tag',
+        'catalog_build_date',
+        'provider',
+        'ocp_version',
+        'prowjob_url',
+        'workload_type',
+        'kata_rpm_version',
+        'prowjob_status',
+        'trigger',
+        'root_cause',
+    ]
+    buf = io.StringIO()
+    writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
+    if header:
+        writer.writerow(columns)
+    writer.writerow(row)
+    return buf.getvalue().rstrip('\n')
