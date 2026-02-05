@@ -28,7 +28,12 @@ from lib.parser import (
 )
 from lib.metadata_extractor import extract_metadata
 from lib.failure_analyzer import analyze_failure
-from lib.report_generator import generate_human_report, generate_json_report, generate_csv_report
+from lib.report_generator import (
+    build_report_data,
+    generate_human_report,
+    generate_json_report,
+    generate_csv_report,
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -159,7 +164,7 @@ Examples:
     parser.add_argument(
         '--csv',
         action='store_true',
-        help='Output CSV format (one row: start_time, catalog_full_tag, catalog_build_date, provider, ocp_version, prowjob url, workload_type, kata_rpm_version, status, trigger, root_cause)'
+        help='Output CSV format (one row: trigger, start_time, catalog_full_tag, catalog_build_date, provider, ocp_version, prowjob url, workload_type, kata_rpm_version, status, failed_steps, primary_pattern, Confidence, root_cause)'
     )
 
     parser.add_argument(
@@ -203,38 +208,25 @@ Examples:
         logger.error("Analysis failed")
         sys.exit(2)
 
-    # Generate report
+    # Build canonical report data once (single source of truth; JSON has everything)
+    report_data = build_report_data(
+        results['prowjob_data'],
+        results['metadata'],
+        results['status'],
+        results['test_results'],
+        results['failure_analysis'],
+        results['base_url'],
+    )
+
     if args.json:
         logger.info("Generating JSON report...")
-        report = generate_json_report(
-            results['prowjob_data'],
-            results['metadata'],
-            results['status'],
-            results['test_results'],
-            results['failure_analysis'],
-            results['base_url']
-        )
+        report = generate_json_report(report_data)
     elif args.csv:
         logger.info("Generating CSV report...")
-        report = generate_csv_report(
-            results['prowjob_data'],
-            results['metadata'],
-            results['status'],
-            results['test_results'],
-            results['failure_analysis'],
-            results['base_url'],
-            header=not args.no_header,
-        )
+        report = generate_csv_report(report_data, header=not args.no_header)
     else:
         logger.info("Generating human-readable report...")
-        report = generate_human_report(
-            results['prowjob_data'],
-            results['metadata'],
-            results['status'],
-            results['test_results'],
-            results['failure_analysis'],
-            results['base_url']
-        )
+        report = generate_human_report(report_data)
 
     # Output report
     if not args.csv:

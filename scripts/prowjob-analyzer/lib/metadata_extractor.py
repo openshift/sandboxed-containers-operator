@@ -7,7 +7,11 @@ Extracts job metadata from prowjob.json and related artifacts.
 import re
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Dict, Optional
+from urllib.request import urlopen, Request
+from urllib.error import HTTPError, URLError
+
 from .fetcher import fetch_artifact, extract_variant_from_job_name
 
 logger = logging.getLogger(__name__)
@@ -147,6 +151,75 @@ def extract_ocp_version(prowjob_data: Dict, base_url: str = None) -> str:
     return 'unknown'
 
 
+def fetch_build_date_from_quay(catalog_image: str) -> Optional[str]:
+    """
+    Fetch image build date from Quay.io API for digest references (@sha256:...).
+
+    Uses the same approach as record-metadata: query
+    https://quay.io/api/v1/repository/{namespace}/{repository}/tag/
+    and find the tag whose manifest_digest matches, then return last_modified
+    formatted as '%Y-%m-%d %H:%M:%S UTC'.
+
+    Args:
+        catalog_image: Full image string (e.g. quay.io/openshift/osc-test-fbc@sha256:abc123...)
+
+    Returns:
+        Build date string in UTC, or None if not found or on error
+    """
+    if not catalog_image or '@sha256:' not in catalog_image:
+        return None
+
+    try:
+        # Parse quay.io/namespace/repo@sha256:hex
+        if not catalog_image.startswith('quay.io/'):
+            return None
+        rest = catalog_image[8:]  # after 'quay.io/'
+        if '@' not in rest:
+            return None
+        image_path, digest_part = rest.split('@', 1)
+        if not digest_part.startswith('sha256:'):
+            return None
+        manifest_digest = digest_part  # keep full "sha256:hex"
+
+        # Paginate through tag list (same as record-metadata script)
+        for page in range(1, 6):
+            url = (
+                f"https://quay.io/api/v1/repository/{image_path}/tag/"
+                f"?limit=100&page={page}"
+            )
+            req = Request(url, headers={'Accept': 'application/json'})
+            with urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+
+            tags = data.get('tags') or data.get('tag') or []
+            if isinstance(tags, dict):
+                tags = list(tags.values())
+
+            for tag_obj in tags:
+                if tag_obj.get('manifest_digest') == manifest_digest:
+                    raw = tag_obj.get('last_modified')
+                    if not raw:
+                        return None
+                    # Parse "Mon, 19 Jan 2026 13:19:23 -0000" -> UTC string
+                    try:
+                        dt = datetime.strptime(
+                            raw.strip(),
+                            '%a, %d %b %Y %H:%M:%S %z'
+                        )
+                        return dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+                    except ValueError:
+                        logger.debug(f"Could not parse last_modified: {raw!r}")
+                        return None
+
+            if not data.get('has_additional', True):
+                break
+
+        return None
+    except (HTTPError, URLError, json.JSONDecodeError, OSError) as e:
+        logger.debug(f"Quay API lookup for build date failed: {e}")
+        return None
+
+
 def parse_catalog_tag(catalog_image: str) -> Dict:
     """
     Parse catalog image tag to extract version and timestamp.
@@ -165,8 +238,6 @@ def parse_catalog_tag(catalog_image: str) -> Dict:
     Returns:
         Dictionary with parsed catalog information
     """
-    from datetime import datetime, timezone
-
     catalog_info = {
         'full_tag': '',
         'base_version': '',
@@ -190,7 +261,12 @@ def parse_catalog_tag(catalog_image: str) -> Dict:
         else:
             catalog_info['base_version'] = tag
 
-        catalog_info['build_date'] = 'unknown'
+        # Try Quay API for build date when using sha256 digest (same as record-metadata)
+        if '@sha256:' in catalog_image:
+            quay_build_date = fetch_build_date_from_quay(catalog_image)
+            catalog_info['build_date'] = quay_build_date if quay_build_date else 'unknown'
+        else:
+            catalog_info['build_date'] = 'unknown'
         return catalog_info
 
     # Check if using tag format (with :)
