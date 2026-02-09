@@ -1,12 +1,12 @@
 # The builder image is expected to contain
 # /bin/opm (with serve subcommand)
-FROM brew.registry.redhat.io/rh-osbs/openshift-ose-operator-registry-rhel9:v4.16 as builder
+FROM brew.registry.redhat.io/rh-osbs/openshift-ose-operator-registry-rhel9:v4.21 as builder
 
 # Copy FBC root into image at /configs and pre-populate serve cache
 ADD catalog/ /configs
 RUN ["/bin/opm", "serve", "/configs", "--cache-dir=/tmp/cache", "--cache-only"]
 
-FROM brew.registry.redhat.io/rh-osbs/openshift-ose-operator-registry-rhel9:v4.16
+FROM brew.registry.redhat.io/rh-osbs/openshift-ose-operator-registry-rhel9:v4.21
 # The base image is expected to contain
 # /bin/opm (with serve subcommand) and /bin/grpc_health_probe
 
