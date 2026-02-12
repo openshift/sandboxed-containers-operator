@@ -88,7 +88,7 @@ print_status "ok" "Operator is running"
 
 # Check if webhook is registered
 echo "2. Checking if pod mutating webhook is registered..."
-if ! $KUBECTL get mutatingwebhookconfiguration 2>/dev/null | grep -q "mpods"; then
+if ! $KUBECTL get mutatingwebhookconfiguration 2>/dev/null | grep -qE "mpods|sandboxed-containers-pod-mutator"; then
     print_status "warn" "Memory overhead webhook not found"
     echo "This may be expected if the webhook is not yet deployed"
     echo ""

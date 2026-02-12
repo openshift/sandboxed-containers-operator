@@ -1765,13 +1765,6 @@ func (eh *NodeEventHandler) Generic(ctx context.Context, event event.GenericEven
 }
 
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
-
-	podMutator := NewPodMutator(mgr)
-	if err := podMutator.SetupWebhookWithManager(mgr); err != nil {
-		return fmt.Errorf("unable to create pod mutator webhook: %w", err)
-	}
-	r.PodMutator = podMutator
-
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
 		Watches(

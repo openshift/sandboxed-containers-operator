@@ -28,6 +28,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 const (
@@ -139,10 +140,12 @@ func (m *PodMutator) injectMemoryOverheadAnnotation(pod *corev1.Pod, memoryOverh
 
 // SetupWebhookWithManager sets up the webhook with the manager
 func (m *PodMutator) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(&corev1.Pod{}).
-		WithDefaulter(m).
-		Complete()
+	// Register the webhook at the path specified in the kubebuilder marker
+	// This must match the path in config/webhook/manifests.yaml
+	mgr.GetWebhookServer().Register("/mutate-pods-v1", &admission.Webhook{
+		Handler: admission.WithCustomDefaulter(mgr.GetScheme(), &corev1.Pod{}, m),
+	})
+	return nil
 }
 
 // Default implements webhook.Defaulter so a webhook will be registered for the type
