@@ -545,7 +545,8 @@ crictl inspectp $SANDBOX_ID 2>/dev/null | grep -A5 -B5 "memory_overhead" || echo
         # Execute via oc debug node
         if command -v oc &> /dev/null; then
             # Use oc debug for OpenShift
-            RUNTIME_OUTPUT=$($KUBECTL debug node/$NODE_NAME -it --image=registry.access.redhat.com/ubi9/ubi:latest -- chroot /host bash -c "$DEBUG_SCRIPT" 2>&1) || true
+            # Run non-interactively for automation; newer oc rejects -it here.
+            RUNTIME_OUTPUT=$($KUBECTL debug node/$NODE_NAME --image=registry.access.redhat.com/ubi9/ubi:latest -- chroot /host bash -c "$DEBUG_SCRIPT" 2>&1) || true
         else
             # For non-OpenShift, try to use a privileged daemonset or direct ssh
             print_status "warn" "Node debugging requires 'oc debug' (OpenShift) or direct node access"
