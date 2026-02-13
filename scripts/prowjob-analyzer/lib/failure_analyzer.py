@@ -8,7 +8,7 @@ import re
 import logging
 from typing import Dict, List, Optional
 from collections import defaultdict
-from .parser import categorize_test_by_name, extract_failing_tests
+from .parser import categorize_test_by_name, extract_failing_tests, add_execution_order_to_tests
 from .fetcher import fetch_artifact, get_failed_steps
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,16 @@ FAILURE_PATTERNS = {
         r'runtime kata.*error',
         r'qemu.*failed',
         r'failed to create sandbox',
+    ],
+    'rpm_install': [
+        r'error:.*Failed dependencies',
+        r'error:.*package.*is needed by kata',
+        r'rpm.*installation failed',
+        r'error:.*nothing provides.*needed by kata',
+    ],
+    'rpm_cascading': [
+        r'error:.*Deployment is already in unlocked state',
+        r'error:.*ostree.*unlocked state',
     ],
 }
 
@@ -192,6 +202,25 @@ def categorize_failing_tests(test_results: Dict) -> Dict[str, List[Dict]]:
     return dict(categorized)
 
 
+def categorize_test_list(failing_tests: List[Dict]) -> Dict[str, List[Dict]]:
+    """
+    Group a list of failing tests by category.
+
+    Args:
+        failing_tests: List of failing test dictionaries
+
+    Returns:
+        Dictionary mapping category to list of failing tests
+    """
+    categorized = defaultdict(list)
+
+    for test in failing_tests:
+        category = categorize_test_by_name(test['name'])
+        categorized[category].append(test)
+
+    return dict(categorized)
+
+
 def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[Dict], metadata: Dict, build_log_text: Optional[str] = None) -> Dict:
     """
     Attempt to determine root cause of failure.
@@ -295,6 +324,22 @@ def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[Dict
             'Consider distributing test load across multiple time periods',
             'Monitor for recurring quota exhaustion patterns',
         ]
+    elif 'rpm_install' in pattern_names:
+        root_cause['primary_pattern'] = 'rpm_install'
+        root_cause['pattern_source'] = find_pattern_source('rpm_install')
+        root_cause['likely_cause'] = 'RPM installation failed due to missing dependencies'
+        root_cause['confidence'] = 'high'
+        root_cause['suggested_actions'] = [
+            'Check the first test logs for the specific missing dependency',
+            'Verify the Kata RPM package dependencies are available in the repository',
+            'Check if the RPM repository is accessible and configured correctly',
+            'Verify the RPM version compatibility with the target OS',
+        ]
+
+        # If rpm_cascading is also present, note it's a secondary error
+        if 'rpm_cascading' in pattern_names:
+            root_cause['cascading_errors'] = ['rpm_cascading']
+            root_cause['note'] = 'Multiple "Deployment is already in unlocked state" errors are cascading failures from the initial RPM dependency error'
 
     # Check for version mismatch (OSC-specific)
     if any('version' in test['name'].lower() for test in failing_tests):
@@ -306,9 +351,11 @@ def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[Dict
 
     # If many tests failed, might be infrastructure
     if len(failing_tests) > 10:
-        root_cause['likely_cause'] = 'Widespread test failures suggest infrastructure or configuration issue'
-        root_cause['confidence'] = 'medium'
+        if not root_cause['likely_cause']:  # Only set if no other cause was found
+            root_cause['likely_cause'] = 'Widespread test failures suggest infrastructure or configuration issue'
+            root_cause['confidence'] = 'medium'
         root_cause['suggested_actions'].append('Review cluster health and OSC installation logs')
+        root_cause['suggested_actions'].append('IMPORTANT: When most/all tests fail, examine the FIRST test\'s logs for the root cause - subsequent test errors are often cascading failures')
 
     return root_cause
 
@@ -357,14 +404,16 @@ def analyze_failure(
     # Fetch and analyze logs for patterns
     detected_patterns = []
     build_log_text = None
+    build_log_text_full = None  # Keep full log for execution order extraction
     analyzed_files = []
 
     # First check the main build log for infrastructure-level failures (e.g., Azure quota)
     build_log_content = fetch_artifact(base_url, "build-log.txt")
     if build_log_content:
         try:
-            build_log_text = build_log_content.decode('utf-8', errors='ignore')
-            # Limit to last 100KB to avoid processing huge logs
+            build_log_text_full = build_log_content.decode('utf-8', errors='ignore')
+            # Use truncated version for pattern matching (performance)
+            build_log_text = build_log_text_full
             if len(build_log_text) > 100000:
                 build_log_text = build_log_text[-100000:]
             patterns_from_build_log = check_log_for_patterns(build_log_text, "build-log.txt")
@@ -405,6 +454,15 @@ def analyze_failure(
     # Store detected patterns with sources and analyzed files info
     analysis['detected_patterns'] = detected_patterns
     analysis['analyzed_files'] = analyzed_files
+
+    # Add execution order to failing tests
+    if analysis['failing_tests'] and build_log_text_full:
+        analysis['failing_tests'] = add_execution_order_to_tests(
+            analysis['failing_tests'],
+            build_log_text_full
+        )
+        # Re-categorize with execution order included
+        analysis['failing_tests_by_category'] = categorize_test_list(analysis['failing_tests'])
 
     # Determine root cause
     analysis['root_cause'] = determine_root_cause(
