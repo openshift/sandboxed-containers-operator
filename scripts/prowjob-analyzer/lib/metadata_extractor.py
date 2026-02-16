@@ -7,6 +7,9 @@ Extracts job metadata from prowjob.json and related artifacts.
 import re
 import json
 import logging
+import urllib.request
+import urllib.error
+from datetime import datetime, timezone
 from typing import Dict, Optional
 from .fetcher import fetch_artifact, extract_variant_from_job_name
 
@@ -147,6 +150,63 @@ def extract_ocp_version(prowjob_data: Dict, base_url: str = None) -> str:
     return 'unknown'
 
 
+def fetch_build_date_from_quay(catalog_image: str) -> str:
+    """
+    For quay.io/...@sha256:..., call Quay API, find tag by manifest_digest,
+    return parsed last_modified or a problem value string.
+
+    Returns:
+        ISO-style build date string, or one of:
+        "quay-unavailable" (network/API error),
+        "quay-not-found" (digest not in tag list),
+        "unknown" (not a quay digest image or generic failure).
+    """
+    if not catalog_image or '@' not in catalog_image:
+        return 'unknown'
+    tag_part = catalog_image.split('@')[-1]
+    if not tag_part.startswith('sha256:'):
+        return 'unknown'
+    # Must be quay.io for this implementation
+    if not catalog_image.startswith('quay.io/'):
+        return 'unknown'
+    # Parse: quay.io/namespace/repo@sha256:digest
+    rest = catalog_image[len('quay.io/'):]
+    if '/' not in rest:
+        return 'unknown'
+    repo = rest.split('@')[0]  # namespace/repo
+    digest = tag_part  # sha256:...
+    api_url = f"https://quay.io/api/v1/repository/{repo}/tag/?limit=500"
+    try:
+        req = urllib.request.Request(api_url, headers={'Accept': 'application/json'})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError, json.JSONDecodeError) as e:
+        logger.debug(f"Quay API request failed for {repo}: {e}")
+        return 'quay-unavailable'
+
+    tags = data.get('tags') or []
+    for t in tags:
+        manifest_digest = t.get('manifest_digest') or ''
+        if manifest_digest == digest or manifest_digest == digest.replace('sha256:', '', 1):
+            last_modified = t.get('last_modified')
+            if last_modified:
+                try:
+                    # Quay returns e.g. "Mon, 01 Jan 2024 12:00:00 -0000" or ISO
+                    if 'T' in last_modified:
+                        dt = datetime.fromisoformat(last_modified.replace('Z', '+00:00'))
+                    else:
+                        from email.utils import parsedate_to_datetime
+                        dt = parsedate_to_datetime(last_modified)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+                except (ValueError, TypeError) as e:
+                    logger.debug(f"Failed to parse last_modified {last_modified}: {e}")
+                    return 'unknown'
+            return 'unknown'
+    return 'quay-not-found'
+
+
 def parse_catalog_tag(catalog_image: str) -> Dict:
     """
     Parse catalog image tag to extract version and timestamp.
@@ -157,7 +217,10 @@ def parse_catalog_tag(catalog_image: str) -> Dict:
     - plain version: 1.11.1
     - latest: latest
     - git SHA: abc123def456
-    - sha256 digest: sha256:41ca9598b816ddc784de8f345e7e586c2630747f2d10c1a45ad5e082ff228a1f
+    - sha256 digest: sha256:... (build_date from Quay API when quay.io)
+
+    Problem values for build_date: "not set", "invalid-timestamp", "quay-unavailable",
+    "quay-not-found", "unknown".
 
     Args:
         catalog_image: Full catalog image string (e.g., quay.io/.../osc-test-fbc:1.11.1-1765791442)
@@ -165,8 +228,6 @@ def parse_catalog_tag(catalog_image: str) -> Dict:
     Returns:
         Dictionary with parsed catalog information
     """
-    from datetime import datetime, timezone
-
     catalog_info = {
         'full_tag': '',
         'base_version': '',
@@ -175,6 +236,7 @@ def parse_catalog_tag(catalog_image: str) -> Dict:
     }
 
     if not catalog_image:
+        catalog_info['build_date'] = 'not set'
         return catalog_info
 
     # Check if using digest format (with @)
@@ -182,15 +244,12 @@ def parse_catalog_tag(catalog_image: str) -> Dict:
         # Format: quay.io/example@sha256:41ca9598b816ddc784de8f345e7e586c2630747f2d10c1a45ad5e082ff228a1f
         tag = catalog_image.split('@')[-1]
         catalog_info['full_tag'] = tag
-
-        # Extract hash without algorithm prefix (sha256:)
         if ':' in tag:
             algorithm, hash_value = tag.split(':', 1)
             catalog_info['base_version'] = hash_value
         else:
             catalog_info['base_version'] = tag
-
-        catalog_info['build_date'] = 'unknown'
+        catalog_info['build_date'] = fetch_build_date_from_quay(catalog_image)
         return catalog_info
 
     # Check if using tag format (with :)
@@ -270,7 +329,7 @@ def extract_build_info(prowjob_data: Dict) -> Dict:
         'expected_operator_version': env_vars.get('EXPECTED_OPERATOR_VERSION', ''),
     }
 
-    # Parse catalog tag for version and timestamp
+    # Parse catalog tag for version and timestamp (build_date is "not set" when no catalog)
     catalog_info = parse_catalog_tag(catalog_image)
     build_info.update(catalog_info)
 
