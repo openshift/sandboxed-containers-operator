@@ -345,14 +345,14 @@ def generate_human_report(report_data: Dict) -> str:
     status_emoji = format_status_emoji(status)
     report += f"## Status: {status_emoji} {status.upper()}\n\n"
 
-    # Job Overview
+    # Job Overview (job_name, build_id, trigger live in prowjob in canonical report)
     report += "## Job Overview\n\n"
-    report += f"- **Job Name**: `{metadata['job_name']}`\n"
-    report += f"- **Snowflake ID**: `{metadata['build_id']}`\n"
-    report += f"- **Trigger**: {metadata['trigger_source']}\n"
+    report += f"- **Job Name**: `{prowjob.get('name', '')}`\n"
+    report += f"- **Snowflake ID**: `{prowjob.get('build_id', '')}`\n"
+    report += f"- **Trigger**: {prowjob.get('trigger', '')}\n"
 
-    if metadata.get('release_stage'):
-        report += f"- **Release Stage**: {metadata['release_stage']}\n"
+    if prowjob.get('release_stage'):
+        report += f"- **Release Stage**: {prowjob['release_stage']}\n"
 
     duration = prowjob.get('duration_seconds', 0)
     if duration > 0:
