@@ -28,7 +28,7 @@ from lib.parser import (
 )
 from lib.metadata_extractor import extract_metadata
 from lib.failure_analyzer import analyze_failure
-from lib.report_generator import generate_human_report, generate_json_report
+from lib.report_generator import build_report_data, generate_human_report, generate_json_report
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -188,27 +188,21 @@ Examples:
         logger.error("Analysis failed")
         sys.exit(2)
 
-    # Generate report
+    # Build canonical report once, then output in requested format
+    report_data = build_report_data(
+        results['prowjob_data'],
+        results['metadata'],
+        results['status'],
+        results['test_results'],
+        results['failure_analysis'],
+        results['base_url'],
+    )
     if args.json:
         logger.info("Generating JSON report...")
-        report = generate_json_report(
-            results['prowjob_data'],
-            results['metadata'],
-            results['status'],
-            results['test_results'],
-            results['failure_analysis'],
-            results['base_url']
-        )
+        report = generate_json_report(report_data)
     else:
         logger.info("Generating human-readable report...")
-        report = generate_human_report(
-            results['prowjob_data'],
-            results['metadata'],
-            results['status'],
-            results['test_results'],
-            results['failure_analysis'],
-            results['base_url']
-        )
+        report = generate_human_report(report_data)
 
     # Output report
     print("\n" + "="*80 + "\n")
