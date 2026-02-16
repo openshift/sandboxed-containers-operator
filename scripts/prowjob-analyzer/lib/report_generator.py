@@ -342,13 +342,11 @@ def generate_human_report(report_data: Dict) -> str:
             report += f"- **Catalog Tag**: `{metadata['full_tag']}`\n"
             if metadata.get('base_version'):
                 report += f"- **Catalog Version**: {metadata['base_version']}\n"
-            build_date = metadata.get('build_date', 'unknown')
-            if build_date == 'invalid-timestamp':
-                build_date = 'unknown'
-            if build_date == 'unknown':
-                report += f"- **Catalog Build Date**: Unknown\n"
-            else:
-                report += f"- **Catalog Build Date**: {build_date}\n"
+        # Show catalog_build_date as-is so problem values are visible
+        build_date = metadata.get('build_date', 'unknown')
+        report += f"- **Catalog Build Date**: {build_date}\n"
+    else:
+        report += "- **Catalog**: Not set (job may not be an OSC test job)\n"
 
     expected_ver = metadata.get('expected_operator_version', '')
     if expected_ver:
