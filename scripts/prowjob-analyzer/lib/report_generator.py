@@ -1,9 +1,11 @@
 """
 Report Generator Module
 
-Generates human-readable markdown and machine-parsable JSON reports.
+Generates human-readable markdown, machine-parsable JSON, and CSV reports.
 """
 
+import csv
+import io
 import json
 import logging
 from typing import Dict, List, Optional
@@ -279,6 +281,51 @@ def build_report_data(
 def generate_json_report(report_data: Dict) -> str:
     """Serialize the canonical report dict to JSON."""
     return json.dumps(report_data, indent=2)
+
+
+def generate_csv_report(report_data: Dict, header: bool = True) -> str:
+    """
+    Generate one row of CSV from the canonical report_data.
+    Columns: trigger, start_time, catalog_full_tag, catalog_build_date, provider,
+    ocp_version, prowjob_url, workload_type, kata_rpm_version, prowjob_status,
+    failed_steps, primary_pattern, confidence, root_cause.
+    """
+    prowjob = report_data['prowjob']
+    metadata = report_data['metadata']
+    failure_analysis = report_data.get('failure_analysis') or {}
+    root_cause = report_data.get('root_cause') or {}
+
+    catalog_full_tag = (metadata.get('catalog_full_tag') or '').strip()
+    if catalog_full_tag.startswith('sha256:'):
+        catalog_full_tag = catalog_full_tag[7:]
+
+    row = [
+        prowjob.get('trigger', ''),
+        prowjob.get('start_time', ''),
+        catalog_full_tag,
+        metadata.get('catalog_build_date', ''),
+        metadata.get('provider', ''),
+        metadata.get('ocp_version', ''),
+        prowjob.get('url', ''),
+        metadata.get('workload_type', ''),
+        metadata.get('kata_rpm_version', ''),
+        (prowjob.get('status') or '').upper(),
+        failure_analysis.get('failure_location', ''),
+        root_cause.get('primary_pattern', ''),
+        root_cause.get('confidence', ''),
+        root_cause.get('likely_cause', ''),
+    ]
+    out = io.StringIO()
+    writer = csv.writer(out)
+    if header:
+        writer.writerow([
+            'trigger', 'start_time', 'catalog_full_tag', 'catalog_build_date',
+            'provider', 'ocp_version', 'prowjob_url', 'workload_type',
+            'kata_rpm_version', 'prowjob_status', 'failed_steps', 'primary_pattern',
+            'confidence', 'root_cause',
+        ])
+    writer.writerow(row)
+    return out.getvalue()
 
 
 def generate_human_report(report_data: Dict) -> str:
