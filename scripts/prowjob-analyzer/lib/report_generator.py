@@ -99,6 +99,8 @@ def generate_failure_analysis_section(failure_analysis: Dict, base_url: str, var
         section += "The job exceeded its execution timeout.\n\n"
     elif location == 'infrastructure':
         section += "The job failed due to infrastructure issues.\n\n"
+    elif location == 'tests':
+        section += "The job failed during the test phase (test-results.yaml available).\n\n"
     elif location == 'unknown':
         section += "Could not determine which step failed.\n\n"
 
@@ -269,6 +271,8 @@ def build_report_data(
         report['artifacts']['extended_log'] = get_artifact_url(base_url, f'artifacts/{variant}/openshift-extended-test/artifacts/extended.log')
         report['artifacts']['must_gather'] = get_artifact_url(base_url, f'artifacts/{variant}/sandboxed-containers-operator-gather-must-gather/artifacts/')
 
+    # Full root_cause dict at top level of canonical report
+    report['root_cause'] = (failure_analysis.get('root_cause', {}) if failure_analysis else {})
     return report
 
 
@@ -312,6 +316,10 @@ def generate_human_report(report_data: Dict) -> str:
         report += f"- **Started**: {start_time}\n"
 
     report += f"- **URL**: {base_url}\n"
+
+    root_cause = report_data.get('root_cause') or {}
+    if root_cause.get('likely_cause'):
+        report += f"- **Root cause**: {root_cause['likely_cause']}\n"
 
     # Environment
     report += "\n## Environment\n\n"
