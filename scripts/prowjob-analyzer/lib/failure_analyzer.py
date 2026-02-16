@@ -324,6 +324,24 @@ def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[Dict
             'Consider distributing test load across multiple time periods',
             'Monitor for recurring quota exhaustion patterns',
         ]
+    elif 'quota' in pattern_names:
+        root_cause['primary_pattern'] = 'quota'
+        root_cause['pattern_source'] = find_pattern_source('quota')
+        root_cause['likely_cause'] = 'Resource quota or limit range exceeded'
+        root_cause['confidence'] = 'medium'
+        root_cause['suggested_actions'] = [
+            'Check resource quotas and limit ranges',
+            'Request quota increase if appropriate',
+        ]
+    elif 'infrastructure' in pattern_names:
+        root_cause['primary_pattern'] = 'infrastructure'
+        root_cause['pattern_source'] = find_pattern_source('infrastructure')
+        root_cause['likely_cause'] = 'Cluster or node provisioning failure'
+        root_cause['confidence'] = 'medium'
+        root_cause['suggested_actions'] = [
+            'Review cluster health and provisioning logs',
+            'Verify cluster installation completed',
+        ]
     elif 'rpm_install' in pattern_names:
         root_cause['primary_pattern'] = 'rpm_install'
         root_cause['pattern_source'] = find_pattern_source('rpm_install')
@@ -340,6 +358,16 @@ def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[Dict
         if 'rpm_cascading' in pattern_names:
             root_cause['cascading_errors'] = ['rpm_cascading']
             root_cause['note'] = 'Multiple "Deployment is already in unlocked state" errors are cascading failures from the initial RPM dependency error'
+    else:
+        # Unknown pattern type: use first detected pattern
+        if detected_patterns:
+            primary = detected_patterns[0]
+            pattern_name = primary.get('pattern', 'unknown') if isinstance(primary, dict) else 'unknown'
+            root_cause['primary_pattern'] = pattern_name
+            root_cause['pattern_source'] = primary.get('source') if isinstance(primary, dict) else None
+            root_cause['likely_cause'] = f"Failure pattern: {pattern_name}"
+            root_cause['confidence'] = 'medium'
+            root_cause['suggested_actions'] = []
 
     # Check for version mismatch (OSC-specific)
     if any('version' in test['name'].lower() for test in failing_tests):
