@@ -28,7 +28,7 @@ from lib.parser import (
 )
 from lib.metadata_extractor import extract_metadata
 from lib.failure_analyzer import analyze_failure
-from lib.report_generator import build_report_data, generate_human_report, generate_json_report
+from lib.report_generator import build_report_data, generate_csv_report, generate_human_report, generate_json_report
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -154,6 +154,18 @@ Examples:
     )
 
     parser.add_argument(
+        '--csv',
+        action='store_true',
+        help='Output one row of CSV (from canonical report)'
+    )
+
+    parser.add_argument(
+        '--no-header',
+        action='store_true',
+        help='Omit CSV header row (only applies with --csv)'
+    )
+
+    parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='Enable verbose logging'
@@ -200,12 +212,16 @@ Examples:
     if args.json:
         logger.info("Generating JSON report...")
         report = generate_json_report(report_data)
+    elif args.csv:
+        logger.info("Generating CSV report...")
+        report = generate_csv_report(report_data, header=not args.no_header)
     else:
         logger.info("Generating human-readable report...")
         report = generate_human_report(report_data)
 
-    # Output report
-    print("\n" + "="*80 + "\n")
+    # Output report (no separator line for CSV)
+    if not args.csv:
+        print("\n" + "="*80 + "\n")
     print(report)
 
     # Exit code based on job status
