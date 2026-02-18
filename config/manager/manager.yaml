@@ -55,6 +55,12 @@ spec:
             defaultMode: 384
             optional: true
             secretName: ssh-key-secret
+        - name: bound-sa-token
+          projected:
+            sources:
+            - serviceAccountToken:
+                path: token
+                audience: openshift
       containers:
         - command:
             - /manager
@@ -64,6 +70,9 @@ spec:
           volumeMounts:
             - mountPath: /root/.ssh/
               name: ssh
+              readOnly: true
+            - mountPath: /var/run/secrets/openshift/serviceaccount
+              name: bound-sa-token
               readOnly: true
           envFrom:
             - secretRef:
