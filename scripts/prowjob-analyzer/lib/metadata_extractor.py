@@ -174,7 +174,6 @@ def fetch_build_date_from_quay(catalog_image: str) -> str:
     if '/' not in rest:
         return 'unknown'
     repo = rest.split('@')[0]  # namespace/repo
-    digest = tag_part  # sha256:...
     api_url = f"https://quay.io/api/v1/repository/{repo}/tag/?limit=500"
     try:
         req = urllib.request.Request(api_url, headers={'Accept': 'application/json'})
@@ -187,7 +186,7 @@ def fetch_build_date_from_quay(catalog_image: str) -> str:
     tags = data.get('tags') or []
     for t in tags:
         manifest_digest = t.get('manifest_digest') or ''
-        if manifest_digest == digest or manifest_digest == digest.replace('sha256:', '', 1):
+        if manifest_digest == tag_part or manifest_digest == tag_part[7:]:
             last_modified = t.get('last_modified')
             if last_modified:
                 try:
@@ -232,11 +231,11 @@ def parse_catalog_tag(catalog_image: str) -> Dict:
         'full_tag': '',
         'base_version': '',
         'timestamp': '',
-        'build_date': '',
+        'catalog_build_date': '',
     }
 
     if not catalog_image:
-        catalog_info['build_date'] = 'not set'
+        catalog_info['catalog_build_date'] = 'not set'
         return catalog_info
 
     # Check if using digest format (with @)
@@ -249,7 +248,7 @@ def parse_catalog_tag(catalog_image: str) -> Dict:
             catalog_info['base_version'] = hash_value
         else:
             catalog_info['base_version'] = tag
-        catalog_info['build_date'] = fetch_build_date_from_quay(catalog_image)
+        catalog_info['catalog_build_date'] = fetch_build_date_from_quay(catalog_image)
         return catalog_info
 
     # Check if using tag format (with :)
@@ -267,44 +266,45 @@ def parse_catalog_tag(catalog_image: str) -> Dict:
         catalog_info['timestamp'] = match.group(2)
 
         # Convert timestamp to UTC datetime
+        ts_raw = match.group(2)
         try:
-            timestamp_int = int(match.group(2))
+            timestamp_int = int(ts_raw)
             dt = datetime.fromtimestamp(timestamp_int, tz=timezone.utc)
-            catalog_info['build_date'] = dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+            catalog_info['catalog_build_date'] = dt.strftime('%Y-%m-%d %H:%M:%S UTC')
         except (ValueError, OSError) as e:
-            logger.debug(f"Failed to convert timestamp {match.group(2)}: {e}")
-            catalog_info['build_date'] = 'invalid-timestamp'
+            logger.debug(f"Failed to convert timestamp {ts_raw}: {e}")
+            catalog_info['catalog_build_date'] = f'invalid-timestamp-{ts_raw}'
         return catalog_info
 
     # Try version with v prefix (e.g., "v1.11.1")
     match = re.match(r'^v([\d.]+)$', tag)
     if match:
         catalog_info['base_version'] = match.group(1)
-        catalog_info['build_date'] = 'unknown'
+        catalog_info['catalog_build_date'] = 'unknown'
         return catalog_info
 
     # Try plain version (e.g., "1.11.1")
     match = re.match(r'^[\d.]+$', tag)
     if match:
         catalog_info['base_version'] = tag
-        catalog_info['build_date'] = 'unknown'
+        catalog_info['catalog_build_date'] = 'unknown'
         return catalog_info
 
     # Check for "latest"
     if tag == 'latest':
         catalog_info['base_version'] = 'latest'
-        catalog_info['build_date'] = 'unknown'
+        catalog_info['catalog_build_date'] = 'unknown'
         return catalog_info
 
     # Check for git SHA (40 hex characters for full SHA, or shorter for abbreviated)
     if re.match(r'^[0-9a-f]{7,40}$', tag):
         catalog_info['base_version'] = tag
-        catalog_info['build_date'] = 'unknown'
+        catalog_info['catalog_build_date'] = 'unknown'
         return catalog_info
 
     # Default: unknown format, keep as-is
     catalog_info['base_version'] = tag
-    catalog_info['build_date'] = 'unknown'
+    catalog_info['catalog_build_date'] = 'unknown'
 
     return catalog_info
 
@@ -329,7 +329,7 @@ def extract_build_info(prowjob_data: Dict) -> Dict:
         'expected_operator_version': env_vars.get('EXPECTED_OPERATOR_VERSION', ''),
     }
 
-    # Parse catalog tag for version and timestamp (build_date is "not set" when no catalog)
+    # Parse catalog tag for version and timestamp (catalog_build_date is "not set" when no catalog)
     catalog_info = parse_catalog_tag(catalog_image)
     build_info.update(catalog_info)
 

@@ -219,7 +219,7 @@ def build_report_data(
             'catalog_source_image': metadata.get('catalog_source_image', ''),
             'catalog_full_tag': metadata.get('full_tag', ''),
             'catalog_version': metadata.get('base_version', ''),
-            'catalog_build_date': metadata.get('build_date', ''),
+            'catalog_build_date': metadata.get('catalog_build_date', ''),
             'catalog_timestamp': metadata.get('timestamp', ''),
             'expected_operator_version': metadata.get('expected_operator_version', ''),
         },
@@ -398,7 +398,7 @@ def generate_human_report(report_data: Dict) -> str:
             if metadata.get('base_version'):
                 report += f"- **Catalog Version**: {metadata['base_version']}\n"
         # Show catalog_build_date as-is so problem values are visible
-        build_date = metadata.get('build_date', 'unknown')
+        build_date = metadata.get('catalog_build_date', 'unknown')
         report += f"- **Catalog Build Date**: {build_date}\n"
     else:
         report += "- **Catalog**: Not set (job may not be an OSC test job)\n"
