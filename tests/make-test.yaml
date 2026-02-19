@@ -22,6 +22,13 @@ spec:
           description: Test output
         steps:
         - image: registry.redhat.io/openshift4/ose-cli:latest
+          resources:
+            requests:
+              cpu: "2"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
           env:
           - name: SNAPSHOT
             value: $(params.SNAPSHOT)
@@ -39,7 +46,7 @@ spec:
             git clone ${srcURL} sources
             cd sources
             git checkout ${srcREV}
-            make test
+            GOMAXPROCS=2 make test
 
             # After the tests finish, record the overall result in the RESULT variable
             if [ $? -eq 0 ]; then
