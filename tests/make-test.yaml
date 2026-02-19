@@ -21,7 +21,7 @@ spec:
         - name: TEST_OUTPUT
           description: Test output
         steps:
-        - image: registry.redhat.io/openshift4/ose-cli:latest
+        - image: registry.redhat.io/openshift4/ose-cli@sha256:4980a846e113a796b7db0ccd86e14064d9d2decca845007d44f0bda4bd139966
           env:
           - name: SNAPSHOT
             value: $(params.SNAPSHOT)
