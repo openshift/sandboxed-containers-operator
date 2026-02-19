@@ -309,6 +309,7 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookConfig() error {
 		"openshift-kube-apiserver",
 		"openshift-kube-apiserver-operator",
 		"openshift-kube-controller-manager",
+		"openshift-kube-proxy",
 		"openshift-kube-scheduler",
 		"openshift-kube-scheduler-operator",
 		"openshift-kube-storage-version-migrator",
