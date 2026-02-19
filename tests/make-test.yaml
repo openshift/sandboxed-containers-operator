@@ -27,18 +27,23 @@ spec:
             value: $(params.SNAPSHOT)
           script: |
             #!/bin/bash
-            set -e
+            set -xe
             SUCCESSES=0
             FAILURES=0
             WARNINGS=0
 
-            dnf -y install jq git make go
+            dnf -y install jq git make go strace
             srcURL=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.url' <<< "${SNAPSHOT}")
             srcREV=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.revision' <<< "${SNAPSHOT}")
 
             git clone ${srcURL} sources
             cd sources
             git checkout ${srcREV}
+
+            export GOMAXPROCS=5
+
+            #go fmt ./...
+            #strace -f go vet ./...
             make test
 
             # After the tests finish, record the overall result in the RESULT variable
