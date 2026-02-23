@@ -41,6 +41,11 @@ major_minor()
 sed -Ei "s/(version=)\"[[:digit:]]+\.[[:digit:]]+\"/\1\"$(major_minor "${version}")\"/g" \
     $(git grep -El 'version=\"[[:digit:]]+\.[[:digit:]]+\"')
 
+sed -Ei "s/(cpe:.*confidential_compute_attestation:)[[:digit:]]+\.[[:digit:]]+:/\1$(major_minor "${version}"):/g" \
+    $(git grep -El 'cpe:.*confidential_compute_attestation:[[:digit:]]+\.[[:digit:]]+:')
+
+sed -Ei "s/\"[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+(-.*timestamp)/\"${version}\1/g" .tekton/osc-test-fbc-push.yaml .tekton/fbc-pipeline.yaml
+
 #
 # `make bundle` applies some changes that we don't want to the following files.
 #
