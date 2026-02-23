@@ -31,7 +31,7 @@ const (
 	rhelCoreOsExtensionsImageName = "rhel-coreos-extensions"
 	cliImageName                  = "cli"
 
-	daemonSetImage = "quay.io/openshift_sandboxed_containers/osc-daemonset:1.11"
+	daemonSetImage = "quay.io/openshift_sandboxed_containers/osc-daemonset:1.12"
 )
 
 // KataInstallationDaemonSetState defines the possible states of the Kata installation DaemonSet.
