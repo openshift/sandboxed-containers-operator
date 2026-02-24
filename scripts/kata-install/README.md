@@ -15,7 +15,7 @@ The image uses an environment variable `TARGETARCH`, which should match one of t
 Run the following commands from the project root directory:
 
 ```bash
-VERSION=1.11
+VERSION=1.12
 IMAGE_BASE=quay.io/openshift_sandboxed_containers/osc-daemonset
 
 # Build for amd64
@@ -55,7 +55,7 @@ Run the following command from the project root directory:
 ```bash
 docker buildx build \
   --platform linux/amd64,linux/s390x \
-  -t quay.io/openshift_sandboxed_containers/osc-daemonset:1.11 \
+  -t quay.io/openshift_sandboxed_containers/osc-daemonset:1.12 \
   -f scripts/kata-install/Dockerfile \
   ./scripts/kata-install \
   --push
