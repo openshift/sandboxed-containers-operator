@@ -2,8 +2,8 @@
 name: prowjob-analyze
 description: Analyze OpenShift Prow job results to determine status, extract metadata, and identify failures
 allowed-tools:
-  - Bash(python3 scripts/prowjob-analyzer/analyze.py:*)
-  - Bash(python3 scripts/prowjob-analyzer/failed_tests_report.py:*)
+  - Bash(python3 scripts/prowjob-analyzer/dig.py:*)
+  - Bash(python3 scripts/prowjob-analyzer/dig_failed_tests_report.py:*)
 ---
 
 Analyze a Prow job to determine its status and provide detailed failure analysis.
@@ -16,7 +16,7 @@ Execute the following steps:
 
 **Step 1: Run main analyzer**
 ```bash
-python3 scripts/prowjob-analyzer/analyze.py --no-wait "$@"
+python3 scripts/prowjob-analyzer/dig.py --no-wait "$@"
 ```
 
 **Step 2: Analyze the output**
@@ -34,20 +34,20 @@ python3 scripts/prowjob-analyzer/analyze.py --no-wait "$@"
     - Find the test with "Execution Order: 1" - this is the FIRST test that executed
     - Use ONLY that test name for detailed analysis:
     ```bash
-    python3 scripts/prowjob-analyzer/failed_tests_report.py <PROW_JOB_URL> "<TEST_NAME_WITH_EXECUTION_ORDER_1>"
+    python3 scripts/prowjob-analyzer/dig_failed_tests_report.py <PROW_JOB_URL> "<TEST_NAME_WITH_EXECUTION_ORDER_1>"
     ```
     This is because when all/most tests fail, it indicates a setup failure. The first test contains the root cause, and subsequent tests show cascading errors.
 
   - If **only a few tests failed** (e.g., <10 tests): Run analysis on all failing tests
     ```bash
-    python3 scripts/prowjob-analyzer/failed_tests_report.py <PROW_JOB_URL> <TEST_NAME_1> <TEST_NAME_2> ...
+    python3 scripts/prowjob-analyzer/dig_failed_tests_report.py <PROW_JOB_URL> <TEST_NAME_1> <TEST_NAME_2> ...
     ```
     Use the exact test names from the "Failed Tests" section.
 
 **Case B: Infrastructure/setup step failed** (Failed Step is NOT `openshift-extended-test`)
 - Examples: `ipi-install-install`, `sandboxed-containers-operator-peerpods-param-cm`, etc.
 - This means tests never ran - job failed before reaching the test step
-- Do NOT run failed_tests_report.py
+- Do NOT run dig_failed_tests_report.py
 - Provide summary explaining that the job failed at infrastructure/setup stage
 - Point user to the specific step's artifacts for investigation
 
@@ -61,14 +61,14 @@ python3 scripts/prowjob-analyzer/analyze.py --no-wait "$@"
 
 Comprehensive Prow job analysis with two-level investigation:
 
-**Level 1: Overall Analysis** (analyze.py)
+**Level 1: Overall Analysis** (dig.py)
 - Extracts job metadata (provider, OCP version, Kata RPM, catalog, etc.)
 - Determines overall job status (pass/fail/timeout)
 - Identifies which step(s) failed
 - Lists failing tests if tests ran and failed
 - Provides links to all artifacts
 
-**Level 2: Detailed Test Debugging** (failed_tests_report.py - only when tests failed)
+**Level 2: Detailed Test Debugging** (dig_failed_tests_report.py - only when tests failed)
 - Only runs if `openshift-extended-test` step failed with failing tests
 - Extracts full test logs and failure summaries from build-log.txt
 - Reports test metadata: elapsed time, category, author, priority

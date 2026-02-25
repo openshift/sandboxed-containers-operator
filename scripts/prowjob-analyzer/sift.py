@@ -6,10 +6,10 @@ Wrapper script to launch Claude Code with the /prowjob-analyze command.
 Automatically finds the project root and invokes Claude with the correct command.
 
 Usage:
-    ./analyze-claude.py <PROW_JOB_URL>
+    ./sift.py <PROW_JOB_URL>
 
 Example:
-    ./analyze-claude.py https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-aws-ipi-peerpods/1987995564184178688
+    ./sift.py https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-aws-ipi-peerpods/1987995564184178688
 """
 
 import sys

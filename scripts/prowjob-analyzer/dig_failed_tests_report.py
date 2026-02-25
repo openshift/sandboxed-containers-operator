@@ -6,8 +6,8 @@ Generates detailed reports for failed tests from a Prow job, including
 full test logs and failure summaries extracted from build-log.txt.
 
 Usage:
-    python3 failed_tests_report.py <PROW_JOB_URL> [TEST_NAME1 TEST_NAME2 ...]
-    python3 failed_tests_report.py --json <PROW_JOB_URL> [TEST_NAME1 TEST_NAME2 ...]
+    python3 dig_failed_tests_report.py <PROW_JOB_URL> [TEST_NAME1 TEST_NAME2 ...]
+    python3 dig_failed_tests_report.py --json <PROW_JOB_URL> [TEST_NAME1 TEST_NAME2 ...]
 """
 
 import sys
