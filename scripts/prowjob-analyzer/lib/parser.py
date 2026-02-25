@@ -14,6 +14,11 @@ except ImportError:
     # Fallback if pyyaml not available
     yaml = None
 
+
+class MissingDependencyError(RuntimeError):
+    """Raised when a required dependency is not available."""
+    pass
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,8 +83,10 @@ def parse_test_results(test_results_content: bytes) -> Optional[Dict]:
         Parsed test results as dict, or None if parsing fails
     """
     if yaml is None:
-        logger.error("pyyaml not available, cannot parse test-results.yaml")
-        return None
+        raise MissingDependencyError(
+            "pyyaml not available, cannot parse test-results.yaml. "
+            "Install with: pip install -r scripts/prowjob-analyzer/requirements.txt"
+        )
 
     if not test_results_content:
         return None
@@ -105,6 +112,50 @@ def parse_test_results(test_results_content: bytes) -> Optional[Dict]:
         return None
 
 
+def get_test_failures_count(test_results: Optional[Dict]) -> int:
+    """
+    Determine the number of failed tests across test-results formats.
+
+    Args:
+        test_results: Parsed test-results.yaml
+
+    Returns:
+        Number of failures detected
+    """
+    if not test_results:
+        return 0
+
+    failures = test_results.get('failures', 0) + test_results.get('errors', 0)
+    failing_scenarios = test_results.get('failingScenarios', [])
+    scenario_count = len(failing_scenarios) if isinstance(failing_scenarios, list) else 0
+
+    if failures == 0 and scenario_count > 0:
+        return scenario_count
+
+    return failures
+
+
+def get_test_total_count(test_results: Optional[Dict]) -> int:
+    """
+    Determine total number of tests across test-results formats.
+
+    Args:
+        test_results: Parsed test-results.yaml
+
+    Returns:
+        Total number of tests detected
+    """
+    if not test_results:
+        return 0
+
+    total = test_results.get('total', 0)
+    if total == 0:
+        tests = test_results.get('tests', 0)
+        total = tests if isinstance(tests, int) else len(tests)
+
+    return total
+
+
 def get_job_status(prowjob_data: Dict, test_results: Optional[Dict] = None) -> str:
     """
     Determine overall job status.
@@ -122,7 +173,7 @@ def get_job_status(prowjob_data: Dict, test_results: Optional[Dict] = None) -> s
     # Map Prow states to our status
     if state == 'success':
         # Double-check with test results if available
-        if test_results and test_results.get('failures', 0) > 0:
+        if get_test_failures_count(test_results) > 0:
             return 'failure'
         return 'success'
     elif state == 'failure':
@@ -136,7 +187,7 @@ def get_job_status(prowjob_data: Dict, test_results: Optional[Dict] = None) -> s
     else:
         # Try to infer from test results
         if test_results:
-            if test_results.get('failures', 0) == 0:
+            if get_test_failures_count(test_results) == 0:
                 return 'success'
             else:
                 return 'failure'

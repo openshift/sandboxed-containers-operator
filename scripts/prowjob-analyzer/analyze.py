@@ -25,6 +25,7 @@ from lib.parser import (
     parse_prowjob,
     parse_test_results,
     get_job_status,
+    MissingDependencyError,
 )
 from lib.metadata_extractor import extract_metadata
 from lib.failure_analyzer import analyze_failure
@@ -98,7 +99,11 @@ def analyze_prowjob(url: str, wait_timeout: int = 300) -> Optional[dict]:
         test_results_content = fetch_artifact(base_url, test_results_path)
 
         if test_results_content:
-            test_results = parse_test_results(test_results_content)
+            try:
+                test_results = parse_test_results(test_results_content)
+            except MissingDependencyError as e:
+                logger.error(str(e))
+                return None
             if test_results:
                 logger.info(f"Test results found: {test_results.get('failures', 0)} failures")
         else:

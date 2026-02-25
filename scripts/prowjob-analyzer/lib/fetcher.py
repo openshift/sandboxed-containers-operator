@@ -14,6 +14,9 @@ from urllib.error import HTTPError, URLError
 
 logger = logging.getLogger(__name__)
 
+# Cache for step directories to avoid repeated listings
+_STEP_DIR_CACHE: Dict[Tuple[str, str], List[str]] = {}
+
 
 def parse_prow_url(url: str) -> Tuple[str, str, str]:
     """
@@ -29,10 +32,13 @@ def parse_prow_url(url: str) -> Tuple[str, str, str]:
     Raises:
         ValueError: If URL format is invalid
     """
+    # Normalize URL by stripping query strings and fragments
+    normalized_url = url.split('?', 1)[0].split('#', 1)[0]
+
     # Try presubmit/PR pattern first (more specific)
     # Format: https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/{ORG}_{REPO}/{PR_NUMBER}/{JOB_NAME}/{BUILD_ID}
     pr_pattern = r'https://prow\.ci\.openshift\.org/view/gs/([^/]+)/pr-logs/pull/([^/]+)/([^/]+)/([^/]+)/([^/\?]+)'
-    match = re.match(pr_pattern, url)
+    match = re.match(pr_pattern, normalized_url)
 
     if match:
         bucket = match.group(1)
@@ -49,7 +55,7 @@ def parse_prow_url(url: str) -> Tuple[str, str, str]:
     # Try periodic/postsubmit pattern
     # Format: https://prow.ci.openshift.org/view/gs/test-platform-results/logs/{JOB_NAME}/{BUILD_ID}
     periodic_pattern = r'https://prow\.ci\.openshift\.org/view/gs/([^/]+)/([^/]+)/([^/]+)/([^/\?]+)'
-    match = re.match(periodic_pattern, url)
+    match = re.match(periodic_pattern, normalized_url)
 
     if match:
         bucket = match.group(1)
@@ -314,6 +320,10 @@ def get_step_directories(base_url: str, variant: str) -> List[str]:
     Returns:
         List of step directory names
     """
+    cache_key = (base_url, variant)
+    if cache_key in _STEP_DIR_CACHE:
+        return list(_STEP_DIR_CACHE[cache_key])
+
     artifacts_url = f"{base_url}/artifacts/{variant}/"
 
     try:
@@ -351,6 +361,7 @@ def get_step_directories(base_url: str, variant: str) -> List[str]:
                     seen.add(m)
 
             logger.debug(f"Found {len(step_dirs)} step directories in {variant}: {step_dirs[:5]}")
+            _STEP_DIR_CACHE[cache_key] = list(step_dirs)
             return step_dirs
 
     except Exception as e:
