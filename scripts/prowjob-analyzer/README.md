@@ -33,7 +33,19 @@ The Prow Job Analyzer provides comprehensive analysis of Prow job runs, extracti
 
 ## Usage
 
-### Quick Start: Claude Launcher (Recommended)
+### Initial Report
+Find out if the tests succeeded or not
+```bash
+cd scripts/prowjob-analyzer
+./dig.py <PROW_JOB_URL>
+```
+If it succeeded, there is no need to investigate further.
+
+
+### Further Investgation
+ On failed jobs, you can use Claude (recommended) or `dig_failed_tests_report.py`\
+
+#### Claude via script (Recommended)
 
 The easiest way to analyze a Prow job is using the Claude launcher script from anywhere:
 
@@ -60,7 +72,7 @@ The launcher script:
 - `--interactive, -i`: Launch Claude in interactive mode (default: non-interactive)
 - `--verbose, -v`: Show verbose output for debugging
 
-### Via Claude Code Slash Command
+#### In Claude Code with /prowjob-analyze
 
 If you already have Claude Code open in the project directory:
 
@@ -72,9 +84,44 @@ The analyzer supports both job URL patterns:
 - **Periodic/Postsubmit**: `https://prow.ci.openshift.org/view/gs/test-platform-results/logs/{JOB_NAME}/{BUILD_ID}`
 - **Presubmit/Rehearsal**: `https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/{ORG}_{REPO}/{PR}/{JOB_NAME}/{BUILD_ID}`
 
+
+### Processing Konflux Workflow
+Konflux will create a build and run the tests in [osc-test-catalog-integration](https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/ose-osc-tenant/applications/osc-test-catalog/integrationtests/osc-test-catalog-integration).  Each build creates a **Pipeline Run**.
+
+Click on the one you want, go to its **Logs** and select *Download all task logs*. This will create a file called osc-test-catalog-integration-XXXX.log.  We'll call this the `konflux test log`.  It contains multiple test runs and the prowjob URLS for each that need to be fed to `dig.py`.
+
+We will use `dig.py` to create a .csv file with all the tests and an initial RCA.  This can be imported into a spreadsheet.
+
+```bash
+cd scripts/prowjob-analyzer
+echo '' > <output.csv>
+URLS=$(grep ^https <konflux test log>)
+for URL in $URLS
+do
+    echo $URL
+    ./dig.py $URL --csv --no-header --no-wait >> <output.csv>
+done
+dos2unix <output.csv> # to conver to Unix EOL
+grep -v <output.csv> > import.csv
+```
+
+We've been using [OSC Testing spreadsheet](https://docs.google.com/spreadsheets/d/13k-rIFap5BTLqDcYfbgMH37hAWJI6hf9Af9LHcA3haw/edit?gid=1173858770#gid=1173858770) to gather results.
+
+Go to the *konflux* tab
+Go to the last row plus 1
+File -> import
+Upload your import.csv file to google drive
+*Import location* should be `Replace data at selected cell`
+Import data.
+If you have many log files, you might need to created a new spreadsheet and copy/pasted it instead.
+You might need to adjust alignment, etc.  If you're doing lots of analysis/sorting/etc, you might want to make a copy and do things there.
+
+Now you should have a list of SUCCESS/FAILURE runs.  There can be an initial RCA for failed jobs.
+You can choose the prowjob URLs for further investigation
+
 ### Direct CLI Usage
 
-You can also run the analyzer scripts directly:
+You can also run the dig scripts directly:
 
 **Level 1: Overall Analysis**
 ```bash
