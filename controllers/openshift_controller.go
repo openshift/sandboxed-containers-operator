@@ -2309,53 +2309,6 @@ func (r *KataConfigOpenShiftReconciler) isUpdating() bool {
 	return cond.Status == corev1.ConditionTrue && cond.Reason == "Updating"
 }
 
-// Create the MachineConfigs from file
-// Full path of the file should be provided
-func (r *KataConfigOpenShiftReconciler) createMcFromFile(machineConfigYamlFile string) error {
-	yamlData, err := readYamlFile(machineConfigYamlFile)
-	if err != nil {
-		r.Log.Info("Error in reading MachineConfigYaml", "mcFile", machineConfigYamlFile, "err", err)
-		return err
-	}
-
-	r.Log.Info("machineConfig yaml dump ", "yamlData", yamlData)
-
-	machineConfig, err := parseMachineConfigYAML(yamlData)
-	if err != nil {
-		r.Log.Info("Error in parsing MachineConfigYaml", "mcFile", machineConfigYamlFile, "err", err)
-		return err
-	}
-
-	// Default MCP is kata-oc, however for converged cluster it should be "master"
-	isConvergedCluster, err := r.checkConvergedCluster()
-	if isConvergedCluster && err == nil {
-		machineConfig.Labels["machineconfiguration.openshift.io/role"] = "master"
-	}
-
-	r.Log.Info("machineConfig dump ", "machineConfig", machineConfig)
-
-	if err := r.Client.Create(context.TODO(), machineConfig); err != nil {
-		if k8serrors.IsAlreadyExists(err) {
-			currentMachineConfig := &mcfgv1.MachineConfig{}
-			err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machineConfig.ObjectMeta.Name}, currentMachineConfig)
-			if err != nil {
-				r.Log.Info("Error getting machineConfig", "mc", machineConfig.Name, "err", err)
-				return err
-			}
-			machineConfig.ObjectMeta.ResourceVersion = currentMachineConfig.ObjectMeta.ResourceVersion
-			err = r.Client.Update(context.TODO(), machineConfig)
-			if err != nil {
-				r.Log.Info("Error updating machineConfig", "mc", machineConfig.Name, "err", err)
-				return err
-			}
-			return nil
-		} else {
-			return err
-		}
-	}
-	return nil
-}
-
 func (r *KataConfigOpenShiftReconciler) checkDeletionEligibility() (ctrl.Result, error) {
 	if contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
 		// Get the list of pods that might be running using kata runtime
