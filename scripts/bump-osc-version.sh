@@ -19,11 +19,25 @@ EOF
     exit 1
 fi
 
+#
+# Generic case based on OSC_VERSION tag
+#
 sed -Ei "s/[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+([^#]+## OSC_VERSION)/${version}\1/g" \
     $(git grep -El '[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+[^#]+## OSC_VERSION')
 
+#
+# Specific cases in the CSV
+#
 sed -Ei \
     "s/(olm.skipRange: '>=1\.1\.0 <)[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+'/\1${version}'/g" \
+    config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml
+
+sed -Ei \
+    "s/^([[:space:]]+version: )[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+/\1${version}/g" \
+    config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml
+
+sed -Ei \
+    "s/^([[:space:]]+name: sandboxed-containers-operator\.v)[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+/\1${version}/g" \
     config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml
 
 if [[ -n "$replaced" ]]; then
@@ -31,6 +45,9 @@ if [[ -n "$replaced" ]]; then
 	config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml
 fi
 
+#
+# Labels
+#
 major_minor()
 {
     local major minor
@@ -44,6 +61,9 @@ sed -Ei "s/(version=)\"[[:digit:]]+\.[[:digit:]]+\"/\1\"$(major_minor "${version
 sed -Ei "s/(cpe:.*confidential_compute_attestation:)[[:digit:]]+\.[[:digit:]]+:/\1$(major_minor "${version}"):/g" \
     $(git grep -El 'cpe:.*confidential_compute_attestation:[[:digit:]]+\.[[:digit:]]+:')
 
+#
+# FBC catalogs
+#
 sed -Ei "s/\"[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+(-.*timestamp)/\"${version}\1/g" .tekton/osc-test-fbc-push.yaml .tekton/fbc-pipeline.yaml
 
 #
@@ -53,7 +73,6 @@ readonly files_to_preserve=(
     "bundle.Dockerfile"
     "config/manager/kustomization.yaml"
     "config/metrics/kustomization.yaml"
-    "config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml"
 )
 
 readonly backup_dir=`mktemp --directory -t bump-osc-version-XXXXXX`
