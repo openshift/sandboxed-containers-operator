@@ -65,8 +65,9 @@ For example `release-1.1` corresponds to the Operator release verson `1.1.x`.
 
 ## Operator Development
 
-Please take a look at the following [doc](./docs/DEVELOPMENT.md). 
-Contributions are most welcome!!
+Contributions are most welcome!! Please check out our [contributing guide](./CONTRIBUTING.md) for commit message format and contribution workflow.
+
+For development setup and build instructions, please see the [development documentation](./docs/DEVELOPMENT.md).
 
 ## Demos
 
