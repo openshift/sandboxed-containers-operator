@@ -369,14 +369,6 @@ def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[Dict
             root_cause['confidence'] = 'medium'
             root_cause['suggested_actions'] = []
 
-    # Check for version mismatch (OSC-specific)
-    if any('version' in test['name'].lower() for test in failing_tests):
-        root_cause['likely_cause'] = 'Operator version mismatch'
-        root_cause['confidence'] = 'high'
-        root_cause['suggested_actions'].append(
-            f"Update EXPECTED_OPERATOR_VERSION to {metadata.get('expected_operator_version', 'correct value')}"
-        )
-
     # If many tests failed, might be infrastructure
     if len(failing_tests) > 10:
         if not root_cause['likely_cause']:  # Only set if no other cause was found

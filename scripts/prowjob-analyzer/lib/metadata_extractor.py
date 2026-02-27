@@ -326,7 +326,6 @@ def extract_build_info(prowjob_data: Dict) -> Dict:
     build_info = {
         'catalog_source_image': catalog_image,
         'catalog_source_name': env_vars.get('CATALOG_SOURCE_NAME', ''),
-        'expected_operator_version': env_vars.get('EXPECTED_OPERATOR_VERSION', ''),
     }
 
     # Parse catalog tag for version and timestamp (catalog_build_date is "not set" when no catalog)
