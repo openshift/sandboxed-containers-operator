@@ -95,7 +95,6 @@ Author:<developer>-<Priority>-<CaseID>-<Description> [Tags]
 ```
 
 Examples:
-- `Author:tbuskey-High-C00077-Version in operator CSV should match expected version [Serial]`
 - `Author:vvoronko-High-C00349-deploy peerpod with non-existing image annotation [Serial]`
 
 Where:
@@ -191,7 +190,6 @@ Tests use hardcoded defaults that can be overridden via `osc-config` ConfigMap:
 - Runtime class name (kata, kata-remote)
 - Enable peer pods (true/false)
 - Workload type to test (kata, peer-pods, coco)
-- Expected operator version
 - Install Kata RPM (true/false)
 - Enable GPU to include Nvidia GPU drivers in podvm image and run GPU tests
 - Set initdata for the OSC operator

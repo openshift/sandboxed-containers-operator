@@ -215,7 +215,6 @@ Based on validated patterns:
 - Extract Kata RPM version (OSC-specific step)
 - Understand workload types (kata, peerpods, coco)
 - Categorize tests by sig-kata patterns
-- Check version mismatches (EXPECTED_OPERATOR_VERSION)
 
 ## Dependencies
 - Python 3 (available)
