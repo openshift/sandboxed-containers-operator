@@ -17,6 +17,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -68,12 +69,18 @@ type KataConfigOpenShiftReconciler struct {
 	DeploymentMode DeploymentMode
 }
 
+type customKernelConfig struct {
+	Image      string
+	KernelPath string
+}
+
 const (
 	OperatorNamespace             = "openshift-sandboxed-containers-operator"
 	dashboard_configmap_name      = "grafana-dashboard-sandboxed-containers"
 	dashboard_configmap_namespace = "openshift-config-managed"
 	container_runtime_config_name = "kata-crio-config"
 	extension_mc_name             = "50-enable-sandboxed-containers-extension"
+	KataAddonConfigMapName        = "kata-addon-artifacts"
 	// Use same Pod Overhead as upstream kata-deploy using, see
 	// https://github.com/kata-containers/kata-containers/blob/main/tools/packaging/kata-deploy/runtimeclasses/kata-qemu.yaml#L7
 	kataRuntimeClassName        = "kata"
@@ -599,7 +606,39 @@ func (r *KataConfigOpenShiftReconciler) isOCPVersionLessThan(minVersion string) 
 	return current.LessThan(min), currentVersion, nil
 }
 
-func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.MachineConfig, error) {
+// getCustomKernelConfig retrieves the kata addon configuration from the "kata-addon-artifacts" ConfigMap in the operator namespace.
+// This configuration contains the addon image reference and kernel path required for kata-se (IBM Secure Execution) deployments.
+// NOTE: This logic is applicable only for kata-se / IBM Secure Execution (s390x).
+func (r *KataConfigOpenShiftReconciler) getCustomKernelConfig(ctx context.Context) (*customKernelConfig, error) {
+	cm := &corev1.ConfigMap{}
+	err := r.Client.Get(ctx, types.NamespacedName{
+		Name:      KataAddonConfigMapName,
+		Namespace: OperatorNamespace,
+	}, cm)
+
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("Skipping custom kernel addon, ConfigMap not found", "ConfigMap", KataAddonConfigMapName)
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	image := cm.Data["addonImage"]
+	kernel := cm.Data["kernelPath"]
+
+	if image == "" || kernel == "" {
+		r.Log.Info("Skipping custom kernel addon, image or kernel not found in ConfigMap", "ConfigMap", KataAddonConfigMapName)
+		return nil, nil
+	}
+
+	return &customKernelConfig{
+		Image:      image,
+		KernelPath: kernel,
+	}, nil
+}
+
+func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string, customKernelCfg *customKernelConfig) (*mcfgv1.MachineConfig, error) {
 	r.Log.Info("Creating MachineConfig for Custom Resource")
 
 	if r.ImgMc != nil {
@@ -612,6 +651,30 @@ func (r *KataConfigOpenShiftReconciler) newMCForCR(machinePool string) (*mcfgv1.
 		Ignition: ignTypes.Ignition{
 			Version: "3.2.0",
 		},
+	}
+
+	if customKernelCfg != nil {
+		mode := 0644
+
+		configContent := fmt.Sprintf(
+			"IMAGE=%s\nKERNEL=%s\n",
+			customKernelCfg.Image,
+			customKernelCfg.KernelPath,
+		)
+
+		source := "data:text/plain;base64," + base64.StdEncoding.EncodeToString([]byte(configContent))
+
+		ic.Storage.Files = append(ic.Storage.Files, ignTypes.File{
+			Node: ignTypes.Node{
+				Path: "/etc/kata-containers/kata-addon-kernel.conf",
+			},
+			FileEmbedded1: ignTypes.FileEmbedded1{
+				Contents: ignTypes.Resource{
+					Source: &source,
+				},
+				Mode: &mode,
+			},
+		})
 	}
 
 	icb, err := json.Marshal(ic)
@@ -1017,10 +1080,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	r.Log.Info("Making sure parent MCP is synced properly, SCNodeRole=" + machinePool)
 	r.setInProgressConditionToUninstalling()
 
-	mc, err := r.newMCForCR(machinePool)
+	mc, err := r.newMCForCR(machinePool, nil)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
 	var isMcDeleted bool
 
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, mc)
@@ -1170,7 +1234,12 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 		r.Log.Info("SCNodeRole is: " + machinePool)
 	}
 
-	wasMcJustCreated, err := r.createMc(machinePool)
+	customKernelCfg, err := r.getCustomKernelConfig(context.TODO())
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	wasMcJustCreated, err := r.createMc(machinePool, customKernelCfg)
 	if err != nil {
 		return ctrl.Result{Requeue: true}, nil
 	}
@@ -1284,7 +1353,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 // If the first return value is 'true' it means that the MC was just created
 // by this call, 'false' means that it's already existed.  As usual, the first
 // return value is only valid if the second one is nil.
-func (r *KataConfigOpenShiftReconciler) createMc(machinePool string) (bool, error) {
+func (r *KataConfigOpenShiftReconciler) createMc(machinePool string, customKernelCfg *customKernelConfig) (bool, error) {
 
 	// In case we're returning an error we want to make it explicit that
 	// the first return value is "not care".  Unfortunately golang seems
@@ -1295,12 +1364,13 @@ func (r *KataConfigOpenShiftReconciler) createMc(machinePool string) (bool, erro
 	/* Create Machine Config object to install sandboxed containers */
 
 	r.Log.Info("creating RHCOS MachineConfig")
-	mc, err := r.newMCForCR(machinePool)
+	mc, err := r.newMCForCR(machinePool, customKernelCfg)
 	if err != nil {
 		return dummy, err
 	}
 
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, mc)
+	existingMc := &mcfgv1.MachineConfig{}
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, existingMc)
 	if err != nil && (k8serrors.IsNotFound(err) || k8serrors.IsGone(err)) {
 
 		err = r.Client.Create(context.TODO(), mc)
@@ -1313,6 +1383,14 @@ func (r *KataConfigOpenShiftReconciler) createMc(machinePool string) (bool, erro
 	} else if err != nil {
 		r.Log.Info("failed to retrieve MachineConfig", "err", err)
 		return dummy, err
+	} else if !reflect.DeepEqual(existingMc.Spec, mc.Spec) {
+		r.Log.Info("MachineConfig spec changed, updating", "mc.Name", mc.Name)
+		existingMc.Spec = mc.Spec
+		if err := r.Client.Update(context.TODO(), existingMc); err != nil {
+			r.Log.Error(err, "Failed to update MachineConfig", "mc.Name", mc.Name)
+			return dummy, err
+		}
+		return false, nil
 	} else {
 		r.Log.Info("MachineConfig already exists")
 		return false, nil

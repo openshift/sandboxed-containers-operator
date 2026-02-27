@@ -186,7 +186,7 @@ func getCloudProviderFromInfra(c client.Client) (string, error) {
 
 // Method to check if the configMap is relevant for the operator
 func isConfigMapRelevant(configMapName string) bool {
-	return configMapName == FeatureGatesCM
+	return configMapName == FeatureGatesCM || configMapName == KataAddonConfigMapName
 }
 
 // Method to get cluster id from ClusterVersion object
