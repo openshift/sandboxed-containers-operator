@@ -36,6 +36,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -105,6 +106,24 @@ func main() {
 		},
 		LeaderElection:   enableLeaderElection,
 		LeaderElectionID: "290f4947.kataconfiguration.openshift.io",
+		// The controller runtime can end up caching all objects in the cluster and cause OOM.
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.Secret{}: {
+					// Restrict caching to namespaces where we access secrets
+					Namespaces: map[string]cache.Config{
+						controllers.OperatorNamespace: {},
+						"openshift-config":            {}, // for global pull-secrets
+					},
+				},
+				&corev1.ConfigMap{}: {
+					// Same for config maps
+					Namespaces: map[string]cache.Config{
+						controllers.OperatorNamespace: {},
+					},
+				},
+			},
+		},
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
