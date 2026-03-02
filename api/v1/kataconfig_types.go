@@ -31,6 +31,7 @@ type KataConfigSpec struct {
 
 	// CheckNodeEligibility is used to detect the node(s) eligibility to run Kata containers.
 	// This is currently done through the use of the Node Feature Discovery Operator (NFD).
+	// In addition this option will also enforce runtime class creation if only if node(s) support them.
 	// For more information on how the check works, please refer to the sandboxed containers documentation - https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.6/html-single/user_guide/index#about-node-eligibility-checks_about-osc
 	// +kubebuilder:default:=false
 	CheckNodeEligibility bool `json:"checkNodeEligibility"`
