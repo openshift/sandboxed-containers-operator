@@ -54,14 +54,17 @@ func IsOpenShift() (bool, error) {
 		return false, err
 	}
 
-	// Get a list of all API's on the cluster
-	apiGroup, _, err := discoveryClient.ServerGroupsAndResources()
+	// We only need API group names to detect OpenShift.
+	// Avoid ServerGroupsAndResources(), which can fail when any aggregated
+	// APIService is unhealthy (for example metrics.k8s.io) and would
+	// unnecessarily crash operator startup.
+	apiGroups, err := discoveryClient.ServerGroups()
 	if err != nil {
 		return false, err
 	}
 
-	for i := 0; i < len(apiGroup); i++ {
-		if apiGroup[i].Name == "config.openshift.io" {
+	for i := 0; i < len(apiGroups.Groups); i++ {
+		if apiGroups.Groups[i].Name == "config.openshift.io" {
 			return true, nil
 		}
 	}
