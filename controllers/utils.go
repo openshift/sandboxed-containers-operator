@@ -156,7 +156,7 @@ func getPeerPodsSecret(c client.Client) (*corev1.Secret, error) {
 
 	err := c.Get(context.TODO(), types.NamespacedName{
 		Name:      peerPodsSecretName,
-		Namespace: "openshift-sandboxed-containers-operator",
+		Namespace: OperatorNamespace,
 	}, peerPodsSecret)
 
 	if err != nil {
