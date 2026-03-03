@@ -105,8 +105,6 @@ dos2unix <output.csv> # to conver to Unix EOL
 grep -v <output.csv> > import.csv
 ```
 
-We've been using [OSC Testing spreadsheet](https://docs.google.com/spreadsheets/d/13k-rIFap5BTLqDcYfbgMH37hAWJI6hf9Af9LHcA3haw/edit?gid=1173858770#gid=1173858770) to gather results.
-
 Go to the *konflux* tab
 Go to the last row plus 1
 File -> import
