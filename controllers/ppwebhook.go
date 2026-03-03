@@ -270,7 +270,7 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookConfig() error {
 	// Add list of namespaces to exclude
 	namespacesToExclude := []string{
 		"peer-pods-webhook-system",
-		"openshift-sandboxed-containers-operator",
+		OperatorNamespace,
 		"openshift",
 		"openshift-apiserver",
 		"openshift-apiserver-operator",

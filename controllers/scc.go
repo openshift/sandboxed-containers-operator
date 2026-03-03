@@ -35,6 +35,6 @@ func GetScc() *secv1.SecurityContextConstraints {
 			Type: secv1.SELinuxStrategyRunAsAny,
 		},
 		Volumes: []secv1.FSType{secv1.FSTypeAll},
-		Users:   []string{"system:serviceaccount:openshift-sandboxed-containers-operator:monitor"},
+		Users:   []string{"system:serviceaccount:" + OperatorNamespace + ":monitor"},
 	}
 }
