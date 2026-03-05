@@ -340,7 +340,7 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state Featur
 		err := r.deleteRuntimeClass(kataCCRuntimeClassName)
 		if err != nil {
 			r.Log.Info("Error deleting "+kataCCRuntimeClassName+" runtime class", "err", err)
-			return fmt.Errorf("Error deleting "+kataCCRuntimeClassName+" runtime class: %w", err)
+			return fmt.Errorf("error deleting "+kataCCRuntimeClassName+" runtime class: %w", err)
 		}
 
 		r.Log.Info("Deleting " + kataNvidiaGPUCCRuntimeClassName + " runtime class for confidential containers")
@@ -349,7 +349,7 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state Featur
 		err = r.deleteRuntimeClass(kataNvidiaGPUCCRuntimeClassName)
 		if err != nil {
 			r.Log.Info("Error deleting "+kataNvidiaGPUCCRuntimeClassName+" runtime class", "err", err)
-			return fmt.Errorf("Error deleting "+kataNvidiaGPUCCRuntimeClassName+" runtime class: %w", err)
+			return fmt.Errorf("error deleting "+kataNvidiaGPUCCRuntimeClassName+" runtime class: %w", err)
 		}
 	}
 

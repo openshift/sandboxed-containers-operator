@@ -66,11 +66,11 @@ func (r *KataConfig) ValidateCreate(ctx context.Context, obj runtime.Object) (ad
 		client.InNamespace(corev1.NamespaceAll),
 	}
 	if err := clientInst.List(ctx, kataConfigList, listOpts...); err != nil {
-		return nil, fmt.Errorf("Failed to list KataConfig custom resources: %v", err)
+		return nil, fmt.Errorf("failed to list KataConfig custom resources: %v", err)
 	}
 
 	if len(kataConfigList.Items) == 1 {
-		return nil, fmt.Errorf("A KataConfig instance already exists, refusing to create a duplicate")
+		return nil, fmt.Errorf("a KataConfig instance already exists, refusing to create a duplicate")
 	}
 
 	return nil, nil
