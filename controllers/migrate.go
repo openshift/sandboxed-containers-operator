@@ -31,7 +31,7 @@ func (r *KataConfigOpenShiftReconciler) migratePeerPodsLimit() error {
 	peerPodConfig.SetAPIVersion("confidentialcontainers.org/v1alpha1")
 	peerPodConfig.SetKind("PeerPodConfig")
 
-	err := r.Client.Get(context.TODO(), client.ObjectKey{
+	err := r.Get(context.TODO(), client.ObjectKey{
 		Name:      "peerpodconfig-openshift",
 		Namespace: OperatorNamespace,
 	}, peerPodConfig)
@@ -52,11 +52,11 @@ func (r *KataConfigOpenShiftReconciler) migratePeerPodsLimit() error {
 	if !found {
 		r.Log.Info("spec.limit not found, skipping migration, in favor of default value.")
 		r.Log.Info("Removing deprecated PeerPodConfig...")
-		return r.Client.Delete(context.TODO(), peerPodConfig)
+		return r.Delete(context.TODO(), peerPodConfig)
 	}
 
 	configMap := &corev1.ConfigMap{}
-	err = r.Client.Get(context.TODO(), client.ObjectKey{
+	err = r.Get(context.TODO(), client.ObjectKey{
 		Name:      "peer-pods-cm",
 		Namespace: OperatorNamespace,
 	}, configMap)
@@ -65,18 +65,18 @@ func (r *KataConfigOpenShiftReconciler) migratePeerPodsLimit() error {
 		if k8serrors.IsNotFound(err) {
 			r.Log.Info("No peer-pods-cm found, skipping migration")
 			r.Log.Info("Removing deprecated PeerPodConfig...")
-			return r.Client.Delete(context.TODO(), peerPodConfig)
+			return r.Delete(context.TODO(), peerPodConfig)
 		}
 		return err
 	}
 
 	configMap.Data["PEERPODS_LIMIT_PER_NODE"] = limitValue
-	err = r.Client.Update(context.TODO(), configMap)
+	err = r.Update(context.TODO(), configMap)
 	if err != nil {
 		return err
 	}
 
-	err = r.Client.Delete(context.TODO(), peerPodConfig)
+	err = r.Delete(context.TODO(), peerPodConfig)
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func (r *KataConfigOpenShiftReconciler) ensureRuntimeClassFinalizers() error {
 
 	for _, name := range runtimeClasses {
 		rc := &nodeapi.RuntimeClass{}
-		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: name}, rc)
+		err := r.Get(context.TODO(), types.NamespacedName{Name: name}, rc)
 		if k8serrors.IsNotFound(err) {
 			continue
 		}
@@ -106,7 +106,7 @@ func (r *KataConfigOpenShiftReconciler) ensureRuntimeClassFinalizers() error {
 		if !controllerutil.ContainsFinalizer(rc, runtimeClassFinalizerName) {
 			r.Log.Info("Adding finalizer to existing runtime class", "runtimeClass", name)
 			controllerutil.AddFinalizer(rc, runtimeClassFinalizerName)
-			if err := r.Client.Update(context.TODO(), rc); err != nil {
+			if err := r.Update(context.TODO(), rc); err != nil {
 				return err
 			}
 		}

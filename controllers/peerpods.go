@@ -295,10 +295,10 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 		return err
 	}
 
-	err := r.Client.Update(context.TODO(), ds)
+	err := r.Update(context.TODO(), ds)
 	if err != nil && k8serrors.IsNotFound(err) {
 		r.Log.Error(err, "cloud-api-adaptor daemonset doesn't exist. Creating")
-		err = r.Client.Create(context.TODO(), ds)
+		err = r.Create(context.TODO(), ds)
 		if err != nil {
 			r.Log.Error(err, "failed to create cloud-api-adaptor daemonset")
 			return err
@@ -337,7 +337,7 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 
 func (r *KataConfigOpenShiftReconciler) disablePeerPodsMiscConfigs() error {
 	ds := r.processDaemonsetForCAA()
-	err := r.Client.Delete(context.TODO(), ds)
+	err := r.Delete(context.TODO(), ds)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			r.Log.Info("cloud-api-adaptor daemonset was already deleted")

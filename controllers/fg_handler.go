@@ -51,7 +51,7 @@ func (r *KataConfigOpenShiftReconciler) NewFeatureGateStatus() (*FeatureGateStat
 	}
 
 	cfgMap := &corev1.ConfigMap{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: FgConfigMapName,
+	err := r.Get(context.TODO(), types.NamespacedName{Name: FgConfigMapName,
 		Namespace: OperatorNamespace}, cfgMap)
 	if err == nil {
 		if value, ok := cfgMap.Data[ConfidentialFeatureGate]; ok {

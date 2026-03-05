@@ -71,7 +71,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 		r.Log.Error(err, "Failed getting DaemonSet for Kata installation")
 		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
-	err = r.Client.Delete(context.TODO(), kataInstallDaemonSet)
+	err = r.Delete(context.TODO(), kataInstallDaemonSet)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			r.Log.Info("kata install daemonset was already deleted")
@@ -96,11 +96,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 	}
 
 	foundKataDaemonSet := &appsv1.DaemonSet{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: kataUninstallDaemonSet.Name, Namespace: kataUninstallDaemonSet.Namespace}, foundKataDaemonSet)
+	err = r.Get(context.TODO(), types.NamespacedName{Name: kataUninstallDaemonSet.Name, Namespace: kataUninstallDaemonSet.Namespace}, foundKataDaemonSet)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			r.Log.Info("Creating a new kata uninstallation daemonset", "kataUninstallDaemonSet.Namespace", kataUninstallDaemonSet.Namespace, "kataUninstallDaemonSet.Name", kataUninstallDaemonSet.Name)
-			err = r.Client.Create(context.TODO(), kataUninstallDaemonSet)
+			err = r.Create(context.TODO(), kataUninstallDaemonSet)
 			if err != nil {
 				r.Log.Error(err, "Error when creating kata uninstallation daemonset")
 				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
@@ -248,11 +248,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 	}
 
 	foundKataDaemonSet := &appsv1.DaemonSet{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: kataInstallDaemonSet.Name, Namespace: kataInstallDaemonSet.Namespace}, foundKataDaemonSet)
+	err = r.Get(context.TODO(), types.NamespacedName{Name: kataInstallDaemonSet.Name, Namespace: kataInstallDaemonSet.Namespace}, foundKataDaemonSet)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			r.Log.Info("Creating a new kata installation daemonset", "kataInstallDaemonSet.Namespace", kataInstallDaemonSet.Namespace, "kataInstallDaemonSet.Name", kataInstallDaemonSet.Name)
-			err = r.Client.Create(context.TODO(), kataInstallDaemonSet)
+			err = r.Create(context.TODO(), kataInstallDaemonSet)
 			if err != nil {
 				r.Log.Error(err, "Error when creating kata installation daemonset")
 				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
@@ -275,7 +275,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 		}
 	} else {
 		r.Log.Info("Updating kata installation daemonset", "kataInstallDaemonSet.Namespace", kataInstallDaemonSet.Namespace, "kataInstallDaemonSet.Name", kataInstallDaemonSet.Name)
-		err = r.Client.Update(context.TODO(), kataInstallDaemonSet)
+		err = r.Update(context.TODO(), kataInstallDaemonSet)
 		if err != nil {
 			r.Log.Error(err, "error when updating kata installation daemonset")
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
@@ -460,7 +460,7 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 // getAddonEnvVars retrieves addon configuration from ConfigMap and returns environment variables
 func (r *KataConfigOpenShiftReconciler) getAddonEnvVars() []corev1.EnvVar {
 	var cm corev1.ConfigMap
-	if err := r.Client.Get(context.Background(),
+	if err := r.Get(context.Background(),
 		types.NamespacedName{Name: "kata-addon-artifacts", Namespace: OperatorNamespace},
 		&cm,
 	); err != nil {
@@ -750,7 +750,7 @@ func (r *KataConfigOpenShiftReconciler) unlabelNodesDaemonSet(nodeSelector label
 		client.MatchingLabelsSelector{Selector: nodeSelector},
 	}
 
-	if err := r.Client.List(context.TODO(), nodeList, listOpts...); err != nil {
+	if err := r.List(context.TODO(), nodeList, listOpts...); err != nil {
 		r.Log.Error(err, "Getting list of nodes failed")
 		return err
 	}
@@ -759,7 +759,7 @@ func (r *KataConfigOpenShiftReconciler) unlabelNodesDaemonSet(nodeSelector label
 		if _, ok := node.Labels["node-role.kubernetes.io/kata-oc"]; ok {
 			delete(node.Labels, "node-role.kubernetes.io/kata-oc")
 			delete(node.Labels, kataInstallationDaemonSetLabel)
-			err := r.Client.Update(context.TODO(), &node)
+			err := r.Update(context.TODO(), &node)
 			if err != nil {
 				r.Log.Error(err, "Error when removing labels from node", "node", node)
 				return err

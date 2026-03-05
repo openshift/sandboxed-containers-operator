@@ -244,12 +244,12 @@ func labelNamespace(ctx context.Context, mgr manager.Manager) error {
 	}
 
 	setupLog.Info("Labelling Namespace")
-	setupLog.Info("Labels: ", "Labels", ns.ObjectMeta.Labels)
+	setupLog.Info("Labels: ", "Labels", ns.Labels)
 	// Add namespace label to align with newly introduced Pod Security Admission controller
-	ns.ObjectMeta.Labels["openshift.io/cluster-monitoring"] = "true"
-	ns.ObjectMeta.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
-	ns.ObjectMeta.Labels["pod-security.kubernetes.io/audit"] = "privileged"
-	ns.ObjectMeta.Labels["pod-security.kubernetes.io/warn"] = "privileged"
+	ns.Labels["openshift.io/cluster-monitoring"] = "true"
+	ns.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
+	ns.Labels["pod-security.kubernetes.io/audit"] = "privileged"
+	ns.Labels["pod-security.kubernetes.io/warn"] = "privileged"
 
 	return mgr.GetClient().Update(ctx, ns)
 }

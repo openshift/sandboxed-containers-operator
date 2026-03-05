@@ -83,7 +83,7 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookService() error {
 	}
 
 	// Create webhook service
-	if err := r.Client.Create(context.Background(), webhookService); err != nil {
+	if err := r.Create(context.Background(), webhookService); err != nil {
 		// Check if the webhook service already exists
 		if !k8serrors.IsAlreadyExists(err) {
 			return err
@@ -245,7 +245,7 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookDeployment() error 
 	}
 
 	// Create webhook deployment
-	if err := r.Client.Create(context.Background(), webhookDeployment); err != nil {
+	if err := r.Create(context.Background(), webhookDeployment); err != nil {
 		// Check if the webhook deployment already exists
 		if !k8serrors.IsAlreadyExists(err) {
 			return err
@@ -398,7 +398,7 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookConfig() error {
 	}
 
 	// Create MutatingWebhookConfiguration object
-	if err := r.Client.Create(context.Background(), mutatingWebhookConfig); err != nil {
+	if err := r.Create(context.Background(), mutatingWebhookConfig); err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
@@ -419,7 +419,7 @@ func (r *KataConfigOpenShiftReconciler) deleteMutatingWebhookDeployment() error 
 		},
 	}
 	// Delete the deployment
-	err := r.Client.Delete(context.Background(), deployment)
+	err := r.Delete(context.Background(), deployment)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -441,7 +441,7 @@ func (r *KataConfigOpenShiftReconciler) deleteMutatingWebhookService() error {
 		},
 	}
 	// Delete the service
-	err := r.Client.Delete(context.Background(), service)
+	err := r.Delete(context.Background(), service)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -459,7 +459,7 @@ func (r *KataConfigOpenShiftReconciler) deleteMutatingWebhookConfig() error {
 		},
 	}
 	// Delete the mutating webhook configuration
-	err := r.Client.Delete(context.Background(), mutatingWebhookConfig)
+	err := r.Delete(context.Background(), mutatingWebhookConfig)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err

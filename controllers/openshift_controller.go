@@ -132,7 +132,7 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 
 	// Fetch the KataConfig instance
 	r.kataConfig = &kataconfigurationv1.KataConfig{}
-	err := r.Client.Get(context.TODO(), req.NamespacedName, r.kataConfig)
+	err := r.Get(context.TODO(), req.NamespacedName, r.kataConfig)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after ctrl request.
@@ -196,7 +196,7 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 				err = fmt.Errorf("unknown deployment mode: %d", r.DeploymentMode)
 			}
 
-			updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
+			updateErr := r.Status().Update(context.TODO(), r.kataConfig)
 			// The finalizer test is to get rid of the
 			// "Operation cannot be fulfilled [...] Precondition failed"
 			// error which happens when returning from a reconciliation that
@@ -228,7 +228,7 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 
 		if r.IsKataConfigStatusChanged(oldObjStatus, &r.kataConfig.Status) {
 			r.Log.Info("KataConfig's status changed, updating...")
-			updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
+			updateErr := r.Status().Update(context.TODO(), r.kataConfig)
 			if updateErr != nil {
 				return ctrl.Result{}, updateErr
 			}
@@ -240,11 +240,11 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, nil
 		}
 		foundCm := &corev1.ConfigMap{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: cMap.Name, Namespace: cMap.Namespace}, foundCm)
+		err = r.Get(context.TODO(), types.NamespacedName{Name: cMap.Name, Namespace: cMap.Namespace}, foundCm)
 		if err != nil {
 			if k8serrors.IsNotFound(err) {
 				r.Log.Info("Installing metrics dashboard")
-				err = r.Client.Create(context.TODO(), cMap)
+				err = r.Create(context.TODO(), cMap)
 				if err != nil {
 					r.Log.Error(err, "Error when creating the dashboard configmap")
 					res = ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}
@@ -309,7 +309,7 @@ func (r *KataConfigOpenShiftReconciler) processLogLevel(desiredLogLevel string) 
 	}
 
 	ctrRuntimeCfg := &mcfgv1.ContainerRuntimeConfig{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: container_runtime_config_name}, ctrRuntimeCfg)
+	err := r.Get(context.TODO(), types.NamespacedName{Name: container_runtime_config_name}, ctrRuntimeCfg)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			r.Log.Error(err, "could not get ContainerRuntimeConfig, try again")
@@ -340,7 +340,7 @@ func (r *KataConfigOpenShiftReconciler) processLogLevel(desiredLogLevel string) 
 		ctrRuntimeCfg = makeContainerRuntimeConfig(desiredLogLevel, machineConfigPoolSelector)
 
 		r.Log.Info("creating ContainerRuntimeConfig")
-		err = r.Client.Create(context.TODO(), ctrRuntimeCfg)
+		err = r.Create(context.TODO(), ctrRuntimeCfg)
 		if err != nil {
 			r.Log.Error(err, "error creating ContainerRuntimeConfig")
 			return err
@@ -360,7 +360,7 @@ func (r *KataConfigOpenShiftReconciler) processLogLevel(desiredLogLevel string) 
 		ctrRuntimeCfg.Spec.ContainerRuntimeConfig.LogLevel = desiredLogLevel
 
 		r.Log.Info("updating ContainerRuntimeConfig")
-		err = r.Client.Update(context.TODO(), ctrRuntimeCfg)
+		err = r.Update(context.TODO(), ctrRuntimeCfg)
 		if err != nil {
 			r.Log.Error(err, "error updating ContainerRuntimeConfig")
 			return err
@@ -376,7 +376,7 @@ func (r *KataConfigOpenShiftReconciler) removeLogLevel() error {
 	r.Log.Info("removing logLevel ContainerRuntimeConfig")
 
 	ctrRuntimeCfg := &mcfgv1.ContainerRuntimeConfig{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: container_runtime_config_name}, ctrRuntimeCfg)
+	err := r.Get(context.TODO(), types.NamespacedName{Name: container_runtime_config_name}, ctrRuntimeCfg)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			r.Log.Info("no logLevel ContainerRuntimeConfig found, nothing to do")
@@ -387,7 +387,7 @@ func (r *KataConfigOpenShiftReconciler) removeLogLevel() error {
 		}
 	}
 
-	err = r.Client.Delete(context.TODO(), ctrRuntimeCfg)
+	err = r.Delete(context.TODO(), ctrRuntimeCfg)
 	if err != nil {
 		r.Log.Info("error deleting ContainerRuntimeConfig", "err", err)
 		return err
@@ -505,7 +505,7 @@ func (r *KataConfigOpenShiftReconciler) processDashboardConfigMap() *corev1.Conf
 
 	// retrieve content of the dashboard from our own namespace
 	foundCm := &corev1.ConfigMap{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: dashboardConfigMapName, Namespace: OperatorNamespace}, foundCm)
+	err := r.Get(context.TODO(), types.NamespacedName{Name: dashboardConfigMapName, Namespace: OperatorNamespace}, foundCm)
 	if err != nil {
 		r.Log.Error(err, "could not get dashboard data")
 		return nil
@@ -573,7 +573,7 @@ func (r *KataConfigOpenShiftReconciler) getExtensionName() (string, error) {
 
 	// FIXME: Look into having a single util function to return the ClusterVersion
 	clusterVersion := &configv1.ClusterVersion{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
+	err := r.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
 	if err != nil {
 		return "", err
 	}
@@ -600,7 +600,7 @@ func (r *KataConfigOpenShiftReconciler) getExtensionName() (string, error) {
 // NOTE: This logic is applicable only for kata-se / IBM Secure Execution (s390x).
 func (r *KataConfigOpenShiftReconciler) getCustomKernelConfig(ctx context.Context) (*customKernelConfig, error) {
 	cm := &corev1.ConfigMap{}
-	err := r.Client.Get(ctx, types.NamespacedName{
+	err := r.Get(ctx, types.NamespacedName{
 		Name:      KataAddonConfigMapName,
 		Namespace: OperatorNamespace,
 	}, cm)
@@ -707,7 +707,7 @@ func (r *KataConfigOpenShiftReconciler) addFinalizer() error {
 	controllerutil.AddFinalizer(r.kataConfig, kataConfigFinalizer)
 
 	// Update CR
-	err := r.Client.Update(context.TODO(), r.kataConfig)
+	err := r.Update(context.TODO(), r.kataConfig)
 	if err != nil {
 		r.Log.Error(err, "Failed to update KataConfig with finalizer")
 		return err
@@ -719,7 +719,7 @@ func (r *KataConfigOpenShiftReconciler) removeFinalizer() error {
 	r.Log.Info("Removing finalizer from the KataConfig")
 	controllerutil.RemoveFinalizer(r.kataConfig, kataConfigFinalizer)
 
-	err := r.Client.Update(context.TODO(), r.kataConfig)
+	err := r.Update(context.TODO(), r.kataConfig)
 	if err != nil {
 		r.Log.Error(err, "Unable to update KataConfig")
 		return err
@@ -732,7 +732,7 @@ func (r *KataConfigOpenShiftReconciler) listKataPods() error {
 	listOpts := []client.ListOption{
 		client.InNamespace(corev1.NamespaceAll),
 	}
-	if err := r.Client.List(context.TODO(), podList, listOpts...); err != nil {
+	if err := r.List(context.TODO(), podList, listOpts...); err != nil {
 		return fmt.Errorf("failed to list kata pods: %v", err)
 	}
 	for _, pod := range podList.Items {
@@ -748,7 +748,7 @@ func (r *KataConfigOpenShiftReconciler) listKataPods() error {
 //lint:ignore U1000 This method is unused, but let's keep it for now
 func (r *KataConfigOpenShiftReconciler) kataOcExists() (bool, error) {
 	kataOcMcp := &mcfgv1.MachineConfigPool{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "kata-oc"}, kataOcMcp)
+	err := r.Get(context.TODO(), types.NamespacedName{Name: "kata-oc"}, kataOcMcp)
 	if err != nil && k8serrors.IsNotFound(err) {
 		r.Log.Info("kata-oc MachineConfigPool not found")
 		return false, nil
@@ -765,7 +765,7 @@ func (r *KataConfigOpenShiftReconciler) checkConvergedCluster() (bool, error) {
 	//Worker machinecount should be 0
 	listOpts := []client.ListOption{}
 	mcpList := &mcfgv1.MachineConfigPoolList{}
-	err := r.Client.List(context.TODO(), mcpList, listOpts...)
+	err := r.List(context.TODO(), mcpList, listOpts...)
 	if err != nil {
 		r.Log.Error(err, "Unable to get the list of MCPs")
 		return false, err
@@ -829,14 +829,14 @@ func (r *KataConfigOpenShiftReconciler) createScc() error {
 	}
 
 	foundScc := &secv1.SecurityContextConstraints{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: scc.Name}, foundScc)
+	err := r.Get(context.TODO(), types.NamespacedName{Name: scc.Name}, foundScc)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
 		}
 
 		r.Log.Info("Creating a new Scc", "scc.Name", scc.Name)
-		err = r.Client.Create(context.TODO(), scc)
+		err = r.Create(context.TODO(), scc)
 		if err != nil {
 			return err
 		}
@@ -855,11 +855,11 @@ func (r *KataConfigOpenShiftReconciler) createDaemonsetForMonitor() error {
 	r.Log.Info("controller reference set for the monitor daemonset")
 
 	foundDS := &appsv1.DaemonSet{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDS)
+	err := r.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDS)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-			err = r.Client.Create(context.TODO(), ds)
+			err = r.Create(context.TODO(), ds)
 			if err != nil {
 				r.Log.Error(err, "error when creating monitor daemonset")
 				return err
@@ -870,7 +870,7 @@ func (r *KataConfigOpenShiftReconciler) createDaemonsetForMonitor() error {
 		}
 	} else {
 		r.Log.Info("Updating monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-		err = r.Client.Update(context.TODO(), ds)
+		err = r.Update(context.TODO(), ds)
 		if err != nil {
 			r.Log.Error(err, "error when updating monitor daemonset")
 			return err
@@ -904,7 +904,7 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(
 			client.MatchingLabelsSelector{Selector: selector},
 			client.MatchingLabels(additionalNodeLabels),
 		}
-		if err := r.Client.List(context.TODO(), nodes, listOpts...); err != nil {
+		if err := r.List(context.TODO(), nodes, listOpts...); err != nil {
 			return fmt.Errorf("failed to list nodes: %w", err)
 		}
 
@@ -962,14 +962,14 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(
 	}
 
 	foundRc := &nodeapi.RuntimeClass{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: rc.Name}, foundRc)
+	err := r.Get(context.TODO(), types.NamespacedName{Name: rc.Name}, foundRc)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
 		}
 
 		r.Log.Info("Creating a new RuntimeClass", "rc.Name", rc.Name)
-		err = r.Client.Create(context.TODO(), rc)
+		err = r.Create(context.TODO(), rc)
 		if err != nil {
 			return fmt.Errorf("error creating %s runtime class: %w", rc.Name, err)
 		}
@@ -985,7 +985,7 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(
 func (r *KataConfigOpenShiftReconciler) deleteRuntimeClass(runtimeClassName string) error {
 
 	foundRc := &nodeapi.RuntimeClass{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: runtimeClassName}, foundRc)
+	err := r.Get(context.TODO(), types.NamespacedName{Name: runtimeClassName}, foundRc)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			return nil
@@ -993,7 +993,7 @@ func (r *KataConfigOpenShiftReconciler) deleteRuntimeClass(runtimeClassName stri
 		return err
 	}
 
-	if err := r.Client.Delete(context.TODO(), foundRc); err != nil {
+	if err := r.Delete(context.TODO(), foundRc); err != nil {
 		if k8serrors.IsNotFound(err) {
 			return nil
 		}
@@ -1064,7 +1064,7 @@ func (r *KataConfigOpenShiftReconciler) getNodeSelectorAsLabelSelector() *metav1
 
 func (r *KataConfigOpenShiftReconciler) isMcpUpdating(mcpName string) bool {
 	mcp := &mcfgv1.MachineConfigPool{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcpName}, mcp)
+	err := r.Get(context.TODO(), types.NamespacedName{Name: mcpName}, mcp)
 	if err != nil {
 		r.Log.Info("Getting MachineConfigPool failed ", "machinePool", mcpName, "err", err)
 		return false
@@ -1109,7 +1109,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 
 	var isMcDeleted bool
 
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, mc)
+	err = r.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, mc)
 	if err != nil && k8serrors.IsNotFound(err) {
 		isMcDeleted = true
 		// Reset ImgMc
@@ -1119,7 +1119,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	}
 
 	if !isMcDeleted {
-		err = r.Client.Delete(context.TODO(), mc)
+		err = r.Delete(context.TODO(), mc)
 		if err != nil {
 			// error during removing mc, don't block the uninstall. Just log the error and move on.
 			r.Log.Error(err, "Error found deleting machine config. If the machine config exists after installation it can be safely deleted manually.",
@@ -1180,10 +1180,10 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 	if !isConvergedCluster {
 		r.Log.Info("Get()'ing MachineConfigPool to delete it", "machinePool", "kata-oc")
 		kataOcMcp := &mcfgv1.MachineConfigPool{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: "kata-oc"}, kataOcMcp)
+		err = r.Get(context.TODO(), types.NamespacedName{Name: "kata-oc"}, kataOcMcp)
 		if err == nil {
 			r.Log.Info("Deleting MachineConfigPool ", "machinePool", "kata-oc")
-			err = r.Client.Delete(context.TODO(), kataOcMcp)
+			err = r.Delete(context.TODO(), kataOcMcp)
 			if err != nil {
 				r.Log.Error(err, "Unable to delete kata-oc MachineConfigPool")
 				return ctrl.Result{}, err
@@ -1294,11 +1294,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 
 		// Create kata-oc only if it doesn't exist
 		mcp := &mcfgv1.MachineConfigPool{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machinePool}, mcp)
+		err = r.Get(context.TODO(), types.NamespacedName{Name: machinePool}, mcp)
 		if err != nil && k8serrors.IsNotFound(err) {
 			r.Log.Info("Creating a new MachineConfigPool ", "machinePool", machinePool)
 			mcp = r.newMCPforCR()
-			err = r.Client.Create(context.TODO(), mcp)
+			err = r.Create(context.TODO(), mcp)
 			if err != nil {
 				r.Log.Error(err, "Error in creating new MachineConfigPool ", "machinePool", machinePool)
 				return ctrl.Result{}, err
@@ -1392,10 +1392,10 @@ func (r *KataConfigOpenShiftReconciler) createMc(machinePool string, customKerne
 	}
 
 	existingMc := &mcfgv1.MachineConfig{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, existingMc)
+	err = r.Get(context.TODO(), types.NamespacedName{Name: mc.Name}, existingMc)
 	if err != nil && (k8serrors.IsNotFound(err) || k8serrors.IsGone(err)) {
 
-		err = r.Client.Create(context.TODO(), mc)
+		err = r.Create(context.TODO(), mc)
 		if err != nil {
 			r.Log.Error(err, "Failed to create a new MachineConfig ", "mc.Name", mc.Name)
 			return dummy, err
@@ -1408,7 +1408,7 @@ func (r *KataConfigOpenShiftReconciler) createMc(machinePool string, customKerne
 	} else if !reflect.DeepEqual(existingMc.Spec, mc.Spec) {
 		r.Log.Info("MachineConfig spec changed, updating", "mc.Name", mc.Name)
 		existingMc.Spec = mc.Spec
-		if err := r.Client.Update(context.TODO(), existingMc); err != nil {
+		if err := r.Update(context.TODO(), existingMc); err != nil {
 			r.Log.Error(err, "Failed to update MachineConfig", "mc.Name", mc.Name)
 			return dummy, err
 		}
@@ -1757,7 +1757,7 @@ func (r *KataConfigOpenShiftReconciler) getNodes() (*corev1.NodeList, error) {
 		client.MatchingLabelsSelector{Selector: labelSelector},
 	}
 
-	if err := r.Client.List(context.TODO(), nodes, listOpts...); err != nil {
+	if err := r.List(context.TODO(), nodes, listOpts...); err != nil {
 		r.Log.Error(err, "Getting list of nodes failed")
 		return &corev1.NodeList{}, err
 	}
@@ -1771,7 +1771,7 @@ func (r *KataConfigOpenShiftReconciler) getNodesWithLabels(nodeLabels map[string
 		client.MatchingLabelsSelector{Selector: labelSelector},
 	}
 
-	if err := r.Client.List(context.TODO(), nodes, listOpts...); err != nil {
+	if err := r.List(context.TODO(), nodes, listOpts...); err != nil {
 		r.Log.Error(err, "Getting list of nodes having specified labels failed")
 		return &corev1.NodeList{}, err
 	}
@@ -1785,7 +1785,7 @@ func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (labelingChanged bool
 		client.MatchingLabelsSelector{Selector: workerSelector},
 	}
 
-	if err := r.Client.List(context.TODO(), workerNodeList, listOpts...); err != nil {
+	if err := r.List(context.TODO(), workerNodeList, listOpts...); err != nil {
 		r.Log.Error(err, "Getting list of nodes failed")
 		return false, err
 	}
@@ -1814,7 +1814,7 @@ func (r *KataConfigOpenShiftReconciler) updateNodeLabels() (labelingChanged bool
 			delete(worker.Labels, "node-role.kubernetes.io/kata-oc")
 		}
 
-		err = r.Client.Update(context.TODO(), &worker)
+		err = r.Update(context.TODO(), &worker)
 		if err != nil {
 			r.Log.Error(err, "Error when adding labels to node", "node", worker)
 			return labelingChanged, err
@@ -1832,7 +1832,7 @@ func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selecto
 		client.MatchingLabelsSelector{Selector: nodeSelector},
 	}
 
-	if err := r.Client.List(context.TODO(), nodeList, listOpts...); err != nil {
+	if err := r.List(context.TODO(), nodeList, listOpts...); err != nil {
 		r.Log.Error(err, "Getting list of nodes failed")
 		return false, err
 	}
@@ -1840,7 +1840,7 @@ func (r *KataConfigOpenShiftReconciler) unlabelNodes(nodeSelector labels.Selecto
 	for _, node := range nodeList.Items {
 		if _, ok := node.Labels["node-role.kubernetes.io/kata-oc"]; ok {
 			delete(node.Labels, "node-role.kubernetes.io/kata-oc")
-			err = r.Client.Update(context.TODO(), &node)
+			err = r.Update(context.TODO(), &node)
 			if err != nil {
 				r.Log.Error(err, "Error when removing labels from node", "node", node)
 				return labelingChanged, err
@@ -1865,7 +1865,7 @@ func (r *KataConfigOpenShiftReconciler) getConditionReason(conditions []mcfgv1.M
 func (r *KataConfigOpenShiftReconciler) getMcpByName(mcpName string) (*mcfgv1.MachineConfigPool, error) {
 
 	mcp := &mcfgv1.MachineConfigPool{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcpName}, mcp)
+	err := r.Get(context.TODO(), types.NamespacedName{Name: mcpName}, mcp)
 	if err != nil {
 		r.Log.Info("Getting MachineConfigPool failed ", "machinePool", mcp, "err", err)
 		return nil, err
@@ -2013,7 +2013,7 @@ func (r *KataConfigOpenShiftReconciler) putNodeOnStatusList(node *corev1.Node) e
 	var isKataEnabledOnNode bool
 	if isConvergedCluster {
 		targetMc := &mcfgv1.MachineConfig{}
-		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: targetMcp.Spec.Configuration.Name}, targetMc)
+		err := r.Get(context.TODO(), types.NamespacedName{Name: targetMcp.Spec.Configuration.Name}, targetMc)
 		if err != nil {
 			r.Log.Info("Failed to retrieve MachineConfig", "MC name", targetMcp.Spec.Configuration.Name, targetMc, "MCP name", targetMcpName)
 			return err
@@ -2288,7 +2288,7 @@ func (r *KataConfigOpenShiftReconciler) checkDeletionEligibility() (ctrl.Result,
 		err := r.listKataPods()
 		if err != nil {
 			r.setInProgressConditionToBlockedByExistingKataPods(err.Error())
-			updErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
+			updErr := r.Status().Update(context.TODO(), r.kataConfig)
 			if updErr != nil {
 				return ctrl.Result{}, updErr
 			}
@@ -2301,7 +2301,7 @@ func (r *KataConfigOpenShiftReconciler) checkDeletionEligibility() (ctrl.Result,
 
 func (r *KataConfigOpenShiftReconciler) deleteDaemonsetForMonitor() error {
 	ds := r.processDaemonsetForMonitor()
-	err := r.Client.Delete(context.TODO(), ds)
+	err := r.Delete(context.TODO(), ds)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			r.Log.Info("monitor daemonset was already deleted")
@@ -2315,7 +2315,7 @@ func (r *KataConfigOpenShiftReconciler) deleteDaemonsetForMonitor() error {
 
 func (r *KataConfigOpenShiftReconciler) deleteScc() error {
 	scc := GetScc()
-	err := r.Client.Delete(context.TODO(), scc)
+	err := r.Delete(context.TODO(), scc)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			r.Log.Info("SCC was already deleted")

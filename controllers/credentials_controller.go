@@ -76,7 +76,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	r.Log.Info("reconciling Secret for OpenShift Sandboxed Containers", "secret", req.Name)
 
 	ccoSecret := &corev1.Secret{}
-	if err := r.Client.Get(context.TODO(), req.NamespacedName, ccoSecret); err != nil {
+	if err := r.Get(context.TODO(), req.NamespacedName, ccoSecret); err != nil {
 		if k8serrors.IsNotFound(err) {
 			r.Log.Info("no cco-secret has been found")
 			return ctrl.Result{}, nil
@@ -328,7 +328,7 @@ func (kh *KataConfigHandler) teardownPeerPodsCredentials(ctx context.Context) (b
 	// 2. Handle STS flow secrets (they don't have owner references and need manual cleanup)
 	if peerPodsSecret != nil && isSTSFlowSecret(peerPodsSecret) {
 		kh.reconciler.Log.Info("Deleting STS flow peer-pods-secret")
-		if err := kh.reconciler.Client.Delete(ctx, peerPodsSecret); err != nil {
+		if err := kh.reconciler.Delete(ctx, peerPodsSecret); err != nil {
 			if !k8serrors.IsNotFound(err) && !k8serrors.IsGone(err) {
 				kh.reconciler.Log.Error(err, "Failed to delete STS flow peer-pods-secret")
 				return false, err
@@ -405,7 +405,7 @@ func (kh *KataConfigHandler) createCredentialsRequests() error {
 		return nil
 	}
 
-	if err := kh.reconciler.Client.Create(context.TODO(), credentialsRequest); err != nil {
+	if err := kh.reconciler.Create(context.TODO(), credentialsRequest); err != nil {
 		if k8serrors.IsAlreadyExists(err) {
 			kh.reconciler.Log.Info("CredentialsRequest already exists", "name", credentialsRequest.Name)
 			return nil
@@ -428,7 +428,7 @@ func (kh *KataConfigHandler) deleteCredentialsRequests() error {
 		return nil // skip silently
 	}
 
-	if err := kh.reconciler.Client.Delete(context.TODO(), credentialsRequest); err != nil {
+	if err := kh.reconciler.Delete(context.TODO(), credentialsRequest); err != nil {
 		if k8serrors.IsNotFound(err) || k8serrors.IsGone(err) {
 			return nil
 		} else {
