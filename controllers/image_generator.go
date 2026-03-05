@@ -647,7 +647,7 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 
 	case "azure":
 		// Check if azure Secret Keys are present in the peerPodsSecret
-		if !(checkKeysPresentAndNotEmpty(peerPodsSecret.Data, azureSecretKeys) || checkKeysPresentAndNotEmpty(peerPodsSecret.Data, azureSecretFederatedKeys)) {
+		if !checkKeysPresentAndNotEmpty(peerPodsSecret.Data, azureSecretKeys) && !checkKeysPresentAndNotEmpty(peerPodsSecret.Data, azureSecretFederatedKeys) {
 			return fmt.Errorf("validatePeerPodsConfigs: cannot find the required keys in peer-pods-secret Secret")
 		}
 
