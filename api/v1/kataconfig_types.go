@@ -44,6 +44,14 @@ type KataConfigSpec struct {
 	// +optional
 	// +kubebuilder:default:=false
 	EnablePeerPods bool `json:"enablePeerPods"`
+
+	// UnifiedKataCCHandler enables a single kata-cc handler that maps to TDX, SNP, or IBM SE
+	// per node. When true, the operator creates per-TEE MachineConfigs (CRI-O drop-ins) and
+	// MachineConfigPools, allowing the same kata-cc RuntimeClass to work across heterogeneous
+	// TEE hardware. Requires NFD to label nodes with TEE capabilities.
+	// +optional
+	// +kubebuilder:default:=false
+	UnifiedKataCCHandler bool `json:"unifiedKataCCHandler"`
 }
 
 // KataConfigStatus defines the observed state of KataConfig
