@@ -10,7 +10,7 @@ The Prow Job Analyzer provides comprehensive analysis of Prow job runs, extracti
 
 ### Two-Level Analysis System
 
-**Level 1: Overall Job Analysis** (`analyze.py`):
+**Level 1: Overall Job Analysis** (`dig.py`):
 - **Metadata Extraction**: Automatically extracts provider, OCP version, workload type, Kata RPM version, and build information
 - **Status Determination**: Accurately determines if a job passed, failed, timed out, or encountered errors
 - **Failed Step Detection**: Identifies which actual Prow step(s) failed by checking each step's finished.json
@@ -18,7 +18,7 @@ The Prow Job Analyzer provides comprehensive analysis of Prow job runs, extracti
 - **Multiple Output Formats**: Generates both human-readable markdown and machine-parsable JSON reports
 - **In-Progress Job Handling**: Can wait for running jobs to complete before analysis
 
-**Level 2: Detailed Test Analysis** (`failed_tests_report.py`):
+**Level 2: Detailed Test Analysis** (`dig_failed_tests_report.py`):
 - **Full Test Logs**: Extracts complete test execution logs from build-log.txt
 - **Failure Summaries**: Parses "Summarizing N Failure" sections for each test
 - **Test Metadata**: Reports test case ID, author, priority, elapsed time, category
@@ -33,20 +33,32 @@ The Prow Job Analyzer provides comprehensive analysis of Prow job runs, extracti
 
 ## Usage
 
-### Quick Start: Claude Launcher (Recommended)
+### Initial Report
+Find out if the tests succeeded or not
+```bash
+cd scripts/prowjob-analyzer
+./dig.py <PROW_JOB_URL>
+```
+If it succeeded, there is no need to investigate further.
+
+
+### Further Investgation
+ On failed jobs, you can use Claude (recommended) or `dig_failed_tests_report.py`\
+
+#### Claude via script (Recommended)
 
 The easiest way to analyze a Prow job is using the Claude launcher script from anywhere:
 
 ```bash
 # Non-interactive mode (default) - get results and exit
-./scripts/prowjob-analyzer/analyze-claude.py https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-aws-ipi-peerpods/1987995564184178688
+./scripts/prowjob-analyzer/sift.py https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-aws-ipi-peerpods/1987995564184178688
 
 # Interactive mode - open Claude session for follow-up questions
-./scripts/prowjob-analyzer/analyze-claude.py -i <PROW_JOB_URL>
+./scripts/prowjob-analyzer/sift.py -i <PROW_JOB_URL>
 
 # Or from within the prowjob-analyzer directory
 cd scripts/prowjob-analyzer
-./analyze-claude.py <PROW_JOB_URL>
+./sift.py <PROW_JOB_URL>
 ```
 
 The launcher script:
@@ -60,7 +72,7 @@ The launcher script:
 - `--interactive, -i`: Launch Claude in interactive mode (default: non-interactive)
 - `--verbose, -v`: Show verbose output for debugging
 
-### Via Claude Code Slash Command
+#### In Claude Code with /prowjob-analyze
 
 If you already have Claude Code open in the project directory:
 
@@ -72,55 +84,88 @@ The analyzer supports both job URL patterns:
 - **Periodic/Postsubmit**: `https://prow.ci.openshift.org/view/gs/test-platform-results/logs/{JOB_NAME}/{BUILD_ID}`
 - **Presubmit/Rehearsal**: `https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/{ORG}_{REPO}/{PR}/{JOB_NAME}/{BUILD_ID}`
 
+
+### Processing Konflux Workflow
+Konflux will create a build and run the tests in [osc-test-catalog-integration](https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/ose-osc-tenant/applications/osc-test-catalog/integrationtests/osc-test-catalog-integration).  Each build creates a **Pipeline Run**.
+
+Click on the one you want, go to its **Logs** and select *Download all task logs*. This will create a file called osc-test-catalog-integration-XXXX.log.  We'll call this the `konflux test log`.  It contains multiple test runs and the prowjob URLS for each that need to be fed to `dig.py`.
+
+We will use `dig.py` to create a .csv file with all the tests and an initial RCA.  This can be imported into a spreadsheet.
+
+```bash
+cd scripts/prowjob-analyzer
+echo '' > <output.csv>
+URLS=$(grep ^https <konflux test log>)
+for URL in $URLS
+do
+    echo $URL
+    ./dig.py $URL --csv --no-header --no-wait >> <output.csv>
+done
+dos2unix <output.csv> # to conver to Unix EOL
+grep -v <output.csv> > import.csv
+```
+
+Go to the *konflux* tab
+Go to the last row plus 1
+File -> import
+Upload your import.csv file to google drive
+*Import location* should be `Replace data at selected cell`
+Import data.
+If you have many log files, you might need to created a new spreadsheet and copy/pasted it instead.
+You might need to adjust alignment, etc.  If you're doing lots of analysis/sorting/etc, you might want to make a copy and do things there.
+
+Now you should have a list of SUCCESS/FAILURE runs.  There can be an initial RCA for failed jobs.
+You can choose the prowjob URLs for further investigation
+
 ### Direct CLI Usage
 
-You can also run the analyzer scripts directly:
+You can also run the dig scripts directly:
 
 **Level 1: Overall Analysis**
 ```bash
 # Basic usage
-./analyze.py <PROW_JOB_URL>
+./dig.py <PROW_JOB_URL>
 
 # Generate JSON output
-./analyze.py --json <PROW_JOB_URL> > report.json
+./dig.py --json <PROW_JOB_URL> > report.json
 
 # Verbose mode with no wait for in-progress jobs
-./analyze.py --verbose --no-wait <PROW_JOB_URL>
+./dig.py --verbose --no-wait <PROW_JOB_URL>
 
 # Custom wait timeout (in seconds)
-./analyze.py --wait 600 <PROW_JOB_URL>
+./dig.py --wait 600 <PROW_JOB_URL>
 ```
 
 **Level 2: Detailed Test Analysis** (only when tests failed)
 ```bash
 # Analyze all failed tests
-./failed_tests_report.py <PROW_JOB_URL>
+./dig_failed_tests_report.py <PROW_JOB_URL>
 
 # Analyze specific tests by name or ID
-./failed_tests_report.py <PROW_JOB_URL> "C00077" "C00349"
+./dig_failed_tests_report.py <PROW_JOB_URL> "C00077" "C00349"
 
 # Full test names work too
-./failed_tests_report.py <PROW_JOB_URL> "[sig-kata] Author:vvoronko-High-C00349-deploy peerpod with non-existing image annotation [Serial]"
+./dig_failed_tests_report.py <PROW_JOB_URL> "[sig-kata] Author:vvoronko-High-C00349-deploy peerpod with non-existing image annotation [Serial]"
 
 # JSON output
-./failed_tests_report.py --json <PROW_JOB_URL> > test-report.json
+./dig_failed_tests_report.py --json <PROW_JOB_URL> > test-report.json
 ```
 
 ### Options
 
-**analyze.py:**
+**dig.py:**
 - `--json`: Output machine-readable JSON format instead of human-readable markdown
 - `--verbose, -v`: Enable verbose logging for debugging
 - `--wait SECONDS`: Set timeout for waiting for in-progress jobs (default: 300 seconds)
 - `--no-wait`: Don't wait for in-progress jobs (analyze immediately)
 
-**failed_tests_report.py:**
+**dig_failed_tests_report.py:**
 - `--json`: Output machine-readable JSON format
 - `--verbose, -v`: Enable verbose logging for debugging
 
 ## Output
 
-### Level 1: Overall Job Analysis Report (analyze.py)
+### Level 1: Overall Job Analysis Report (dig.py)
 
 The default output is a comprehensive markdown report including:
 
@@ -132,7 +177,7 @@ The default output is a comprehensive markdown report including:
 - **Failed Tests**: List of tests that failed (grouped by category) with test IDs, authors, and priorities
 - **Artifacts**: Direct links to all relevant artifacts (test results, logs, must-gather data)
 
-### Level 2: Detailed Test Report (failed_tests_report.py)
+### Level 2: Detailed Test Report (dig_failed_tests_report.py)
 
 Per-test detailed analysis including:
 
@@ -146,7 +191,7 @@ Per-test detailed analysis including:
 
 Both scripts support `--json` flag for structured output suitable for automation:
 
-**analyze.py JSON:**
+**dig.py JSON:**
 ```json
 {
   "version": "1.0",
@@ -162,7 +207,7 @@ Both scripts support `--json` flag for structured output suitable for automation
 }
 ```
 
-**failed_tests_report.py JSON:**
+**dig_failed_tests_report.py JSON:**
 ```json
 {
   "job_url": "...",
@@ -188,9 +233,9 @@ The analyzer is built with a modular architecture:
 
 ```
 prowjob-analyzer/
-├── analyze-claude.py           # Claude launcher wrapper script
-├── analyze.py                  # Level 1: Overall job analysis
-├── failed_tests_report.py      # Level 2: Detailed test analysis
+├── sift.py           # Claude launcher wrapper script
+├── dig.py                  # Level 1: Overall job analysis
+├── dig_failed_tests_report.py      # Level 2: Detailed test analysis
 └── lib/                        # Analysis modules
     ├── fetcher.py             # Artifact fetching and URL parsing
     ├── parser.py              # prowjob.json and test-results.yaml parsing
@@ -202,18 +247,18 @@ prowjob-analyzer/
 ### Key Components
 
 **User-Facing Scripts:**
-1. **analyze-claude.py**: Wrapper script that launches Claude Code with the `/prowjob-analyze` command
+1. **sift.py**: Wrapper script that launches Claude Code with the `/prowjob-analyze` command
    - Finds project root automatically
    - Supports interactive (`-i`) and non-interactive modes
    - Validates Prow URLs
 
-2. **analyze.py**: Level 1 analysis - overall job status and metadata
+2. **dig.py**: Level 1 analysis - overall job status and metadata
    - Fetches prowjob.json, finished.json, test-results.yaml
    - Determines which step(s) failed
    - Lists failing tests (if tests ran)
    - Generates comprehensive report with metadata and artifact links
 
-3. **failed_tests_report.py**: Level 2 analysis - detailed test debugging
+3. **dig_failed_tests_report.py**: Level 2 analysis - detailed test debugging
    - Extracts full test logs from build-log.txt
    - Parses failure summaries
    - Reports test metadata (ID, author, priority, elapsed time)
@@ -230,10 +275,10 @@ prowjob-analyzer/
 
 When using `/prowjob-analyze` command, Claude follows this workflow:
 
-1. **Run analyze.py** - Get overall job status and identify failed steps
+1. **Run dig.py** - Get overall job status and identify failed steps
 2. **Examine Failure Analysis** - Check which step(s) failed
 3. **Decision Logic**:
-   - **Case A**: If `openshift-extended-test` failed AND tests are listed → Run `failed_tests_report.py` for detailed test logs
+   - **Case A**: If `openshift-extended-test` failed AND tests are listed → Run `dig_failed_tests_report.py` for detailed test logs
    - **Case B**: If other step failed (e.g., `ipi-install-install`) → Tests never ran, explain infrastructure failure
    - **Case C**: If multiple steps failed → Intelligent decision based on whether tests executed
 4. **Report Results** - Present analysis with artifact links and next steps
@@ -264,7 +309,7 @@ sudo dnf install python3-pyyaml
 ### Passing Job
 
 ```bash
-./analyze.py https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-aws-ipi-peerpods/1998111460479209472
+./dig.py https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-aws-ipi-peerpods/1998111460479209472
 ```
 
 Output:
@@ -284,7 +329,7 @@ Output:
 ### Failed Periodic Job
 
 ```bash
-./analyze.py https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-azure-ipi-kata/1998111457991987200
+./dig.py https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-azure-ipi-kata/1998111457991987200
 ```
 
 Output will include failure analysis with categorized failing tests, detected patterns, and root cause analysis.
@@ -292,7 +337,7 @@ Output will include failure analysis with categorized failing tests, detected pa
 ### Presubmit/Rehearsal Job
 
 ```bash
-./analyze.py https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/72608/rehearse-72608-periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate417-azure-ipi-coco/2001012534630420480
+./dig.py https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/72608/rehearse-72608-periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate417-azure-ipi-coco/2001012534630420480
 ```
 
 Output for rehearsal jobs includes the PR context:
@@ -337,7 +382,7 @@ pip install pyyaml
 
 Use the `--wait` option to wait for job completion:
 ```bash
-./analyze.py --wait 600 <URL>  # Wait up to 10 minutes
+./dig.py --wait 600 <URL>  # Wait up to 10 minutes
 ```
 
 ## Development
@@ -346,13 +391,13 @@ Use the `--wait` option to wait for job completion:
 
 ```bash
 # Test with a known passing job
-./analyze.py <passing-job-url>
+./dig.py <passing-job-url>
 
 # Test with a known failing job
-./analyze.py <failing-job-url>
+./dig.py <failing-job-url>
 
 # Test JSON output
-./analyze.py --json <job-url> | jq .
+./dig.py --json <job-url> | jq .
 ```
 
 ### Adding New Failure Patterns
