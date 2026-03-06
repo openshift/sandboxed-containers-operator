@@ -164,7 +164,7 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state Featur
 		}
 
 		// Create kata-cc runtime class restricted to the detected TEE subset
-		err = r.createRuntimeClass(kataCCRuntimeClassName, kataCCRuntimeClassCpuOverhead, kataCCRuntimeClassMemOverhead, kataCCRuntimeClassExtResOverhead, handler, nodeLabel)
+		err = r.createRuntimeClass(kataCCRuntimeClassName, kataCCRuntimeClassCpuOverhead, kataCCRuntimeClassMemOverhead, kataCCRuntimeClassExtResOverhead, handler, map[string]string{nodeLabel: "true"})
 		if err != nil {
 			r.Log.Info("Error creating "+kataCCRuntimeClassName+" runtime class", "err", err)
 			return fmt.Errorf("Error creating "+kataCCRuntimeClassName+" runtime class: %w", err)

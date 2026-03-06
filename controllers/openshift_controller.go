@@ -20,6 +20,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"reflect"
 	"strings"
@@ -890,7 +891,7 @@ func (r *KataConfigOpenShiftReconciler) createDaemonsetForMonitor() error {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName string, cpuOverhead string, memoryOverhead string, extResOverhead string, handler string, additionalNodeLabel string) error {
+func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName string, cpuOverhead string, memoryOverhead string, extResOverhead string, handler string, additionalNodeLabels map[string]string) error {
 
 	rc := func() *nodeapi.RuntimeClass {
 		podFixed := corev1.ResourceList{
@@ -921,8 +922,8 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName stri
 		nodeSelector := r.getNodeSelectorAsMap()
 
 		// Add additional node label if provided
-		if additionalNodeLabel != "" {
-			nodeSelector[additionalNodeLabel] = "true"
+		if additionalNodeLabels != nil {
+			maps.Copy(nodeSelector, additionalNodeLabels)
 		}
 
 		rc.Scheduling = &nodeapi.Scheduling{
@@ -2355,7 +2356,7 @@ func (r *KataConfigOpenShiftReconciler) deleteScc() error {
 func (r *KataConfigOpenShiftReconciler) postKataInstallation() (*ctrl.Result, error) {
 	r.Log.Info("create runtime class")
 	r.resetInProgressCondition()
-	err := r.createRuntimeClass(kataRuntimeClassName, kataRuntimeClassCpuOverhead, kataRuntimeClassMemOverhead, "", kataRuntimeClassName, "")
+	err := r.createRuntimeClass(kataRuntimeClassName, kataRuntimeClassCpuOverhead, kataRuntimeClassMemOverhead, "", kataRuntimeClassName, nil)
 	if err != nil {
 		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
