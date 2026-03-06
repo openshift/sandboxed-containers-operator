@@ -978,7 +978,7 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(
 			NodeSelector: nodeSelector,
 		}
 
-		r.Log.Info("RuntimeClass NodeSelector:", "nodeSelector", nodeSelector)
+		r.Log.Info("RuntimeClass", "name", runtimeClassName, "nodeSelector", nodeSelector)
 
 		return rc
 	}()
@@ -998,7 +998,7 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(
 		r.Log.Info("Creating a new RuntimeClass", "rc.Name", rc.Name)
 		err = r.Client.Create(context.TODO(), rc)
 		if err != nil {
-			return err
+			return fmt.Errorf("error creating %s runtime class: %w", rc.Name, err)
 		}
 	}
 
