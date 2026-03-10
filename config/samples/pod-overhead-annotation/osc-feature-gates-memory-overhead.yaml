@@ -1,0 +1,11 @@
+# ConfigMap for memory overhead annotation feature.
+# Add memoryOverheadMB to osc-feature-gates; the pod mutating webhook reads this
+# and injects io.katacontainers.config.hypervisor.memory_overhead on Kata pods.
+# Default is 350 when this key is absent.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: osc-feature-gates
+  namespace: openshift-sandboxed-containers-operator
+data:
+  memoryOverheadMB: "512"
