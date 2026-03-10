@@ -1,0 +1,388 @@
+kind: PipelineRun
+apiVersion: tekton.dev/v1
+metadata:
+  name: build-test-artifacts
+spec:
+  taskRunTemplate:
+    podTemplate:
+      automountServiceAccountToken: false
+  pipelineSpec:
+    params:
+      - name: SNAPSHOT
+        type: string
+        description: 'Snapshot of the application'
+    results:
+      - name: TEST_OUTPUT
+        value: $(tasks.build-and-push.results.TEST_OUTPUT)
+    tasks:
+    - name: build-and-push
+      description: Builds a bundle and catalog that references the modified images from the SNAPSHOT
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+      taskSpec:
+        params:
+        - name: SNAPSHOT
+          type: string
+        results:
+        - name: TEST_OUTPUT
+          description: Test output
+        volumes:
+        - name: workdir
+          emptyDir: {}
+        - name: bundle-push-secret
+          secret:
+            secretName: imagerepository-for-openshift-sandboxed-containers-osc-operator-bundle-image-push
+        - name: fbc-push-secret
+          secret:
+            secretName: osc-test-fbc-image-push
+        steps:
+        - name: build
+          image: registry.redhat.io/ubi9/ubi:latest
+          securityContext:
+            runAsUser: 65534
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+          - name: workdir
+            mountPath: /workdir
+          env:
+          - name: SNAPSHOT
+            value: $(params.SNAPSHOT)
+          - name: HOME
+            value: /workdir
+          script: |
+            #!/bin/bash
+            set -e
+
+            RESULTS_FILE="$(results.TEST_OUTPUT.path)"
+            trap 'if [ $? -ne 0 ] && [ ! -s "$RESULTS_FILE" ]; then printf "{\"result\":\"ERROR\",\"timestamp\":\"%s\",\"failures\":1,\"successes\":0,\"warnings\":0,\"note\":\"Build step failed unexpectedly\"}" "$(date -u --iso-8601=seconds)" > "$RESULTS_FILE"; fi' EXIT
+
+            echo "=== Step: build ==="
+
+            TOOLS_DIR="/workdir/tools"
+            mkdir -p "$TOOLS_DIR"
+            ARCH=$(uname -m)
+            echo "Installing jq (arch: $ARCH)..."
+            case "$ARCH" in x86_64) JQ_ARCH="amd64" ;; aarch64|arm64) JQ_ARCH="arm64" ;; esac
+            curl -fsSL "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-${JQ_ARCH}" \
+                -o "$TOOLS_DIR/jq"
+            chmod +x "$TOOLS_DIR/jq"
+            export PATH="$TOOLS_DIR:$PATH"
+            echo "jq installed: $(jq --version)"
+
+            echo "Parsing snapshot..."
+            SNAPSHOT_IMAGES=$(jq -r '.components[].containerImage' <<< "${SNAPSHOT}")
+
+            # Categorize snapshot images to decide what to build.
+            # The CSV patching skips bundle/catalog images,
+            # so if those are the only ones we need to handle them specially.
+            echo "Categorizing snapshot images..."
+            BUNDLE_IMAGE=""
+            HAS_OPERATOR_IMAGES=false
+            for IMAGE in $SNAPSHOT_IMAGES; do
+                COMPONENT=$(basename "$(echo "$IMAGE" | cut -d'@' -f1)")
+                case "$COMPONENT" in
+                    *osc-operator-bundle*) BUNDLE_IMAGE="$IMAGE"; echo "  bundle: $COMPONENT" ;;
+                    *osc-test-fbc*) echo "  catalog (skipped)" ;;
+                    *) HAS_OPERATOR_IMAGES=true; echo "  operator: $COMPONENT" ;;
+                esac
+            done
+
+            if [ "$HAS_OPERATOR_IMAGES" = "false" ] && [ -z "$BUNDLE_IMAGE" ]; then
+                NOTE="Skipped: snapshot contains only catalog images — no bundle changes to test"
+                echo "$NOTE"
+                echo "SKIP" > /workdir/BUILD_MODE
+                TEST_OUTPUT=$(jq -rc --arg date "$(date -u --iso-8601=seconds)" \
+                    --arg NOTE "$NOTE" --null-input \
+                    '{result: "SUCCESS", timestamp: $date, failures: 0, successes: 1, warnings: 0, note: $NOTE}')
+                echo -n "${TEST_OUTPUT}" | tee "$(results.TEST_OUTPUT.path)"
+                exit 0
+            fi
+
+            echo "Resolving source from osc-operator-bundle component..."
+            srcURL=$(jq -r '.components[] | select(.name=="osc-operator-bundle") | .source.git.url' <<< "${SNAPSHOT}")
+            srcREV=$(jq -r '.components[] | select(.name=="osc-operator-bundle") | .source.git.revision' <<< "${SNAPSHOT}")
+
+            if [ -z "$srcURL" ] || [ "$srcURL" = "null" ]; then
+                echo "ERROR: osc-operator-bundle component not found in snapshot"
+                exit 1
+            fi
+            if [ -z "$srcREV" ] || [ "$srcREV" = "null" ]; then
+                echo "ERROR: osc-operator-bundle component has no source.git.revision"
+                exit 1
+            fi
+            if [[ ! "$srcURL" =~ ^https://[^@]*$ ]]; then
+                echo "ERROR: source URL must be plain HTTPS (no embedded credentials)"
+                exit 1
+            fi
+            srcURL="${srcURL%%\?*}"
+
+            echo "Downloading source archive..."
+            mkdir -p /workdir/sources
+            curl -fsSL "${srcURL}/archive/${srcREV}.tar.gz" \
+                | tar xz -C /workdir/sources --strip-components=1
+            cd /workdir/sources
+
+            VERSION="on-pr-${srcREV:0:8}"
+            echo "$VERSION" > /workdir/VERSION
+            echo "VERSION=$VERSION"
+
+            if [ "$HAS_OPERATOR_IMAGES" = "true" ]; then
+                echo "Build mode: FULL — patching CSV with snapshot image digests"
+
+                get_redhat_url_from_quay_url() {
+                    local REDHAT_BASE="registry.redhat.io/openshift-sandboxed-containers"
+                    local QUAY_URL="$1"
+                    case "$QUAY_URL" in
+                        *osc-operator-bundle*|*osc-test-fbc*)
+                            ;;
+                        *osc-caa-webhook*)
+                            echo "$REDHAT_BASE/osc-cloud-api-adaptor-webhook-rhel9"
+                            ;;
+                        *osc-caa*)
+                            echo "$REDHAT_BASE/osc-cloud-api-adaptor-rhel9"
+                            ;;
+                        *osc-operator*)
+                            echo "$REDHAT_BASE/osc-rhel9-operator"
+                            ;;
+                        *osc-dm-verity-image*)
+                            echo "$REDHAT_BASE/osc-dm-verity-image"
+                            ;;
+                        *osc-storage-helper*)
+                            echo "$REDHAT_BASE/osc-storage-helper"
+                            ;;
+                        *)
+                            local IMAGE_NAME
+                            IMAGE_NAME=$(echo "$QUAY_URL" | sed 's|quay.io/redhat-user-workloads/ose-osc-tenant/||')
+                            echo "$REDHAT_BASE/${IMAGE_NAME}-rhel9"
+                            ;;
+                    esac
+                }
+
+                CSV_FILE=$(ls bundle/manifests/*clusterserviceversion.yaml 2>/dev/null | head -1)
+                if [ -z "$CSV_FILE" ]; then
+                    echo "No ClusterServiceVersion file found in bundle/manifests/. Exiting."
+                    exit 1
+                fi
+                echo "Patching image references in: $CSV_FILE"
+
+                cp "$CSV_FILE" "${CSV_FILE}.orig"
+
+                for IMAGE in $SNAPSHOT_IMAGES; do
+                    IMAGE_REPO=$(echo "$IMAGE" | cut -d'@' -f1)
+                    RH_IMAGE=$(get_redhat_url_from_quay_url "$IMAGE_REPO")
+                    [ -z "$RH_IMAGE" ] && continue
+                    IMAGE_DIGEST=$(echo "$IMAGE" | cut -d'@' -f2)
+                    sed -i -E "s~(${RH_IMAGE})(@sha256:[^ \"]*|:[^ \"]*)~\1@${IMAGE_DIGEST}~g" "$CSV_FILE"
+                    # sed exits 0 even when no substitution is made, so a stale
+                    # image mapping would silently produce a bundle with the old
+                    # digest. Verify the expected reference actually landed.
+                    if ! grep -q "${RH_IMAGE}@${IMAGE_DIGEST}" "$CSV_FILE"; then
+                        echo "WARNING: reference not found in CSV after patching: $(basename "$RH_IMAGE")"
+                        echo "$RH_IMAGE" >> /workdir/missed-images.txt
+                    fi
+                done
+
+                diff "${CSV_FILE}.orig" "$CSV_FILE" > modified-images.diff || true
+                rm -f "${CSV_FILE}.orig"
+                PATCHED_COUNT=$(grep -c '^[<>]' modified-images.diff 2>/dev/null || echo 0)
+                echo "Patched $PATCHED_COUNT image reference(s) in CSV."
+
+                echo "Creating bundle content tar..."
+                tar czf /workdir/bundle.tar.gz --owner=0 --group=0 \
+                    -C bundle manifests metadata tests/scorecard
+                cp modified-images.diff /workdir/ 2>/dev/null || true
+
+                echo "FULL" > /workdir/BUILD_MODE
+            else
+                echo "Build mode: BUNDLE_ONLY"
+                echo "$BUNDLE_IMAGE" > /workdir/BUNDLE_IMG_OVERRIDE
+                echo "BUNDLE_ONLY" > /workdir/BUILD_MODE
+            fi
+            echo "Build step done. BUILD_MODE=$(cat /workdir/BUILD_MODE)"
+
+        - name: publish
+          image: registry.redhat.io/ubi9/ubi:latest
+          securityContext:
+            runAsUser: 65534
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+          - name: workdir
+            mountPath: /workdir
+          - name: bundle-push-secret
+            mountPath: /workdir/push-secrets/bundle
+            readOnly: true
+          - name: fbc-push-secret
+            mountPath: /workdir/push-secrets/fbc
+            readOnly: true
+          env:
+          - name: DOCKER_CONFIG
+            value: /workdir/docker-config
+          - name: HOME
+            value: /workdir
+          script: |
+            #!/bin/bash
+            set -e
+
+            RESULTS_FILE="$(results.TEST_OUTPUT.path)"
+            trap 'if [ $? -ne 0 ] && [ ! -s "$RESULTS_FILE" ]; then printf "{\"result\":\"ERROR\",\"timestamp\":\"%s\",\"failures\":1,\"successes\":0,\"warnings\":0,\"note\":\"Publish step failed unexpectedly\"}" "$(date -u --iso-8601=seconds)" > "$RESULTS_FILE"; fi' EXIT
+
+            echo "=== Step: publish ==="
+
+            BUILD_MODE=$(cat /workdir/BUILD_MODE)
+            echo "BUILD_MODE=$BUILD_MODE"
+            if [ "$BUILD_MODE" = "SKIP" ]; then
+                echo "Nothing to publish, exiting."
+                exit 0
+            fi
+
+            TOOLS_DIR="/workdir/tools"
+            mkdir -p "$TOOLS_DIR"
+            ARCH=$(uname -m)
+            OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+
+            echo "Installing crane ${CRANE_VERSION}..."
+            CRANE_VERSION="v0.20.3"
+            case "$ARCH" in x86_64) CRANE_ARCH="x86_64" ;; aarch64|arm64) CRANE_ARCH="arm64" ;; esac
+            curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_${OS}_${CRANE_ARCH}.tar.gz" \
+                | tar xz -C "$TOOLS_DIR" crane
+
+            OPM_VERSION="v1.52.0"
+            echo "Installing opm ${OPM_VERSION}..."
+            case "$ARCH" in x86_64) OPM_ARCH="amd64" ;; aarch64|arm64) OPM_ARCH="arm64" ;; esac
+            curl -fsSL "https://github.com/operator-framework/operator-registry/releases/download/${OPM_VERSION}/${OS}-${OPM_ARCH}-opm" \
+                -o "$TOOLS_DIR/opm"
+            chmod +x "$TOOLS_DIR/opm"
+
+            echo "Installing yq..."
+            curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_${OS}_${OPM_ARCH}" \
+                -o "$TOOLS_DIR/yq"
+            chmod +x "$TOOLS_DIR/yq"
+
+            export PATH="$TOOLS_DIR:$PATH"
+
+            BUNDLE_DOCKER_CONFIG="/workdir/docker-config-bundle"
+            FBC_DOCKER_CONFIG="/workdir/docker-config-fbc"
+            mkdir -p "$BUNDLE_DOCKER_CONFIG" "$FBC_DOCKER_CONFIG"
+            cp /workdir/push-secrets/bundle/.dockerconfigjson "$BUNDLE_DOCKER_CONFIG/config.json"
+            cp /workdir/push-secrets/fbc/.dockerconfigjson "$FBC_DOCKER_CONFIG/config.json"
+
+            VERSION=$(cat /workdir/VERSION)
+            CATALOG_BASE_IMAGE="quay.io/operator-framework/opm:v1.52.0"
+            SUCCESSES=0
+            FAILURES=0
+
+            set +e
+            (
+                set -e
+
+                if [ "$BUILD_MODE" = "FULL" ]; then
+                    export DOCKER_CONFIG="$BUNDLE_DOCKER_CONFIG"
+                    BUNDLE_IMG="quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator-bundle:${VERSION}"
+                    echo "Building bundle image..."
+
+                    crane append \
+                        -f /workdir/bundle.tar.gz \
+                        -t "$BUNDLE_IMG"
+
+                    crane mutate "$BUNDLE_IMG" \
+                        --label operators.operatorframework.io.bundle.mediatype.v1=registry+v1 \
+                        --label operators.operatorframework.io.bundle.manifests.v1=manifests/ \
+                        --label operators.operatorframework.io.bundle.metadata.v1=metadata/ \
+                        --label operators.operatorframework.io.bundle.package.v1=sandboxed-containers-operator \
+                        --label operators.operatorframework.io.bundle.channels.v1=stable \
+                        --label operators.operatorframework.io.bundle.channel.default.v1=stable \
+                        --label operators.operatorframework.io.metrics.builder=operator-sdk-v1.39.1 \
+                        --label operators.operatorframework.io.metrics.mediatype.v1=metrics+v1 \
+                        --label operators.operatorframework.io.metrics.project_layout=go.kubebuilder.io/v4 \
+                        --label operators.operatorframework.io.test.mediatype.v1=scorecard+v1 \
+                        --label operators.operatorframework.io.test.config.v1=tests/scorecard/ \
+                        --label quay.expires-after=5d \
+                        -t "$BUNDLE_IMG"
+
+                    echo "Bundle image pushed."
+                else
+                    BUNDLE_IMG=$(cat /workdir/BUNDLE_IMG_OVERRIDE)
+                    echo "Using pre-built bundle image."
+                fi
+                echo "$BUNDLE_IMG" >> /workdir/produced-images.txt
+
+                export DOCKER_CONFIG="$FBC_DOCKER_CONFIG"
+                cd /workdir/sources
+                RENDER_TEMPLATE=$(mktemp)
+                cp fbc/test-fbc/catalog-template.yaml "$RENDER_TEMPLATE"
+                sed -i "s|image: .*|image: ${BUNDLE_IMG}|" "$RENDER_TEMPLATE"
+                base64 fbc/icon.png > /workdir/icon.base64
+                yq -i ".entries[0].icon.base64data = \"$(cat /workdir/icon.base64)\"" "$RENDER_TEMPLATE"
+                mkdir -p fbc/test-fbc/catalog/sandboxed-containers-operator
+                echo "Rendering catalog..."
+                opm --migrate-level bundle-object-to-csv-metadata \
+                    alpha render-template basic "$RENDER_TEMPLATE" \
+                    > fbc/test-fbc/catalog/sandboxed-containers-operator/catalog.json
+                rm -f "$RENDER_TEMPLATE"
+                echo "Catalog rendered."
+
+                CATALOG_IMG="quay.io/redhat-user-workloads/ose-osc-tenant/osc-test-fbc:${VERSION}"
+                CATALOG_TAR=$(mktemp --suffix=.tar.gz)
+                tar czf "$CATALOG_TAR" --owner=0 --group=0 \
+                    --transform 's|^catalog|configs|' -C fbc/test-fbc catalog
+
+                echo "Building catalog image..."
+                crane append \
+                    --base "$CATALOG_BASE_IMAGE" \
+                    -f "$CATALOG_TAR" \
+                    -t "$CATALOG_IMG"
+
+                crane mutate "$CATALOG_IMG" \
+                    --label operators.operatorframework.io.index.configs.v1=/configs \
+                    --label quay.expires-after=5d \
+                    --entrypoint /bin/opm \
+                    --cmd "serve,/configs,--cache-dir=/tmp/cache" \
+                    -t "$CATALOG_IMG"
+
+                rm -f "$CATALOG_TAR"
+
+                if [ -s /workdir/modified-images.diff ]; then
+                    DIFF_TAR=$(mktemp --suffix=.tar.gz)
+                    tar czf "$DIFF_TAR" --owner=0 --group=0 -C /workdir modified-images.diff
+                    crane append --base "$CATALOG_IMG" -f "$DIFF_TAR" -t "$CATALOG_IMG"
+                    rm -f "$DIFF_TAR"
+                fi
+
+                echo "Catalog image pushed."
+                echo "$CATALOG_IMG" >> /workdir/produced-images.txt
+            ) &> /workdir/publish.log
+            PUBLISH_EXIT=$?
+            set -e
+
+            echo "Publish finished (exit=$PUBLISH_EXIT)."
+
+            WARNINGS=0
+            MISSED=""
+            if [ -s /workdir/missed-images.txt ]; then
+                WARNINGS=$(wc -l < /workdir/missed-images.txt)
+                MISSED=$(cat /workdir/missed-images.txt | paste -sd ', ')
+            fi
+
+            if [ $PUBLISH_EXIT -eq 0 ]; then
+                RESULT="SUCCESS"
+                SUCCESSES=1
+                IMAGES=$(cat /workdir/produced-images.txt 2>/dev/null | paste -sd ', ')
+                NOTE="Build succeeded. Images: ${IMAGES}"
+                if [ -n "$MISSED" ]; then
+                    NOTE="${NOTE}. Unpatched references: ${MISSED}"
+                fi
+            else
+                RESULT="FAILURE"
+                FAILURES=1
+            fi
+
+            TEST_OUTPUT=$(jq -rc --arg date "$(date -u --iso-8601=seconds)" --arg RESULT "${RESULT}" \
+                --arg NOTE "${NOTE}" \
+                --argjson FAILURES ${FAILURES} --argjson SUCCESSES ${SUCCESSES} --argjson WARNINGS ${WARNINGS} --null-input \
+                '{result: $RESULT, timestamp: $date, failures: $FAILURES, successes: $SUCCESSES, warnings: $WARNINGS, note: $NOTE}')
+            echo -n "${TEST_OUTPUT}" | tee "$(results.TEST_OUTPUT.path)"
+
+            [ "$RESULT" = "SUCCESS" ] || exit 1
