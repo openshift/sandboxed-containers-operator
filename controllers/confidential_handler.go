@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"slices"
+	"strings"
 
 	semver "github.com/Masterminds/semver/v3"
 	configv1 "github.com/openshift/api/config/v1"
@@ -159,12 +161,16 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialPeerPods(state Feature
 }
 
 // validateOCPVersion checks if the current OpenShift cluster is valid based on
-// minimal version in minOCPVersion.
-// Returns false if OCP version is < to minimal version
-// Returns true otherwise
+// minimal versions in minOCPVersions.
+// Returns false if OCP version is < to all minimal versions
+// Returns false if OCP version is < to the minimal version matching major.minor
+// Returns true otherwise (i.e. assume that any higher OCP version has support)
 // Returns error if cluster version is not available or cannot be retrieved.
 func (r *KataConfigOpenShiftReconciler) validateOCPVersion() (bool, error) {
-	minOCPVersion := "4.20.6"
+	// Sorted slice of minimal OCP z-stream releases.
+	minOCPVersions := slices.Sorted(slices.Values([]string{
+		"4.20.6",
+	}))
 
 	clusterVersion := &configv1.ClusterVersion{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
@@ -182,22 +188,50 @@ func (r *KataConfigOpenShiftReconciler) validateOCPVersion() (bool, error) {
 		return false, fmt.Errorf("unable to parse current OCP version %s: %w", currentVersion, err)
 	}
 
-	minVersion := minOCPVersion
-	min, err := semver.NewVersion(minVersion)
-	if err != nil {
-		return false, fmt.Errorf("invalid minimum version format %s: %w", minVersion, err)
+	supported := false
+	for i, minVersion := range minOCPVersions {
+		min, err := semver.NewVersion(minVersion)
+		if err != nil {
+			return false, fmt.Errorf("invalid minimum version format %s: %w", minVersion, err)
+		}
+
+		if current.Major() < min.Major() {
+			// major is too low to be even considered.
+			break
+		}
+
+		if current.Major() == min.Major() {
+			if current.Minor() < min.Minor() {
+				// minor is too low to be even considered.
+				break
+			}
+
+			if current.Minor() == min.Minor() {
+				// Same major/minor, just compare the patch.
+				supported = !current.LessThan(min)
+				break
+			}
+		}
+
+		if i == len(minOCPVersions)-1 {
+			// Higher major/minor than the last version is assumed to have proper support.
+			supported = true
+		}
 	}
 
-	if current.LessThan(min) {
-		r.Log.Info("WARNING: OpenShift version does not support CoCo bare metal", "version", currentVersion, "minVersion", minVersion)
+	if !supported {
+		minVersions := strings.Join(minOCPVersions, ", ")
+
+		r.Log.Info("WARNING: OpenShift version does not support CoCo bare metal", "version", currentVersion, "minVersions", minVersions)
 		cond := r.retrieveInProgressConditionForChange()
 		cond.Status = corev1.ConditionFalse
 		cond.Reason = "UnsupportedOCPVersion"
-		cond.Message = fmt.Sprintf("OpenShift version %s does not support CoCo bare metal (minimum required: %s or higher)", currentVersion, minVersion)
+		cond.Message = fmt.Sprintf("OpenShift version %s does not support CoCo bare metal (minimum required: %s or higher)", currentVersion, minVersions)
 
 		return false, nil
 	}
 
+	r.Log.Info("OpenShift version supports CoCo bare metal", "version", currentVersion)
 	return true, nil
 }
 
