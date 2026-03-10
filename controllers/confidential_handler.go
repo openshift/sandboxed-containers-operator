@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 
@@ -174,15 +175,18 @@ func (r *KataConfigOpenShiftReconciler) validateOCPVersion() (bool, error) {
 		"4.21.8",
 	}))
 
-	clusterVersion := &configv1.ClusterVersion{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
-	if err != nil {
-		return false, err
-	}
-
-	currentVersion := clusterVersion.Status.Desired.Version
+	currentVersion := os.Getenv("BM_COCO_OVERRIDE_OCP_VERSION")
 	if currentVersion == "" {
-		return false, fmt.Errorf("cluster version not available yet")
+		clusterVersion := &configv1.ClusterVersion{}
+		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
+		if err != nil {
+			return false, err
+		}
+
+		currentVersion = clusterVersion.Status.Desired.Version
+		if currentVersion == "" {
+			return false, fmt.Errorf("cluster version not available yet")
+		}
 	}
 
 	current, err := semver.NewVersion(currentVersion)
