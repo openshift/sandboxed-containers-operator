@@ -158,32 +158,47 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialPeerPods(state Feature
 	return nil
 }
 
-// isOCPVersionLessThan checks if the current OpenShift cluster version is less than the specified minimum version.
-// Returns (true, version, nil) if current version < minVersion, (false, version, nil) if current >= minVersion.
+// validateOCPVersion checks if the current OpenShift cluster is valid based on
+// minimal version in minOCPVersion.
+// Returns false if OCP version is < to minimal version
+// Returns true otherwise
 // Returns error if cluster version is not available or cannot be retrieved.
-func (r *KataConfigOpenShiftReconciler) isOCPVersionLessThan(minVersion string) (bool, string, error) {
+func (r *KataConfigOpenShiftReconciler) validateOCPVersion() (bool, error) {
+	minOCPVersion := "4.20.6"
+
 	clusterVersion := &configv1.ClusterVersion{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
 	if err != nil {
-		return false, "", err
+		return false, err
 	}
 
 	currentVersion := clusterVersion.Status.Desired.Version
 	if currentVersion == "" {
-		return false, "", fmt.Errorf("cluster version not available yet")
+		return false, fmt.Errorf("cluster version not available yet")
 	}
 
 	current, err := semver.NewVersion(currentVersion)
 	if err != nil {
-		return false, currentVersion, fmt.Errorf("unable to parse current OCP version %s: %w", currentVersion, err)
+		return false, fmt.Errorf("unable to parse current OCP version %s: %w", currentVersion, err)
 	}
 
+	minVersion := minOCPVersion
 	min, err := semver.NewVersion(minVersion)
 	if err != nil {
-		return false, currentVersion, fmt.Errorf("invalid minimum version format %s: %w", minVersion, err)
+		return false, fmt.Errorf("invalid minimum version format %s: %w", minVersion, err)
 	}
 
-	return current.LessThan(min), currentVersion, nil
+	if current.LessThan(min) {
+		r.Log.Info("WARNING: OpenShift version does not support CoCo bare metal", "version", currentVersion, "minVersion", minVersion)
+		cond := r.retrieveInProgressConditionForChange()
+		cond.Status = corev1.ConditionFalse
+		cond.Reason = "UnsupportedOCPVersion"
+		cond.Message = fmt.Sprintf("OpenShift version %s does not support CoCo bare metal (minimum required: %s or higher)", currentVersion, minVersion)
+
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // handleConfidentialBaremetal configures confidential computing for baremetal deployments.
@@ -192,17 +207,12 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state Featur
 	// if confidential feature gate enabled
 	if state == Enabled {
 		if !r.kataConfig.Spec.EnablePeerPods {
-			isLess, version, err := r.isOCPVersionLessThan("4.20.6")
+			isValid, err := r.validateOCPVersion()
 			if err != nil {
 				// Return error to trigger reconcile retry (cluster version not available yet or API error)
 				return err
 			}
-			if isLess {
-				r.Log.Info("WARNING: OpenShift version does not support CoCo bare metal", "version", version, "minVersion", "4.20.6")
-				cond := r.retrieveInProgressConditionForChange()
-				cond.Status = corev1.ConditionFalse
-				cond.Reason = "UnsupportedOCPVersion"
-				cond.Message = fmt.Sprintf("OpenShift version %s does not support CoCo bare metal (minimum required: 4.20.6)", version)
+			if !isValid {
 				return nil
 			}
 		}
