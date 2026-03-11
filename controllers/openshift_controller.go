@@ -544,6 +544,171 @@ func (r *KataConfigOpenShiftReconciler) newMCPforCR() *mcfgv1.MachineConfigPool 
 	return mcp
 }
 
+// kata-cc CRI-O drop-in MachineConfig names and paths for unified handler mode
+const (
+	kataCCCRIODropInPath = "/etc/crio/crio.conf.d/99-kata-cc.conf"
+	kataCCCRIOMCPrefix   = "99-kata-cc-"
+	kataCCTEEMCPPrefix   = "kata-oc-"
+)
+
+// createKataCCCRIODropInMC creates a MachineConfig that adds the kata-cc CRI-O handler
+// with the given Kata config path, targeted to the specified MCP role.
+func (r *KataConfigOpenShiftReconciler) createKataCCCRIODropInMC(tee, kataConfigPath, mcRole string) (*mcfgv1.MachineConfig, error) {
+	crioConfig := fmt.Sprintf(`[crio.runtime.runtimes.kata-cc]
+runtime_path = "/usr/bin/kata-runtime"
+runtime_type = "vm"
+runtime_args = ["--kata-config=%s"]
+`, kataConfigPath)
+
+	encodedContent := base64.StdEncoding.EncodeToString([]byte(crioConfig))
+
+	ic := ignTypes.Config{
+		Ignition: ignTypes.Ignition{
+			Version: "3.2.0",
+		},
+		Storage: ignTypes.Storage{
+			Files: []ignTypes.File{
+				{
+					Node: ignTypes.Node{
+						Path:      kataCCCRIODropInPath,
+						Overwrite: ptrToBool(true),
+					},
+					FileEmbedded1: ignTypes.FileEmbedded1{
+						Contents: ignTypes.Resource{
+							Source: ptrToString("data:text/plain;charset=utf-8;base64," + encodedContent),
+						},
+						Mode: ptrToInt(0644),
+					},
+				},
+			},
+		},
+	}
+
+	icb, err := json.Marshal(ic)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal ignition config: %w", err)
+	}
+
+	mcName := kataCCCRIOMCPrefix + tee
+	mc := &mcfgv1.MachineConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "machineconfiguration.openshift.io/v1",
+			Kind:       "MachineConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: mcName,
+			Labels: map[string]string{
+				"machineconfiguration.openshift.io/role": mcRole,
+				"app":                                    r.kataConfig.Name,
+			},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{Raw: icb},
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(r.kataConfig, mc, r.Scheme); err != nil {
+		return nil, err
+	}
+
+	return mc, nil
+}
+
+func ptrToBool(b bool) *bool       { return &b }
+func ptrToInt(i int) *int          { return &i }
+func ptrToString(s string) *string { return &s }
+
+// createOrUpdateTEEPool creates or updates a MachineConfigPool for the given TEE type.
+// The MCP selects nodes that match KataConfigPoolSelector AND have the TEE label.
+func (r *KataConfigOpenShiftReconciler) createOrUpdateTEEPool(tee, teeNodeLabel string) error {
+	mcpName := kataCCTEEMCPPrefix + tee
+	mcRole := kataCCTEEMCPPrefix + tee
+
+	nodeSelector := r.getKataConfigNodeSelectorAsLabelSelector().DeepCopy()
+	nodeSelector = metav1.AddLabelToSelector(nodeSelector, teeNodeLabel, "true")
+
+	lsr := metav1.LabelSelectorRequirement{
+		Key:      "machineconfiguration.openshift.io/role",
+		Operator: metav1.LabelSelectorOpIn,
+		Values:   []string{"worker", "kata-oc", mcRole},
+	}
+
+	mcp := &mcfgv1.MachineConfigPool{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "machineconfiguration.openshift.io/v1",
+			Kind:       "MachineConfigPool",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: mcpName,
+			Labels: map[string]string{
+				"pools.operator.machineconfiguration.openshift.io/" + mcpName: "",
+			},
+		},
+		Spec: mcfgv1.MachineConfigPoolSpec{
+			MachineConfigSelector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{lsr},
+			},
+			NodeSelector: nodeSelector,
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(r.kataConfig, mcp, r.Scheme); err != nil {
+		return err
+	}
+
+	found := &mcfgv1.MachineConfigPool{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcpName}, found)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("Creating TEE MachineConfigPool", "mcp", mcpName, "tee", tee)
+			return r.Client.Create(context.TODO(), mcp)
+		}
+		return err
+	}
+
+	if reflect.DeepEqual(found.Spec, mcp.Spec) {
+		return nil
+	}
+
+	found.Spec = mcp.Spec
+	r.Log.Info("Updating TEE MachineConfigPool", "mcp", mcpName, "tee", tee)
+	return r.Client.Update(context.TODO(), found)
+}
+
+// deleteTEEPoolAndMC deletes the MachineConfigPool and MachineConfig for the given TEE type.
+func (r *KataConfigOpenShiftReconciler) deleteTEEPoolAndMC(tee string) error {
+	mcpName := kataCCTEEMCPPrefix + tee
+	mcName := kataCCCRIOMCPrefix + tee
+
+	mcp := &mcfgv1.MachineConfigPool{}
+	if err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcpName}, mcp); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
+	} else {
+		if err := r.Client.Delete(context.TODO(), mcp); err != nil && !k8serrors.IsNotFound(err) {
+			r.Log.Info("Error deleting TEE MachineConfigPool", "mcp", mcpName, "err", err)
+			return err
+		}
+		r.Log.Info("Deleted TEE MachineConfigPool", "mcp", mcpName)
+	}
+
+	mc := &mcfgv1.MachineConfig{}
+	if err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcName}, mc); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
+	} else {
+		if err := r.Client.Delete(context.TODO(), mc); err != nil && !k8serrors.IsNotFound(err) {
+			r.Log.Info("Error deleting kata-cc CRI-O MachineConfig", "mc", mcName, "err", err)
+			return err
+		}
+		r.Log.Info("Deleted kata-cc CRI-O MachineConfig", "mc", mcName)
+	}
+
+	return nil
+}
+
 func (r *KataConfigOpenShiftReconciler) getExtensionName() (string, error) {
 	// RHCOS uses "sandboxed-containers" as thats resolved/translated in the machine-config-operator to "kata-containers"
 	// FCOS/SCOS however does not get any translation in the machine-config-operator so we need to
