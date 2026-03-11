@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -10,6 +11,9 @@ import (
 )
 
 const (
+
+	// CPU
+
 	// kata-cc runtime class for CoCo BM
 	kataCCRuntimeClassName        = "kata-cc"
 	kataCCRuntimeClassCpuOverhead = "0.25"
@@ -29,10 +33,40 @@ const (
 	intelTDXExtendedResource = "tdx.intel.com/keys"
 	amdSNPExtendedResource   = "sev-snp.amd.com/esids"
 
+	// GPU
+
+	// kata-cc-nvidia-gpu runtime class for CoCo BM GPU
+	kataNvidiaGPUCCRuntimeClassName        = "kata-cc-nvidia-gpu"
+	kataNvidiaGPUCCRuntimeClassCpuOverhead = "0.25"
+	kataNvidiaGPUCCRuntimeClassMemOverhead = "350Mi"
+
+	// RuntimeClass handlers for TEE
+	kataNvidiaGPUCCIntelHandler = "kata-tdx-nvidia-gpu"
+	kataNvidiaGPUCCAmdHandler   = "kata-snp-nvidia-gpu"
+
 	// INITDATA value for non-confidential peer pods, this is required in order
 	// to override the default restrictive CoCo agent policy
 	// created from sourced plaintxt: cat config/peerpods/default-non-cc-initdata.toml | gzip | base64 -w0
 	defaultNonCCInitdata = "H4sIAAAAAAAAA42UwW7bMAyG734KwT3ktKDDehgG9NAl2VZgWQw7bQ7DMDAWYxOVRU+i03pPP7lGhx0muwddyE8U+ZPUhdrX5BVZEg0C6kQG1SN4VToEQa2OvZIaFfvyDbfoQNglYCp2JHWjrlXqa3j3/ipNzug8sR1Ml8u3y8s0Sb4PIX8kKcBSuDFp8C0Wi2Q4SdqyobJfOqz4xdFC+QAVqnCs/ByBJNF4gs6IutH6Js++IVX1kZ3P8VeHXtSHayWuw3+x4hHamHtl2GMhmmyU4Lb/FGSI+p+VWbEVIItuGivA6iM/xaB1MDruZ6jNE5aZ4xJ9tOrPKFsUR+UUsdttN+cgbRQZrGsMdZlomK/k5dYKuhOEfKaonDuJE1tsvrC0pqs+9qG2Y1TunTVB5lV2F27EmAw6P9+RrDPmtgnDFQNyBF1I6Fv0oRwbPs+/NGKFgMF7ckJ88kUNDrfcWYlKkqNH1HmYBW7WeJ7AumY+hwJl7GeYwj010aIDlz1vWhSgyoKZmb9Qq5P5nAZq76AkW00w4l8RiduZQHvpD8OWe/odLf6u1a/Z5RHbtDU24Qs0020c4b87Mo1NL8kBSGaEP4SPGP8/tMOX+geD8J3Z4AUAAA=="
+)
+
+var (
+	// TEE node labels for NVIDIA GPUs
+	nvidiaGPUCCNodeLabels = map[string]string{
+		"nvidia.com/cc.mode.state":  "on",
+		"nvidia.com/cc.ready.state": "true",
+	}
+
+	// TEE node labels for CPUs
+	intelTDXNodeLabels = map[string]string{
+		intelTDXNodeLabel: "true",
+	}
+	amdSNPNodeLabels = map[string]string{
+		amdSNPNodeLabel: "true",
+	}
+	imbSENodeLabels = map[string]string{
+		ibmSENodeLabel: "true",
+	}
 )
 
 // When the feature is enabled, handleFeatureConfidential configures confidential computing support.
@@ -124,6 +158,7 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialPeerPods(state Feature
 // handleConfidentialBaremetal configures confidential computing for baremetal deployments.
 // It manages kata-cc runtime classes with TEE-specific handlers (Intel TDX, AMD SNP or IBM SE).
 func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state FeatureGateState) error {
+	// if confidential feature gate enabled
 	if state == Enabled {
 		if !r.kataConfig.Spec.EnablePeerPods {
 			isLess, version, err := r.isOCPVersionLessThan("4.20.6")
@@ -143,7 +178,8 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state Featur
 
 		r.Log.Info("Creating " + kataCCRuntimeClassName + " runtime class for confidential containers")
 
-		handler, nodeLabel, err := r.computeTEEHandlerAndLabel()
+		// compute TEE
+		hasIntelTDX, hasAmdSNP, hasIbmSE, err := r.computeTEE()
 		if err != nil {
 			// If peer pods is enabled, just warn and skip baremetal coco
 			if r.kataConfig.Spec.EnablePeerPods {
@@ -155,19 +191,64 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state Featur
 			return err
 		}
 
-		// Determine extended resource based on TEE type
-		var kataCCRuntimeClassExtResOverhead string
-		if handler == kataCCIntelHandler {
+		// Determine handler and extended resource based on TEE type
+		var handler, kataCCRuntimeClassExtResOverhead string
+		additionalLabels := map[string]string{}
+		if hasIntelTDX {
 			kataCCRuntimeClassExtResOverhead = intelTDXExtendedResource
-		} else if handler == kataCCAmdHandler {
+			handler = kataCCIntelHandler
+			maps.Copy(additionalLabels, intelTDXNodeLabels)
+		} else if hasAmdSNP {
 			kataCCRuntimeClassExtResOverhead = amdSNPExtendedResource
+			handler = kataCCAmdHandler
+			maps.Copy(additionalLabels, amdSNPNodeLabels)
+		} else if hasIbmSE {
+			handler = kataCCIbmHandler
+			maps.Copy(additionalLabels, imbSENodeLabels)
 		}
 
 		// Create kata-cc runtime class restricted to the detected TEE subset
-		err = r.createRuntimeClass(kataCCRuntimeClassName, kataCCRuntimeClassCpuOverhead, kataCCRuntimeClassMemOverhead, kataCCRuntimeClassExtResOverhead, handler, nodeLabel)
+		err = r.createRuntimeClass(
+			kataCCRuntimeClassName,
+			kataCCRuntimeClassCpuOverhead,
+			kataCCRuntimeClassMemOverhead,
+			kataCCRuntimeClassExtResOverhead,
+			handler,
+			additionalLabels)
 		if err != nil {
-			r.Log.Info("Error creating "+kataCCRuntimeClassName+" runtime class", "err", err)
-			return fmt.Errorf("Error creating "+kataCCRuntimeClassName+" runtime class: %w", err)
+			r.Log.Error(err, "aborting, failed to create runtimeclass")
+			return err
+		}
+
+		additionalLabels = map[string]string{}
+		// for kata-cc-nvidia-gpu
+		if hasIntelTDX {
+			kataCCRuntimeClassExtResOverhead = intelTDXExtendedResource
+			handler = kataNvidiaGPUCCIntelHandler
+			maps.Copy(additionalLabels, nvidiaGPUNodeLabels)
+			// nvidiaGPUCCNodeLabels overrides values of base gpu labels
+			maps.Copy(additionalLabels, nvidiaGPUCCNodeLabels)
+			maps.Copy(additionalLabels, intelTDXNodeLabels)
+		} else if hasAmdSNP {
+			kataCCRuntimeClassExtResOverhead = amdSNPExtendedResource
+			handler = kataNvidiaGPUCCAmdHandler
+			maps.Copy(additionalLabels, nvidiaGPUNodeLabels)
+			// nvidiaGPUCCNodeLabels overrides values of base gpu labels
+			maps.Copy(additionalLabels, nvidiaGPUCCNodeLabels)
+			maps.Copy(additionalLabels, amdSNPNodeLabels)
+		}
+
+		// Create kata-cc-nvidia-gpu runtime class restricted to the detected GPU TEE subset
+		err = r.createRuntimeClass(
+			kataNvidiaGPUCCRuntimeClassName,
+			kataNvidiaGPUCCRuntimeClassCpuOverhead,
+			kataNvidiaGPUCCRuntimeClassMemOverhead,
+			kataCCRuntimeClassExtResOverhead,
+			handler,
+			additionalLabels)
+		if err != nil {
+			r.Log.Error(err, "aborting, failed to create runtimeclass")
+			return err
 		}
 
 	} else {
@@ -179,26 +260,35 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state Featur
 			r.Log.Info("Error deleting "+kataCCRuntimeClassName+" runtime class", "err", err)
 			return fmt.Errorf("Error deleting "+kataCCRuntimeClassName+" runtime class: %w", err)
 		}
+
+		r.Log.Info("Deleting " + kataNvidiaGPUCCRuntimeClassName + " runtime class for confidential containers")
+
+		// Delete kata-cc runtime class
+		err = r.deleteRuntimeClass(kataNvidiaGPUCCRuntimeClassName)
+		if err != nil {
+			r.Log.Info("Error deleting "+kataNvidiaGPUCCRuntimeClassName+" runtime class", "err", err)
+			return fmt.Errorf("Error deleting "+kataNvidiaGPUCCRuntimeClassName+" runtime class: %w", err)
+		}
 	}
 
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) computeTEEHandlerAndLabel() (string, string, error) {
+func (r *KataConfigOpenShiftReconciler) computeTEE() (hasIntelTDX, hasAmdSNP, hasIbmSE bool, err error) {
 	selector, err := r.getKataConfigNodeSelectorAsSelector()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to build node selector: %w", err)
+		err = fmt.Errorf("failed to build node selector: %w", err)
+		return
 	}
 
 	nodes := &corev1.NodeList{}
 	listOpts := []client.ListOption{
 		client.MatchingLabelsSelector{Selector: selector},
 	}
-	if err := r.Client.List(context.TODO(), nodes, listOpts...); err != nil {
-		return "", "", fmt.Errorf("failed to list nodes: %w", err)
+	if err = r.Client.List(context.TODO(), nodes, listOpts...); err != nil {
+		err = fmt.Errorf("failed to list nodes: %w", err)
+		return
 	}
-
-	var hasIntelTDX, hasAmdSNP, hasIbmSE bool
 
 	for _, n := range nodes.Items {
 		if v, ok := n.Labels[intelTDXNodeLabel]; ok && v == "true" {
@@ -223,19 +313,14 @@ func (r *KataConfigOpenShiftReconciler) computeTEEHandlerAndLabel() (string, str
 		count++
 	}
 
+	if count == 0 {
+		err = fmt.Errorf("no TEE platform labels found (expected %s, %s or %s)", intelTDXNodeLabel, amdSNPNodeLabel, ibmSENodeLabel)
+		return
+	}
 	if count >= 2 {
-		return "", "", fmt.Errorf("multiple TEE platforms detected; only one per cluster supported")
+		err = fmt.Errorf("multiple TEE platforms detected; only one per cluster supported")
+		return
 	}
 
-	if hasIntelTDX {
-		return kataCCIntelHandler, intelTDXNodeLabel, nil
-	}
-	if hasAmdSNP {
-		return kataCCAmdHandler, amdSNPNodeLabel, nil
-	}
-	if hasIbmSE {
-		return kataCCIbmHandler, ibmSENodeLabel, nil
-	}
-
-	return "", "", fmt.Errorf("no TEE platform labels found (expected %s, %s or %s)", intelTDXNodeLabel, amdSNPNodeLabel, ibmSENodeLabel)
+	return
 }

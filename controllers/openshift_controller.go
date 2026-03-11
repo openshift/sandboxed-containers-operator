@@ -20,6 +20,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"reflect"
 	"strings"
@@ -87,6 +88,21 @@ const (
 	kataRuntimeClassCpuOverhead = "0.25"
 	// We need a higher value than upstream (see https://github.com/openshift/sandboxed-containers-operator/pull/84)
 	kataRuntimeClassMemOverhead = "350Mi"
+
+	kataNvidiaGPURuntimeClassName        = "kata-nvidia-gpu"
+	kataNvidiaGPURuntimeClassCpuOverhead = "1"
+	kataNvidiaGPURuntimeClassMemOverhead = "4096Mi"
+)
+
+var (
+	// node labels for NVIDIA GPU
+	nvidiaGPUNodeLabels = map[string]string{
+		"nvidia.com/gpu.present":                      "true",
+		"nvidia.com/gpu.deploy.vfio-manager":          "true",
+		"nvidia.com/gpu.deploy.sandbox-device-plugin": "true",
+		"nvidia.com/cc.mode.state":                    "off",
+		"nvidia.com/cc.ready.state":                   "false",
+	}
 )
 
 // +kubebuilder:rbac:groups=kataconfiguration.openshift.io,resources=kataconfigs;kataconfigs/finalizers,verbs=get;list;watch;create;update;patch;delete
@@ -890,7 +906,40 @@ func (r *KataConfigOpenShiftReconciler) createDaemonsetForMonitor() error {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName string, cpuOverhead string, memoryOverhead string, extResOverhead string, handler string, additionalNodeLabel string) error {
+// createRuntimeClass creates a runtimeclass if it doesn't exist
+// When checkNodeEligibility is set to true, prior to creation
+// it verifies if nodes that support this runtime class exist. This
+// is done by checking if nodes have all labels in additionalNodeLabels.
+func (r *KataConfigOpenShiftReconciler) createRuntimeClass(
+	runtimeClassName string,
+	cpuOverhead string,
+	memoryOverhead string,
+	extResOverhead string,
+	handler string,
+	additionalNodeLabels map[string]string) error {
+
+	if r.kataConfig.Spec.CheckNodeEligibility {
+
+		r.Log.Info("filtering nodes with labels", "labels", additionalNodeLabels)
+		selector, err := r.getKataConfigNodeSelectorAsSelector()
+		if err != nil {
+			return fmt.Errorf("failed to build node selector: %w", err)
+		}
+
+		nodes := &corev1.NodeList{}
+		listOpts := []client.ListOption{
+			client.MatchingLabelsSelector{Selector: selector},
+			client.MatchingLabels(additionalNodeLabels),
+		}
+		if err := r.Client.List(context.TODO(), nodes, listOpts...); err != nil {
+			return fmt.Errorf("failed to list nodes: %w", err)
+		}
+
+		if len(nodes.Items) == 0 {
+			r.Log.Info("skipping creating runtimeclass due to missing labels", "runtimeclass", runtimeClassName)
+			return nil
+		}
+	}
 
 	rc := func() *nodeapi.RuntimeClass {
 		podFixed := corev1.ResourceList{
@@ -921,15 +970,15 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName stri
 		nodeSelector := r.getNodeSelectorAsMap()
 
 		// Add additional node label if provided
-		if additionalNodeLabel != "" {
-			nodeSelector[additionalNodeLabel] = "true"
+		if additionalNodeLabels != nil {
+			maps.Copy(nodeSelector, additionalNodeLabels)
 		}
 
 		rc.Scheduling = &nodeapi.Scheduling{
 			NodeSelector: nodeSelector,
 		}
 
-		r.Log.Info("RuntimeClass NodeSelector:", "nodeSelector", nodeSelector)
+		r.Log.Info("RuntimeClass", "name", runtimeClassName, "nodeSelector", nodeSelector)
 
 		return rc
 	}()
@@ -949,7 +998,7 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(runtimeClassName stri
 		r.Log.Info("Creating a new RuntimeClass", "rc.Name", rc.Name)
 		err = r.Client.Create(context.TODO(), rc)
 		if err != nil {
-			return err
+			return fmt.Errorf("error creating %s runtime class: %w", rc.Name, err)
 		}
 	}
 
@@ -2260,53 +2309,6 @@ func (r *KataConfigOpenShiftReconciler) isUpdating() bool {
 	return cond.Status == corev1.ConditionTrue && cond.Reason == "Updating"
 }
 
-// Create the MachineConfigs from file
-// Full path of the file should be provided
-func (r *KataConfigOpenShiftReconciler) createMcFromFile(machineConfigYamlFile string) error {
-	yamlData, err := readYamlFile(machineConfigYamlFile)
-	if err != nil {
-		r.Log.Info("Error in reading MachineConfigYaml", "mcFile", machineConfigYamlFile, "err", err)
-		return err
-	}
-
-	r.Log.Info("machineConfig yaml dump ", "yamlData", yamlData)
-
-	machineConfig, err := parseMachineConfigYAML(yamlData)
-	if err != nil {
-		r.Log.Info("Error in parsing MachineConfigYaml", "mcFile", machineConfigYamlFile, "err", err)
-		return err
-	}
-
-	// Default MCP is kata-oc, however for converged cluster it should be "master"
-	isConvergedCluster, err := r.checkConvergedCluster()
-	if isConvergedCluster && err == nil {
-		machineConfig.Labels["machineconfiguration.openshift.io/role"] = "master"
-	}
-
-	r.Log.Info("machineConfig dump ", "machineConfig", machineConfig)
-
-	if err := r.Client.Create(context.TODO(), machineConfig); err != nil {
-		if k8serrors.IsAlreadyExists(err) {
-			currentMachineConfig := &mcfgv1.MachineConfig{}
-			err = r.Client.Get(context.TODO(), types.NamespacedName{Name: machineConfig.ObjectMeta.Name}, currentMachineConfig)
-			if err != nil {
-				r.Log.Info("Error getting machineConfig", "mc", machineConfig.Name, "err", err)
-				return err
-			}
-			machineConfig.ObjectMeta.ResourceVersion = currentMachineConfig.ObjectMeta.ResourceVersion
-			err = r.Client.Update(context.TODO(), machineConfig)
-			if err != nil {
-				r.Log.Info("Error updating machineConfig", "mc", machineConfig.Name, "err", err)
-				return err
-			}
-			return nil
-		} else {
-			return err
-		}
-	}
-	return nil
-}
-
 func (r *KataConfigOpenShiftReconciler) checkDeletionEligibility() (ctrl.Result, error) {
 	if contains(r.kataConfig.GetFinalizers(), kataConfigFinalizer) {
 		// Get the list of pods that might be running using kata runtime
@@ -2355,10 +2357,34 @@ func (r *KataConfigOpenShiftReconciler) deleteScc() error {
 func (r *KataConfigOpenShiftReconciler) postKataInstallation() (*ctrl.Result, error) {
 	r.Log.Info("create runtime class")
 	r.resetInProgressCondition()
-	err := r.createRuntimeClass(kataRuntimeClassName, kataRuntimeClassCpuOverhead, kataRuntimeClassMemOverhead, "", kataRuntimeClassName, "")
+
+	// creating kata runtime class if node labels exist
+	err := r.createRuntimeClass(
+		kataRuntimeClassName,
+		kataRuntimeClassCpuOverhead,
+		kataRuntimeClassMemOverhead,
+		"",                   /* nil extended resource overhead */
+		kataRuntimeClassName, /* reused for handler */
+		map[string]string{
+			"feature.node.kubernetes.io/runtime.kata": "true",
+		})
 	if err != nil {
 		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
+
+	// creating kata-nvidia-gpu runtime class if node labels exist
+	err = r.createRuntimeClass(
+		kataNvidiaGPURuntimeClassName,
+		kataNvidiaGPURuntimeClassCpuOverhead,
+		kataNvidiaGPURuntimeClassMemOverhead,
+		"",                            /* nil extended resource overhead */
+		kataNvidiaGPURuntimeClassName, /* reused for handler */
+		nvidiaGPUNodeLabels)
+
+	if err != nil {
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+	}
+
 	r.Log.Info("create Scc")
 	err = r.createScc()
 	if err != nil {
