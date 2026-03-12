@@ -191,6 +191,7 @@ func isConfigMapRelevant(configMapName string) bool {
 
 // Method to get cluster id from ClusterVersion object
 func getClusterID(c client.Client) (string, error) {
+	// FIXME: Look into having a single util function to return the ClusterVersion
 	clusterVersion := &configv1.ClusterVersion{}
 	err := c.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
 	if err != nil {
@@ -246,6 +247,7 @@ func updateConfigMap(client client.Client, logger logr.Logger, cmName string, na
 // It searches for the componentName in the release info and returns the corresponding Docker image.
 func GetImageForComponent(componentName string, client client.Client) (string, error) {
 	// Fetch the cluster version
+	// FIXME: Look into having a single util function to return the ClusterVersion
 	clusterVersion := &configv1.ClusterVersion{}
 	err := client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
 	if err != nil {

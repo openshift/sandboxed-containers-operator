@@ -177,6 +177,7 @@ func (r *KataConfigOpenShiftReconciler) validateOCPVersion() (bool, error) {
 
 	currentVersion := os.Getenv("BM_COCO_OVERRIDE_OCP_VERSION")
 	if currentVersion == "" {
+		// FIXME: Look into having a single util function to return the ClusterVersion
 		clusterVersion := &configv1.ClusterVersion{}
 		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
 		if err != nil {

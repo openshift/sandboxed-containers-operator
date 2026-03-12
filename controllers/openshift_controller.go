@@ -570,6 +570,7 @@ func (r *KataConfigOpenShiftReconciler) getExtensionName() (string, error) {
 		return extension, nil
 	}
 
+	// FIXME: Look into having a single util function to return the ClusterVersion
 	clusterVersion := &configv1.ClusterVersion{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
 	if err != nil {
