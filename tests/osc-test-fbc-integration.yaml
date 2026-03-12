@@ -200,8 +200,8 @@ spec:
           operator: in
           values: ["true"]
       runAfter:
-        - prowjob-ocp21
-        - prowjob-ocp20
+        - prowjob-ocp421
+        - prowjob-ocp420
       taskRef:
         resolver: git
         params:
