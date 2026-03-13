@@ -4,9 +4,15 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"os"
+	"slices"
+	"strings"
 
+	semver "github.com/Masterminds/semver/v3"
+	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -155,23 +161,99 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialPeerPods(state Feature
 	return nil
 }
 
+// validateOCPVersion checks if the current OpenShift cluster is valid based on
+// minimal versions in minOCPVersions.
+// Returns false if OCP version is < to all minimal versions
+// Returns false if OCP version is < to the minimal version matching major.minor
+// Returns true otherwise (i.e. assume that any higher OCP version has support)
+// Returns error if cluster version is not available or cannot be retrieved.
+func (r *KataConfigOpenShiftReconciler) validateOCPVersion() (bool, error) {
+	// Sorted slice of minimal OCP z-stream releases.
+	minOCPVersions := slices.Sorted(slices.Values([]string{
+		"4.19.27",
+		"4.20.17",
+		"4.21.8",
+	}))
+
+	currentVersion := os.Getenv("BM_COCO_OVERRIDE_OCP_VERSION")
+	if currentVersion == "" {
+		// FIXME: Look into having a single util function to return the ClusterVersion
+		clusterVersion := &configv1.ClusterVersion{}
+		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
+		if err != nil {
+			return false, err
+		}
+
+		currentVersion = clusterVersion.Status.Desired.Version
+		if currentVersion == "" {
+			return false, fmt.Errorf("cluster version not available yet")
+		}
+	}
+
+	current, err := semver.NewVersion(currentVersion)
+	if err != nil {
+		return false, fmt.Errorf("unable to parse current OCP version %s: %w", currentVersion, err)
+	}
+
+	supported := false
+	for i, minVersion := range minOCPVersions {
+		min, err := semver.NewVersion(minVersion)
+		if err != nil {
+			return false, fmt.Errorf("invalid minimum version format %s: %w", minVersion, err)
+		}
+
+		if current.Major() < min.Major() {
+			// major is too low to be even considered.
+			break
+		}
+
+		if current.Major() == min.Major() {
+			if current.Minor() < min.Minor() {
+				// minor is too low to be even considered.
+				break
+			}
+
+			if current.Minor() == min.Minor() {
+				// Same major/minor, just compare the patch.
+				supported = !current.LessThan(min)
+				break
+			}
+		}
+
+		if i == len(minOCPVersions)-1 {
+			// Higher major/minor than the last version is assumed to have proper support.
+			supported = true
+		}
+	}
+
+	if !supported {
+		minVersions := strings.Join(minOCPVersions, ", ")
+
+		r.Log.Info("WARNING: OpenShift version does not support CoCo bare metal", "version", currentVersion, "minVersions", minVersions)
+		cond := r.retrieveInProgressConditionForChange()
+		cond.Status = corev1.ConditionFalse
+		cond.Reason = "UnsupportedOCPVersion"
+		cond.Message = fmt.Sprintf("OpenShift version %s does not support CoCo bare metal (minimum required: %s or higher)", currentVersion, minVersions)
+
+		return false, nil
+	}
+
+	r.Log.Info("OpenShift version supports CoCo bare metal", "version", currentVersion)
+	return true, nil
+}
+
 // handleConfidentialBaremetal configures confidential computing for baremetal deployments.
 // It manages kata-cc runtime classes with TEE-specific handlers (Intel TDX, AMD SNP or IBM SE).
 func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state FeatureGateState) error {
 	// if confidential feature gate enabled
 	if state == Enabled {
 		if !r.kataConfig.Spec.EnablePeerPods {
-			isLess, version, err := r.isOCPVersionLessThan("4.20.6")
+			isValid, err := r.validateOCPVersion()
 			if err != nil {
 				// Return error to trigger reconcile retry (cluster version not available yet or API error)
 				return err
 			}
-			if isLess {
-				r.Log.Info("WARNING: OpenShift version does not support CoCo bare metal", "version", version, "minVersion", "4.20.6")
-				cond := r.retrieveInProgressConditionForChange()
-				cond.Status = corev1.ConditionFalse
-				cond.Reason = "UnsupportedOCPVersion"
-				cond.Message = fmt.Sprintf("OpenShift version %s does not support CoCo bare metal (minimum required: 4.20.6)", version)
+			if !isValid {
 				return nil
 			}
 		}
