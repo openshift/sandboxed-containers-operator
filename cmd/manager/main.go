@@ -119,7 +119,8 @@ func main() {
 				&corev1.ConfigMap{}: {
 					// Same for config maps
 					Namespaces: map[string]cache.Config{
-						controllers.OperatorNamespace: {},
+						controllers.OperatorNamespace:           {},
+						controllers.DashboardConfigMapNamespace: {},
 					},
 				},
 			},
