@@ -970,7 +970,7 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(
 		nodeSelector := r.getNodeSelectorAsMap()
 
 		// Add additional node label if provided
-		if additionalNodeLabels != nil {
+		if r.kataConfig.Spec.CheckNodeEligibility && additionalNodeLabels != nil {
 			maps.Copy(nodeSelector, additionalNodeLabels)
 		}
 
