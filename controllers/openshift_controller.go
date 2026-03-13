@@ -78,7 +78,7 @@ type customKernelConfig struct {
 const (
 	OperatorNamespace             = "openshift-sandboxed-containers-operator"
 	dashboard_configmap_name      = "grafana-dashboard-sandboxed-containers"
-	dashboard_configmap_namespace = "openshift-config-managed"
+	DashboardConfigMapNamespace   = "openshift-config-managed"
 	container_runtime_config_name = "kata-crio-config"
 	extension_mc_name             = "50-enable-sandboxed-containers-extension"
 	KataAddonConfigMapName        = "kata-addon-artifacts"
@@ -518,7 +518,7 @@ func (r *KataConfigOpenShiftReconciler) processDashboardConfigMap() *corev1.Conf
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      dashboard_configmap_name,
-			Namespace: dashboard_configmap_namespace,
+			Namespace: DashboardConfigMapNamespace,
 			Labels:    cmLabels,
 		},
 		Data: foundCm.Data,
