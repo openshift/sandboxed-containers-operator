@@ -76,8 +76,8 @@ type customKernelConfig struct {
 
 const (
 	OperatorNamespace             = "openshift-sandboxed-containers-operator"
-	dashboard_configmap_name      = "grafana-dashboard-sandboxed-containers"
-	dashboard_configmap_namespace = "openshift-config-managed"
+	dashboardConfigMapName        = "grafana-dashboard-sandboxed-containers"
+	DashboardConfigMapNamespace   = "openshift-config-managed"
 	container_runtime_config_name = "kata-crio-config"
 	extension_mc_name             = "50-enable-sandboxed-containers-extension"
 	KataAddonConfigMapName        = "kata-addon-artifacts"
@@ -504,7 +504,7 @@ func (r *KataConfigOpenShiftReconciler) processDashboardConfigMap() *corev1.Conf
 
 	// retrieve content of the dashboard from our own namespace
 	foundCm := &corev1.ConfigMap{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: dashboard_configmap_name, Namespace: OperatorNamespace}, foundCm)
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: dashboardConfigMapName, Namespace: OperatorNamespace}, foundCm)
 	if err != nil {
 		r.Log.Error(err, "could not get dashboard data")
 		return nil
@@ -516,8 +516,8 @@ func (r *KataConfigOpenShiftReconciler) processDashboardConfigMap() *corev1.Conf
 			Kind:       "ConfigMap",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      dashboard_configmap_name,
-			Namespace: dashboard_configmap_namespace,
+			Name:      dashboardConfigMapName,
+			Namespace: DashboardConfigMapNamespace,
 			Labels:    cmLabels,
 		},
 		Data: foundCm.Data,
