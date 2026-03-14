@@ -34,7 +34,7 @@ spec:
             value: $(params.SNAPSHOT)
           script: |
             #!/bin/bash
-            set -e
+            set -ex
             SUCCESSES=0
             FAILURES=0
             WARNINGS=0
