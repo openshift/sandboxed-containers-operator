@@ -43,9 +43,10 @@ spec:
             srcURL=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.url' <<< "${SNAPSHOT}")
             srcREV=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.revision' <<< "${SNAPSHOT}")
 
-            git clone --recurse-submodules ${srcURL} sources
+            git clone ${srcURL} sources
             cd sources
             git checkout ${srcREV}
+            git submodule update --init --recursive
             GOMAXPROCS=2 make test
 
             # After the tests finish, record the overall result in the RESULT variable
