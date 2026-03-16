@@ -96,11 +96,11 @@ const (
 var (
 	// node labels for NVIDIA GPU
 	nvidiaGPUNodeLabels = map[string]string{
-		"nvidia.com/gpu.present":                      "true",
-		"nvidia.com/gpu.deploy.vfio-manager":          "true",
-		"nvidia.com/gpu.deploy.sandbox-device-plugin": "true",
-		"nvidia.com/cc.mode.state":                    "off",
-		"nvidia.com/cc.ready.state":                   "false",
+		"nvidia.com/gpu.present":                           "true",
+		"nvidia.com/gpu.deploy.vfio-manager":               "true",
+		"nvidia.com/gpu.deploy.kata-sandbox-device-plugin": "true",
+		"nvidia.com/cc.mode.state":                         "off",
+		"nvidia.com/cc.ready.state":                        "false",
 	}
 )
 
