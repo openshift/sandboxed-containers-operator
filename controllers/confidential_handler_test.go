@@ -47,9 +47,9 @@ var _ = Describe("validateOCPVersion", func() {
 	AfterEach(func() {
 		// Restore original environment variable
 		if origEnv != "" {
-			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", origEnv)
+			Expect(os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", origEnv)).To(Succeed())
 		} else {
-			os.Unsetenv("BM_COCO_OVERRIDE_OCP_VERSION")
+			Expect(os.Unsetenv("BM_COCO_OVERRIDE_OCP_VERSION")).To(Succeed())
 		}
 	})
 
@@ -57,7 +57,7 @@ var _ = Describe("validateOCPVersion", func() {
 		// Test cases for versions below minimum requirements
 		DescribeTable("should return false for versions below minimum",
 			func(version string) {
-				os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", version)
+				Expect(os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", version)).To(Succeed())
 				valid, err := reconciler.validateOCPVersion()
 				Expect(err).ToNot(HaveOccurred())
 				Expect(valid).To(BeFalse())
@@ -74,7 +74,7 @@ var _ = Describe("validateOCPVersion", func() {
 		// Test cases for versions at or above minimum requirements
 		DescribeTable("should return true for versions at or above minimum",
 			func(version string) {
-				os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", version)
+				Expect(os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", version)).To(Succeed())
 				valid, err := reconciler.validateOCPVersion()
 				Expect(err).ToNot(HaveOccurred())
 				Expect(valid).To(BeTrue())
@@ -95,7 +95,7 @@ var _ = Describe("validateOCPVersion", func() {
 
 		// Test cases for invalid version formats
 		It("should return error for invalid version format", func() {
-			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "invalid-version")
+			Expect(os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "invalid-version")).To(Succeed())
 			valid, err := reconciler.validateOCPVersion()
 			Expect(err).To(HaveOccurred())
 			Expect(valid).To(BeFalse())
@@ -103,14 +103,14 @@ var _ = Describe("validateOCPVersion", func() {
 		})
 
 		It("should return error for malformed version", func() {
-			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "not-a-version")
+			Expect(os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "not-a-version")).To(Succeed())
 			valid, err := reconciler.validateOCPVersion()
 			Expect(err).To(HaveOccurred())
 			Expect(valid).To(BeFalse())
 		})
 
 		It("should handle version with pre-release suffix", func() {
-			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.21.9-rc1")
+			Expect(os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.21.9-rc1")).To(Succeed())
 			valid, err := reconciler.validateOCPVersion()
 			Expect(err).ToNot(HaveOccurred())
 			// Pre-release versions (4.21.9-rc1) are considered LESS than their base (4.21.9) by semver
@@ -121,7 +121,7 @@ var _ = Describe("validateOCPVersion", func() {
 
 	Context("when BM_COCO_OVERRIDE_OCP_VERSION is not set", func() {
 		It("should attempt to fetch from cluster", func() {
-			os.Unsetenv("BM_COCO_OVERRIDE_OCP_VERSION")
+			Expect(os.Unsetenv("BM_COCO_OVERRIDE_OCP_VERSION")).To(Succeed())
 
 			// In unit test environment, this will use the test k8s client from suite_test.go
 			// The cluster won't have the version CRD populated, so it should return an error
@@ -133,14 +133,14 @@ var _ = Describe("validateOCPVersion", func() {
 
 	Context("edge cases", func() {
 		It("should handle version 4.19.27 correctly (just below threshold)", func() {
-			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.19.27")
+			Expect(os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.19.27")).To(Succeed())
 			valid, err := reconciler.validateOCPVersion()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(valid).To(BeFalse())
 		})
 
 		It("should handle version 4.19.28 correctly (exactly at threshold)", func() {
-			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.19.28")
+			Expect(os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.19.28")).To(Succeed())
 			valid, err := reconciler.validateOCPVersion()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(valid).To(BeTrue())
@@ -149,7 +149,7 @@ var _ = Describe("validateOCPVersion", func() {
 		It("should handle versions between supported minors", func() {
 			// 4.19.28+ is supported, 4.20.18+ is supported
 			// But 4.20.0 to 4.20.17 should not be supported
-			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.20.10")
+			Expect(os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.20.10")).To(Succeed())
 			valid, err := reconciler.validateOCPVersion()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(valid).To(BeFalse())
@@ -171,11 +171,11 @@ var _ = Describe("validateOCPVersion integration", func() {
 
 	Context("with environment override", func() {
 		AfterEach(func() {
-			os.Unsetenv("BM_COCO_OVERRIDE_OCP_VERSION")
+			Expect(os.Unsetenv("BM_COCO_OVERRIDE_OCP_VERSION")).To(Succeed())
 		})
 
 		It("should use environment variable when set", func() {
-			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.21.9")
+			Expect(os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.21.9")).To(Succeed())
 			valid, err := reconciler.validateOCPVersion()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(valid).To(BeTrue())
