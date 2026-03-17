@@ -66,7 +66,7 @@ var _ = Describe("validateOCPVersion", func() {
 			Entry("version 4.19.0 (patch too low)", "4.19.0"),
 			Entry("version 4.19.26 (patch one below minimum)", "4.19.26"),
 			Entry("version 4.20.0 (patch too low)", "4.20.0"),
-			Entry("version 4.20.16 (patch one below minimum)", "4.20.16"),
+			Entry("version 4.20.17 (patch one below minimum)", "4.20.17"),
 			Entry("version 4.21.0 (patch too low)", "4.21.0"),
 			Entry("version 4.21.7 (patch one below minimum)", "4.21.7"),
 		)
@@ -82,8 +82,8 @@ var _ = Describe("validateOCPVersion", func() {
 			Entry("version 4.19.27 (exact minimum for 4.19)", "4.19.27"),
 			Entry("version 4.19.28 (above minimum for 4.19)", "4.19.28"),
 			Entry("version 4.19.100 (well above minimum for 4.19)", "4.19.100"),
-			Entry("version 4.20.17 (exact minimum for 4.20)", "4.20.17"),
-			Entry("version 4.20.18 (above minimum for 4.20)", "4.20.18"),
+			Entry("version 4.20.18 (exact minimum for 4.20)", "4.20.18"),
+			Entry("version 4.20.19 (above minimum for 4.20)", "4.20.19"),
 			Entry("version 4.20.100 (well above minimum for 4.20)", "4.20.100"),
 			Entry("version 4.21.8 (exact minimum for 4.21)", "4.21.8"),
 			Entry("version 4.21.9 (above minimum for 4.21)", "4.21.9"),
@@ -147,8 +147,8 @@ var _ = Describe("validateOCPVersion", func() {
 		})
 
 		It("should handle versions between supported minors", func() {
-			// 4.19.27+ is supported, 4.20.17+ is supported
-			// But 4.20.0 to 4.20.16 should not be supported
+			// 4.19.27+ is supported, 4.20.18+ is supported
+			// But 4.20.0 to 4.20.17 should not be supported
 			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.20.10")
 			valid, err := reconciler.validateOCPVersion()
 			Expect(err).ToNot(HaveOccurred())

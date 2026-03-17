@@ -171,7 +171,7 @@ func (r *KataConfigOpenShiftReconciler) validateOCPVersion() (bool, error) {
 	// Sorted slice of minimal OCP z-stream releases.
 	minOCPVersions := slices.Sorted(slices.Values([]string{
 		"4.19.27",
-		"4.20.17",
+		"4.20.18",
 		"4.21.8",
 	}))
 
