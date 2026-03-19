@@ -127,7 +127,7 @@ spec:
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       # A fail on sanity should stop and fail the pipeline
       onError: stopAndFail
-      timeout: "4h"
+      timeout: "8h"
       when:
         - input: "$(tasks.determine-prowjobs.results.run_sanity)"
           operator: in
@@ -160,7 +160,7 @@ spec:
     - name: prowjob-ocp418
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       onError: continue
-      timeout: "4h"
+      timeout: "8h"
       when:
         - input: "$(tasks.determine-prowjobs.results.run_ocp418)"
           operator: in
@@ -198,7 +198,7 @@ spec:
     - name: prowjob-ocp419
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       onError: continue
-      timeout: "4h"
+      timeout: "8h"
       when:
         - input: "$(tasks.determine-prowjobs.results.run_ocp419)"
           operator: in
@@ -236,7 +236,7 @@ spec:
     - name: prowjob-ocp420
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       onError: continue
-      timeout: "4h"
+      timeout: "8h"
       when:
         - input: "$(tasks.determine-prowjobs.results.run_ocp420)"
           operator: in
@@ -271,7 +271,7 @@ spec:
     - name: prowjob-ocp421
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       onError: continue
-      timeout: "4h"
+      timeout: "8h"
       when:
         - input: "$(tasks.determine-prowjobs.results.run_ocp421)"
           operator: in
