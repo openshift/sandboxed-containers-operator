@@ -57,7 +57,7 @@ spec:
             privileged: true  # Required for chcon to work on host files
       containers:
         - name: pccs
-          image: registry.redhat.io/openshift-sandboxed-containers/osc-pccs@sha256:6f2ef8964e94c9d4ace050d002bf254841078cf2cba0dedab4deaaf59266d32e
+          image: registry.redhat.io/openshift-sandboxed-containers/osc-pccs@sha256:57aee93ecdbb0d1ff56d4c94456104616d46204091cb9b7b46a0505da493b2a9
           envFrom:
             - secretRef:
                 name: pccs-secrets
