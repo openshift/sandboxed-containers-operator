@@ -43,7 +43,10 @@ func MountProgagationRef(mode corev1.MountPropagationMode) *corev1.MountPropagat
 	return &mode
 }
 
-func (r *KataConfigOpenShiftReconciler) processDaemonsetForCAA() *appsv1.DaemonSet {
+// mutateCAADaemonSet sets the desired state for the cloud-api-adaptor DaemonSet.
+// It builds the complete spec including provider-specific volumes so that it is
+// safe to call on both new and existing objects (idempotent, no appending).
+func (r *KataConfigOpenShiftReconciler) mutateCAADaemonSet(ds *appsv1.DaemonSet) error {
 	var (
 		runPrivileged                = true
 		runAsUser              int64 = 0
@@ -62,141 +65,105 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForCAA() *appsv1.DaemonS
 		r.Log.Info("RELATED_IMAGE_CAA env var is unset or empty, cloud-api-adaptor pods will not run")
 	}
 
-	return &appsv1.DaemonSet{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "apps/v1",
-			Kind:       "DaemonSet",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      caaDsName,
-			Namespace: os.Getenv("PEERPODS_NAMESPACE"),
-		},
-		Spec: appsv1.DaemonSetSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: dsLabelSelectors,
+	// Owner reference
+	if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
+		return err
+	}
+
+	// Selector is immutable after creation
+	if ds.Spec.Selector == nil {
+		ds.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: dsLabelSelectors,
+		}
+	}
+
+	// RevisionHistoryLimit is set explicitly to match the API server default (10)
+	// so that DeepEqual does not detect a spurious diff.
+	var defaultRevHistoryLimit int32 = 10
+	ds.Spec.RevisionHistoryLimit = &defaultRevHistoryLimit
+
+	ds.Spec.UpdateStrategy = appsv1.DaemonSetUpdateStrategy{
+		Type: "RollingUpdate",
+		RollingUpdate: &appsv1.RollingUpdateDaemonSet{
+			MaxUnavailable: &intstr.IntOrString{
+				Type:   intstr.Int,
+				IntVal: 1,
 			},
-			UpdateStrategy: appsv1.DaemonSetUpdateStrategy{
-				Type: "RollingUpdate",
-				RollingUpdate: &appsv1.RollingUpdateDaemonSet{
-					MaxUnavailable: &intstr.IntOrString{
-						Type:   intstr.Int,
-						IntVal: 1,
-					},
+			MaxSurge: &intstr.IntOrString{
+				Type:   intstr.Int,
+				IntVal: 0,
+			},
+		},
+	}
+
+	ds.Spec.Template.ObjectMeta.Labels = dsLabelSelectors
+
+	// Build the complete volume and volumeMount lists (base + provider-specific).
+	// HostPath Type is set explicitly to match the API server default so that
+	// DeepEqual does not detect a spurious diff on every reconciliation.
+	hostPathDefault := corev1.HostPathUnset
+	volumes := []corev1.Volume{
+		{
+			Name: "auth-json-volume",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  "auth-json-secret",
+					DefaultMode: &defaultMode,
+					Optional:    &authJsonSecretOptional,
 				},
 			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: dsLabelSelectors,
+		}, {
+			Name: "ssh",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  "ssh-key-secret",
+					DefaultMode: &defaultMode,
+					Optional:    &sshSecretOptional,
 				},
-				Spec: corev1.PodSpec{
-					ServiceAccountName: "default",
-					NodeSelector:       nodeSelector,
-					HostNetwork:        true,
-					Containers: []corev1.Container{
-						{
-							Name:            "caa-pod",
-							Image:           imageString,
-							ImagePullPolicy: "Always",
-							SecurityContext: &corev1.SecurityContext{
-								// TODO - do we really need to run as root?
-								Privileged: &runPrivileged,
-								RunAsUser:  &runAsUser,
-							},
-							Command: []string{"/usr/local/bin/entrypoint.sh"},
-							Env: []corev1.EnvVar{
-								{
-									Name: "NODE_NAME",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "spec.nodeName",
-										},
-									},
-								},
-							},
-							EnvFrom: []corev1.EnvFromSource{
-								{
-									SecretRef: &corev1.SecretEnvSource{
-										LocalObjectReference: corev1.LocalObjectReference{
-											Name: "peer-pods-secret",
-										},
-									},
-								},
-								{
-									ConfigMapRef: &corev1.ConfigMapEnvSource{
-										LocalObjectReference: corev1.LocalObjectReference{
-											Name: "peer-pods-cm",
-										},
-									},
-								},
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "auth-json-volume",
-									MountPath: "/root/containers/",
-									ReadOnly:  true,
-								}, {
-									Name:      "ssh",
-									MountPath: "/root/.ssh",
-									ReadOnly:  true,
-								},
-								{
-									MountPath: "/run/peerpod",
-									Name:      "pods-dir",
-								},
-								{
-									MountPath:        "/run/netns",
-									MountPropagation: MountProgagationRef(corev1.MountPropagationHostToContainer),
-									Name:             "netns",
-								},
-							},
-						},
-					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "auth-json-volume",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName:  "auth-json-secret",
-									DefaultMode: &defaultMode,
-									Optional:    &authJsonSecretOptional,
-								},
-							},
-						}, {
-							Name: "ssh",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName:  "ssh-key-secret",
-									DefaultMode: &defaultMode,
-									Optional:    &sshSecretOptional,
-								},
-							},
-						},
-						{
-							Name: "pods-dir",
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Path: "/run/peerpod",
-								},
-							},
-						},
-						{
-							Name: "netns",
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Path: "/run/netns",
-								},
-							},
-						},
-					},
+			},
+		},
+		{
+			Name: "pods-dir",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/run/peerpod",
+					Type: &hostPathDefault,
+				},
+			},
+		},
+		{
+			Name: "netns",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/run/netns",
+					Type: &hostPathDefault,
 				},
 			},
 		},
 	}
-}
 
-// Handles provider specific parts of the CAA Ds
-// Modifies the DaemonSet if needed
-func (r *KataConfigOpenShiftReconciler) processProviderConfigCAA(ds *appsv1.DaemonSet) error {
+	volumeMounts := []corev1.VolumeMount{
+		{
+			Name:      "auth-json-volume",
+			MountPath: "/root/containers/",
+			ReadOnly:  true,
+		}, {
+			Name:      "ssh",
+			MountPath: "/root/.ssh",
+			ReadOnly:  true,
+		},
+		{
+			MountPath: "/run/peerpod",
+			Name:      "pods-dir",
+		},
+		{
+			MountPath:        "/run/netns",
+			MountPropagation: MountProgagationRef(corev1.MountPropagationHostToContainer),
+			Name:             "netns",
+		},
+	}
+
+	// Add provider-specific volumes
 	r.Log.Info("Getting cloud provider from infra")
 	provider, err := getCloudProviderFromInfra(r.Client)
 	if err != nil {
@@ -206,7 +173,7 @@ func (r *KataConfigOpenShiftReconciler) processProviderConfigCAA(ds *appsv1.Daem
 	switch provider {
 	case IBMCloudProvider:
 		var expSecs int64 = 3600
-		vaultTokenVolume := corev1.Volume{
+		volumes = append(volumes, corev1.Volume{
 			Name: "vault-token",
 			VolumeSource: corev1.VolumeSource{
 				Projected: &corev1.ProjectedVolumeSource{
@@ -221,29 +188,18 @@ func (r *KataConfigOpenShiftReconciler) processProviderConfigCAA(ds *appsv1.Daem
 					},
 				},
 			},
-		}
-
-		vaultTokenVolumeMount := corev1.VolumeMount{
+		})
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			MountPath: "/var/run/secrets/tokens",
 			Name:      "vault-token",
-		}
+		})
 
-		ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, vaultTokenVolume)
-		for i := range ds.Spec.Template.Spec.Containers {
-			container := &ds.Spec.Template.Spec.Containers[i]
-			if container.Name == "caa-pod" {
-				container.VolumeMounts = append(container.VolumeMounts, vaultTokenVolumeMount)
-			}
-		}
-
-		return nil
 	case AzureProvider:
 		// Only add bound-sa-token volume for Azure federated identity if using STS flow
-		// Check for all STS environment variables (set during OLM installation)
 		hasAzureSTSCreds := os.Getenv("CLIENTID") != "" && os.Getenv("TENANTID") != "" && os.Getenv("SUBSCRIPTIONID") != ""
 		if hasAzureSTSCreds {
 			r.Log.Info("STS flow detected for Azure, adding bound-sa-token volume mount")
-			boundSATokenVolume := corev1.Volume{
+			volumes = append(volumes, corev1.Volume{
 				Name: "bound-sa-token",
 				VolumeSource: corev1.VolumeSource{
 					Projected: &corev1.ProjectedVolumeSource{
@@ -257,53 +213,97 @@ func (r *KataConfigOpenShiftReconciler) processProviderConfigCAA(ds *appsv1.Daem
 						},
 					},
 				},
-			}
-
-			boundSATokenVolumeMount := corev1.VolumeMount{
+			})
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
 				MountPath: "/var/run/secrets/openshift/serviceaccount",
 				Name:      "bound-sa-token",
 				ReadOnly:  true,
-			}
-
-			ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, boundSATokenVolume)
-			for i := range ds.Spec.Template.Spec.Containers {
-				container := &ds.Spec.Template.Spec.Containers[i]
-				if container.Name == "caa-pod" {
-					container.VolumeMounts = append(container.VolumeMounts, boundSATokenVolumeMount)
-				}
-			}
+			})
 		}
-
-		return nil
-	default:
-		return nil
 	}
+
+	// Set pod spec fields individually to preserve server-set defaults
+	// (e.g. terminationGracePeriodSeconds, dnsPolicy) on existing objects
+	ds.Spec.Template.Spec.ServiceAccountName = "default"
+	ds.Spec.Template.Spec.NodeSelector = nodeSelector
+	ds.Spec.Template.Spec.HostNetwork = true
+	ds.Spec.Template.Spec.Volumes = volumes
+
+	// Find or initialize the caa-pod container
+	var container *corev1.Container
+	for i := range ds.Spec.Template.Spec.Containers {
+		if ds.Spec.Template.Spec.Containers[i].Name == "caa-pod" {
+			container = &ds.Spec.Template.Spec.Containers[i]
+			break
+		}
+	}
+	if container == nil {
+		ds.Spec.Template.Spec.Containers = append(ds.Spec.Template.Spec.Containers, corev1.Container{})
+		container = &ds.Spec.Template.Spec.Containers[len(ds.Spec.Template.Spec.Containers)-1]
+	}
+
+	container.Name = "caa-pod"
+	container.Image = imageString
+	container.ImagePullPolicy = "Always"
+	container.SecurityContext = &corev1.SecurityContext{
+		Privileged: &runPrivileged,
+		RunAsUser:  &runAsUser,
+	}
+	container.Command = []string{"/usr/local/bin/entrypoint.sh"}
+	container.Env = []corev1.EnvVar{
+		{
+			Name: "NODE_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					APIVersion: "v1",
+					FieldPath:  "spec.nodeName",
+				},
+			},
+		},
+	}
+	container.EnvFrom = []corev1.EnvFromSource{
+		{
+			SecretRef: &corev1.SecretEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: "peer-pods-secret",
+				},
+			},
+		},
+		{
+			ConfigMapRef: &corev1.ConfigMapEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: "peer-pods-cm",
+				},
+			},
+		},
+	}
+	container.VolumeMounts = volumeMounts
+
+	return nil
 }
 
 // Create the PeerPodConfig CRDs and misc configs required for peer-pods
 func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
-	// Create the CAA daemonset
-	ds := r.processDaemonsetForCAA()
-	if err := r.processProviderConfigCAA(ds); err != nil {
-		r.Log.Error(err, "Failed setting cloud provider specific configuration for cloud-api-adaptor DS")
+	// Reconcile the CAA daemonset using CreateOrUpdate to avoid unnecessary
+	// rolling updates. A plain Update() with a freshly-built object (no
+	// ResourceVersion) can cause the API server to treat every reconciliation
+	// as a spec change, recycling CAA pods and breaking existing peer-pod VMs
+	// whose ttrpc connections are tied to the old CAA instance.
+	ds := &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      caaDsName,
+			Namespace: os.Getenv("PEERPODS_NAMESPACE"),
+		},
+	}
+
+	result, err := controllerutil.CreateOrUpdate(context.TODO(), r.Client, ds, func() error {
+		return r.mutateCAADaemonSet(ds)
+	})
+	if err != nil {
+		r.Log.Error(err, "failed to reconcile cloud-api-adaptor daemonset")
 		return err
 	}
-	r.Log.Info("Got CAA ds manifest", "ds", ds)
-
-	if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
-		r.Log.Error(err, "Failed setting ControllerReference for cloud-api-adaptor DS")
-		return err
-	}
-
-	err := r.Client.Update(context.TODO(), ds)
-	if err != nil && k8serrors.IsNotFound(err) {
-		r.Log.Error(err, "cloud-api-adaptor daemonset doesn't exist. Creating")
-		err = r.Client.Create(context.TODO(), ds)
-		if err != nil {
-			r.Log.Error(err, "failed to create cloud-api-adaptor daemonset")
-			return err
-		}
-	}
+	r.Log.Info("Reconciled CAA daemonset", "result", result)
 
 	// Create the mutating webhook deployment
 	err = r.createMutatingWebhookDeployment()
@@ -336,7 +336,12 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 }
 
 func (r *KataConfigOpenShiftReconciler) disablePeerPodsMiscConfigs() error {
-	ds := r.processDaemonsetForCAA()
+	ds := &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      caaDsName,
+			Namespace: os.Getenv("PEERPODS_NAMESPACE"),
+		},
+	}
 	err := r.Client.Delete(context.TODO(), ds)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
