@@ -291,7 +291,75 @@ def categorize_test_list(failing_tests: List[Dict]) -> Dict[str, List[Dict]]:
     return dict(categorized)
 
 
-def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[Dict], metadata: Dict, build_log_text: Optional[str] = None) -> Dict:
+def _failed_test_case_ids(failing_tests: List[Dict]) -> List[str]:
+    """Unique C##### identifiers from failing test entries, stable order."""
+    seen: List[str] = []
+    for t in failing_tests:
+        cid = (t.get('test_case_number') or '').strip()
+        if cid and cid not in seen:
+            seen.append(cid)
+    return seen
+
+
+def _merge_case_ids(test_ids: List[str], log_ids: Optional[List[str]]) -> List[str]:
+    """Append log-only IDs after test-results order, de-duplicated."""
+    out: List[str] = list(test_ids)
+    if not log_ids:
+        return out
+    for cid in log_ids:
+        if cid not in out:
+            out.append(cid)
+    return out
+
+
+def extract_failed_case_ids_from_extended_build_log(log_text: str) -> List[str]:
+    """
+    Find failed OSC test case IDs (C#####) in openshift-extended-test/build-log.txt.
+
+    Used when test-results.yaml is missing or the step was interrupted; logs still
+    often mention ``-C#####-`` on failure lines or in trailing summaries.
+    """
+    if not log_text:
+        return []
+
+    seen: List[str] = []
+    id_in_name = re.compile(r'-C(\d+)-')
+    # Lines that suggest a failure context (avoid counting passing test name mentions)
+    failure_hint = re.compile(
+        r'(?i)(fail|failure|failed|error|panic|timeout|interrupt|aborted|'
+        r'SIGKILL|SIGTERM|OOMKilled|•\s*Failure|\[Fail\]|Summarizing\s+\d+\s+Failure)'
+    )
+
+    for line in log_text.splitlines():
+        if not failure_hint.search(line):
+            continue
+        for m in id_in_name.finditer(line):
+            cid = f"C{m.group(1)}"
+            if cid not in seen:
+                seen.append(cid)
+
+    # Tail often has failure summaries after interruption or OOM
+    if not seen:
+        tail = log_text[-200000:] if len(log_text) > 200000 else log_text
+        tail_fail = re.compile(r'(?i)(fail|failure|error|panic|timeout|interrupt|abort)')
+        for line in tail.splitlines():
+            if not tail_fail.search(line):
+                continue
+            for m in id_in_name.finditer(line):
+                cid = f"C{m.group(1)}"
+                if cid not in seen:
+                    seen.append(cid)
+
+    return seen
+
+
+def determine_root_cause(
+    failing_tests: List[Dict],
+    detected_patterns: List[Dict],
+    metadata: Dict,
+    build_log_text: Optional[str] = None,
+    extended_build_log_case_ids: Optional[List[str]] = None,
+) -> Dict:
     """
     Attempt to determine root cause of failure.
 
@@ -299,7 +367,8 @@ def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[Dict
         failing_tests: List of failing tests
         detected_patterns: List of detected failure patterns with sources
         metadata: Job metadata
-        build_log_text: Build log content for extracting additional details
+        build_log_text: Top-level Prow build log content for extracting additional details
+        extended_build_log_case_ids: C##### IDs parsed from openshift-extended-test/build-log.txt
 
     Returns:
         Dictionary with root cause analysis
@@ -447,6 +516,41 @@ def determine_root_cause(failing_tests: List[Dict], detected_patterns: List[Dict
         root_cause['suggested_actions'].append('Review cluster health and OSC installation logs')
         root_cause['suggested_actions'].append('IMPORTANT: When most/all tests fail, examine the FIRST test\'s logs for the root cause - subsequent test errors are often cascading failures')
 
+    # openshift-extended-test: failed test case numbers from test-results.yaml and/or step build-log.txt
+    test_ids = _failed_test_case_ids(failing_tests)
+    merged_ids = _merge_case_ids(test_ids, extended_build_log_case_ids)
+    only_from_log: List[str] = []
+    if extended_build_log_case_ids:
+        ts = set(test_ids)
+        only_from_log = [c for c in extended_build_log_case_ids if c not in ts]
+
+    if merged_ids:
+        root_cause['failed_test_case_numbers'] = merged_ids
+        if only_from_log:
+            root_cause['failed_test_case_numbers_from_build_log'] = only_from_log
+        case_part = f"Failed test case(s): {', '.join(merged_ids)}."
+        if only_from_log:
+            case_part += " (includes IDs from openshift-extended-test/build-log.txt)."
+    elif failing_tests:
+        root_cause['failed_test_case_numbers'] = []
+        case_part = (
+            f"openshift-extended-test: {len(failing_tests)} failing test(s) "
+            "(no C##### id in test names or build-log.txt)."
+        )
+    elif extended_build_log_case_ids is not None:
+        root_cause['failed_test_case_numbers'] = []
+        case_part = (
+            "openshift-extended-test: step failed or interrupted; "
+            "no C##### ids found in openshift-extended-test/build-log.txt (inspect artifact manually)."
+        )
+    else:
+        return root_cause
+
+    if root_cause.get('likely_cause'):
+        root_cause['likely_cause'] = f"{root_cause['likely_cause'].rstrip()} {case_part}"
+    else:
+        root_cause['likely_cause'] = case_part
+
     return root_cause
 
 
@@ -496,6 +600,7 @@ def analyze_failure(
     build_log_text = None
     build_log_text_full = None  # Keep full log for execution order extraction
     analyzed_files = []
+    extended_build_log_case_ids: Optional[List[str]] = None
 
     # First check the main build log for infrastructure-level failures (e.g., Azure quota)
     build_log_content = fetch_artifact(base_url, "build-log.txt")
@@ -541,6 +646,26 @@ def analyze_failure(
             except Exception as e:
                 logger.warning(f"Failed to analyze extended log: {e}")
 
+        # openshift-extended-test/build-log.txt — C##### when test-results is incomplete or step interrupted
+        ext_step_build_path = f"artifacts/{variant}/openshift-extended-test/build-log.txt"
+        ext_step_build = fetch_artifact(base_url, ext_step_build_path)
+        if ext_step_build:
+            try:
+                ext_bl_text = ext_step_build.decode('utf-8', errors='ignore')
+                extended_build_log_case_ids = extract_failed_case_ids_from_extended_build_log(ext_bl_text)
+                analyzed_files.append({
+                    'name': 'openshift-extended-test/build-log.txt',
+                    'path': ext_step_build_path,
+                    'patterns_found': len(extended_build_log_case_ids),
+                })
+                logger.debug(
+                    "Case IDs from openshift-extended-test/build-log.txt: %s",
+                    extended_build_log_case_ids,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to parse openshift-extended-test/build-log.txt: {e}")
+                extended_build_log_case_ids = []
+
     # Store detected patterns with sources and analyzed files info
     analysis['detected_patterns'] = detected_patterns
     analysis['analyzed_files'] = analyzed_files
@@ -559,7 +684,8 @@ def analyze_failure(
         analysis['failing_tests'],
         analysis['detected_patterns'],
         metadata,
-        build_log_text
+        build_log_text,
+        extended_build_log_case_ids,
     )
 
     return analysis
