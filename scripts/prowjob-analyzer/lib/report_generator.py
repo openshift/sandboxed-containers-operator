@@ -151,6 +151,42 @@ def generate_failure_analysis_section(failure_analysis: Dict, base_url: str, var
     return section
 
 
+def generate_post_test_prow_pipeline_section(
+    failure_analysis: Dict, base_url: str, variant: str
+) -> str:
+    """Section when tests passed but a later Prow step failed."""
+    section = "\n## Prow pipeline issue (not a test failure)\n\n"
+    steps = failure_analysis.get('post_test_failed_steps') or []
+    loc = failure_analysis.get('failure_location', 'unknown')
+    if steps:
+        step_list = ', '.join(f'`{s}`' for s in steps)
+        section += f"**Failed Prow step(s) after tests**: {step_list}\n\n"
+    else:
+        section += (
+            f"**Failed step(s)**: could not be listed from artifacts "
+            f"(location hint: `{loc}`).\n\n"
+        )
+    note = failure_analysis.get('summary_note', '')
+    if note:
+        section += f"{note}\n\n"
+    root_cause = failure_analysis.get('root_cause', {})
+    if root_cause.get('likely_cause'):
+        section += f"**Details**: {root_cause['likely_cause']}\n\n"
+    suggested = root_cause.get('suggested_actions', [])
+    if suggested:
+        section += "**Suggested actions**:\n"
+        for action in suggested:
+            section += f"- {action}\n"
+        section += "\n"
+    if variant and variant != 'unknown' and steps:
+        section += "### Step artifact links\n\n"
+        for step in steps:
+            prefix = f"artifacts/{variant}/{step}/"
+            section += f"- [`{step}`]({get_artifact_url(base_url, prefix)})\n"
+        section += "\n"
+    return section
+
+
 def generate_artifacts_section(base_url: str, variant: str, test_results_available: bool, analyzed_files: List[Dict] = None) -> str:
     """Generate artifacts links section."""
     section = "\n## Artifacts\n\n"
@@ -202,6 +238,7 @@ def build_report_data(
             'name': metadata['job_name'],
             'build_id': metadata['build_id'],
             'status': status,
+            'prow_reported_state': prowjob_data.get('state', 'unknown'),
             'trigger': metadata['trigger_source'],
             'release_stage': metadata.get('release_stage', ''),
             'duration_seconds': prowjob_data.get('duration_seconds', 0),
@@ -243,6 +280,8 @@ def build_report_data(
     if failure_analysis:
         failing_tests = failure_analysis.get('failing_tests', [])
         report['failure_analysis'] = {
+            'failure_kind': failure_analysis.get('failure_kind'),
+            'post_test_failed_steps': failure_analysis.get('post_test_failed_steps'),
             'failure_location': failure_analysis.get('failure_location', 'unknown'),
             'failing_tests': [
                 {
@@ -260,6 +299,13 @@ def build_report_data(
             'detected_patterns': failure_analysis.get('detected_patterns', []),
             'analyzed_files': failure_analysis.get('analyzed_files', []),
             'root_cause': failure_analysis.get('root_cause', {}),
+        }
+
+    if failure_analysis and failure_analysis.get('failure_kind') == 'prow_pipeline_after_tests':
+        report['prow_pipeline_issue'] = {
+            'failed_steps': failure_analysis.get('post_test_failed_steps') or [],
+            'failure_location': failure_analysis.get('failure_location', ''),
+            'summary': failure_analysis.get('summary_note', ''),
         }
 
     # Artifacts
@@ -341,9 +387,14 @@ def generate_human_report(report_data: Dict) -> str:
 
     report = "# Prow Job Analysis Report\n\n"
 
-    # Status
+    # Status (tests can be SUCCESS while Prow still reports a later pipeline failure)
     status_emoji = format_status_emoji(status)
     report += f"## Status: {status_emoji} {status.upper()}\n\n"
+    if report_data.get('prow_pipeline_issue'):
+        report += (
+            "> **Note:** Extended tests passed. Prow reported a failure in a **later pipeline step** "
+            "(not a failing test case). See [Prow pipeline issue](#prow-pipeline-issue-not-a-test-failure) below.\n\n"
+        )
 
     # Job Overview (job_name, build_id, trigger live in prowjob in canonical report)
     report += "## Job Overview\n\n"
@@ -412,7 +463,12 @@ def generate_human_report(report_data: Dict) -> str:
     if test_results:
         report += generate_test_results_section(test_results, failure_analysis or {})
 
-    if status != 'success' and failure_analysis:
+    fa_kind = (failure_analysis or {}).get('failure_kind')
+    if failure_analysis and fa_kind == 'prow_pipeline_after_tests':
+        report += generate_post_test_prow_pipeline_section(
+            failure_analysis, base_url, metadata.get('variant', '')
+        )
+    elif status != 'success' and failure_analysis:
         report += generate_failure_analysis_section(failure_analysis, base_url, metadata.get('variant', ''))
 
     analyzed_files = failure_analysis.get('analyzed_files', []) if failure_analysis else []
