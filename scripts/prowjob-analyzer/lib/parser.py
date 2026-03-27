@@ -105,23 +105,48 @@ def parse_test_results(test_results_content: bytes) -> Optional[Dict]:
         return None
 
 
-def get_job_status(prowjob_data: Dict, test_results: Optional[Dict] = None) -> str:
+def get_job_status(
+    prowjob_data: Dict,
+    test_results: Optional[Dict] = None,
+    extended_test_finished: Optional[Dict] = None,
+) -> str:
     """
     Determine overall job status.
 
+    Priority for openshift-extended-test outcomes:
+    1. ``artifacts/.../openshift-extended-test/artifacts/test-results.yaml`` —
+       if parsed and contains ``failures``, ``failures == 0`` means success (primary).
+    2. ``artifacts/.../openshift-extended-test/finished.json`` —
+       ``"result": "SUCCESS"`` when all test cases passed (no failures).
+    3. Top-level ``prowjob.json`` ``status.state`` when the above are absent.
+
     Args:
-        prowjob_data: Parsed prowjob.json
-        test_results: Optional parsed test-results.yaml
+        prowjob_data: Parsed prowjob.json (raw dict)
+        test_results: Parsed test-results.yaml from openshift-extended-test (optional)
+        extended_test_finished: Parsed openshift-extended-test/finished.json (optional)
 
     Returns:
         Status string: 'success', 'failure', 'timeout', 'error', 'aborted', 'pending'
     """
+    # Primary: test-results.yaml failures count (openshift-extended-test)
+    if test_results is not None and 'failures' in test_results:
+        return 'success' if test_results['failures'] == 0 else 'failure'
+
+    # Secondary: finished.json result (e.g. SUCCESS when no cases failed)
+    if extended_test_finished is not None:
+        result = extended_test_finished.get('result')
+        if result is not None:
+            r = str(result).strip().upper()
+            if r == 'SUCCESS':
+                return 'success'
+            if r in ('FAILURE', 'FAILED', 'FAIL'):
+                return 'failure'
+            # Other values: defer to prowjob.json
+
     status = prowjob_data.get('status', {})
     state = status.get('state', '').lower()
 
-    # Map Prow states to our status
     if state == 'success':
-        # Double-check with test results if available
         if test_results and test_results.get('failures', 0) > 0:
             return 'failure'
         return 'success'
@@ -134,7 +159,6 @@ def get_job_status(prowjob_data: Dict, test_results: Optional[Dict] = None) -> s
     elif state == 'error':
         return 'error'
     else:
-        # Try to infer from test results
         if test_results:
             if test_results.get('failures', 0) == 0:
                 return 'success'

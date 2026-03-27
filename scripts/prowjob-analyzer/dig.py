@@ -93,8 +93,10 @@ def analyze_prowjob(url: str, wait_timeout: int = 300) -> Optional[dict]:
     test_results = None
     variant = metadata.get('variant')
 
+    extended_finished = None
     if variant and variant != 'unknown':
-        test_results_path = f"artifacts/{variant}/openshift-extended-test/artifacts/test-results.yaml"
+        prefix = f"artifacts/{variant}/openshift-extended-test"
+        test_results_path = f"{prefix}/artifacts/test-results.yaml"
         test_results_content = fetch_artifact(base_url, test_results_path)
 
         if test_results_content:
@@ -104,8 +106,15 @@ def analyze_prowjob(url: str, wait_timeout: int = 300) -> Optional[dict]:
         else:
             logger.warning("test-results.yaml not found (might be a prow step failure)")
 
-    # Determine job status
-    status = get_job_status(prowjob_json, test_results)
+        finished_path = f"{prefix}/finished.json"
+        extended_finished = fetch_json_artifact(base_url, finished_path)
+        if extended_finished:
+            logger.info(
+                f"openshift-extended-test finished.json: result={extended_finished.get('result')!r}"
+            )
+
+    # Determine job status (test-results primary, then finished.json, then prowjob.json)
+    status = get_job_status(prowjob_json, test_results, extended_finished)
     logger.info(f"Job status: {status}")
 
     # Analyze failures if job failed
