@@ -27,7 +27,7 @@ from lib.parser import (
     get_job_status,
 )
 from lib.metadata_extractor import extract_metadata
-from lib.failure_analyzer import analyze_failure
+from lib.failure_analyzer import analyze_failure, analyze_post_test_prow_failure
 from lib.report_generator import build_report_data, generate_csv_report, generate_human_report, generate_json_report
 
 # Configure logging
@@ -117,7 +117,7 @@ def analyze_prowjob(url: str, wait_timeout: int = 300) -> Optional[dict]:
     status = get_job_status(prowjob_json, test_results, extended_finished)
     logger.info(f"Job status: {status}")
 
-    # Analyze failures if job failed
+    # Analyze failures if tests/job failed (test failures)
     failure_analysis = None
     if status != 'success':
         logger.info("Analyzing failure...")
@@ -125,6 +125,18 @@ def analyze_prowjob(url: str, wait_timeout: int = 300) -> Optional[dict]:
         logger.info(f"Failed step(s): {failure_analysis.get('failure_location')}")
         logger.info(f"Failing tests: {len(failure_analysis.get('failing_tests', []))}")
         logger.info(f"Detected patterns: {failure_analysis.get('detected_patterns')}")
+
+    # Tests passed but overall Prow job failed (e.g. later step) — not a test failure
+    if status == 'success':
+        prow_state = (prowjob_json.get('status') or {}).get('state', '').lower()
+        if prow_state not in ('success', 'pending', ''):
+            post = analyze_post_test_prow_failure(prowjob_json, base_url, metadata)
+            if post:
+                failure_analysis = post
+                logger.info(
+                    "Prow reported non-success after successful tests; "
+                    f"post-test step issue: {post.get('failure_location')}"
+                )
 
     return {
         'prowjob_data': prowjob_data,

@@ -131,6 +131,76 @@ def identify_failure_location(
     return 'unknown'
 
 
+def analyze_post_test_prow_failure(
+    prowjob_raw: Dict,
+    base_url: str,
+    metadata: Dict,
+) -> Optional[Dict]:
+    """
+    When openshift-extended-test succeeded (caller already set status to success)
+    but the overall Prow job did not succeed, summarize failed steps after the test phase.
+
+    These are Prow/pipeline issues, not test-case failures.
+    """
+    status_block = prowjob_raw.get('status') or {}
+    prow_state = (status_block.get('state') or '').lower()
+    if prow_state in ('success', 'pending', ''):
+        return None
+
+    variant = metadata.get('variant') or ''
+    failed_steps: List[str] = []
+    if variant and variant != 'unknown':
+        failed_steps = get_failed_steps(base_url, variant)
+
+    # Defensive: extended test phase is already known-good from test-results/finished.json
+    failed_steps = [s for s in failed_steps if s != 'openshift-extended-test']
+
+    summary_note = (
+        'One or more Prow steps failed after openshift-extended-test completed successfully. '
+        'This is not a test-case failure.'
+    )
+
+    if not failed_steps:
+        return {
+            'failure_kind': 'prow_pipeline_after_tests',
+            'failure_location': 'prowjob',
+            'post_test_failed_steps': [],
+            'failing_tests': [],
+            'failing_tests_by_category': {},
+            'detected_patterns': [],
+            'analyzed_files': [],
+            'root_cause': {
+                'likely_cause': (
+                    f'Prow job state is {prow_state!r} while the extended test phase reported success. '
+                    'A later pipeline step may have failed, or step-level artifacts could not be enumerated.'
+                ),
+                'confidence': 'medium',
+                'suggested_actions': [
+                    'Review the Prow UI step timeline and build-log.txt for the failing step.',
+                    'Confirm whether a post-test step (e.g. gather, teardown) failed.',
+                ],
+            },
+            'summary_note': summary_note,
+        }
+
+    return {
+        'failure_kind': 'prow_pipeline_after_tests',
+        'failure_location': ', '.join(failed_steps),
+        'post_test_failed_steps': failed_steps,
+        'failing_tests': [],
+        'failing_tests_by_category': {},
+        'detected_patterns': [],
+        'analyzed_files': [],
+        'root_cause': {
+            'likely_cause': summary_note,
+            'confidence': 'high',
+            'suggested_actions': [
+                f'Inspect finished.json and logs under artifacts for: {", ".join(failed_steps)}.',
+                'This does not indicate failing OSC extended tests.',
+            ],
+        },
+        'summary_note': summary_note,
+    }
 
 
 def extract_azure_quota_details(log_content: str) -> Dict[str, Optional[int]]:
