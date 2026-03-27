@@ -126,7 +126,9 @@ spec:
     - name: prowjob-sanity
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       # A fail on sanity should stop and fail the pipeline
-      onError: stopAndFail
+      #onError: stopAndFail
+      # TODO: revert to stopAndFail when AWS deprovision is fixed
+      onError: continue
       timeout: "8h"
       when:
         - input: "$(tasks.determine-prowjobs.results.run_sanity)"
