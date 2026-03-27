@@ -156,7 +156,8 @@ function getLocalDefaults() {
     # azure
     if [[ "${IS_ARO}" == "yes" ]]; then
         [[ ! ${AZURE_SUBNET_ID} ]] && [[ ${AZURE_SUBSCRIPTION_ID} ]] && net_rg=$(oc get infrastructure/cluster -o jsonpath='{.status.platformStatus.azure.networkResourceGroupName}') && [[ ${net_rg} ]] && \
-            AZURE_SUBNET_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${net_rg}/providers/Microsoft.Network/virtualNetworks/aro-vnet/subnets/worker-subnet"
+            vnet=$(${CLI} get configmap cloud-conf -n openshift-cloud-controller-manager -o jsonpath='{.data.cloud\.conf}' | jq -r .vnetName) && [[ "${vnet}" ]] && \
+            AZURE_SUBNET_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${net_rg}/providers/Microsoft.Network/virtualNetworks/${vnet}/subnets/worker-subnet"
         [[ ! ${AZURE_NSG_ID} ]] && [[ ${AZURE_SUBSCRIPTION_ID} ]] && [[ ${AZURE_RESOURCE_GROUP} ]] && infra_name=$(oc get infrastructure/cluster -o jsonpath='{.status.infrastructureName}') && [[ ${infra_name} ]] && \
             AZURE_NSG_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${AZURE_RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/${infra_name}-nsg"
     else # self managed azure
