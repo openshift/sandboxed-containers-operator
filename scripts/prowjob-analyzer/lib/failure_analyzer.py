@@ -9,7 +9,7 @@ import logging
 from typing import Dict, List, Optional
 from collections import defaultdict
 from .parser import categorize_test_by_name, extract_failing_tests, add_execution_order_to_tests
-from .fetcher import fetch_artifact, get_failed_steps
+from .fetcher import fetch_artifact, get_failed_steps, is_openshift_extended_test_failure_label
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +153,7 @@ def analyze_post_test_prow_failure(
         failed_steps = get_failed_steps(base_url, variant)
 
     # Defensive: extended test phase is already known-good from test-results/finished.json
-    failed_steps = [s for s in failed_steps if s != 'openshift-extended-test']
+    failed_steps = [s for s in failed_steps if not is_openshift_extended_test_failure_label(s)]
 
     summary_note = (
         'One or more Prow steps failed after openshift-extended-test completed successfully. '
