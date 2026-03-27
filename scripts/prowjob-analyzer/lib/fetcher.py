@@ -358,6 +358,58 @@ def get_step_directories(base_url: str, variant: str) -> List[str]:
         return []
 
 
+def summarize_openshift_extended_test_build_log(log_text: str) -> Optional[str]:
+    """
+    Build a short label for openshift-extended-test from build-log.txt.
+
+    - If the step finished with a test failure: ``error: X fail, V pass, W skip`` →
+      ``"X fail, V pass, W skip"``.
+    - If tests were interrupted (no final error line): last ``started: (X/Y/Z)`` →
+      ``"(X/Y/Z)"`` (X failed, Y started, Z total).
+    """
+    if not log_text:
+        return None
+
+    error_re = re.compile(
+        r'(?i)error:\s*(\d+)\s*fail,\s*(\d+)\s*pass,\s*(\d+)\s*skip',
+    )
+    err_matches = list(error_re.finditer(log_text))
+    if err_matches:
+        m = err_matches[-1]
+        return f"{m.group(1)} fail, {m.group(2)} pass, {m.group(3)} skip"
+
+    started_re = re.compile(
+        r'(?i)started:\s*\(\s*(\d+)\s*/\s*(\d+)\s*/\s*(\d+)\s*\)',
+    )
+    started_matches = list(started_re.finditer(log_text))
+    if started_matches:
+        m = started_matches[-1]
+        return f"({m.group(1)}/{m.group(2)}/{m.group(3)})"
+
+    return None
+
+
+def is_openshift_extended_test_failure_label(step_label: str) -> bool:
+    """
+    True if this string is the openshift-extended-test step or a build-log summary
+    derived from that step (instead of the bare directory name).
+    """
+    if step_label == 'openshift-extended-test':
+        return True
+    if re.fullmatch(r'\d+ fail, \d+ pass, \d+ skip', step_label):
+        return True
+    if re.fullmatch(r'\(\d+/\d+/\d+\)', step_label):
+        return True
+    return False
+
+
+def artifact_dir_for_failed_step_label(step_label: str) -> str:
+    """Directory under artifacts/{variant}/ for linking (summaries map to openshift-extended-test)."""
+    if is_openshift_extended_test_failure_label(step_label):
+        return 'openshift-extended-test'
+    return step_label
+
+
 def get_failed_steps(base_url: str, variant: str) -> List[str]:
     """
     Identify which steps failed by checking their finished.json files.
@@ -370,7 +422,9 @@ def get_failed_steps(base_url: str, variant: str) -> List[str]:
         variant: Job variant (e.g., "aws-ipi-peerpods")
 
     Returns:
-        List of failed step names
+        List of failed step labels. For openshift-extended-test, this may be a summary
+        from build-log.txt (e.g. ``3 fail, 10 pass, 2 skip`` or ``(0/5/40)``) instead of
+        the bare step name.
     """
     step_dirs = get_step_directories(base_url, variant)
     failed_steps = []
@@ -406,8 +460,25 @@ def get_failed_steps(base_url: str, variant: str) -> List[str]:
                             logger.debug(f"Step {step} has test failures: failures={failures}, errors={errors}")
 
             if step_failed:
-                failed_steps.append(step)
-                logger.debug(f"Step {step} failed: passed={passed}, result={result}")
+                if step == 'openshift-extended-test':
+                    label: Optional[str] = None
+                    bl_path = f"artifacts/{variant}/{step}/build-log.txt"
+                    bl_content = fetch_artifact(base_url, bl_path)
+                    if bl_content:
+                        try:
+                            label = summarize_openshift_extended_test_build_log(
+                                bl_content.decode('utf-8', errors='ignore')
+                            )
+                        except Exception as e:
+                            logger.debug(f"Could not summarize openshift-extended-test build-log: {e}")
+                    failed_steps.append(label or step)
+                    logger.debug(
+                        "Step %s failed: passed=%s, result=%s, label=%s",
+                        step, passed, result, label or step,
+                    )
+                else:
+                    failed_steps.append(step)
+                    logger.debug(f"Step {step} failed: passed={passed}, result={result}")
 
     logger.debug(f"Found {len(failed_steps)} failed steps: {failed_steps}")
     return failed_steps

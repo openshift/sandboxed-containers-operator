@@ -11,7 +11,7 @@ import logging
 from typing import Dict, List, Optional
 from datetime import datetime
 from .parser import format_duration
-from .fetcher import get_artifact_url
+from .fetcher import get_artifact_url, artifact_dir_for_failed_step_label
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +181,8 @@ def generate_post_test_prow_pipeline_section(
     if variant and variant != 'unknown' and steps:
         section += "### Step artifact links\n\n"
         for step in steps:
-            prefix = f"artifacts/{variant}/{step}/"
+            step_dir = artifact_dir_for_failed_step_label(step)
+            prefix = f"artifacts/{variant}/{step_dir}/"
             section += f"- [`{step}`]({get_artifact_url(base_url, prefix)})\n"
         section += "\n"
     return section
