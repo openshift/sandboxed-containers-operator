@@ -10,7 +10,7 @@ import json
 import logging
 from typing import Dict, List, Optional
 from datetime import datetime
-from .parser import format_duration
+from .parser import format_hours_minutes
 from .fetcher import get_artifact_url, artifact_dir_for_failed_step_label
 
 logger = logging.getLogger(__name__)
@@ -226,14 +226,20 @@ def build_report_data(
     test_results: Optional[Dict],
     failure_analysis: Optional[Dict],
     base_url: str,
+    test_elapsed_time: str = '',
 ) -> Dict:
     """
     Build the canonical report dict (single source of truth).
     JSON dumps it in full; human report reads a subset from this dict.
     """
+    prowjob_ds = int(prowjob_data.get('duration_seconds', 0) or 0)
+    prowjob_elapsed_time = format_hours_minutes(prowjob_ds) if prowjob_ds > 0 else 'unknown'
+
     report = {
         'version': '1.0',
         'timestamp': datetime.utcnow().isoformat() + 'Z',
+        'test_elapsed_time': test_elapsed_time or 'unknown',
+        'prowjob_elapsed_time': prowjob_elapsed_time,
         'prowjob': {
             'url': base_url,
             'name': metadata['job_name'],
@@ -335,7 +341,7 @@ def generate_csv_report(report_data: Dict, header: bool = True) -> str:
     Generate one row of CSV from the canonical report_data.
     Columns: trigger, start_time, catalog_full_tag, catalog_build_date, provider,
     ocp_version, prowjob_url, workload_type, kata_rpm_version, prowjob_status,
-    failed_steps, primary_pattern, confidence, root_cause.
+    test_elapsed_time, failed_steps, primary_pattern, confidence, root_cause.
     """
     prowjob = report_data['prowjob']
     metadata = report_data['metadata']
@@ -357,6 +363,7 @@ def generate_csv_report(report_data: Dict, header: bool = True) -> str:
         metadata.get('workload_type', ''),
         metadata.get('kata_rpm_version', ''),
         (prowjob.get('status') or '').upper(),
+        report_data.get('test_elapsed_time', ''),
         failure_analysis.get('failure_location', ''),
         root_cause.get('primary_pattern', ''),
         root_cause.get('confidence', ''),
@@ -368,7 +375,8 @@ def generate_csv_report(report_data: Dict, header: bool = True) -> str:
         writer.writerow([
             'trigger', 'start_time', 'catalog_full_tag', 'catalog_build_date',
             'provider', 'ocp_version', 'prowjob_url', 'workload_type',
-            'kata_rpm_version', 'prowjob_status', 'failed_steps', 'primary_pattern',
+            'kata_rpm_version', 'prowjob_status', 'test_elapsed_time', 'failed_steps',
+            'primary_pattern',
             'confidence', 'root_cause',
         ])
     writer.writerow(row)
@@ -406,15 +414,16 @@ def generate_human_report(report_data: Dict) -> str:
     if prowjob.get('release_stage'):
         report += f"- **Release Stage**: {prowjob['release_stage']}\n"
 
-    duration = prowjob.get('duration_seconds', 0)
-    if duration > 0:
-        report += f"- **Duration**: {format_duration(duration)}\n"
-
     start_time = prowjob.get('start_time', '')
     if start_time:
         report += f"- **Started**: {start_time}\n"
 
     report += f"- **URL**: {base_url}\n"
+
+    report += f"- **test_elapsed_time**: {report_data.get('test_elapsed_time', 'unknown')} "
+    report += "(openshift-extended-test step, start to finish or interruption)\n"
+    report += f"- **prowjob_elapsed_time**: {report_data.get('prowjob_elapsed_time', 'unknown')} "
+    report += "(entire Prow job wall time)\n"
 
     root_cause = report_data.get('root_cause') or {}
     if root_cause.get('likely_cause'):

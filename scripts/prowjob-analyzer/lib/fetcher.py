@@ -482,3 +482,345 @@ def get_failed_steps(base_url: str, variant: str) -> List[str]:
 
     logger.debug(f"Found {len(failed_steps)} failed steps: {failed_steps}")
     return failed_steps
+
+
+def _podutils_json_timestamp(obj: Optional[Dict]) -> Optional[int]:
+    """Epoch seconds from a Prow step ``started.json`` / ``finished.json``."""
+    if not isinstance(obj, dict):
+        return None
+    t = obj.get('timestamp')
+    if t is None:
+        return None
+    try:
+        return int(float(t))
+    except (TypeError, ValueError):
+        return None
+
+
+def go_duration_to_seconds(s: str) -> Optional[int]:
+    """Parse a Go-style duration fragment (e.g. ``1h30m5s``, ``45m0s``) to seconds."""
+    s = (s or '').strip()
+    if not s:
+        return None
+    total = 0.0
+    # Milliseconds before ``m`` (minutes): ``813ms`` must not match as 813 minutes.
+    for m in re.finditer(r'(\d+(?:\.\d+)?)ms', s):
+        total += float(m.group(1)) / 1000.0
+    s = re.sub(r'(\d+(?:\.\d+)?)ms', ' ', s)
+    for m in re.finditer(r'(\d+(?:\.\d+)?)h', s):
+        total += float(m.group(1)) * 3600
+    for m in re.finditer(r'(\d+(?:\.\d+)?)m', s):
+        total += float(m.group(1)) * 60
+    for m in re.finditer(r'(\d+(?:\.\d+)?)s', s):
+        total += float(m.group(1))
+    if total <= 0:
+        return None
+    return int(round(total))
+
+
+def parse_test_step_duration_from_build_log(text: str) -> Optional[int]:
+    """
+    Duration from ``error: X fail, V pass, W skip (DURATION)`` in build-log.txt
+    (openshift-tests suite summary). When this line appears, use the last match as the
+    step elapsed time; it overrides per-test ``failed: (…)`` durations elsewhere in the log.
+    """
+    if not text:
+        return None
+    matches = list(
+        re.finditer(
+            r'(?i)error:\s*\d+\s*fail,\s*\d+\s*pass,\s*\d+\s*skip\s*\(\s*([^)]+)\s*\)',
+            text,
+        )
+    )
+    if not matches:
+        return None
+    return go_duration_to_seconds(matches[-1].group(1))
+
+
+def parse_ginkgo_failed_durations_max(text: str) -> Optional[int]:
+    """
+    Longest ``failed: (3h1m37s)``-style duration from ginkgo output (per-test timeout).
+    """
+    if not text:
+        return None
+    best: Optional[int] = None
+    for m in re.finditer(r'(?im)^\s*failed:\s*\(\s*([^)]+)\s*\)', text):
+        secs = go_duration_to_seconds(m.group(1).strip())
+        if secs is not None and secs > 0:
+            if best is None or secs > best:
+                best = secs
+    return best
+
+
+def _line_is_prow_entrypoint_noise(line: str) -> bool:
+    """Skip Prow sidecar JSON lines (grace period, global timeout) — not suite duration."""
+    s = line.lower()
+    if '"component"' in s and 'entrypoint' in s:
+        return True
+    if 'grace period' in s or 'gracefullyterminate' in s:
+        return True
+    if 'did not finish before' in s and 'timeout' in s:
+        return True
+    return False
+
+
+def parse_build_log_duration_fallback(text: str) -> Optional[int]:
+    """
+    Parenthesized Go durations in the log tail, excluding Prow entrypoint JSON lines
+    (which often end the file with ``10m0s`` grace, etc.).
+    """
+    if not text:
+        return None
+    tail = text[-400000:] if len(text) > 400000 else text
+    best: Optional[int] = None
+    for line in tail.splitlines():
+        if _line_is_prow_entrypoint_noise(line):
+            continue
+        for m in re.finditer(r'\(\s*([^)]+)\s*\)', line):
+            g = m.group(1).strip()
+            if not re.search(r'\d', g):
+                continue
+            if not re.search(r'\d+\s*[hms]', g, re.I):
+                continue
+            secs = go_duration_to_seconds(g)
+            if secs is not None and secs > 0:
+                if best is None or secs > best:
+                    best = secs
+    return best
+
+
+def _step_started_timestamp(base_url: str, variant: str, step_name: str) -> Optional[int]:
+    """Epoch seconds from ``artifacts/{variant}/{step}/started.json``."""
+    path = f"artifacts/{variant}/{step_name}/started.json"
+    data = fetch_json_artifact(base_url, path)
+    return _podutils_json_timestamp(data)
+
+
+def _duration_openshift_extended_test_via_next_step(
+    base_url: str, variant: str,
+) -> Optional[int]:
+    """
+    Duration = start time of the next pipeline step minus openshift-extended-test start.
+
+    Steps are ordered by ``started.json`` timestamp (sequential ci-operator steps). The
+    step immediately after openshift-extended-test in that order is used when this step's
+    ``finished.json`` is missing or unreliable (e.g. timeout).
+    """
+    step_dirs = get_step_directories(base_url, variant)
+    if not step_dirs or 'openshift-extended-test' not in step_dirs:
+        return None
+
+    entries: List[Tuple[int, str]] = []
+    for step in step_dirs:
+        st = _step_started_timestamp(base_url, variant, step)
+        if st is not None:
+            entries.append((st, step))
+
+    if len(entries) < 2:
+        return None
+
+    entries.sort(key=lambda x: (x[0], x[1]))
+
+    for i in range(len(entries) - 1):
+        if entries[i][1] == 'openshift-extended-test':
+            t_oet = entries[i][0]
+            t_next = entries[i + 1][0]
+            if t_next > t_oet:
+                return t_next - t_oet
+            return None
+
+    return None
+
+
+def _build_log_shows_test_step_finished(text: Optional[str]) -> bool:
+    """True if build-log contains the final openshift-tests error summary line."""
+    if not text:
+        return False
+    return bool(
+        re.search(
+            r'(?i)error:\s*\d+\s*fail,\s*\d+\s*pass,\s*\d+\s*skip',
+            text,
+        )
+    )
+
+
+def _oet_step_has_finished(
+    ts: Optional[int],
+    tf: Optional[int],
+    finished_json: Optional[Dict],
+    build_log_text: Optional[str],
+) -> bool:
+    """
+    Step is done if Prow wrote a finished record, we have an end timestamp, or build-log
+    has the final test summary (tests completed / failed, not mid-run).
+    """
+    if finished_json is not None:
+        if _podutils_json_timestamp(finished_json) is not None:
+            return True
+        if str(finished_json.get('result', '')).strip() != '':
+            return True
+        if 'passed' in finished_json:
+            return True
+    if ts is not None and tf is not None and tf >= ts:
+        return True
+    return _build_log_shows_test_step_finished(build_log_text)
+
+
+def _parse_build_log_duration_seconds(build_log_text: Optional[str]) -> Optional[int]:
+    """
+    Best-effort seconds from build-log: the final ``error: N fail, … (duration)`` line from
+    openshift-tests is treated as the suite elapsed time when present; otherwise longest
+    ginkgo ``failed: (…)``, then other parenthesized durations (excluding Prow entrypoint
+    noise).
+    """
+    if not build_log_text:
+        return None
+    suite = parse_test_step_duration_from_build_log(build_log_text)
+    if suite is not None and suite > 0:
+        return suite
+    candidates: List[int] = []
+    b = parse_ginkgo_failed_durations_max(build_log_text)
+    if b is not None and b > 0:
+        candidates.append(b)
+    c = parse_build_log_duration_fallback(build_log_text)
+    if c is not None and c > 0:
+        candidates.append(c)
+    return max(candidates) if candidates else None
+
+
+def _merge_wall_and_log_seconds(
+    sec_wall: Optional[int],
+    sec_log: Optional[int],
+) -> int:
+    """
+    Prefer wall-clock when it is at least one minute; otherwise prefer build-log.
+    If both are positive, use the larger (covers sub-minute wall vs full suite in log).
+    """
+    w = sec_wall if sec_wall is not None else 0
+    l = sec_log if sec_log is not None else 0
+    if w >= 60:
+        return max(w, l) if l > 0 else w
+    if l > 0:
+        return max(w, l)
+    return w
+
+
+def _oet_step_ended(
+    ts: Optional[int],
+    tf: Optional[int],
+    fin_json: Optional[Dict],
+    build_log_text: Optional[str],
+    sec_next: Optional[int],
+) -> bool:
+    """
+    True if the step is no longer running: Prow finished, test summary in log, or the
+    next ci-operator step has started (interrupt/timeout without a clean finished.json).
+    """
+    if _oet_step_has_finished(ts, tf, fin_json, build_log_text):
+        return True
+    if ts is not None and sec_next is not None and sec_next > 0:
+        return True
+    return False
+
+
+def _prefer_next_step_wall_duration(
+    fin_json: Optional[Dict],
+    build_log_text: Optional[str],
+) -> bool:
+    """
+    Use (next step started − OET started) as wall duration when the step was killed,
+    timed out, or never got a reliable finished.json timestamp.
+    """
+    if fin_json is None:
+        return True
+    r = str(fin_json.get('result', '')).strip().upper()
+    if r in ('ABORTED', 'TIMEOUT'):
+        return True
+    if build_log_text and r == 'FAILURE':
+        if re.search(
+            r'(?i)(timeout|deadline exceeded|context deadline|interrupted|SIGKILL|SIGTERM)',
+            build_log_text,
+        ):
+            return True
+    return False
+
+
+def compute_openshift_extended_test_elapsed_display(
+    base_url: str,
+    variant: str,
+    extended_finished_json: Optional[Dict] = None,
+) -> str:
+    """
+    How long the openshift-extended-test step ran, as ``HH:MM``.
+
+    ``00:00`` only when the step never started or is still running (no finish artifact/log).
+
+    When the step has finished, duration is: wall-clock from ``finished.json`` when
+    reliable; on interrupt/timeout or missing finish time, prefer **next step's
+    ``started.json`` minus this step's start**. Merged with ``build-log.txt`` when
+    wall-clock is missing or sub-minute.
+    """
+    if not variant or variant == 'unknown':
+        return ''
+
+    from .parser import format_hours_minutes_test_step_display
+
+    prefix = f"artifacts/{variant}/openshift-extended-test"
+    started = fetch_json_artifact(base_url, f"{prefix}/started.json")
+    ts = _podutils_json_timestamp(started)
+
+    fin_json = extended_finished_json
+    if fin_json is None:
+        fin_json = fetch_json_artifact(base_url, f"{prefix}/finished.json")
+
+    tf = _podutils_json_timestamp(fin_json)
+
+    bl = fetch_artifact(base_url, f"{prefix}/build-log.txt")
+    build_log_text: Optional[str] = None
+    if bl:
+        try:
+            build_log_text = bl.decode('utf-8', errors='ignore')
+        except Exception as e:
+            logger.debug(f"Could not decode openshift-extended-test build-log.txt: {e}")
+
+    sec_next: Optional[int] = None
+    if ts is not None:
+        sec_next = _duration_openshift_extended_test_via_next_step(base_url, variant)
+
+    ended = _oet_step_ended(ts, tf, fin_json, build_log_text, sec_next)
+    finished_prow = _oet_step_has_finished(ts, tf, fin_json, build_log_text)
+    not_started = ts is None and not finished_prow
+    running = ts is not None and not ended
+
+    sec_log = _parse_build_log_duration_seconds(build_log_text)
+
+    if not_started:
+        return '00:00'
+    if running:
+        return '00:00'
+
+    # Ended: prefer tf−ts, or (next step start − OET start) for interrupt/timeout
+    sec_tf: Optional[int] = None
+    if ts is not None and tf is not None and tf >= ts:
+        sec_tf = tf - ts
+
+    # finished.json tf−ts is authoritative whenever present; do not let prefer_next
+    # overwrite with next-step duration (often wrong on timeout when sorting mis-orders).
+    sec_wall: Optional[int] = None
+    prefer_next = _prefer_next_step_wall_duration(fin_json, build_log_text)
+
+    if sec_tf is not None and sec_tf > 0:
+        sec_wall = sec_tf
+    elif prefer_next and sec_next is not None and sec_next > 0:
+        sec_wall = sec_next
+    elif sec_next is not None and sec_next > 0:
+        sec_wall = sec_next
+    else:
+        sec_wall = None
+
+    secs = _merge_wall_and_log_seconds(sec_wall, sec_log)
+
+    if secs <= 0:
+        return 'unknown'
+
+    return format_hours_minutes_test_step_display(secs)

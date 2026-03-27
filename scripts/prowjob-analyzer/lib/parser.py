@@ -416,3 +416,28 @@ def format_duration(seconds: int) -> str:
         minutes = (seconds % 3600) // 60
         secs = seconds % 60
         return f"{hours}h {minutes}m {secs}s"
+
+
+def format_hours_minutes(seconds: int) -> str:
+    """
+    Format duration as ``HH:MM`` (hours and whole minutes, floor seconds).
+    """
+    if seconds < 0:
+        seconds = 0
+    total_minutes = seconds // 60
+    h = total_minutes // 60
+    m = total_minutes % 60
+    return f"{h:02d}:{m:02d}"
+
+
+def format_hours_minutes_test_step_display(seconds: int) -> str:
+    """
+    ``HH:MM`` for openshift-extended-test elapsed. Sub-minute positive durations show as
+    ``00:01`` so the value is never ``00:00`` when ``seconds > 0``.
+    """
+    if seconds <= 0:
+        return format_hours_minutes(0)
+    s = format_hours_minutes(seconds)
+    if s == '00:00' and seconds > 0:
+        return '00:01'
+    return s

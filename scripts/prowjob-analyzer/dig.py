@@ -20,6 +20,7 @@ from lib.fetcher import (
     fetch_artifact,
     wait_for_artifacts,
     extract_variant_from_job_name,
+    compute_openshift_extended_test_elapsed_display,
 )
 from lib.parser import (
     parse_prowjob,
@@ -113,6 +114,15 @@ def analyze_prowjob(url: str, wait_timeout: int = 300) -> Optional[dict]:
                 f"openshift-extended-test finished.json: result={extended_finished.get('result')!r}"
             )
 
+    test_elapsed_time = 'unknown'
+    if variant and variant != 'unknown':
+        test_elapsed_time = compute_openshift_extended_test_elapsed_display(
+            base_url, variant, extended_finished
+        )
+        if not test_elapsed_time:
+            test_elapsed_time = 'unknown'
+        logger.info(f"test_elapsed_time: {test_elapsed_time}")
+
     # Determine job status (test-results primary, then finished.json, then prowjob.json)
     status = get_job_status(prowjob_json, test_results, extended_finished)
     logger.info(f"Job status: {status}")
@@ -145,6 +155,7 @@ def analyze_prowjob(url: str, wait_timeout: int = 300) -> Optional[dict]:
         'test_results': test_results,
         'failure_analysis': failure_analysis,
         'base_url': base_url,
+        'test_elapsed_time': test_elapsed_time,
     }
 
 
@@ -229,6 +240,7 @@ Examples:
         results['test_results'],
         results['failure_analysis'],
         results['base_url'],
+        results.get('test_elapsed_time', ''),
     )
     if args.json:
         logger.info("Generating JSON report...")
