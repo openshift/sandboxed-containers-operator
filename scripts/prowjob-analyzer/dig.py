@@ -36,12 +36,16 @@ logger = logging.getLogger(__name__)
 
 
 def setup_logging(verbose: bool = False):
-    """Configure logging."""
+    """Configure logging (always to stderr so stdout stays clean for --csv / redirects)."""
     level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format='%(levelname)s: %(message)s'
-    )
+    kwargs = {
+        'level': level,
+        'format': '%(levelname)s: %(message)s',
+        'stream': sys.stderr,
+    }
+    if sys.version_info >= (3, 8):
+        kwargs['force'] = True
+    logging.basicConfig(**kwargs)
 
 
 def analyze_prowjob(url: str, wait_timeout: int = 300) -> Optional[dict]:
@@ -252,10 +256,13 @@ Examples:
         logger.info("Generating human-readable report...")
         report = generate_human_report(report_data)
 
-    # Output report (no separator line for CSV)
+    # Output report (no separator line for CSV). CSV rows already end with a line
+    # terminator from csv.writer; avoid print()'s extra newline (blank line when appending).
     if not args.csv:
         print("\n" + "="*80 + "\n")
-    print(report)
+        print(report)
+    else:
+        print(report, end="")
 
     # Exit code based on job status
     if results['status'] == 'success':

@@ -370,7 +370,9 @@ def generate_csv_report(report_data: Dict, header: bool = True) -> str:
         root_cause.get('likely_cause', ''),
     ]
     out = io.StringIO()
-    writer = csv.writer(out)
+    # Single \n line endings; strip any stray leading newlines (avoids a blank first line
+    # when appending rows with --no-header or odd csv.writer/CRLF combinations).
+    writer = csv.writer(out, lineterminator='\n')
     if header:
         writer.writerow([
             'trigger', 'start_time', 'catalog_full_tag', 'catalog_build_date',
@@ -380,7 +382,7 @@ def generate_csv_report(report_data: Dict, header: bool = True) -> str:
             'confidence', 'root_cause',
         ])
     writer.writerow(row)
-    return out.getvalue()
+    return out.getvalue().lstrip('\r\n')
 
 
 def generate_human_report(report_data: Dict) -> str:
