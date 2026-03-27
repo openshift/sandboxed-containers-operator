@@ -68,6 +68,10 @@ FAILURE_PATTERNS = {
         r'failed to create sandbox',
     ],
     'rpm_install': [
+        # oc debug on worker + kata RPM (BeforeEach); see detect_kata_rpm_install_context too
+        r'debug\s+node/[^\s]*worker[^\s]*.*kata-containers\.rpm',
+        r'error:\s*Failed dependencies',
+        r'is needed by kata-containers',
         r'error:.*Failed dependencies',
         r'error:.*package.*is needed by kata',
         r'rpm.*installation failed',
@@ -227,6 +231,54 @@ def extract_azure_quota_details(log_content: str) -> Dict[str, Optional[int]]:
     return quota_details
 
 
+def extended_build_log_first_test_prefix(log_text: str, max_chars: int = 1_500_000) -> str:
+    """
+    Text through the end of the first ginkgo spec block. RPM install in BeforeEach and the
+    first failure are before/at the second ``started: (i/total/n)`` line; later specs repeat
+    the same install failure and add noise.
+    """
+    if not log_text:
+        return ''
+    text = log_text if len(log_text) <= max_chars else log_text[:max_chars]
+    # Second ``started: (a/b/c)`` begins the next spec (Ginkgo/openshift-tests).
+    pat = re.compile(r'^\s*started:\s*\(\d+/\d+/\d+\)', re.MULTILINE)
+    matches = list(pat.finditer(text))
+    if len(matches) >= 2:
+        return text[: matches[1].start()]
+    return text
+
+
+def detect_kata_rpm_install_context(text: str) -> bool:
+    """
+    True when ``oc debug node/…worker…`` failed while installing kata-containers.rpm
+    (Failed dependencies / needed by kata-containers).
+    """
+    if not text or len(text) < 80:
+        return False
+    if not re.search(r'debug\s+node/[^\s]*worker', text, re.I):
+        return False
+    if not re.search(r'kata-containers\.rpm|rpm\s+-Uvh\s+\S*kata', text, re.I):
+        return False
+    if not re.search(r'Failed dependencies|is needed by kata-containers', text, re.I):
+        return False
+    return True
+
+
+def extract_kata_rpm_dependency_detail(text: str) -> Optional[str]:
+    """First dependency line mentioning kata-containers, or Failed dependencies header."""
+    if not text:
+        return None
+    for line in text.splitlines():
+        s = line.strip()
+        if re.search(r'is needed by kata-containers', s, re.I):
+            return s[:500]
+    m = re.search(r'error:\s*Failed dependencies', text, re.I)
+    if m:
+        rest = text[m.start() :]
+        return rest.split('\n', 1)[0].strip()[:500]
+    return None
+
+
 def check_log_for_patterns(log_content: str, source_name: str = "unknown") -> List[Dict[str, str]]:
     """
     Check log content for known failure patterns.
@@ -359,6 +411,7 @@ def determine_root_cause(
     metadata: Dict,
     build_log_text: Optional[str] = None,
     extended_build_log_case_ids: Optional[List[str]] = None,
+    oet_build_log_first_test: Optional[str] = None,
 ) -> Dict:
     """
     Attempt to determine root cause of failure.
@@ -369,6 +422,8 @@ def determine_root_cause(
         metadata: Job metadata
         build_log_text: Top-level Prow build log content for extracting additional details
         extended_build_log_case_ids: C##### IDs parsed from openshift-extended-test/build-log.txt
+        oet_build_log_first_test: openshift-extended-test/build-log.txt truncated to the first spec
+            (used for kata RPM dependency extraction; avoids cascading repeats)
 
     Returns:
         Dictionary with root cause analysis
@@ -390,8 +445,36 @@ def determine_root_cause(
                 return pattern_info['source']
         return None
 
-    # Analyze patterns
-    if 'timeout' in pattern_names:
+    # Analyze patterns (rpm_install before timeout: logs often contain both Prow/step timeouts
+    # and the real Kata RPM failure on workers)
+    if 'rpm_install' in pattern_names:
+        root_cause['primary_pattern'] = 'rpm_install'
+        root_cause['pattern_source'] = find_pattern_source('rpm_install')
+        root_cause['confidence'] = 'high'
+        detail = None
+        if oet_build_log_first_test:
+            detail = extract_kata_rpm_dependency_detail(oet_build_log_first_test)
+        if detail:
+            root_cause['likely_cause'] = (
+                f'Kata RPM install on a worker (oc debug) failed: missing dependency. {detail}'
+            )
+        else:
+            root_cause['likely_cause'] = (
+                'Kata RPM install on a worker node failed (BeforeEach): missing or unsatisfied '
+                'dependencies for kata-containers'
+            )
+        root_cause['suggested_actions'] = [
+            'Use the first test block in openshift-extended-test/build-log.txt only; later tests '
+            'repeat the same RPM install failure',
+            'Resolve the dependency shown under StdOut from oc debug (e.g. qemu-kvm-core)',
+            'Verify RHCOS layer and kata-containers RPM versions match test expectations',
+        ]
+        if 'rpm_cascading' in pattern_names:
+            root_cause['cascading_errors'] = ['rpm_cascading']
+            root_cause['note'] = (
+                'Additional ostree "already unlocked" errors are usually cascading from the initial RPM failure'
+            )
+    elif 'timeout' in pattern_names:
         root_cause['primary_pattern'] = 'timeout'
         root_cause['pattern_source'] = find_pattern_source('timeout')
         root_cause['likely_cause'] = 'Test execution exceeded time limits'
@@ -481,22 +564,6 @@ def determine_root_cause(
             'Review cluster health and provisioning logs',
             'Verify cluster installation completed',
         ]
-    elif 'rpm_install' in pattern_names:
-        root_cause['primary_pattern'] = 'rpm_install'
-        root_cause['pattern_source'] = find_pattern_source('rpm_install')
-        root_cause['likely_cause'] = 'RPM installation failed due to missing dependencies'
-        root_cause['confidence'] = 'high'
-        root_cause['suggested_actions'] = [
-            'Check the first test logs for the specific missing dependency',
-            'Verify the Kata RPM package dependencies are available in the repository',
-            'Check if the RPM repository is accessible and configured correctly',
-            'Verify the RPM version compatibility with the target OS',
-        ]
-
-        # If rpm_cascading is also present, note it's a secondary error
-        if 'rpm_cascading' in pattern_names:
-            root_cause['cascading_errors'] = ['rpm_cascading']
-            root_cause['note'] = 'Multiple "Deployment is already in unlocked state" errors are cascading failures from the initial RPM dependency error'
     else:
         # Unknown pattern type: use first detected pattern
         if detected_patterns:
@@ -601,6 +668,7 @@ def analyze_failure(
     build_log_text_full = None  # Keep full log for execution order extraction
     analyzed_files = []
     extended_build_log_case_ids: Optional[List[str]] = None
+    oet_first_test_prefix: Optional[str] = None
 
     # First check the main build log for infrastructure-level failures (e.g., Azure quota)
     build_log_content = fetch_artifact(base_url, "build-log.txt")
@@ -653,14 +721,34 @@ def analyze_failure(
             try:
                 ext_bl_text = ext_step_build.decode('utf-8', errors='ignore')
                 extended_build_log_case_ids = extract_failed_case_ids_from_extended_build_log(ext_bl_text)
+                # RPM install runs in BeforeEach; only the first spec's log avoids repeated failures.
+                oet_first_test_prefix = extended_build_log_first_test_prefix(ext_bl_text)
+                oet_src = "openshift-extended-test/build-log.txt (first test)"
+                patterns_oet = check_log_for_patterns(oet_first_test_prefix, oet_src)
+                detected_patterns.extend(patterns_oet)
+                composite_rpm = detect_kata_rpm_install_context(oet_first_test_prefix)
+                if composite_rpm:
+                    have = {p['pattern'] for p in detected_patterns}
+                    if 'rpm_install' not in have:
+                        detected_patterns.append({
+                            'pattern': 'rpm_install',
+                            'source': f'{oet_src}, composite',
+                        })
+                oet_pf = len(patterns_oet)
+                if composite_rpm and not any(p['pattern'] == 'rpm_install' for p in patterns_oet):
+                    oet_pf += 1
                 analyzed_files.append({
                     'name': 'openshift-extended-test/build-log.txt',
                     'path': ext_step_build_path,
-                    'patterns_found': len(extended_build_log_case_ids),
+                    'patterns_found': oet_pf,
                 })
                 logger.debug(
                     "Case IDs from openshift-extended-test/build-log.txt: %s",
                     extended_build_log_case_ids,
+                )
+                logger.debug(
+                    "Patterns from openshift-extended-test/build-log (first test): %s",
+                    [p['pattern'] for p in patterns_oet],
                 )
             except Exception as e:
                 logger.warning(f"Failed to parse openshift-extended-test/build-log.txt: {e}")
@@ -686,6 +774,7 @@ def analyze_failure(
         metadata,
         build_log_text,
         extended_build_log_case_ids,
+        oet_build_log_first_test=oet_first_test_prefix,
     )
 
     return analysis
