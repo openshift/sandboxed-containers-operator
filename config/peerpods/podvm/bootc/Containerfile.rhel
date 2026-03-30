@@ -1,5 +1,5 @@
 # Get payload
-FROM registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.11.1 as payload  ## OSC_VERSION
+FROM registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.11.1-1764865303 as payload  ## OSC_VERSION
 
 # Build bootc rhel podvm
 FROM registry.redhat.io/rhel9/rhel-bootc:9.7-1774512263 as podvm-bootc
