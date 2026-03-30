@@ -34,10 +34,12 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	secv1 "github.com/openshift/api/security/v1"
 
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	// +kubebuilder:scaffold:imports
 )
@@ -75,6 +77,7 @@ var _ = BeforeSuite(func() {
 			filepath.Join("..", "config", "extension-crds", "machineconfig.crd.yaml"),
 			filepath.Join("..", "config", "extension-crds", "machineconfigpool.crd.yaml"),
 			filepath.Join("..", "config", "extension-crds", "scc.crd.yaml"),
+			filepath.Join("..", "config", "extension-crds", "infrastructure.crd.yaml"),
 		},
 		WebhookInstallOptions: webhookOptions,
 	}
@@ -99,13 +102,17 @@ var _ = BeforeSuite(func() {
 
 	err = secv1.AddToScheme(s)
 	Expect(err).ToNot(HaveOccurred())
+
+	err = configv1.Install(s)
+	Expect(err).ToNot(HaveOccurred())
 	err = corev1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:scheme
 
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
-		Scheme: scheme.Scheme,
+		Scheme:  scheme.Scheme,
+		Metrics: metricsserver.Options{BindAddress: "0"},
 		WebhookServer: &webhook.DefaultServer{
 			Options: webhook.Options{
 				Port:    testEnv.WebhookInstallOptions.LocalServingPort,
