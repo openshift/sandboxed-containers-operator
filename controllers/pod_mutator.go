@@ -36,7 +36,7 @@ const (
 	KataMemoryOverheadAnnotation = "io.katacontainers.config.hypervisor.memory_overhead"
 )
 
-// +kubebuilder:webhook:path=/mutate-pods-v1,mutating=true,failurePolicy=fail,sideEffects=None,groups="",resources=pods,verbs=create;update,versions=v1,name=mpods.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/mutate-pods-v1,mutating=true,failurePolicy=fail,sideEffects=None,groups="",resources=pods,verbs=create;update,versions=v1,name=mpods.kb.io,admissionReviewVersions=v1,serviceName=controller-manager-service
 
 // PodMutator handles pod mutations to inject Kata-specific annotations
 type PodMutator struct {
