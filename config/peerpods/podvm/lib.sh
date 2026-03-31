@@ -264,21 +264,6 @@ to edit policy.conf"
         fi
     fi
 
-    # Enable image signature check
-    if [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]]; then
-        local agent_config_file="/etc/agent-config.toml"
-
-        cat <<EOF >"${podvm_dir}/files${agent_config_file}"
-server_addr = "unix:///run/kata-containers/agent.sock"
-guest_components_procs = "none"
-image_registry_auth = "file:///run/peerpod/auth.json"
-enable_signature_verification = true
-image_policy_file = "kbs:///default/security-policy/osc"
-EOF
-        sed -i "s,/run/peerpod/agent-config.toml,${agent_config_file},g" \
-            "${podvm_dir}"/files/etc/systemd/system/kata-agent.service
-        echo "sudo cp -a /tmp/files${agent_config_file} ${agent_config_file}" >>"${podvm_dir}"/qcow2/copy-files.sh
-    fi
 }
 
 # Download and extract the pause container image
