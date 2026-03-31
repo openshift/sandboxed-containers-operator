@@ -288,28 +288,26 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 		},
 	}
 
-	// Create the CAA daemonset
-	ds = r.processDaemonsetForCAA(ds)
-	if err := r.processProviderConfigCAA(ds); err != nil {
-		r.Log.Error(err, "Failed setting cloud provider specific configuration for cloud-api-adaptor DS")
-		return err
-	}
-	r.Log.Info("Got CAA ds manifest", "ds", ds)
-
-	if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
-		r.Log.Error(err, "Failed setting ControllerReference for cloud-api-adaptor DS")
-		return err
-	}
-
-	err := r.Client.Update(context.TODO(), ds)
-	if err != nil && k8serrors.IsNotFound(err) {
-		r.Log.Error(err, "cloud-api-adaptor daemonset doesn't exist. Creating")
-		err = r.Client.Create(context.TODO(), ds)
-		if err != nil {
-			r.Log.Error(err, "failed to create cloud-api-adaptor daemonset")
+	result, err := controllerutil.CreateOrUpdate(context.TODO(), r.Client, ds, func() error {
+		// Create the CAA daemonset
+		ds = r.processDaemonsetForCAA(ds)
+		if err := r.processProviderConfigCAA(ds); err != nil {
+			r.Log.Error(err, "Failed setting cloud provider specific configuration for cloud-api-adaptor DS")
 			return err
 		}
+		r.Log.Info("Got CAA ds manifest", "ds", ds)
+
+		if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
+			r.Log.Error(err, "Failed setting ControllerReference for cloud-api-adaptor DS")
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		r.Log.Error(err, "failed to reconcile cloud-api-adaptor daemonset")
+		return err
 	}
+	r.Log.Info("Reconciled CAA daemonset", "result", result)
 
 	// Create the mutating webhook deployment
 	err = r.createMutatingWebhookDeployment()
