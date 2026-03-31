@@ -23,6 +23,7 @@ import (
 	"maps"
 	"os"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"time"
 
@@ -2345,16 +2346,21 @@ func (r *KataConfigOpenShiftReconciler) postKataInstallation() (*ctrl.Result, er
 	}
 
 	// creating kata-nvidia-gpu runtime class if node labels exist
-	err = r.createRuntimeClass(
-		kataNvidiaGPURuntimeClassName,
-		kataNvidiaGPURuntimeClassCpuOverhead,
-		kataNvidiaGPURuntimeClassMemOverhead,
-		"",                            /* nil extended resource overhead */
-		kataNvidiaGPURuntimeClassName, /* reused for handler */
-		nvidiaGPUNodeLabels)
+	// Skip GPU runtime classes on s390x architecture as NVIDIA GPUs are not supported
+	if goruntime.GOARCH != "s390x" {
+		err = r.createRuntimeClass(
+			kataNvidiaGPURuntimeClassName,
+			kataNvidiaGPURuntimeClassCpuOverhead,
+			kataNvidiaGPURuntimeClassMemOverhead,
+			"",                            /* nil extended resource overhead */
+			kataNvidiaGPURuntimeClassName, /* reused for handler */
+			nvidiaGPUNodeLabels)
 
-	if err != nil {
-		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		if err != nil {
+			return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		}
+	} else {
+		r.Log.Info("Skipping kata-nvidia-gpu runtime class creation on s390x architecture")
 	}
 
 	r.Log.Info("create Scc")
