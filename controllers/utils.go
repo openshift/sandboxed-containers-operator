@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -42,7 +43,10 @@ type eventInfo struct {
 var eventCache = make(map[string]eventInfo)
 var mutex = &sync.Mutex{}
 
-// IsOpenShift detects if we are running in OpenShift using the discovery client
+// IsOpenShift detects if we are running in OpenShift.
+// Use a single group-version probe instead of listing all API groups: aggregated
+// discovery can return ErrGroupDiscoveryFailed when an APIService is unhealthy
+// (e.g. metrics.k8s.io), which breaks ServerGroups() on some client-go versions.
 func IsOpenShift() (bool, error) {
 	cfg, err := config.GetConfig()
 	if err != nil {
@@ -54,22 +58,18 @@ func IsOpenShift() (bool, error) {
 		return false, err
 	}
 
-	// We only need API group names to detect OpenShift.
-	// Avoid ServerGroupsAndResources(), which can fail when any aggregated
-	// APIService is unhealthy (for example metrics.k8s.io) and would
-	// unnecessarily crash operator startup.
-	apiGroups, err := discoveryClient.ServerGroups()
-	if err != nil {
-		return false, err
+	_, err = discoveryClient.ServerResourcesForGroupVersion("config.openshift.io/v1")
+	if err == nil {
+		return true, nil
 	}
-
-	for i := 0; i < len(apiGroups.Groups); i++ {
-		if apiGroups.Groups[i].Name == "config.openshift.io" {
-			return true, nil
-		}
+	if k8serrors.IsNotFound(err) {
+		return false, nil
 	}
-
-	return false, nil
+	var status *k8serrors.StatusError
+	if errors.As(err, &status) && status.Status().Code == 403 {
+		return true, nil
+	}
+	return false, err
 }
 
 func parseJobYAML(yamlData []byte) (*batchv1.Job, error) {
