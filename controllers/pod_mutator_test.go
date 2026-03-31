@@ -97,6 +97,35 @@ func TestPodMutator_getMemoryOverheadForKataPod(t *testing.T) {
 			expectError:   false,
 		},
 		{
+			name: "Pod with kata-qemu-runtime-rs runtime class",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					RuntimeClassName: stringPtr("kata-qemu-runtime-rs"),
+				},
+			},
+			kataConfigs: []kataconfigurationv1.KataConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-kataconfig",
+					},
+					Status: kataconfigurationv1.KataConfigStatus{
+						RuntimeClasses: []string{"kata", "kata-qemu-runtime-rs"},
+					},
+				},
+			},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      FgConfigMapName,
+					Namespace: OperatorNamespace,
+				},
+				Data: map[string]string{
+					MemoryOverheadMBConfig: "400",
+				},
+			},
+			expectedValue: 400,
+			expectError:   false,
+		},
+		{
 			name: "Pod with Kata runtime class and no ConfigMap should use default",
 			pod: &corev1.Pod{
 				Spec: corev1.PodSpec{

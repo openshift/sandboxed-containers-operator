@@ -11,14 +11,18 @@
 # - Webhook annotation injection
 # - ConfigMap-based configuration
 # - Default value handling
-# - Kata runtime consumption of the annotation
+# - Kata runtime consumption of the annotation (Part 2: oc debug node — default)
+#
+# SKIP_RUNTIME_TESTS=true skips Part 2 (webhook-only). Default is false.
+#
+# MEMORY_OVERHEAD_TEST_RUNTIME_CLASSES: optional space-separated list (e.g. "kata kata-qemu-runtime-rs").
+# If unset, tests use "kata" and "kata-qemu-runtime-rs" when both appear in KataConfig.status.runtimeClasses.
 
 set -e
 
 NAMESPACE="openshift-sandboxed-containers-operator"
 CONFIGMAP_NAME="osc-feature-gates"
 KATACONFIG_NAME="test-kataconfig"
-POD_NAME="test-pod"
 TEST_NAMESPACE="webhook-test-$$"
 SKIP_RUNTIME_TESTS=${SKIP_RUNTIME_TESTS:-false}
 
@@ -86,9 +90,10 @@ if ! $KUBECTL get deployment controller-manager -n $NAMESPACE >/dev/null 2>&1; t
 fi
 print_status "ok" "Operator is running"
 
-# Check if webhook is registered
+# Check if webhook is registered (webhook name mpods.kb.io is inside the object,
+# not in the default kubectl list columns)
 echo "2. Checking if pod mutating webhook is registered..."
-if ! $KUBECTL get mutatingwebhookconfiguration 2>/dev/null | grep -qE "mpods|sandboxed-containers-pod-mutator"; then
+if ! $KUBECTL get mutatingwebhookconfigurations -o yaml 2>/dev/null | grep -qE 'name:\s*mpods\.kb\.io|/mutate-pods-v1'; then
     print_status "warn" "Memory overhead webhook not found"
     echo "This may be expected if the webhook is not yet deployed"
     echo ""
@@ -123,18 +128,31 @@ EOF
 fi
 print_status "ok" "KataConfig found with runtime classes: $RUNTIME_CLASSES"
 
-# Determine which runtime class to use for testing
-if echo "$RUNTIME_CLASSES" | grep -q "kata "; then
-    TEST_RUNTIME_CLASS="kata"
-elif echo "$RUNTIME_CLASSES" | grep -qw "kata"; then
-    TEST_RUNTIME_CLASS="kata"
-elif echo "$RUNTIME_CLASSES" | grep -q "kata-remote"; then
-    TEST_RUNTIME_CLASS="kata-remote"
+# Build runtime class list for webhook + Part 2 (kata + runtime-rs when present)
+if [ -n "${MEMORY_OVERHEAD_TEST_RUNTIME_CLASSES:-}" ]; then
+    RTC_LIST=$(echo "$MEMORY_OVERHEAD_TEST_RUNTIME_CLASSES" | xargs)
 else
-    TEST_RUNTIME_CLASS="kata"
-    print_status "warn" "Using default runtime class 'kata' - may not match KataConfig"
+    RTC_LIST=""
+    if echo "$RUNTIME_CLASSES" | grep -qw "kata"; then
+        RTC_LIST="${RTC_LIST}kata "
+    fi
+    if echo "$RUNTIME_CLASSES" | grep -qw "kata-qemu-runtime-rs"; then
+        RTC_LIST="${RTC_LIST}kata-qemu-runtime-rs "
+    fi
+    RTC_LIST=$(echo "$RTC_LIST" | xargs)
+    if [ -z "$RTC_LIST" ]; then
+        if echo "$RUNTIME_CLASSES" | grep -qw "kata-remote"; then
+            RTC_LIST="kata-remote"
+        else
+            RTC_LIST="kata"
+            print_status "warn" "No kata / kata-qemu-runtime-rs in status; using 'kata' for ConfigMap steps"
+        fi
+    fi
 fi
-echo "   Using runtime class: $TEST_RUNTIME_CLASS"
+FIRST_RTC=$(echo "$RTC_LIST" | awk '{print $1}')
+TEST_RUNTIME_CLASS="$FIRST_RTC"
+echo "   Runtime classes under test: $RTC_LIST"
+echo "   ConfigMap update / default tests use: $TEST_RUNTIME_CLASS"
 
 # Create test namespace
 echo "4. Creating test namespace..."
@@ -157,16 +175,19 @@ print_status "ok" "ConfigMap created"
 # Wait a moment for the operator to pick up the ConfigMap
 sleep 2
 
-# Create test pod with Kata runtime class
-echo "6. Creating test pod with $TEST_RUNTIME_CLASS runtime class..."
-cat <<EOF | $KUBECTL apply -f -
+# Create test pod(s) per runtime class and verify annotation (512)
+echo "6–8. Creating test pods and checking memory overhead annotation (512) per runtime class..."
+for rtc in $RTC_LIST; do
+    POD_NAME_RTC="test-pod-${rtc}"
+    echo "   Runtime class: $rtc — pod $POD_NAME_RTC"
+    cat <<EOF | $KUBECTL apply -f -
 apiVersion: v1
 kind: Pod
 metadata:
-  name: $POD_NAME
+  name: $POD_NAME_RTC
   namespace: $TEST_NAMESPACE
 spec:
-  runtimeClassName: $TEST_RUNTIME_CLASS
+  runtimeClassName: $rtc
   securityContext:
     runAsNonRoot: true
     seccompProfile:
@@ -189,39 +210,33 @@ spec:
   restartPolicy: Never
   terminationGracePeriodSeconds: 0
 EOF
+    sleep 5
+    print_status "ok" "Pod created: $POD_NAME_RTC"
 
-# Wait for pod to be admitted
-echo "7. Waiting for pod to be admitted..."
-sleep 5
-print_status "ok" "Pod created"
+    echo "   Checking annotation on $POD_NAME_RTC..."
+    ANNOTATION_VALUE=$($KUBECTL get pod "$POD_NAME_RTC" -n $TEST_NAMESPACE -o jsonpath='{.metadata.annotations.io\.katacontainers\.config\.hypervisor\.memory_overhead}' 2>/dev/null || echo "")
 
-# Check if memory overhead annotation was injected
-echo "8. Checking if memory overhead annotation was injected..."
-ANNOTATION_VALUE=$($KUBECTL get pod $POD_NAME -n $TEST_NAMESPACE -o jsonpath='{.metadata.annotations.io\.katacontainers\.config\.hypervisor\.memory_overhead}' 2>/dev/null || echo "")
+    if [ -z "$ANNOTATION_VALUE" ]; then
+        print_status "fail" "Memory overhead annotation not found for runtime class '$rtc'"
+        echo ""
+        echo "Pod annotations:"
+        $KUBECTL get pod "$POD_NAME_RTC" -n $TEST_NAMESPACE -o jsonpath='{.metadata.annotations}' 2>/dev/null | python3 -m json.tool 2>/dev/null || $KUBECTL get pod "$POD_NAME_RTC" -n $TEST_NAMESPACE -o jsonpath='{.metadata.annotations}'
+        echo ""
+        echo "Possible causes:"
+        echo "  - Webhook is not intercepting pod creation"
+        echo "  - Runtime class '$rtc' not in KataConfig.status.runtimeClasses"
+        echo "  - ConfigMap not in correct namespace"
+        exit 1
+    fi
 
-if [ -z "$ANNOTATION_VALUE" ]; then
-    print_status "fail" "Memory overhead annotation not found"
-    echo ""
-    echo "Pod annotations:"
-    $KUBECTL get pod $POD_NAME -n $TEST_NAMESPACE -o jsonpath='{.metadata.annotations}' 2>/dev/null | python3 -m json.tool 2>/dev/null || $KUBECTL get pod $POD_NAME -n $TEST_NAMESPACE -o jsonpath='{.metadata.annotations}'
-    echo ""
-    echo ""
-    echo "Possible causes:"
-    echo "  - Webhook is not intercepting pod creation"
-    echo "  - Runtime class '$TEST_RUNTIME_CLASS' not in KataConfig.status.runtimeClasses"
-    echo "  - ConfigMap not in correct namespace"
-    exit 1
-fi
+    print_status "ok" "Annotation on $rtc pod: $ANNOTATION_VALUE"
 
-print_status "ok" "Memory overhead annotation found: $ANNOTATION_VALUE"
-
-# Verify the annotation value matches the ConfigMap
-if [ "$ANNOTATION_VALUE" != "512" ]; then
-    print_status "fail" "Expected annotation value '512', got '$ANNOTATION_VALUE'"
-    exit 1
-fi
-
-print_status "ok" "Annotation value is correct: $ANNOTATION_VALUE"
+    if [ "$ANNOTATION_VALUE" != "512" ]; then
+        print_status "fail" "Expected annotation value '512' for $rtc, got '$ANNOTATION_VALUE'"
+        exit 1
+    fi
+done
+print_status "ok" "All listed runtime classes have correct annotation (512)"
 
 # Test with different memory overhead value
 echo "9. Testing ConfigMap update (memoryOverheadMB=768)..."
@@ -407,17 +422,19 @@ data:
 EOF
     sleep 2
 
-    # Create a pod for runtime testing
-    POD_NAME_RUNTIME="test-pod-runtime"
-    echo "13. Creating pod for runtime verification..."
-    cat <<EOF | $KUBECTL apply -f -
+    PART2_ANY_OK=false
+
+    for rtc in $RTC_LIST; do
+        POD_NAME_RUNTIME="test-pod-runtime-${rtc}"
+        echo "13. Runtime verification pod for runtime class: $rtc ($POD_NAME_RUNTIME)"
+        cat <<EOF | $KUBECTL apply -f -
 apiVersion: v1
 kind: Pod
 metadata:
   name: $POD_NAME_RUNTIME
   namespace: $TEST_NAMESPACE
 spec:
-  runtimeClassName: $TEST_RUNTIME_CLASS
+  runtimeClassName: $rtc
   securityContext:
     runAsNonRoot: true
     seccompProfile:
@@ -441,65 +458,53 @@ spec:
   terminationGracePeriodSeconds: 0
 EOF
 
-    # Wait for pod to be scheduled and running
-    echo "14. Waiting for pod to be running on a Kata-enabled node..."
-    RUNTIME_TEST_TIMEOUT=120
-    RUNTIME_TEST_START=$(date +%s)
-    POD_RUNNING=false
+        echo "14. Waiting for $POD_NAME_RUNTIME to be running on a Kata-enabled node..."
+        RUNTIME_TEST_TIMEOUT=120
+        RUNTIME_TEST_START=$(date +%s)
+        POD_RUNNING=false
 
-    while [ $(($(date +%s) - RUNTIME_TEST_START)) -lt $RUNTIME_TEST_TIMEOUT ]; do
-        POD_PHASE=$($KUBECTL get pod $POD_NAME_RUNTIME -n $TEST_NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-        if [ "$POD_PHASE" = "Running" ]; then
-            POD_RUNNING=true
-            break
-        elif [ "$POD_PHASE" = "Failed" ] || [ "$POD_PHASE" = "Unknown" ]; then
-            print_status "warn" "Pod failed to start (phase: $POD_PHASE)"
-            echo "   This may be expected if no Kata-enabled nodes are available"
-            break
-        fi
-        echo "   Pod phase: $POD_PHASE, waiting..."
-        sleep 5
-    done
+        while [ $(($(date +%s) - RUNTIME_TEST_START)) -lt $RUNTIME_TEST_TIMEOUT ]; do
+            POD_PHASE=$($KUBECTL get pod "$POD_NAME_RUNTIME" -n $TEST_NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+            if [ "$POD_PHASE" = "Running" ]; then
+                POD_RUNNING=true
+                break
+            elif [ "$POD_PHASE" = "Failed" ] || [ "$POD_PHASE" = "Unknown" ]; then
+                print_status "warn" "Pod $POD_NAME_RUNTIME failed to start (phase: $POD_PHASE)"
+                echo "   This may be expected if no Kata-enabled nodes or handler missing for this runtime class"
+                break
+            fi
+            echo "   Pod phase: $POD_PHASE, waiting..."
+            sleep 5
+        done
 
-    if [ "$POD_RUNNING" = "true" ]; then
-        print_status "ok" "Pod is running"
+        if [ "$POD_RUNNING" = "true" ]; then
+            print_status "ok" "Pod $POD_NAME_RUNTIME is running"
+            PART2_ANY_OK=true
 
-        # Get the node where the pod is running
-        NODE_NAME=$($KUBECTL get pod $POD_NAME_RUNTIME -n $TEST_NAMESPACE -o jsonpath='{.spec.nodeName}')
-        echo "   Pod is running on node: $NODE_NAME"
+            NODE_NAME=$($KUBECTL get pod "$POD_NAME_RUNTIME" -n $TEST_NAMESPACE -o jsonpath='{.spec.nodeName}')
+            echo "   Pod is running on node: $NODE_NAME"
+            POD_UID=$($KUBECTL get pod "$POD_NAME_RUNTIME" -n $TEST_NAMESPACE -o jsonpath='{.metadata.uid}')
+            echo "   Pod UID: $POD_UID"
 
-        # Get the pod UID for finding the sandbox
-        POD_UID=$($KUBECTL get pod $POD_NAME_RUNTIME -n $TEST_NAMESPACE -o jsonpath='{.metadata.uid}')
-        echo "   Pod UID: $POD_UID"
+            echo "15. Verifying Kata runtime configuration on node (runtime class: $rtc)..."
 
-        echo "15. Verifying Kata runtime configuration on node..."
-        
-        # Create a debug script to run on the node
-        DEBUG_SCRIPT='
+            DEBUG_SCRIPT=$(cat <<'EOS'
 #!/bin/bash
 set -e
-
-echo "=== Checking Kata VM configuration ==="
-
-# Find sandbox ID from crictl
-SANDBOX_ID=$(crictl pods --name test-pod-runtime -q 2>/dev/null | head -1)
+POD_NAME="$1"
+echo "=== Checking Kata VM configuration (pod: $POD_NAME) ==="
+SANDBOX_ID=$(crictl pods --name "$POD_NAME" -q 2>/dev/null | head -1)
 if [ -z "$SANDBOX_ID" ]; then
     echo "Could not find sandbox ID via crictl"
-    # Try to find via /run/vc
     echo "Searching in /run/vc/vm/..."
     ls -la /run/vc/vm/ 2>/dev/null || echo "No VMs found in /run/vc/vm/"
     exit 1
 fi
-
 echo "Sandbox ID: $SANDBOX_ID"
-
-# Check for hypervisor.json or similar config
 VM_PATH="/run/vc/vm/${SANDBOX_ID}"
 if [ -d "$VM_PATH" ]; then
     echo "VM directory found: $VM_PATH"
     ls -la "$VM_PATH"
-    
-    # Look for configuration files
     for config_file in hypervisor.json config.json state.json; do
         if [ -f "$VM_PATH/$config_file" ]; then
             echo ""
@@ -510,8 +515,6 @@ if [ -d "$VM_PATH" ]; then
 else
     echo "VM directory not found at $VM_PATH"
 fi
-
-# Check QEMU process for memory settings
 echo ""
 echo "=== QEMU process memory settings ==="
 QEMU_PID=$(pgrep -f "qemu.*$SANDBOX_ID" 2>/dev/null | head -1)
@@ -520,72 +523,50 @@ if [ -n "$QEMU_PID" ]; then
     ps -p $QEMU_PID -o args= 2>/dev/null | tr " " "\n" | grep -E "^-m|memory" || echo "(memory args not found in cmdline)"
 else
     echo "QEMU process not found for sandbox"
-    # Try to find any QEMU process
-    echo "Looking for any QEMU processes..."
     pgrep -a qemu 2>/dev/null | head -3 || echo "No QEMU processes found"
 fi
-
-# Check kata-runtime logs for memory overhead
 echo ""
 echo "=== Recent kata-related logs ==="
 journalctl -u crio --since "5 minutes ago" 2>/dev/null | grep -i "memory_overhead\|memory overhead" | tail -10 || echo "(no memory_overhead logs found)"
-
-# Check if the annotation made it to containerd/CRI-O
 echo ""
 echo "=== Pod annotations in CRI ==="
 crictl inspectp $SANDBOX_ID 2>/dev/null | grep -A5 -B5 "memory_overhead" || echo "(annotation not found in sandbox inspect)"
-'
+EOS
+)
 
-        # Run the debug script on the node
-        echo ""
-        echo "   Running diagnostics on node $NODE_NAME..."
-        echo "   (This uses 'oc debug node' which may take a moment)"
-        echo ""
-        
-        # Execute via oc debug node
-        if command -v oc &> /dev/null; then
-            # Use oc debug for OpenShift
-            # Run non-interactively for automation; newer oc rejects -it here.
-            RUNTIME_OUTPUT=$($KUBECTL debug node/$NODE_NAME --image=registry.access.redhat.com/ubi9/ubi:latest -- chroot /host bash -c "$DEBUG_SCRIPT" 2>&1) || true
-        else
-            # For non-OpenShift, try to use a privileged daemonset or direct ssh
-            print_status "warn" "Node debugging requires 'oc debug' (OpenShift) or direct node access"
-            RUNTIME_OUTPUT="Skipped - no node access method available"
-        fi
-
-        echo "   --- Node Debug Output ---"
-        echo "$RUNTIME_OUTPUT" | sed 's/^/   /'
-        echo "   --- End Debug Output ---"
-        echo ""
-
-        # Check if we found evidence of the memory overhead being applied
-        if echo "$RUNTIME_OUTPUT" | grep -qi "memory_overhead\|512"; then
-            print_status "ok" "Found memory overhead configuration in Kata runtime"
-        else
-            print_status "warn" "Could not verify memory overhead in Kata runtime config"
-            echo "   This may be due to:"
-            echo "   - Different Kata configuration storage location"
-            echo "   - Kata version differences"
-            echo "   - The annotation is processed differently"
             echo ""
-            echo "   Manual verification steps:"
-            echo "   1. SSH to node: $NODE_NAME"
-            echo "   2. Find sandbox: crictl pods --name $POD_NAME_RUNTIME"
-            echo "   3. Check VM config: ls /run/vc/vm/<sandbox-id>/"
-            echo "   4. Check QEMU args: ps aux | grep qemu"
-        fi
+            echo "   Running diagnostics on node $NODE_NAME for pod $POD_NAME_RUNTIME..."
+            echo ""
 
-    else
-        print_status "warn" "Pod did not reach Running state within ${RUNTIME_TEST_TIMEOUT}s"
-        echo "   This is expected if:"
-        echo "   - No nodes have Kata runtime installed"
-        echo "   - Nodes are not labeled for Kata workloads"
-        echo "   - RuntimeClass '$TEST_RUNTIME_CLASS' is not available"
-        echo ""
-        echo "   Pod events:"
-        $KUBECTL get events -n $TEST_NAMESPACE --field-selector involvedObject.name=$POD_NAME_RUNTIME --sort-by='.lastTimestamp' | tail -10
-        echo ""
-        echo "   Skipping runtime verification (webhook tests still passed)"
+            if command -v oc &> /dev/null; then
+                RUNTIME_OUTPUT=$($KUBECTL debug node/"$NODE_NAME" --image=registry.access.redhat.com/ubi9/ubi:latest -- chroot /host bash -c "$DEBUG_SCRIPT" _ "$POD_NAME_RUNTIME" 2>&1) || true
+            else
+                print_status "warn" "Node debugging requires 'oc debug' (OpenShift) or direct node access"
+                RUNTIME_OUTPUT="Skipped - no node access method available"
+            fi
+
+            echo "   --- Node Debug Output ---"
+            echo "$RUNTIME_OUTPUT" | sed 's/^/   /'
+            echo "   --- End Debug Output ---"
+            echo ""
+
+            if echo "$RUNTIME_OUTPUT" | grep -qi "memory_overhead\|512"; then
+                print_status "ok" "Found memory overhead configuration in Kata runtime ($rtc)"
+            else
+                print_status "warn" "Could not verify memory overhead in Kata runtime config ($rtc)"
+                echo "   Manual verification: crictl pods --name $POD_NAME_RUNTIME on node $NODE_NAME"
+            fi
+        else
+            print_status "warn" "Pod $POD_NAME_RUNTIME did not reach Running within ${RUNTIME_TEST_TIMEOUT}s"
+            echo "   Runtime class: $rtc — check CRI handler and Kata-enabled nodes."
+            echo "   Pod events:"
+            $KUBECTL get events -n $TEST_NAMESPACE --field-selector involvedObject.name="$POD_NAME_RUNTIME" --sort-by='.lastTimestamp' | tail -10
+            echo ""
+        fi
+    done
+
+    if [ "$PART2_ANY_OK" != "true" ]; then
+        echo "   No runtime verification pods reached Running; webhook tests still passed."
     fi
 fi
 
@@ -604,10 +585,10 @@ echo ""
 echo "Runtime Tests:"
 if [ "$SKIP_RUNTIME_TESTS" = "true" ]; then
     print_status "warn" "Skipped (SKIP_RUNTIME_TESTS=true)"
-elif [ "$POD_RUNNING" = "true" ]; then
-    print_status "info" "Ran diagnostics on node (see output above)"
+elif [ "${PART2_ANY_OK:-false}" = "true" ]; then
+    print_status "info" "Ran node diagnostics for at least one runtime class (see output above)"
 else
-    print_status "warn" "Skipped (pod did not reach Running state)"
+    print_status "warn" "Skipped or no pod reached Running (see Part 2 output)"
 fi
 echo ""
 echo "Configuration:"

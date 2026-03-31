@@ -94,6 +94,10 @@ const (
 	kataNvidiaGPURuntimeClassName        = "kata-nvidia-gpu"
 	kataNvidiaGPURuntimeClassCpuOverhead = "1"
 	kataNvidiaGPURuntimeClassMemOverhead = "4096Mi"
+
+	// qemu-runtime-rs shim; name/handler match upstream kata-deploy.
+	// Nodes must register this CRI handler (same extension as the default kata shim).
+	kataQemuRuntimeRsRuntimeClassName = "kata-qemu-runtime-rs"
 )
 
 var (
@@ -2383,6 +2387,19 @@ func (r *KataConfigOpenShiftReconciler) postKataInstallation() (*ctrl.Result, er
 		kataNvidiaGPURuntimeClassName, /* reused for handler */
 		nvidiaGPUNodeLabels)
 
+	if err != nil {
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+	}
+
+	err = r.createRuntimeClass(
+		kataQemuRuntimeRsRuntimeClassName,
+		kataRuntimeClassCpuOverhead,
+		kataRuntimeClassMemOverhead,
+		"",
+		kataQemuRuntimeRsRuntimeClassName,
+		map[string]string{
+			"feature.node.kubernetes.io/runtime.kata": "true",
+		})
 	if err != nil {
 		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
