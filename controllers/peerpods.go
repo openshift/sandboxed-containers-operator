@@ -43,7 +43,7 @@ func MountProgagationRef(mode corev1.MountPropagationMode) *corev1.MountPropagat
 	return &mode
 }
 
-func (r *KataConfigOpenShiftReconciler) processDaemonsetForCAA() *appsv1.DaemonSet {
+func (r *KataConfigOpenShiftReconciler) processDaemonsetForCAA(ds *appsv1.DaemonSet) *appsv1.DaemonSet {
 	var (
 		runPrivileged                = true
 		runAsUser              int64 = 0
@@ -62,129 +62,126 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForCAA() *appsv1.DaemonS
 		r.Log.Info("RELATED_IMAGE_CAA env var is unset or empty, cloud-api-adaptor pods will not run")
 	}
 
-	return &appsv1.DaemonSet{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "apps/v1",
-			Kind:       "DaemonSet",
+	ds.TypeMeta = metav1.TypeMeta{
+		APIVersion: "apps/v1",
+		Kind:       "DaemonSet",
+	}
+
+	ds.Spec = appsv1.DaemonSetSpec{
+		Selector: &metav1.LabelSelector{
+			MatchLabels: dsLabelSelectors,
 		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      caaDsName,
-			Namespace: os.Getenv("PEERPODS_NAMESPACE"),
-		},
-		Spec: appsv1.DaemonSetSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: dsLabelSelectors,
-			},
-			UpdateStrategy: appsv1.DaemonSetUpdateStrategy{
-				Type: "RollingUpdate",
-				RollingUpdate: &appsv1.RollingUpdateDaemonSet{
-					MaxUnavailable: &intstr.IntOrString{
-						Type:   intstr.Int,
-						IntVal: 1,
-					},
+		UpdateStrategy: appsv1.DaemonSetUpdateStrategy{
+			Type: "RollingUpdate",
+			RollingUpdate: &appsv1.RollingUpdateDaemonSet{
+				MaxUnavailable: &intstr.IntOrString{
+					Type:   intstr.Int,
+					IntVal: 1,
 				},
 			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: dsLabelSelectors,
-				},
-				Spec: corev1.PodSpec{
-					ServiceAccountName: "default",
-					NodeSelector:       nodeSelector,
-					HostNetwork:        true,
-					Containers: []corev1.Container{
-						{
-							Name:            "caa-pod",
-							Image:           imageString,
-							ImagePullPolicy: "Always",
-							SecurityContext: &corev1.SecurityContext{
-								// TODO - do we really need to run as root?
-								Privileged: &runPrivileged,
-								RunAsUser:  &runAsUser,
-							},
-							Command: []string{"/usr/local/bin/entrypoint.sh"},
-							Env: []corev1.EnvVar{
-								{
-									Name: "NODE_NAME",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "spec.nodeName",
-										},
+		},
+		Template: corev1.PodTemplateSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: dsLabelSelectors,
+			},
+			Spec: corev1.PodSpec{
+				ServiceAccountName: "default",
+				NodeSelector:       nodeSelector,
+				HostNetwork:        true,
+				Containers: []corev1.Container{
+					{
+						Name:            "caa-pod",
+						Image:           imageString,
+						ImagePullPolicy: "Always",
+						SecurityContext: &corev1.SecurityContext{
+							// TODO - do we really need to run as root?
+							Privileged: &runPrivileged,
+							RunAsUser:  &runAsUser,
+						},
+						Command: []string{"/usr/local/bin/entrypoint.sh"},
+						Env: []corev1.EnvVar{
+							{
+								Name: "NODE_NAME",
+								ValueFrom: &corev1.EnvVarSource{
+									FieldRef: &corev1.ObjectFieldSelector{
+										FieldPath: "spec.nodeName",
 									},
 								},
 							},
-							EnvFrom: []corev1.EnvFromSource{
-								{
-									SecretRef: &corev1.SecretEnvSource{
-										LocalObjectReference: corev1.LocalObjectReference{
-											Name: "peer-pods-secret",
-										},
-									},
-								},
-								{
-									ConfigMapRef: &corev1.ConfigMapEnvSource{
-										LocalObjectReference: corev1.LocalObjectReference{
-											Name: "peer-pods-cm",
-										},
+						},
+						EnvFrom: []corev1.EnvFromSource{
+							{
+								SecretRef: &corev1.SecretEnvSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: "peer-pods-secret",
 									},
 								},
 							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "auth-json-volume",
-									MountPath: "/root/containers/",
-									ReadOnly:  true,
-								}, {
-									Name:      "ssh",
-									MountPath: "/root/.ssh",
-									ReadOnly:  true,
+							{
+								ConfigMapRef: &corev1.ConfigMapEnvSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: "peer-pods-cm",
+									},
 								},
-								{
-									MountPath: "/run/peerpod",
-									Name:      "pods-dir",
-								},
-								{
-									MountPath:        "/run/netns",
-									MountPropagation: MountProgagationRef(corev1.MountPropagationHostToContainer),
-									Name:             "netns",
-								},
+							},
+						},
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "auth-json-volume",
+								MountPath: "/root/containers/",
+								ReadOnly:  true,
+							},
+							{
+								Name:      "ssh",
+								MountPath: "/root/.ssh",
+								ReadOnly:  true,
+							},
+							{
+								MountPath: "/run/peerpod",
+								Name:      "pods-dir",
+							},
+							{
+								MountPath:        "/run/netns",
+								MountPropagation: MountProgagationRef(corev1.MountPropagationHostToContainer),
+								Name:             "netns",
 							},
 						},
 					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "auth-json-volume",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName:  "auth-json-secret",
-									DefaultMode: &defaultMode,
-									Optional:    &authJsonSecretOptional,
-								},
-							},
-						}, {
-							Name: "ssh",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName:  "ssh-key-secret",
-									DefaultMode: &defaultMode,
-									Optional:    &sshSecretOptional,
-								},
+				},
+				Volumes: []corev1.Volume{
+					{
+						Name: "auth-json-volume",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								SecretName:  "auth-json-secret",
+								DefaultMode: &defaultMode,
+								Optional:    &authJsonSecretOptional,
 							},
 						},
-						{
-							Name: "pods-dir",
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Path: "/run/peerpod",
-								},
+					},
+					{
+						Name: "ssh",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								SecretName:  "ssh-key-secret",
+								DefaultMode: &defaultMode,
+								Optional:    &sshSecretOptional,
 							},
 						},
-						{
-							Name: "netns",
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Path: "/run/netns",
-								},
+					},
+					{
+						Name: "pods-dir",
+						VolumeSource: corev1.VolumeSource{
+							HostPath: &corev1.HostPathVolumeSource{
+								Path: "/run/peerpod",
+							},
+						},
+					},
+					{
+						Name: "netns",
+						VolumeSource: corev1.VolumeSource{
+							HostPath: &corev1.HostPathVolumeSource{
+								Path: "/run/netns",
 							},
 						},
 					},
@@ -192,6 +189,8 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForCAA() *appsv1.DaemonS
 			},
 		},
 	}
+
+	return ds
 }
 
 // Handles provider specific parts of the CAA Ds
@@ -282,8 +281,15 @@ func (r *KataConfigOpenShiftReconciler) processProviderConfigCAA(ds *appsv1.Daem
 
 // Create the PeerPodConfig CRDs and misc configs required for peer-pods
 func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
+	ds := &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      caaDsName,
+			Namespace: os.Getenv("PEERPODS_NAMESPACE"),
+		},
+	}
+
 	// Create the CAA daemonset
-	ds := r.processDaemonsetForCAA()
+	ds = r.processDaemonsetForCAA(ds)
 	if err := r.processProviderConfigCAA(ds); err != nil {
 		r.Log.Error(err, "Failed setting cloud provider specific configuration for cloud-api-adaptor DS")
 		return err
@@ -336,7 +342,12 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 }
 
 func (r *KataConfigOpenShiftReconciler) disablePeerPodsMiscConfigs() error {
-	ds := r.processDaemonsetForCAA()
+	ds := &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      caaDsName,
+			Namespace: os.Getenv("PEERPODS_NAMESPACE"),
+		},
+	}
 	err := r.Client.Delete(context.TODO(), ds)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
