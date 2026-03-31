@@ -125,7 +125,11 @@ spec:
     # Choose the kata workload test and newest supported OCP version.
     - name: prowjob-sanity
       displayName: "Running prow job $(params.PROWJOB_NAME)"
-      timeout: "4h"
+      # A fail on sanity should stop and fail the pipeline
+      #onError: stopAndFail
+      # TODO: revert to stopAndFail when AWS deprovision is fixed
+      onError: continue
+      timeout: "8h"
       when:
         - input: "$(tasks.determine-prowjobs.results.run_sanity)"
           operator: in
@@ -157,7 +161,8 @@ spec:
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-aws-ipi-peerpods
     - name: prowjob-ocp418
       displayName: "Running prow job $(params.PROWJOB_NAME)"
-      timeout: "4h"
+      onError: continue
+      timeout: "8h"
       when:
         - input: "$(tasks.determine-prowjobs.results.run_ocp418)"
           operator: in
@@ -194,7 +199,8 @@ spec:
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate418-aws-ipi-peerpods
     - name: prowjob-ocp419
       displayName: "Running prow job $(params.PROWJOB_NAME)"
-      timeout: "4h"
+      onError: continue
+      timeout: "8h"
       when:
         - input: "$(tasks.determine-prowjobs.results.run_ocp419)"
           operator: in
@@ -231,7 +237,8 @@ spec:
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate419-aws-ipi-peerpods
     - name: prowjob-ocp420
       displayName: "Running prow job $(params.PROWJOB_NAME)"
-      timeout: "4h"
+      onError: continue
+      timeout: "8h"
       when:
         - input: "$(tasks.determine-prowjobs.results.run_ocp420)"
           operator: in
@@ -265,7 +272,8 @@ spec:
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-azure-ipi-peerpods
     - name: prowjob-ocp421
       displayName: "Running prow job $(params.PROWJOB_NAME)"
-      timeout: "4h"
+      onError: continue
+      timeout: "8h"
       when:
         - input: "$(tasks.determine-prowjobs.results.run_ocp421)"
           operator: in
@@ -299,3 +307,55 @@ spec:
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-kata
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-peerpods
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-aws-ipi-peerpods
+  finally:
+    - name: aggregate-status
+      params:
+        - name: SANITY_STATUS
+          value: $(tasks.prowjob-sanity.status)
+        - name: OCP418_STATUS
+          value: $(tasks.prowjob-ocp418.status)
+        - name: OCP419_STATUS
+          value: $(tasks.prowjob-ocp419.status)
+        - name: OCP420_STATUS
+          value: $(tasks.prowjob-ocp420.status)
+        - name: OCP421_STATUS
+          value: $(tasks.prowjob-ocp421.status)
+      taskSpec:
+        params:
+          - name: SANITY_STATUS
+          - name: OCP418_STATUS
+          - name: OCP419_STATUS
+          - name: OCP420_STATUS
+          - name: OCP421_STATUS
+        steps:
+          - name: check-tasks-statuses
+            image: registry.redhat.io/openshift4/ose-cli:latest
+            script: |
+              #!/bin/bash
+              set -e
+
+              failed_count=0
+              if [ "$(params.SANITY_STATUS)" == "Failed" ]; then
+                echo "Some sanity jobs failed"
+                failed_count=$((failed_count+1))
+              fi
+              if [ "$(params.OCP418_STATUS)" == "Failed" ]; then
+                echo "Some OCP 4.18 jobs failed"
+                failed_count=$((failed_count+1))
+              fi
+              if [ "$(params.OCP419_STATUS)" == "Failed" ]; then
+                echo "Some OCP 4.19 jobs failed"
+                failed_count=$((failed_count+1))
+              fi
+              if [ "$(params.OCP420_STATUS)" == "Failed" ]; then
+                echo "Some OCP 4.20 jobs failed"
+                failed_count=$((failed_count+1))
+              fi
+              if [ "$(params.OCP421_STATUS)" == "Failed" ]; then
+                echo "Some OCP 4.21 jobs failed"
+                failed_count=$((failed_count+1))
+              fi
+
+              if [ ${failed_count} -gt 0 ]; then
+                exit 1
+              fi
