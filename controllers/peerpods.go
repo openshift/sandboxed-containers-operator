@@ -43,7 +43,7 @@ func MountProgagationRef(mode corev1.MountPropagationMode) *corev1.MountPropagat
 	return &mode
 }
 
-func (r *KataConfigOpenShiftReconciler) processDaemonsetForCAA(ds *appsv1.DaemonSet) *appsv1.DaemonSet {
+func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet) *appsv1.DaemonSet {
 	var (
 		runPrivileged                = true
 		runAsUser              int64 = 0
@@ -195,11 +195,11 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForCAA(ds *appsv1.Daemon
 
 // Handles provider specific parts of the CAA Ds
 // Modifies the DaemonSet if needed
-func (r *KataConfigOpenShiftReconciler) processProviderConfigCAA(ds *appsv1.DaemonSet) error {
+func (r *KataConfigOpenShiftReconciler) configureCAAProvider(ds *appsv1.DaemonSet) (*appsv1.DaemonSet, error) {
 	r.Log.Info("Getting cloud provider from infra")
 	provider, err := getCloudProviderFromInfra(r.Client)
 	if err != nil {
-		return fmt.Errorf("failed to get cloud provider from infra: %w", err)
+		return nil, fmt.Errorf("failed to get cloud provider from infra: %w", err)
 	}
 
 	switch provider {
@@ -235,7 +235,7 @@ func (r *KataConfigOpenShiftReconciler) processProviderConfigCAA(ds *appsv1.Daem
 			}
 		}
 
-		return nil
+		return ds, nil
 	case AzureProvider:
 		// Only add bound-sa-token volume for Azure federated identity if using STS flow
 		// Check for all STS environment variables (set during OLM installation)
@@ -273,9 +273,9 @@ func (r *KataConfigOpenShiftReconciler) processProviderConfigCAA(ds *appsv1.Daem
 			}
 		}
 
-		return nil
+		return ds, nil
 	default:
-		return nil
+		return ds, nil
 	}
 }
 
@@ -289,9 +289,13 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 	}
 
 	result, err := controllerutil.CreateOrUpdate(context.TODO(), r.Client, ds, func() error {
+		var err error
+
 		// Create the CAA daemonset
-		ds = r.processDaemonsetForCAA(ds)
-		if err := r.processProviderConfigCAA(ds); err != nil {
+		ds = r.configureCAA(ds)
+
+		ds, err = r.configureCAAProvider(ds)
+		if err != nil {
 			r.Log.Error(err, "Failed setting cloud provider specific configuration for cloud-api-adaptor DS")
 			return err
 		}
