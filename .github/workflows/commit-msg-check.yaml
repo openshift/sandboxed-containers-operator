@@ -1,0 +1,26 @@
+# Validate commit messages against project conventions.
+---
+name: commit-msg-check
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  commit-msg-check:
+    name: commit-msg-check
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate commit messages
+        run: ./hack/commit-msg-check.sh origin/${{ github.event.pull_request.base.ref }} ${{ github.event.pull_request.head.sha }}
