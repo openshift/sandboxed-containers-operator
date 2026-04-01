@@ -190,7 +190,7 @@ Tests use hardcoded defaults that can be overridden via `osc-config` ConfigMap:
 - Runtime class name (kata, kata-remote)
 - Enable peer pods (true/false)
 - Workload type to test (kata, peer-pods, coco)
-****- Install Kata RPM (true/false)
+- Install Kata RPM (true/false)
 - Enable GPU to include Nvidia GPU drivers in podvm image and run GPU tests
 - Set initdata for the OSC operator
 - Must-gather image
