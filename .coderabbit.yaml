@@ -1,0 +1,66 @@
+# CodeRabbit Configuration
+# Reference: https://docs.coderabbit.ai/reference/configuration
+
+# Language for review comments (ISO code). Default: "en-US"
+language: en-US
+
+# Inherit settings from parent/organization config.
+inheritance: true
+
+reviews:
+  # Review intensity: "chill" (lighter feedback) or "assertive" (more detailed/nitpicky).
+  # Default: "chill"
+  profile: chill
+
+  # Generate a high-level summary of PR changes in the description.
+  # Updates PR description, might be too intrusive.
+  # Default: true
+  high_level_summary: false
+
+  # Post status messages (e.g., "review skipped") in walkthrough summary.
+  # Default: true
+  review_status: true
+
+  # Set GitHub commit status to "pending" during review and "success" on completion.
+  # Default: true
+  commit_status: true
+
+  # Wrap detailed walkthrough in a collapsible Markdown section.
+  # Default: true
+  collapse_walkthrough: true
+
+  # Include a summary of modified files in the walkthrough.
+  # Default: true
+  changed_files_summary: false
+
+  # Auto-approve PRs once CodeRabbit comments are resolved and checks pass.
+  # Default: false
+  request_changes_workflow: false
+
+  # Generate a creative poem in walkthrough comments.
+  # Default: true
+  poem: false
+
+  # Suggest labels based on PR changes.
+  # Default: true
+  suggested_labels: false
+
+  auto_review:
+    # Enable automatic PR review triggering.
+    # Default: true
+    enabled: true
+
+    # Include draft PRs in automatic reviews.
+    # Default: false
+    drafts: false
+
+    # Branches to auto-review (supports regex). Empty means default branch only.
+    # Default: []
+    base_branches:
+      - devel
+
+  # Glob patterns to include/exclude files. Prefix with "!" to exclude.
+  # Default: []
+  path_filters:
+    - "!**/vendor/**"
+    - "!vendor/**"
