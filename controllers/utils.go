@@ -186,7 +186,9 @@ func getCloudProviderFromInfra(c client.Client) (string, error) {
 
 // Method to check if the configMap is relevant for the operator
 func isConfigMapRelevant(configMapName string) bool {
-	return configMapName == FeatureGatesCM || configMapName == KataAddonConfigMapName
+	return configMapName == FeatureGatesCM ||
+		configMapName == KataAddonConfigMapName ||
+		configMapName == peerpodsCMName
 }
 
 // Method to get cluster id from ClusterVersion object
@@ -357,4 +359,20 @@ func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
 	}
 
 	return err
+}
+
+func (r *KataConfigOpenShiftReconciler) getConfigMapVersion(name, namespace string) (string, bool, error) {
+	cm := &corev1.ConfigMap{}
+	err := r.Get(context.TODO(), types.NamespacedName{
+		Name:      name,
+		Namespace: namespace,
+	}, cm)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return "", false, nil // ConfigMap doesn't exist yet
+		}
+		return "", false, err
+	}
+
+	return cm.GetResourceVersion(), true, nil
 }

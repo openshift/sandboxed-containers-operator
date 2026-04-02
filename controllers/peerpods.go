@@ -43,7 +43,7 @@ func MountProgagationRef(mode corev1.MountPropagationMode) *corev1.MountPropagat
 	return &mode
 }
 
-func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet) *appsv1.DaemonSet {
+func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVersion string) *appsv1.DaemonSet {
 	var (
 		runPrivileged                = true
 		runAsUser              int64 = 0
@@ -51,6 +51,7 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet) *apps
 		sshSecretOptional            = true
 		authJsonSecretOptional       = true
 		nodeSelector                 = r.getNodeSelectorAsMap()
+		peerPodCMVersionKey          = fmt.Sprintf("%s/version", peerpodsCMName)
 	)
 
 	dsLabelSelectors := map[string]string{
@@ -83,6 +84,9 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet) *apps
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: dsLabelSelectors,
+				Annotations: map[string]string{
+					peerPodCMVersionKey: cmVersion,
+				},
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName: "default",
@@ -288,11 +292,24 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 		},
 	}
 
+	cmVersion, found, err := r.getConfigMapVersion(peerpodsCMName, OperatorNamespace)
+	if err != nil {
+		r.Log.Error(err, "Failed getting configmap resource version", "name", peerpodsCMName)
+		return err
+	}
+
+	if !found {
+		err = fmt.Errorf("peer pod configmap %s missing", peerpodsCMName)
+		r.Log.Error(err, "Failed to reload CAA")
+		return err
+
+	}
+
 	result, err := controllerutil.CreateOrUpdate(context.TODO(), r.Client, ds, func() error {
 		var err error
 
 		// Create the CAA daemonset
-		ds = r.configureCAA(ds)
+		ds = r.configureCAA(ds, cmVersion)
 
 		ds, err = r.configureCAAProvider(ds)
 		if err != nil {
