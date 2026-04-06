@@ -115,7 +115,7 @@ def get_job_status(
 
     Priority for openshift-extended-test outcomes:
     1. ``artifacts/.../openshift-extended-test/artifacts/test-results.yaml`` —
-       if parsed and contains ``failures``, ``failures == 0`` means success (primary).
+       if parsed and contains ``failures`` and/or ``errors``, both must be zero for success (primary).
     2. ``artifacts/.../openshift-extended-test/finished.json`` —
        ``"result": "SUCCESS"`` when all test cases passed (no failures).
     3. Top-level ``prowjob.json`` ``status.state`` when the above are absent.
@@ -128,9 +128,13 @@ def get_job_status(
     Returns:
         Status string: 'success', 'failure', 'timeout', 'error', 'aborted', 'pending'
     """
-    # Primary: test-results.yaml failures count (openshift-extended-test)
-    if test_results is not None and 'failures' in test_results:
-        return 'success' if test_results['failures'] == 0 else 'failure'
+    # Primary: test-results.yaml failures/errors counts (openshift-extended-test)
+    if test_results is not None and (
+        'failures' in test_results or 'errors' in test_results
+    ):
+        failures = test_results.get('failures', 0)
+        errors = test_results.get('errors', 0)
+        return 'success' if failures == 0 and errors == 0 else 'failure'
 
     # Secondary: finished.json result (e.g. SUCCESS when no cases failed)
     if extended_test_finished is not None:
@@ -147,7 +151,10 @@ def get_job_status(
     state = status.get('state', '').lower()
 
     if state == 'success':
-        if test_results and test_results.get('failures', 0) > 0:
+        if test_results and (
+            test_results.get('failures', 0) > 0
+            or test_results.get('errors', 0) > 0
+        ):
             return 'failure'
         return 'success'
     elif state == 'failure':
@@ -160,7 +167,10 @@ def get_job_status(
         return 'error'
     else:
         if test_results:
-            if test_results.get('failures', 0) == 0:
+            if (
+                test_results.get('failures', 0) == 0
+                and test_results.get('errors', 0) == 0
+            ):
                 return 'success'
             else:
                 return 'failure'

@@ -70,7 +70,6 @@ FAILURE_PATTERNS = {
     'rpm_install': [
         # oc debug on worker + kata RPM (BeforeEach); see detect_kata_rpm_install_context too
         r'debug\s+node/[^\s]*worker[^\s]*.*kata-containers\.rpm',
-        r'error:\s*Failed dependencies',
         r'is needed by kata-containers',
         r'error:.*Failed dependencies',
         r'error:.*package.*is needed by kata',

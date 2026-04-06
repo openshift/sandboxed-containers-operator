@@ -723,28 +723,6 @@ def _oet_step_ended(
     return False
 
 
-def _prefer_next_step_wall_duration(
-    fin_json: Optional[Dict],
-    build_log_text: Optional[str],
-) -> bool:
-    """
-    Use (next step started − OET started) as wall duration when the step was killed,
-    timed out, or never got a reliable finished.json timestamp.
-    """
-    if fin_json is None:
-        return True
-    r = str(fin_json.get('result', '')).strip().upper()
-    if r in ('ABORTED', 'TIMEOUT'):
-        return True
-    if build_log_text and r == 'FAILURE':
-        if re.search(
-            r'(?i)(timeout|deadline exceeded|context deadline|interrupted|SIGKILL|SIGTERM)',
-            build_log_text,
-        ):
-            return True
-    return False
-
-
 def compute_openshift_extended_test_elapsed_display(
     base_url: str,
     variant: str,
@@ -755,10 +733,10 @@ def compute_openshift_extended_test_elapsed_display(
 
     ``00:00`` only when the step never started or is still running (no finish artifact/log).
 
-    When the step has finished, duration is: wall-clock from ``finished.json`` when
-    reliable; on interrupt/timeout or missing finish time, prefer **next step's
-    ``started.json`` minus this step's start**. Merged with ``build-log.txt`` when
-    wall-clock is missing or sub-minute.
+    When the step has finished, wall duration is ``finished`` minus ``started`` from
+    ``finished.json`` / ``started.json`` when that delta is positive; otherwise **next
+    step's ``started.json`` minus this step's start**. Merged with ``build-log.txt``
+    when wall-clock is missing or sub-minute.
     """
     if not variant or variant == 'unknown':
         return ''
@@ -794,29 +772,17 @@ def compute_openshift_extended_test_elapsed_display(
 
     sec_log = _parse_build_log_duration_seconds(build_log_text)
 
-    if not_started:
-        return '00:00'
-    if running:
+    if not_started or running:
         return '00:00'
 
-    # Ended: prefer tf−ts, or (next step start − OET start) for interrupt/timeout
-    sec_tf: Optional[int] = None
-    if ts is not None and tf is not None and tf >= ts:
-        sec_tf = tf - ts
-
-    # finished.json tf−ts is authoritative whenever present; do not let prefer_next
-    # overwrite with next-step duration (often wrong on timeout when sorting mis-orders).
+    # Ended: prefer positive finished.json wall delta; else next-step start − OET start.
     sec_wall: Optional[int] = None
-    prefer_next = _prefer_next_step_wall_duration(fin_json, build_log_text)
-
-    if sec_tf is not None and sec_tf > 0:
-        sec_wall = sec_tf
-    elif prefer_next and sec_next is not None and sec_next > 0:
+    if ts is not None and tf is not None and tf >= ts:
+        d = tf - ts
+        if d > 0:
+            sec_wall = d
+    if sec_wall is None and sec_next is not None and sec_next > 0:
         sec_wall = sec_next
-    elif sec_next is not None and sec_next > 0:
-        sec_wall = sec_next
-    else:
-        sec_wall = None
 
     secs = _merge_wall_and_log_seconds(sec_wall, sec_log)
 

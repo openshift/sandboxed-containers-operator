@@ -387,7 +387,7 @@ def generate_csv_report(report_data: Dict, header: bool = True) -> str:
 
 def generate_human_report(report_data: Dict) -> str:
     """
-    Generate human-readable markdown report from the canonical repor dict.
+    Generate human-readable markdown report from the canonical report dict.
     """
     prowjob = report_data['prowjob']
     metadata = report_data['metadata']
