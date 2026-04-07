@@ -29,14 +29,15 @@ RUN . ./controller-tools-ver && mv bin/controller-gen bin/controller-gen-$CONTRO
 RUN . ./controller-tools-ver && make build
 
 # Use OpenShift base image
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8-1779809423
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.8-1779858820
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
 COPY --from=builder /workspace/bin/metrics-server .
 COPY --from=builder /workspace/config/peerpods /config/peerpods
 
-RUN useradd  -r -u 499 nonroot
-RUN getent group nonroot || groupadd -o -g 499 nonroot
+
+RUN echo "nonroot:x:499:499::/:" >> /etc/passwd && \
+    echo "nonroot:x:499:" >> /etc/group
 
 # Red Hat labels
 LABEL name="openshift-sandboxed-containers/osc-rhel9-operator" \
