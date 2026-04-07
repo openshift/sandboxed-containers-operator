@@ -64,11 +64,11 @@ var _ = Describe("validateOCPVersion", func() {
 			},
 			Entry("version 4.18.0 (major.minor too low)", "4.18.0"),
 			Entry("version 4.19.0 (patch too low)", "4.19.0"),
-			Entry("version 4.19.26 (patch one below minimum)", "4.19.26"),
+			Entry("version 4.19.27 (patch one below minimum)", "4.19.27"),
 			Entry("version 4.20.0 (patch too low)", "4.20.0"),
 			Entry("version 4.20.17 (patch one below minimum)", "4.20.17"),
 			Entry("version 4.21.0 (patch too low)", "4.21.0"),
-			Entry("version 4.21.7 (patch one below minimum)", "4.21.7"),
+			Entry("version 4.21.8 (patch one below minimum)", "4.21.8"),
 		)
 
 		// Test cases for versions at or above minimum requirements
@@ -79,14 +79,14 @@ var _ = Describe("validateOCPVersion", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(valid).To(BeTrue())
 			},
-			Entry("version 4.19.27 (exact minimum for 4.19)", "4.19.27"),
-			Entry("version 4.19.28 (above minimum for 4.19)", "4.19.28"),
+			Entry("version 4.19.28 (exact minimum for 4.19)", "4.19.28"),
+			Entry("version 4.19.29 (above minimum for 4.19)", "4.19.29"),
 			Entry("version 4.19.100 (well above minimum for 4.19)", "4.19.100"),
 			Entry("version 4.20.18 (exact minimum for 4.20)", "4.20.18"),
 			Entry("version 4.20.19 (above minimum for 4.20)", "4.20.19"),
 			Entry("version 4.20.100 (well above minimum for 4.20)", "4.20.100"),
-			Entry("version 4.21.8 (exact minimum for 4.21)", "4.21.8"),
-			Entry("version 4.21.9 (above minimum for 4.21)", "4.21.9"),
+			Entry("version 4.21.9 (exact minimum for 4.21)", "4.21.9"),
+			Entry("version 4.21.10 (above minimum for 4.21)", "4.21.10"),
 			Entry("version 4.21.100 (well above minimum for 4.21)", "4.21.100"),
 			Entry("version 4.22.0 (higher minor, assumed supported)", "4.22.0"),
 			Entry("version 4.25.1 (much higher minor, assumed supported)", "4.25.1"),
@@ -110,10 +110,10 @@ var _ = Describe("validateOCPVersion", func() {
 		})
 
 		It("should handle version with pre-release suffix", func() {
-			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.21.8-rc1")
+			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.21.9-rc1")
 			valid, err := reconciler.validateOCPVersion()
 			Expect(err).ToNot(HaveOccurred())
-			// Pre-release versions (4.21.8-rc1) are considered LESS than their base (4.21.8) by semver
+			// Pre-release versions (4.21.9-rc1) are considered LESS than their base (4.21.9) by semver
 			// So this should return false since it's technically below the minimum
 			Expect(valid).To(BeFalse())
 		})
@@ -132,22 +132,22 @@ var _ = Describe("validateOCPVersion", func() {
 	})
 
 	Context("edge cases", func() {
-		It("should handle version 4.19.26 correctly (just below threshold)", func() {
-			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.19.26")
+		It("should handle version 4.19.27 correctly (just below threshold)", func() {
+			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.19.27")
 			valid, err := reconciler.validateOCPVersion()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(valid).To(BeFalse())
 		})
 
-		It("should handle version 4.19.27 correctly (exactly at threshold)", func() {
-			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.19.27")
+		It("should handle version 4.19.28 correctly (exactly at threshold)", func() {
+			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.19.28")
 			valid, err := reconciler.validateOCPVersion()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(valid).To(BeTrue())
 		})
 
 		It("should handle versions between supported minors", func() {
-			// 4.19.27+ is supported, 4.20.18+ is supported
+			// 4.19.28+ is supported, 4.20.18+ is supported
 			// But 4.20.0 to 4.20.17 should not be supported
 			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.20.10")
 			valid, err := reconciler.validateOCPVersion()
@@ -175,7 +175,7 @@ var _ = Describe("validateOCPVersion integration", func() {
 		})
 
 		It("should use environment variable when set", func() {
-			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.21.8")
+			os.Setenv("BM_COCO_OVERRIDE_OCP_VERSION", "4.21.9")
 			valid, err := reconciler.validateOCPVersion()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(valid).To(BeTrue())
