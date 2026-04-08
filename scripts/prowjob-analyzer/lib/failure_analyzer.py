@@ -9,7 +9,7 @@ import logging
 from typing import Dict, List, Optional
 from collections import defaultdict
 from .parser import categorize_test_by_name, extract_failing_tests, add_execution_order_to_tests
-from .fetcher import fetch_artifact, get_failed_steps, is_openshift_extended_test_failure_label
+from .fetcher import fetch_artifact, get_failed_steps
 
 logger = logging.getLogger(__name__)
 
@@ -141,9 +141,10 @@ def analyze_post_test_prow_failure(
 ) -> Optional[Dict]:
     """
     When openshift-extended-test succeeded (caller already set status to success)
-    but the overall Prow job did not succeed, summarize failed steps after the test phase.
+    but the overall Prow job did not succeed, summarize failed steps from artifacts.
 
-    These are Prow/pipeline issues, not test-case failures.
+    Typically these are later pipeline steps or infrastructure; the list can still include
+    openshift-extended-test (or its build-log label) when step-level state disagrees with junit.
     """
     status_block = prowjob_raw.get('status') or {}
     prow_state = (status_block.get('state') or '').lower()
@@ -155,12 +156,11 @@ def analyze_post_test_prow_failure(
     if variant and variant != 'unknown':
         failed_steps = get_failed_steps(base_url, variant)
 
-    # Defensive: extended test phase is already known-good from test-results/finished.json
-    failed_steps = [s for s in failed_steps if not is_openshift_extended_test_failure_label(s)]
-
     summary_note = (
-        'One or more Prow steps failed after openshift-extended-test completed successfully. '
-        'This is not a test-case failure.'
+        'Overall Prow state is not success while the extended test phase was treated as successful '
+        'from test-results/finished.json. Failed steps may include openshift-extended-test or its '
+        'build-log summary when step-level artifacts disagree with junit; other entries are typically '
+        'later pipeline steps. This is not necessarily a failing test case in the junit report.'
     )
 
     if not failed_steps:
@@ -199,7 +199,7 @@ def analyze_post_test_prow_failure(
             'confidence': 'high',
             'suggested_actions': [
                 f'Inspect finished.json and logs under artifacts for: {", ".join(failed_steps)}.',
-                'This does not indicate failing OSC extended tests.',
+                "If openshift-extended-test appears, compare test-results.yaml with that step's build-log and finished.json.",
             ],
         },
         'summary_note': summary_note,
