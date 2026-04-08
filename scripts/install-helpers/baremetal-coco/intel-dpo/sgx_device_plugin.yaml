@@ -6,7 +6,7 @@ kind: SgxDevicePlugin
 metadata:
   name: sgxdeviceplugin-sample
 spec:
-  image: registry.connect.redhat.com/intel/intel-sgx-plugin@sha256:f2c77521c6dae6b4db1896a5784ba8b06a5ebb2a01684184fc90143cfcca7bf4
+  image: registry.connect.redhat.com/intel/intel-sgx-plugin@sha256:4ac8769c4f0a82b3ea04cf1532f15e9935c71fe390ff5a9dc3ee57f970a65f0b
   enclaveLimit: 110
   provisionLimit: 110
   logLevel: 4
