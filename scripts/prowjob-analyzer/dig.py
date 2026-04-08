@@ -8,6 +8,7 @@ Analyzes OpenShift Prow job results for OSC testing.
 import argparse
 import logging
 import sys
+from pathlib import Path
 from typing import Optional
 
 # Add lib directory to path
@@ -21,6 +22,10 @@ from lib.fetcher import (
     wait_for_artifacts,
     extract_variant_from_job_name,
     compute_openshift_extended_test_elapsed_display,
+    configure_artifact_source,
+    download_job_artifacts,
+    write_job_artifacts_tarball,
+    is_local_artifact_mode,
 )
 from lib.parser import (
     parse_prowjob,
@@ -48,37 +53,65 @@ def setup_logging(verbose: bool = False):
     logging.basicConfig(**kwargs)
 
 
-def analyze_prowjob(url: str, wait_timeout: int = 300) -> Optional[dict]:
+_LOCAL_ONLY_FETCH_BASE = 'local://artifact-bundle'
+
+
+def analyze_prowjob(
+    url: Optional[str] = None,
+    wait_timeout: int = 300,
+    artifact_source: Optional[str] = None,
+) -> Optional[dict]:
     """
-    Analyze a Prow job from its URL.
+    Analyze a Prow job from its URL and/or local artifact tree.
 
     Args:
-        url: Prow job URL
+        url: Prow job URL (optional if ``artifact_source`` is a directory or ``.tar.gz``
+            containing ``prowjob.json``; links in reports use ``status.url`` from that file
+            or a ``file://`` URI for the bundle path).
         wait_timeout: Timeout for waiting for artifacts (seconds)
+        artifact_source: Optional path to a local directory or ``.tar.gz`` whose layout
+            matches Prow (``prowjob.json`` at job root). When set (including after
+            ``gsutil`` download via ``--download-artifacts``), all artifact reads use
+            this tree only—no per-file HTTP fetches.
 
     Returns:
         Analysis results as dict, or None on error
     """
     try:
-        # Parse URL
-        logger.info(f"Parsing Prow job URL...")
-        base_url, job_name, build_id = parse_prow_url(url)
-        logger.info(f"Job: {job_name}")
-        logger.info(f"Build ID: {build_id}")
-
-    except ValueError as e:
-        logger.error(str(e))
+        configure_artifact_source(artifact_source)
+    except (OSError, ValueError) as e:
+        logger.error("%s", e)
         return None
 
-    # Wait for artifacts if needed
-    if wait_timeout > 0:
+    if url:
+        try:
+            logger.info("Parsing Prow job URL...")
+            base_url, job_name, build_id = parse_prow_url(url)
+            logger.info(f"Job: {job_name}")
+            logger.info(f"Build ID: {build_id}")
+        except ValueError as e:
+            logger.error(str(e))
+            return None
+        fetch_base = base_url
+    else:
+        if not is_local_artifact_mode():
+            logger.error(
+                "Provide a Prow job URL or --artifacts PATH (directory or .tar.gz)."
+            )
+            return None
+        logger.info("Analyzing from local artifacts only (no Prow URL)")
+        fetch_base = _LOCAL_ONLY_FETCH_BASE
+        base_url = ''
+
+    # Wait for remote artifacts only when not using a local tree (dir or extracted tar).
+    if wait_timeout > 0 and not is_local_artifact_mode():
         logger.info("Checking if artifacts are ready...")
         if not wait_for_artifacts(base_url, timeout=wait_timeout):
             logger.warning("Artifacts not ready yet, attempting analysis anyway...")
 
     # Fetch prowjob.json
     logger.info("Fetching prowjob.json...")
-    prowjob_json = fetch_json_artifact(base_url, "prowjob.json")
+    prowjob_json = fetch_json_artifact(fetch_base, "prowjob.json")
 
     if not prowjob_json:
         logger.error("Failed to fetch prowjob.json - cannot analyze job")
@@ -87,6 +120,19 @@ def analyze_prowjob(url: str, wait_timeout: int = 300) -> Optional[dict]:
     # Parse prowjob
     logger.info("Parsing prowjob data...")
     prowjob_data = parse_prowjob(prowjob_json)
+
+    if not url:
+        su = (prowjob_data.get('url') or '').strip()
+        if su:
+            base_url = su
+        elif artifact_source:
+            base_url = Path(
+                os.path.abspath(os.path.expanduser(artifact_source))
+            ).as_uri()
+        else:
+            base_url = _LOCAL_ONLY_FETCH_BASE
+        logger.info(f"Job: {prowjob_data.get('job_name', 'unknown')}")
+        logger.info(f"Build ID: {prowjob_data.get('build_id', 'unknown')}")
 
     # Extract metadata
     logger.info("Extracting metadata...")
@@ -172,15 +218,68 @@ def main():
 Examples:
   %(prog)s https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-aws-ipi-peerpods/1987995564184178688
 
+  %(prog)s --artifacts /path/to/job-artifacts.tar.gz
+
+  %(prog)s --artifacts /path/to/job-artifacts-dir <URL>
+
+  %(prog)s --download-artifacts . <URL>
+
+  %(prog)s --download-artifacts /tmp --tar-artifacts <URL>
+
   %(prog)s --json <URL> > report.json
 
   %(prog)s --verbose --no-wait <URL>
+
+Artifact layout:
+  The Prow job Artifacts page lists a gsutil command to download the GCS prefix into a
+  local directory. That tree (prowjob.json at the root, artifacts/...) is the same layout
+  expected by --artifacts. Use --download-artifacts to run gsutil from this tool (requires
+  gsutil on PATH); otherwise run the gsutil command from the UI and pass the directory with
+  --artifacts.
         '''
     )
 
     parser.add_argument(
         'url',
-        help='Prow job URL'
+        nargs='?',
+        default=None,
+        help=(
+            'Prow job URL (optional if --artifacts is a directory or .tar.gz containing '
+            'prowjob.json)'
+        ),
+    )
+
+    parser.add_argument(
+        '--artifacts',
+        metavar='PATH',
+        help=(
+            'Local directory or .tar.gz of job artifacts (prowjob.json at root). '
+            'Same layout as a directory produced by the gsutil command on the Prow '
+            'Artifacts page. Reads are cached in memory. May be used alone (no URL) '
+            'or with a URL for explicit job identity and links.'
+        ),
+    )
+
+    parser.add_argument(
+        '--download-artifacts',
+        nargs='?',
+        const='.',
+        default=None,
+        metavar='PARENT_DIR',
+        help=(
+            'Run gsutil -m cp -r gs://... (derived like the Prow Artifacts page) into '
+            'PARENT_DIR/<build-id> (default parent: current directory). Requires gsutil '
+            'on PATH. Analysis uses this folder unless --artifacts is set.'
+        ),
+    )
+
+    parser.add_argument(
+        '--tar-artifacts',
+        action='store_true',
+        help=(
+            'With --download-artifacts, also write PARENT_DIR/<build-id>.tar.gz '
+            'next to the downloaded directory.'
+        ),
     )
 
     parser.add_argument(
@@ -223,14 +322,68 @@ Examples:
 
     args = parser.parse_args()
 
+    if args.tar_artifacts and args.download_artifacts is None:
+        parser.error('--tar-artifacts requires --download-artifacts')
+
+    if not args.url and not args.artifacts:
+        parser.error(
+            'Provide a Prow job URL or --artifacts PATH (directory or .tar.gz)'
+        )
+
+    if args.download_artifacts is not None and not args.url:
+        parser.error('--download-artifacts requires a Prow job URL')
+
     # Setup logging
     setup_logging(args.verbose)
+    logger = logging.getLogger(__name__)
 
     # Determine wait timeout
     wait_timeout = 0 if args.no_wait else args.wait
 
-    # Analyze job
-    results = analyze_prowjob(args.url, wait_timeout=wait_timeout)
+    base_url = None
+    job_name = None
+    build_id = None
+    if args.url:
+        try:
+            base_url, job_name, build_id = parse_prow_url(args.url)
+        except ValueError as e:
+            logger.error(str(e))
+            sys.exit(2)
+
+    downloaded_dir = None
+    if args.download_artifacts is not None:
+        parent_dir = args.download_artifacts
+        if wait_timeout > 0:
+            logger.info('Checking if artifacts are ready before download...')
+            if not wait_for_artifacts(base_url, timeout=wait_timeout):
+                logger.warning(
+                    'Artifacts may be incomplete; continuing with download anyway.'
+                )
+        try:
+            downloaded_dir = download_job_artifacts(base_url, parent_dir, build_id)
+        except (OSError, ValueError, RuntimeError) as e:
+            logger.error('Download failed: %s', e)
+            sys.exit(2)
+        if args.tar_artifacts:
+            tar_path = os.path.join(
+                os.path.abspath(os.path.expanduser(parent_dir)),
+                f'{build_id}.tar.gz',
+            )
+            try:
+                write_job_artifacts_tarball(downloaded_dir, tar_path)
+            except OSError as e:
+                logger.error('Tarball failed: %s', e)
+                sys.exit(2)
+
+    artifact_source = args.artifacts if args.artifacts else downloaded_dir
+    use_local_tree = bool(args.artifacts or downloaded_dir)
+
+    # Analyze: no remote wait when a directory/tar.gz or fresh download supplies artifacts
+    results = analyze_prowjob(
+        url=args.url,
+        wait_timeout=0 if use_local_tree else wait_timeout,
+        artifact_source=artifact_source,
+    )
 
     if results is None:
         logger.error("Analysis failed")
