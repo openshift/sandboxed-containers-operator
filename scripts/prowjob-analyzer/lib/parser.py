@@ -105,6 +105,67 @@ def parse_test_results(test_results_content: bytes) -> Optional[Dict]:
         return None
 
 
+def _count_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _oet_finished_json_has_timestamp(fin: Dict) -> bool:
+    """True if openshift-extended-test ``finished.json`` has a pod-utils timestamp."""
+    t = fin.get('timestamp')
+    if t is None:
+        return False
+    try:
+        return int(float(t)) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _job_status_from_test_results(test_results: Optional[Dict]) -> Optional[str]:
+    """
+    Derive ``success`` / ``failure`` from test-results.yaml body when possible.
+
+    Handles junit-style ``failures``/``errors``, ``failingScenarios``, per-test ``tests``,
+    a top-level ``failed`` count, or ``total``/``passed``/``skipped``.
+    """
+    if not test_results or not isinstance(test_results, dict):
+        return None
+
+    if 'failures' in test_results or 'errors' in test_results:
+        failures = _count_int(test_results.get('failures', 0))
+        errors = _count_int(test_results.get('errors', 0))
+        return 'success' if failures == 0 and errors == 0 else 'failure'
+
+    failing_scenarios = test_results.get('failingScenarios') or []
+    if failing_scenarios:
+        return 'failure'
+
+    tests = test_results.get('tests')
+    if isinstance(tests, list) and len(tests) > 0:
+        for t in tests:
+            if not isinstance(t, dict):
+                continue
+            if t.get('state') == 'failed' or t.get('failed') is True:
+                return 'failure'
+        return 'success'
+
+    if 'failed' in test_results:
+        failed = _count_int(test_results.get('failed'))
+        return 'success' if failed == 0 else 'failure'
+
+    if 'total' in test_results and 'passed' in test_results:
+        total = _count_int(test_results.get('total'))
+        passed = _count_int(test_results.get('passed'))
+        skipped = _count_int(test_results.get('skipped', 0))
+        if total > 0:
+            failed = total - passed - skipped
+            return 'success' if failed <= 0 else 'failure'
+
+    return None
+
+
 def get_job_status(
     prowjob_data: Dict,
     test_results: Optional[Dict] = None,
@@ -114,11 +175,13 @@ def get_job_status(
     Determine overall job status.
 
     Priority for openshift-extended-test outcomes:
-    1. ``artifacts/.../openshift-extended-test/artifacts/test-results.yaml`` —
-       if parsed and contains ``failures`` and/or ``errors``, both must be zero for success (primary).
-    2. ``artifacts/.../openshift-extended-test/finished.json`` —
-       ``"result": "SUCCESS"`` when all test cases passed (no failures).
-    3. Top-level ``prowjob.json`` ``status.state`` when the above are absent.
+    1. ``artifacts/.../openshift-extended-test/artifacts/test-results.yaml`` when the
+       body supports a clear outcome (failures/errors, ``failingScenarios``, ``tests``,
+       ``failed`` count, or ``total``/``passed``/``skipped``).
+    2. ``artifacts/.../openshift-extended-test/finished.json`` — ``result`` and/or a
+       ``timestamp`` proving the step finished (avoids ``pending`` when Prow job state
+       lags later ci-operator steps).
+    3. Top-level ``prowjob.json`` ``status.state`` when the above are inconclusive.
 
     Args:
         prowjob_data: Parsed prowjob.json (raw dict)
@@ -126,34 +189,39 @@ def get_job_status(
         extended_test_finished: Parsed openshift-extended-test/finished.json (optional)
 
     Returns:
-        Status string: 'success', 'failure', 'timeout', 'error', 'aborted', 'pending'
+        Status string: 'success', 'failure', 'timeout', 'error', 'aborted', 'pending',
+        'unknown'
     """
-    # Primary: test-results.yaml failures/errors counts (openshift-extended-test)
-    if test_results is not None and (
-        'failures' in test_results or 'errors' in test_results
-    ):
-        failures = test_results.get('failures', 0)
-        errors = test_results.get('errors', 0)
-        return 'success' if failures == 0 and errors == 0 else 'failure'
+    tr_status = _job_status_from_test_results(test_results)
+    if tr_status is not None:
+        return tr_status
 
-    # Secondary: finished.json result (e.g. SUCCESS when no cases failed)
-    if extended_test_finished is not None:
+    if extended_test_finished is not None and isinstance(extended_test_finished, dict):
         result = extended_test_finished.get('result')
-        if result is not None:
-            r = str(result).strip().upper()
-            if r == 'SUCCESS':
+        r = str(result).strip().upper() if result is not None else ''
+        if r:
+            if r in ('SUCCESS', 'PASS', 'PASSED', 'SUCCEEDED'):
                 return 'success'
             if r in ('FAILURE', 'FAILED', 'FAIL'):
                 return 'failure'
-            # Other values: defer to prowjob.json
+            if r in ('TIMEOUT', 'TIMEDOUT'):
+                return 'timeout'
+            if r in ('ABORTED', 'INTERRUPTED'):
+                return 'aborted'
+            if r == 'ERROR':
+                return 'error'
+            return 'unknown'
+
+        if _oet_finished_json_has_timestamp(extended_test_finished):
+            return 'unknown'
 
     status = prowjob_data.get('status', {})
-    state = status.get('state', '').lower()
+    state = (status.get('state') or '').lower()
 
     if state == 'success':
         if test_results and (
-            test_results.get('failures', 0) > 0
-            or test_results.get('errors', 0) > 0
+            _count_int(test_results.get('failures', 0)) > 0
+            or _count_int(test_results.get('errors', 0)) > 0
         ):
             return 'failure'
         return 'success'
@@ -162,18 +230,14 @@ def get_job_status(
     elif state == 'aborted':
         return 'aborted'
     elif state == 'pending':
+        if extended_test_finished is not None and isinstance(
+            extended_test_finished, dict
+        ) and _oet_finished_json_has_timestamp(extended_test_finished):
+            return 'unknown'
         return 'pending'
     elif state == 'error':
         return 'error'
     else:
-        if test_results:
-            if (
-                test_results.get('failures', 0) == 0
-                and test_results.get('errors', 0) == 0
-            ):
-                return 'success'
-            else:
-                return 'failure'
         return 'unknown'
 
 
