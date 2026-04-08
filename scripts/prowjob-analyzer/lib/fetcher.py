@@ -2,17 +2,32 @@
 Artifact Fetcher Module
 
 Handles URL parsing and fetching artifacts from Prow/GCS.
+Supports in-memory caching, a local directory tree, or a .tar.gz of the same layout.
 """
 
-import re
-import time
 import json
 import logging
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+from pathlib import Path
 from typing import Dict, Optional, Tuple, List
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError, URLError
 
 logger = logging.getLogger(__name__)
+
+# Bytes fetched over HTTP or read from disk (keyed by root + relative path).
+_artifact_cache: Dict[str, Optional[bytes]] = {}
+# Resolved directory containing prowjob.json (and artifacts/, …); None = fetch over HTTP only.
+_local_artifacts_root: Optional[str] = None
+# Temp directory created when configuring from a .tar.gz (removed on next configure or process exit).
+_tar_extract_temp_dir: Optional[str] = None
 
 
 def parse_prow_url(url: str) -> Tuple[str, str, str]:
@@ -137,19 +152,214 @@ def discover_gcs_url_from_prow(prow_url: str) -> Optional[str]:
     return None
 
 
-def fetch_artifact(base_url: str, artifact_path: str, max_retries: int = 3) -> Optional[bytes]:
+def gcs_uri_from_gcsweb_https(https_url: str) -> Optional[str]:
     """
-    Fetch an artifact from Prow/GCS with retry logic.
-    Dynamically discovers the GCS web URL if Prow returns HTML.
+    Convert a gcsweb HTTPS URL (``.../gcs/BUCKET/path``) to ``gs://BUCKET/path``.
+
+    If ``https_url`` is already ``gs://``, return it unchanged.
+    """
+    u = https_url.strip()
+    if u.lower().startswith('gs://'):
+        return u.rstrip('/')
+    base = u.split('?')[0].split('#')[0].rstrip('/')
+    idx = base.find('/gcs/')
+    if idx == -1:
+        return None
+    rest = base[idx + len('/gcs/') :].strip('/')
+    if not rest:
+        return None
+    if '/' in rest:
+        bucket, path = rest.split('/', 1)
+        return f'gs://{bucket}/{path}'
+    return f'gs://{rest}'
+
+
+def gcs_uri_for_job_artifacts(prow_job_base_url: str) -> str:
+    """
+    Resolve the ``gs://`` prefix for the job artifact tree (same object prefix as on
+    the Prow Artifacts page / ``gsutil`` examples).
+    """
+    u = prow_job_base_url.strip().rstrip('/')
+    if u.lower().startswith('gs://'):
+        return u
+    https = u
+    if 'gcsweb' not in u.lower():
+        gcs = discover_gcs_url_from_prow(u)
+        if not gcs:
+            raise ValueError(
+                'Could not discover a gcsweb URL from this Prow page. Open the job '
+                'Artifacts tab, run the gsutil command shown there, then pass the '
+                'downloaded directory with --artifacts.'
+            )
+        https = gcs
+    uri = gcs_uri_from_gcsweb_https(https)
+    if not uri:
+        raise ValueError(
+            'Could not convert the artifact URL to a gs:// URI. Use gsutil from the '
+            'Prow Artifacts page and --artifacts with the local directory.'
+        )
+    return uri
+
+
+def download_job_artifacts(prow_job_base_url: str, parent_directory: str, build_id: str) -> str:
+    """
+    Download the job artifact tree into ``parent_directory/build_id/`` using ``gsutil``.
+
+    Runs the same style of command as on the Prow Artifacts page: ``gsutil -m cp -r``
+    from the job's ``gs://`` prefix into the destination directory. Requires ``gsutil``
+    on ``PATH`` (Google Cloud SDK).
 
     Args:
-        base_url: Base URL of the Prow job
-        artifact_path: Relative path to the artifact (e.g., "prowjob.json")
-        max_retries: Maximum number of retry attempts
+        prow_job_base_url: Prow job base URL from :func:`parse_prow_url`
+        parent_directory: Directory in which to create the ``build_id`` folder
+        build_id: Last path segment of the job URL (folder name)
 
     Returns:
-        Artifact content as bytes, or None if not found
+        Absolute path to ``parent_directory/build_id``
     """
+    gcs_uri = gcs_uri_for_job_artifacts(prow_job_base_url)
+
+    dest = os.path.abspath(os.path.join(os.path.expanduser(parent_directory), build_id))
+    if os.path.exists(dest) and not os.path.isdir(dest):
+        raise FileExistsError(dest)
+    os.makedirs(dest, exist_ok=True)
+
+    src = gcs_uri.rstrip('/') + '/'
+    logger.info("Downloading artifacts with gsutil ( %s -> %s )", src, dest)
+    try:
+        subprocess.run(
+            ['gsutil', '-m', 'cp', '-r', src, dest],
+            check=True,
+        )
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            'gsutil not found; install Google Cloud SDK so gsutil is on PATH, '
+            'or download artifacts manually using the command from the Prow Artifacts page.'
+        ) from e
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(
+            f'gsutil failed with exit code {e.returncode}'
+        ) from e
+
+    return dest
+
+
+def write_job_artifacts_tarball(artifact_dir: str, tar_gz_path: str) -> None:
+    """
+    Write a gzip-compressed tar of ``artifact_dir`` (top-level folder name preserved).
+
+    Args:
+        artifact_dir: Path to the job artifacts directory (e.g. ``.../build_id``)
+        tar_gz_path: Output file path (e.g. ``.../build_id.tar.gz``)
+    """
+    artifact_dir = os.path.abspath(artifact_dir)
+    if not os.path.isdir(artifact_dir):
+        raise NotADirectoryError(artifact_dir)
+    base = os.path.basename(artifact_dir.rstrip(os.sep))
+    tar_abs = os.path.abspath(tar_gz_path)
+    tar_parent = os.path.dirname(tar_abs)
+    if tar_parent:
+        os.makedirs(tar_parent, exist_ok=True)
+    logger.info("Writing tarball %s from %s", tar_abs, artifact_dir)
+    with tarfile.open(tar_abs, 'w:gz') as tf:
+        tf.add(artifact_dir, arcname=base)
+
+
+def clear_artifact_cache() -> None:
+    """Clear the in-memory artifact cache (e.g. before switching artifact source)."""
+    _artifact_cache.clear()
+
+
+def is_local_artifact_mode() -> bool:
+    """True when reads come from a configured local directory or extracted archive."""
+    return _local_artifacts_root is not None
+
+
+def _find_job_root(path: str) -> str:
+    """
+    If ``prowjob.json`` is not at ``path``, use the first subdirectory that contains it
+    (common for tar layouts with a single top-level folder).
+    """
+    if os.path.isfile(os.path.join(path, 'prowjob.json')):
+        return path
+    try:
+        names = sorted(os.listdir(path))
+    except OSError:
+        return path
+    for name in names:
+        sub = os.path.join(path, name)
+        if os.path.isdir(sub) and os.path.isfile(os.path.join(sub, 'prowjob.json')):
+            return sub
+    return path
+
+
+def configure_artifact_source(path: Optional[str]) -> None:
+    """
+    Use a local directory or ``.tar.gz`` of job artifacts instead of (or before) HTTP.
+
+    Layout matches Prow: ``prowjob.json``, ``finished.json``, ``artifacts/<variant>/…``.
+
+    Clears the artifact cache. Call with ``None`` to use only network fetches again.
+    Removes a previously extracted tar temp directory when reconfiguring.
+    """
+    global _local_artifacts_root, _tar_extract_temp_dir
+
+    clear_artifact_cache()
+
+    if _tar_extract_temp_dir and os.path.isdir(_tar_extract_temp_dir):
+        shutil.rmtree(_tar_extract_temp_dir, ignore_errors=True)
+    _tar_extract_temp_dir = None
+    _local_artifacts_root = None
+
+    if not path:
+        return
+
+    path = os.path.abspath(os.path.expanduser(path.strip()))
+    if not os.path.exists(path):
+        raise FileNotFoundError(path)
+
+    if path.lower().endswith(('.tar.gz', '.tgz')):
+        if not os.path.isfile(path):
+            raise ValueError(f"Not a file: {path}")
+        td = tempfile.mkdtemp(prefix='prowjob-analyzer-artifacts-')
+        _tar_extract_temp_dir = td
+        logger.info(f"Extracting artifact archive to {td}...")
+        with tarfile.open(path, 'r:*') as tf:
+            if sys.version_info >= (3, 12):
+                tf.extractall(td, filter='data')
+            else:
+                tf.extractall(td)
+        _local_artifacts_root = _find_job_root(td)
+    elif os.path.isdir(path):
+        _local_artifacts_root = _find_job_root(path)
+    else:
+        raise ValueError(f"Expected a directory or .tar.gz, got: {path}")
+
+    if not os.path.isfile(os.path.join(_local_artifacts_root, 'prowjob.json')):
+        logger.warning(
+            f"No prowjob.json under artifact root {_local_artifacts_root!r}; "
+            "analysis may fail."
+        )
+    logger.info(f"Artifact source: local root {_local_artifacts_root}")
+
+
+def _artifact_cache_key(base_url: str, artifact_path: str) -> str:
+    root = _local_artifacts_root or base_url
+    return f"{root}\0{artifact_path}"
+
+
+def _read_local_artifact(artifact_path: str) -> Optional[bytes]:
+    if not _local_artifacts_root:
+        return None
+    full = os.path.join(_local_artifacts_root, artifact_path.replace('/', os.sep))
+    if not os.path.isfile(full):
+        return None
+    with open(full, 'rb') as f:
+        return f.read()
+
+
+def _fetch_artifact_http(base_url: str, artifact_path: str, max_retries: int = 3) -> Optional[bytes]:
+    """HTTP(S) fetch only (no cache)."""
     url = f"{base_url}/{artifact_path}"
 
     for attempt in range(max_retries):
@@ -222,6 +432,43 @@ def fetch_artifact(base_url: str, artifact_path: str, max_retries: int = 3) -> O
     return None
 
 
+def fetch_artifact(base_url: str, artifact_path: str, max_retries: int = 3) -> Optional[bytes]:
+    """
+    Read an artifact from the configured local tree, or fetch from Prow/GCS over HTTP.
+
+    When :func:`configure_artifact_source` has set a local directory or extracted
+    ``.tar.gz``, **only disk reads** are used for job artifacts—``base_url`` is ignored
+    for retrieval (still used as a cache key). Otherwise HTTP is used with retries.
+
+    Successful reads are cached in-memory for the lifetime of the process (including
+    ``None`` for missing files) to avoid duplicate network or disk reads.
+
+    Args:
+        base_url: Base URL of the Prow job (cache key; used for HTTP when not local)
+        artifact_path: Relative path to the artifact (e.g., "prowjob.json")
+        max_retries: Maximum number of retry attempts (HTTP only)
+
+    Returns:
+        Artifact content as bytes, or None if not found
+    """
+    key = _artifact_cache_key(base_url, artifact_path)
+    if key in _artifact_cache:
+        return _artifact_cache[key]
+
+    if _local_artifacts_root:
+        data = _read_local_artifact(artifact_path)
+        _artifact_cache[key] = data
+        if data is not None:
+            logger.debug(f"Read local artifact {artifact_path} ({len(data)} bytes)")
+        else:
+            logger.debug(f"Local artifact not found: {artifact_path}")
+        return data
+
+    data = _fetch_artifact_http(base_url, artifact_path, max_retries=max_retries)
+    _artifact_cache[key] = data
+    return data
+
+
 def fetch_json_artifact(base_url: str, artifact_path: str) -> Optional[Dict]:
     """
     Fetch and parse a JSON artifact.
@@ -261,7 +508,10 @@ def check_artifacts_ready(base_url: str) -> bool:
 
 def wait_for_artifacts(base_url: str, timeout: int = 300, poll_interval: int = 10) -> bool:
     """
-    Wait for job artifacts to become available.
+    Wait for job artifacts to become available on the remote job (HTTP polling).
+
+    When a local artifact tree is configured, does not poll the network: checks once
+    for ``finished.json`` under the local root.
 
     Args:
         base_url: Base URL of the Prow job
@@ -271,6 +521,13 @@ def wait_for_artifacts(base_url: str, timeout: int = 300, poll_interval: int = 1
     Returns:
         True if artifacts became ready, False if timeout
     """
+    if _local_artifacts_root:
+        if check_artifacts_ready(base_url):
+            logger.info("Local artifacts present (finished.json found).")
+            return True
+        logger.warning("Local artifact root is missing finished.json.")
+        return False
+
     start_time = time.time()
 
     logger.info(f"Waiting for job artifacts (timeout: {timeout}s)...")
@@ -291,7 +548,7 @@ def wait_for_artifacts(base_url: str, timeout: int = 300, poll_interval: int = 1
 
 def get_artifact_url(base_url: str, artifact_path: str) -> str:
     """
-    Generate a GCS web URL for an artifact.
+    Generate a GCS web URL for an artifact, or a ``file://`` URI when using local artifacts.
 
     Args:
         base_url: Base URL of the Prow job
@@ -300,6 +557,10 @@ def get_artifact_url(base_url: str, artifact_path: str) -> str:
     Returns:
         Full URL to the artifact
     """
+    if _local_artifacts_root:
+        full = os.path.join(_local_artifacts_root, artifact_path.replace('/', os.sep))
+        if os.path.isfile(full):
+            return Path(full).resolve().as_uri()
     return f"{base_url}/{artifact_path}"
 
 
@@ -314,6 +575,25 @@ def get_step_directories(base_url: str, variant: str) -> List[str]:
     Returns:
         List of step directory names
     """
+    if _local_artifacts_root:
+        base = os.path.join(_local_artifacts_root, 'artifacts', variant)
+        if not os.path.isdir(base):
+            logger.debug(f"No local artifacts/{variant}/ directory: {base}")
+            return []
+        step_dirs: List[str] = []
+        try:
+            for name in sorted(os.listdir(base)):
+                if name in ('.', '..', 'artifacts'):
+                    continue
+                p = os.path.join(base, name)
+                if os.path.isdir(p):
+                    step_dirs.append(name)
+        except OSError as e:
+            logger.warning(f"Failed to list local step directories {base}: {e}")
+            return []
+        logger.debug(f"Found {len(step_dirs)} local step directories in {variant}")
+        return step_dirs
+
     artifacts_url = f"{base_url}/artifacts/{variant}/"
 
     try:
