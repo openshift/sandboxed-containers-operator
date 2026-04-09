@@ -781,11 +781,16 @@ def analyze_failure(
             try:
                 ext_bl_text = ext_step_build.decode('utf-8', errors='ignore')
                 extended_build_log_case_ids = extract_failed_case_ids_from_extended_build_log(ext_bl_text)
-                # RPM install runs in BeforeEach; only the first spec's log avoids repeated failures.
+                # Patterns (timeout/OOM/network/…): scan full step log so later specs are visible.
+                patterns_oet_full = check_log_for_patterns(
+                    ext_bl_text,
+                    'openshift-extended-test/build-log.txt',
+                )
+                detected_patterns.extend(patterns_oet_full)
+                # RPM install in BeforeEach: composite detection uses first-spec prefix only.
                 oet_first_test_prefix = extended_build_log_first_test_prefix(ext_bl_text)
-                oet_src = "openshift-extended-test/build-log.txt (first test)"
-                patterns_oet = check_log_for_patterns(oet_first_test_prefix, oet_src)
-                detected_patterns.extend(patterns_oet)
+                oet_src = 'openshift-extended-test/build-log.txt (first test)'
+                oet_pf = len(patterns_oet_full)
                 composite_rpm = detect_kata_rpm_install_context(oet_first_test_prefix)
                 if composite_rpm:
                     have = {p['pattern'] for p in detected_patterns}
@@ -794,9 +799,7 @@ def analyze_failure(
                             'pattern': 'rpm_install',
                             'source': f'{oet_src}, composite',
                         })
-                oet_pf = len(patterns_oet)
-                if composite_rpm and not any(p['pattern'] == 'rpm_install' for p in patterns_oet):
-                    oet_pf += 1
+                        oet_pf += 1
                 analyzed_files.append({
                     'name': 'openshift-extended-test/build-log.txt',
                     'path': ext_step_build_path,
@@ -807,8 +810,8 @@ def analyze_failure(
                     extended_build_log_case_ids,
                 )
                 logger.debug(
-                    "Patterns from openshift-extended-test/build-log (first test): %s",
-                    [p['pattern'] for p in patterns_oet],
+                    "Patterns from openshift-extended-test/build-log (full): %s",
+                    [p['pattern'] for p in patterns_oet_full],
                 )
             except Exception as e:
                 logger.warning(f"Failed to parse openshift-extended-test/build-log.txt: {e}")
