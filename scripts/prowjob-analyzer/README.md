@@ -17,6 +17,7 @@ The Prow Job Analyzer provides comprehensive analysis of Prow job runs, extracti
 - **Test Summary**: Lists failing tests if tests executed
 - **Multiple Output Formats**: Generates both human-readable markdown and machine-parsable JSON reports
 - **In-Progress Job Handling**: Can wait for running jobs to complete before analysis
+- **Local or Remote Artifacts**: Analyze from a Prow URL, from a local directory or a `.tar.gz` that matches the job artifact tree (`prowjob.json` at the job root). A tarball or directory can be used **without** a URL; report links prefer `status.url` from `prowjob.json` when present
 
 **Level 2: Detailed Test Analysis** (`dig_failed_tests_report.py`):
 - **Full Test Logs**: Extracts complete test execution logs from build-log.txt
@@ -41,8 +42,51 @@ cd scripts/prowjob-analyzer
 ```
 If it succeeded, there is no need to investigate further.
 
+#### Analyzing a local artifact tree or `.tar.gz`
 
-### Further Investgation
+If you already have job artifacts (same layout as the **gsutil** command on the Prow **Artifacts** page: `prowjob.json` at the root, `artifacts/…` below), you can analyze **without** a URL:
+
+```bash
+cd scripts/prowjob-analyzer
+./dig.py --artifacts /path/to/job-artifacts.tar.gz
+# or an extracted directory:
+./dig.py --artifacts /path/to/job-artifacts-dir
+```
+
+You can still pass a URL together with `--artifacts` if you want an explicit job identity or consistent links; otherwise links in the report use `status.url` from `prowjob.json`, or a `file://` URI for the bundle path.
+
+To download artifacts from GCS from the tool (requires `gsutil` on `PATH`), use `--download-artifacts` with a **Prow job URL**; optional `--tar-artifacts` writes `PARENT_DIR/<build-id>.tar.gz` next to the downloaded folder. See **Options** under `dig.py` below.
+
+#### Download, analyze, create a `.tar.gz`, and remove the directory
+
+Yes—with a **single** `dig.py` invocation you can download, analyze, and create the tarball. The analysis step always reads the **extracted directory** (`PARENT_DIR/<build-id>/`); the `.tar.gz` is written from that tree after download (when `--tar-artifacts` is set).
+
+```bash
+cd scripts/prowjob-analyzer
+./dig.py --download-artifacts /tmp --tar-artifacts '<PROW_JOB_URL>'
+```
+
+This produces:
+
+| Path | Role |
+|------|------|
+| `/tmp/<build-id>/` | Full artifact tree; **used for analysis in this run** |
+| `/tmp/<build-id>.tar.gz` | Same content archived for storage or later re-analysis |
+
+`dig.py` does **not** delete the extracted directory automatically (there is no built-in “remove after tar” flag). After the command finishes successfully, if you only want to keep the archive, delete the folder yourself. The directory name is the job’s **build ID** (the last path segment of the Prow URL, or the folder you see under `PARENT_DIR`):
+
+```bash
+rm -rf "/tmp/<build-id>"
+```
+
+You can analyze the saved bundle later without re-downloading:
+
+```bash
+./dig.py --artifacts "/tmp/<build-id>.tar.gz"
+```
+
+
+### Further Investigation
  On failed jobs, you can use Claude (recommended) or `dig_failed_tests_report.py`\
 
 #### Claude via script (Recommended)
@@ -126,6 +170,17 @@ You can also run the dig scripts directly:
 # Basic usage
 ./dig.py <PROW_JOB_URL>
 
+# Local directory or tarball only (no URL)
+./dig.py --artifacts /path/to/job-artifacts.tar.gz
+./dig.py --artifacts /path/to/extracted-artifacts-dir
+
+# Optional: combine URL with a local tree (reads from disk, no per-file HTTP for artifacts)
+./dig.py --artifacts /path/to/dir <PROW_JOB_URL>
+
+# Download artifacts with gsutil (requires URL), then analyze
+./dig.py --download-artifacts . <PROW_JOB_URL>
+./dig.py --download-artifacts /tmp --tar-artifacts <PROW_JOB_URL>
+
 # Generate JSON output
 ./dig.py --json <PROW_JOB_URL> > report.json
 
@@ -154,10 +209,16 @@ You can also run the dig scripts directly:
 ### Options
 
 **dig.py:**
-- `--json`: Output machine-readable JSON format instead of human-readable markdown
+- `url` (optional positional): Prow job URL. **Required** unless you pass `--artifacts` pointing at a directory or `.tar.gz` that contains `prowjob.json`. **Required** for `--download-artifacts`.
+- `--artifacts PATH`: Local directory or `.tar.gz` of job artifacts (Prow layout: `prowjob.json` at job root). Can be used **alone** or with a URL. When set, analysis reads from disk (no per-file HTTP for artifacts).
+- `--download-artifacts [PARENT_DIR]`: With a URL, run `gsutil` to copy the GCS prefix into `PARENT_DIR/<build-id>` (default parent: current directory). Requires `gsutil` on `PATH`.
+- `--tar-artifacts`: With `--download-artifacts`, also write `PARENT_DIR/<build-id>.tar.gz` beside the downloaded directory.
+- `--json`: Output machine-readable JSON instead of human-readable markdown
+- `--csv`: Output one CSV row from the canonical report (see Konflux batch example above)
+- `--no-header`: With `--csv`, omit the header row
 - `--verbose, -v`: Enable verbose logging for debugging
-- `--wait SECONDS`: Set timeout for waiting for in-progress jobs (default: 300 seconds)
-- `--no-wait`: Don't wait for in-progress jobs (analyze immediately)
+- `--wait SECONDS`: Timeout for waiting on in-progress **remote** jobs (default: 300; use `0` or `--no-wait` to disable). Not used when analyzing only from `--artifacts` or a tree produced by `--download-artifacts`.
+- `--no-wait`: Don't wait for in-progress jobs (same as `--wait 0`)
 
 **dig_failed_tests_report.py:**
 - `--json`: Output machine-readable JSON format
@@ -253,7 +314,7 @@ prowjob-analyzer/
    - Validates Prow URLs
 
 2. **dig.py**: Level 1 analysis - overall job status and metadata
-   - Fetches prowjob.json, finished.json, test-results.yaml
+   - Loads `prowjob.json`, `finished.json`, `test-results.yaml`, and step logs from the Prow job URL or from a local directory / `.tar.gz` (`--artifacts`), or after `--download-artifacts`
    - Determines which step(s) failed
    - Lists failing tests (if tests ran)
    - Generates comprehensive report with metadata and artifact links
@@ -265,7 +326,7 @@ prowjob-analyzer/
    - Only runs when tests actually executed and failed
 
 **Library Modules:**
-1. **Fetcher**: URL parsing, artifact downloading with retry logic, step detection
+1. **Fetcher**: URL parsing, HTTP fetching with retries, optional local directory or `.tar.gz` artifact root (same layout as gsutil download), optional `gsutil`-based full-tree download, step detection
 2. **Parser**: prowjob.json and test-results.yaml parsing, job status determination
 3. **Metadata Extractor**: Provider, OCP version, workload type, Kata RPM extraction
 4. **Failure Analyzer**: Failed step identification, test categorization
@@ -287,6 +348,7 @@ When using `/prowjob-analyze` command, Claude follows this workflow:
 
 - Python 3.6+
 - `pyyaml` library (for parsing test-results.yaml)
+- `gsutil` on `PATH` (only if you use `dig.py --download-artifacts` to pull artifacts from GCS)
 
 ### Installing Dependencies
 
@@ -302,7 +364,7 @@ sudo dnf install python3-pyyaml
 
 - `0`: Job passed successfully
 - `1`: Job failed, timed out, or was aborted
-- `2`: Analysis error (cannot fetch artifacts, invalid URL, etc.)
+- `2`: Analysis error (cannot load artifacts, invalid URL, missing `prowjob.json`, CLI usage error such as neither URL nor `--artifacts`, etc.)
 
 ## Examples
 
@@ -367,9 +429,8 @@ The analyzer is tailored for OSC jobs with special handling for:
 
 ### "Failed to fetch prowjob.json"
 
-- Check that the Prow job URL is correct
-- Verify the job has completed (or use --wait to wait for completion)
-- Ensure you have network access to prow.ci.openshift.org
+- **Remote mode**: Check that the Prow job URL is correct, the job has completed (or use `--wait`), and you have network access to prow.ci.openshift.org
+- **Local mode** (`--artifacts`): Confirm the path is a directory or `.tar.gz` whose job root contains `prowjob.json` (if you archived a single top-level folder, the tool looks for a subdirectory that holds `prowjob.json`)
 
 ### "pyyaml not available"
 

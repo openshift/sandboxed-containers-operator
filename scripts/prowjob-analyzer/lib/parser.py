@@ -105,24 +105,124 @@ def parse_test_results(test_results_content: bytes) -> Optional[Dict]:
         return None
 
 
-def get_job_status(prowjob_data: Dict, test_results: Optional[Dict] = None) -> str:
+def _count_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _oet_finished_json_has_timestamp(fin: Dict) -> bool:
+    """True if openshift-extended-test ``finished.json`` has a pod-utils timestamp."""
+    t = fin.get('timestamp')
+    if t is None:
+        return False
+    try:
+        return int(float(t)) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _job_status_from_test_results(test_results: Optional[Dict]) -> Optional[str]:
+    """
+    Derive ``success`` / ``failure`` from test-results.yaml body when possible.
+
+    Handles junit-style ``failures``/``errors``, ``failingScenarios``, per-test ``tests``,
+    a top-level ``failed`` count, or ``total``/``passed``/``skipped``.
+    """
+    if not test_results or not isinstance(test_results, dict):
+        return None
+
+    if 'failures' in test_results or 'errors' in test_results:
+        failures = _count_int(test_results.get('failures', 0))
+        errors = _count_int(test_results.get('errors', 0))
+        return 'success' if failures == 0 and errors == 0 else 'failure'
+
+    failing_scenarios = test_results.get('failingScenarios') or []
+    if failing_scenarios:
+        return 'failure'
+
+    tests = test_results.get('tests')
+    if isinstance(tests, list) and len(tests) > 0:
+        for t in tests:
+            if not isinstance(t, dict):
+                continue
+            if t.get('state') == 'failed' or t.get('failed') is True:
+                return 'failure'
+        return 'success'
+
+    if 'failed' in test_results:
+        failed = _count_int(test_results.get('failed'))
+        return 'success' if failed == 0 else 'failure'
+
+    if 'total' in test_results and 'passed' in test_results:
+        total = _count_int(test_results.get('total'))
+        passed = _count_int(test_results.get('passed'))
+        skipped = _count_int(test_results.get('skipped', 0))
+        if total > 0:
+            failed = total - passed - skipped
+            return 'success' if failed <= 0 else 'failure'
+
+    return None
+
+
+def get_job_status(
+    prowjob_data: Dict,
+    test_results: Optional[Dict] = None,
+    extended_test_finished: Optional[Dict] = None,
+) -> str:
     """
     Determine overall job status.
 
+    Priority for openshift-extended-test outcomes:
+    1. ``artifacts/.../openshift-extended-test/artifacts/test-results.yaml`` when the
+       body supports a clear outcome (failures/errors, ``failingScenarios``, ``tests``,
+       ``failed`` count, or ``total``/``passed``/``skipped``).
+    2. ``artifacts/.../openshift-extended-test/finished.json`` — ``result`` and/or a
+       ``timestamp`` proving the step finished (avoids ``pending`` when Prow job state
+       lags later ci-operator steps).
+    3. Top-level ``prowjob.json`` ``status.state`` when the above are inconclusive.
+
     Args:
-        prowjob_data: Parsed prowjob.json
-        test_results: Optional parsed test-results.yaml
+        prowjob_data: Parsed prowjob.json (raw dict)
+        test_results: Parsed test-results.yaml from openshift-extended-test (optional)
+        extended_test_finished: Parsed openshift-extended-test/finished.json (optional)
 
     Returns:
-        Status string: 'success', 'failure', 'timeout', 'error', 'aborted', 'pending'
+        Status string: 'success', 'failure', 'timeout', 'error', 'aborted', 'pending',
+        'unknown'
     """
-    status = prowjob_data.get('status', {})
-    state = status.get('state', '').lower()
+    tr_status = _job_status_from_test_results(test_results)
+    if tr_status is not None:
+        return tr_status
 
-    # Map Prow states to our status
+    if extended_test_finished is not None and isinstance(extended_test_finished, dict):
+        result = extended_test_finished.get('result')
+        r = str(result).strip().upper() if result is not None else ''
+        if r:
+            if r in ('SUCCESS', 'PASS', 'PASSED', 'SUCCEEDED'):
+                return 'success'
+            if r in ('FAILURE', 'FAILED', 'FAIL'):
+                return 'failure'
+            if r in ('TIMEOUT', 'TIMEDOUT'):
+                return 'timeout'
+            if r in ('ABORTED', 'INTERRUPTED'):
+                return 'aborted'
+            if r == 'ERROR':
+                return 'error'
+            return 'unknown'
+
+        if _oet_finished_json_has_timestamp(extended_test_finished):
+            return 'unknown'
+
+    status = prowjob_data.get('status', {})
+    state = (status.get('state') or '').lower()
+
     if state == 'success':
-        # Double-check with test results if available
-        if test_results and test_results.get('failures', 0) > 0:
+        if test_results and (
+            _count_int(test_results.get('failures', 0)) > 0
+            or _count_int(test_results.get('errors', 0)) > 0
+        ):
             return 'failure'
         return 'success'
     elif state == 'failure':
@@ -130,16 +230,14 @@ def get_job_status(prowjob_data: Dict, test_results: Optional[Dict] = None) -> s
     elif state == 'aborted':
         return 'aborted'
     elif state == 'pending':
+        if extended_test_finished is not None and isinstance(
+            extended_test_finished, dict
+        ) and _oet_finished_json_has_timestamp(extended_test_finished):
+            return 'unknown'
         return 'pending'
     elif state == 'error':
         return 'error'
     else:
-        # Try to infer from test results
-        if test_results:
-            if test_results.get('failures', 0) == 0:
-                return 'success'
-            else:
-                return 'failure'
         return 'unknown'
 
 
@@ -392,3 +490,28 @@ def format_duration(seconds: int) -> str:
         minutes = (seconds % 3600) // 60
         secs = seconds % 60
         return f"{hours}h {minutes}m {secs}s"
+
+
+def format_hours_minutes(seconds: int) -> str:
+    """
+    Format duration as ``HH:MM`` (hours and whole minutes, floor seconds).
+    """
+    if seconds < 0:
+        seconds = 0
+    total_minutes = seconds // 60
+    h = total_minutes // 60
+    m = total_minutes % 60
+    return f"{h:02d}:{m:02d}"
+
+
+def format_hours_minutes_test_step_display(seconds: int) -> str:
+    """
+    ``HH:MM`` for openshift-extended-test elapsed. Sub-minute positive durations show as
+    ``00:01`` so the value is never ``00:00`` when ``seconds > 0``.
+    """
+    if seconds <= 0:
+        return format_hours_minutes(0)
+    s = format_hours_minutes(seconds)
+    if s == '00:00' and seconds > 0:
+        return '00:01'
+    return s
