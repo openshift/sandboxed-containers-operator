@@ -3,6 +3,7 @@
 import unittest
 
 from lib.failure_analyzer import (
+    determine_root_cause,
     detect_kata_rpm_install_context,
     extract_failed_case_ids_from_extended_build_log,
     extract_kata_rpm_dependency_detail,
@@ -167,6 +168,83 @@ error: Failed dependencies:
         self.assertIsNone(
             extract_kata_rpm_dependency_detail("only unrelated log lines\n"),
         )
+
+
+class TestDetermineRootCauseRpmInstall(unittest.TestCase):
+    def test_high_confidence_when_composite_source_even_if_first_match_is_build_log(
+        self,
+    ) -> None:
+        """Composite rpm_install is only added when detect_kata passed on OET prefix."""
+        rc = determine_root_cause(
+            [],
+            [
+                {'pattern': 'rpm_install', 'source': 'build-log.txt'},
+                {
+                    'pattern': 'rpm_install',
+                    'source': 'openshift-extended-test/build-log.txt (first test), composite',
+                },
+            ],
+            {},
+            oet_build_log_first_test=None,
+        )
+        self.assertEqual(rc['primary_pattern'], 'rpm_install')
+        self.assertEqual(rc['confidence'], 'high')
+        self.assertTrue(rc.get('kata_worker_context_verified'))
+        self.assertIn('Kata RPM install', rc['likely_cause'])
+
+    def test_high_confidence_when_oet_prefix_matches_kata_worker_context(self) -> None:
+        oet = _kata_rpm_install_log_snippet()
+        rc = determine_root_cause(
+            [],
+            [
+                {
+                    'pattern': 'rpm_install',
+                    'source': 'openshift-extended-test/build-log.txt (first test)',
+                },
+            ],
+            {},
+            oet_build_log_first_test=oet,
+        )
+        self.assertEqual(rc['confidence'], 'high')
+        self.assertTrue(rc.get('kata_worker_context_verified'))
+        self.assertIn('Kata RPM install', rc['likely_cause'])
+
+    def test_low_confidence_for_generic_build_log_match_without_oet_verification(
+        self,
+    ) -> None:
+        rc = determine_root_cause(
+            [],
+            [{'pattern': 'rpm_install', 'source': 'build-log.txt'}],
+            {},
+            oet_build_log_first_test=None,
+        )
+        self.assertEqual(rc['confidence'], 'low')
+        self.assertFalse(rc.get('kata_worker_context_verified'))
+        self.assertIn('not confirmed', rc['likely_cause'].lower())
+        self.assertNotIn('qemu-kvm-core', ' '.join(rc.get('suggested_actions', [])))
+
+    def test_low_confidence_when_oet_does_not_show_worker_kata_context(self) -> None:
+        # Matches generic rpm_install regex (Failed dependencies) but not Kata worker path
+        oet = (
+            "oc debug node/ci-op-xyz-master-0-abcd -n openshift-machine-api "
+            + "y" * 40
+            + "\n"
+            "error: Failed dependencies:\n"
+            "  some-other-pkg is needed by unrelated-package\n"
+        )
+        rc = determine_root_cause(
+            [],
+            [
+                {
+                    'pattern': 'rpm_install',
+                    'source': 'openshift-extended-test/build-log.txt (first test)',
+                },
+            ],
+            {},
+            oet_build_log_first_test=oet,
+        )
+        self.assertEqual(rc['confidence'], 'low')
+        self.assertFalse(rc.get('kata_worker_context_verified'))
 
 
 if __name__ == "__main__":

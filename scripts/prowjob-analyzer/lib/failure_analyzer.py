@@ -278,6 +278,43 @@ def extract_kata_rpm_dependency_detail(text: str) -> Optional[str]:
     return None
 
 
+def _rpm_install_is_verified_kata_worker(
+    detected_patterns: List[Dict],
+    oet_build_log_first_test: Optional[str],
+) -> bool:
+    """
+    True only when ``rpm_install`` is tied to oc debug on a worker + kata RPM context.
+
+    Generic ``FAILURE_PATTERNS['rpm_install']`` regexes can match unrelated RPM errors in
+    top-level build-log.txt or extended.log; avoid high-confidence Kata remediation until
+    verified via openshift-extended-test (or composite injection from
+    :func:`detect_kata_rpm_install_context`).
+    """
+    for p in detected_patterns:
+        if p.get('pattern') != 'rpm_install':
+            continue
+        src = (p.get('source') or '')
+        # analyze_failure appends this only when detect_kata_rpm_install_context(oet prefix)
+        if 'composite' in src:
+            return True
+
+    oet = oet_build_log_first_test or ''
+    if not oet.strip():
+        return False
+
+    if detect_kata_rpm_install_context(oet):
+        return True
+
+    detail = extract_kata_rpm_dependency_detail(oet)
+    if not detail:
+        return False
+    if not re.search(r'debug\s+node/[^\s]*worker', oet, re.I):
+        return False
+    if not re.search(r'kata-containers\.rpm|rpm\s+-Uvh\s+\S*kata|needed by kata-containers', oet, re.I):
+        return False
+    return True
+
+
 def check_log_for_patterns(log_content: str, source_name: str = "unknown") -> List[Dict[str, str]]:
     """
     Check log content for known failure patterns.
@@ -449,30 +486,54 @@ def determine_root_cause(
     if 'rpm_install' in pattern_names:
         root_cause['primary_pattern'] = 'rpm_install'
         root_cause['pattern_source'] = find_pattern_source('rpm_install')
-        root_cause['confidence'] = 'high'
-        detail = None
-        if oet_build_log_first_test:
-            detail = extract_kata_rpm_dependency_detail(oet_build_log_first_test)
-        if detail:
-            root_cause['likely_cause'] = (
-                f'Kata RPM install on a worker (oc debug) failed: missing dependency. {detail}'
-            )
+        kata_worker_verified = _rpm_install_is_verified_kata_worker(
+            detected_patterns, oet_build_log_first_test
+        )
+        root_cause['kata_worker_context_verified'] = kata_worker_verified
+
+        if kata_worker_verified:
+            root_cause['confidence'] = 'high'
+            detail = None
+            if oet_build_log_first_test:
+                detail = extract_kata_rpm_dependency_detail(oet_build_log_first_test)
+            if detail:
+                root_cause['likely_cause'] = (
+                    f'Kata RPM install on a worker (oc debug) failed: missing dependency. {detail}'
+                )
+            else:
+                root_cause['likely_cause'] = (
+                    'Kata RPM install on a worker node failed (BeforeEach): missing or unsatisfied '
+                    'dependencies for kata-containers'
+                )
+            root_cause['suggested_actions'] = [
+                'Use the first test block in openshift-extended-test/build-log.txt only; later tests '
+                'repeat the same RPM install failure',
+                'Resolve the dependency shown under StdOut from oc debug (e.g. qemu-kvm-core)',
+                'Verify RHCOS layer and kata-containers RPM versions match test expectations',
+            ]
+            if 'rpm_cascading' in pattern_names:
+                root_cause['cascading_errors'] = ['rpm_cascading']
+                root_cause['note'] = (
+                    'Additional ostree "already unlocked" errors are usually cascading from the initial RPM failure'
+                )
         else:
+            root_cause['confidence'] = 'low'
             root_cause['likely_cause'] = (
-                'Kata RPM install on a worker node failed (BeforeEach): missing or unsatisfied '
-                'dependencies for kata-containers'
+                'RPM installation or dependency error matched generic log patterns; not confirmed '
+                'as Kata worker install via oc debug. Inspect the log in pattern_source for the '
+                'exact rpm/dnf error before applying Kata-specific fixes.'
             )
-        root_cause['suggested_actions'] = [
-            'Use the first test block in openshift-extended-test/build-log.txt only; later tests '
-            'repeat the same RPM install failure',
-            'Resolve the dependency shown under StdOut from oc debug (e.g. qemu-kvm-core)',
-            'Verify RHCOS layer and kata-containers RPM versions match test expectations',
-        ]
-        if 'rpm_cascading' in pattern_names:
-            root_cause['cascading_errors'] = ['rpm_cascading']
-            root_cause['note'] = (
-                'Additional ostree "already unlocked" errors are usually cascading from the initial RPM failure'
-            )
+            root_cause['suggested_actions'] = [
+                'Open the file listed in pattern_source and locate the failing rpm/dnf line',
+                'If the failure is openshift-extended-test installing kata on a worker, confirm '
+                'oc debug node/…worker… + kata-containers in openshift-extended-test/build-log.txt',
+            ]
+            if 'rpm_cascading' in pattern_names:
+                root_cause['cascading_errors'] = ['rpm_cascading']
+                root_cause['note'] = (
+                    'Additional ostree "already unlocked" errors may be related to an earlier RPM/ostree '
+                    'issue in the same log; verify context before treating as Kata-specific cascade'
+                )
     elif 'timeout' in pattern_names:
         root_cause['primary_pattern'] = 'timeout'
         root_cause['pattern_source'] = find_pattern_source('timeout')
