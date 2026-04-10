@@ -320,17 +320,19 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state Featur
 			maps.Copy(additionalLabels, amdSNPNodeLabels)
 		}
 
-		// Create kata-cc-nvidia-gpu runtime class restricted to the detected GPU TEE subset
-		err = r.createRuntimeClass(
-			kataNvidiaGPUCCRuntimeClassName,
-			kataNvidiaGPUCCRuntimeClassCpuOverhead,
-			kataNvidiaGPUCCRuntimeClassMemOverhead,
-			kataCCRuntimeClassExtResOverhead,
-			handler,
-			additionalLabels)
-		if err != nil {
-			r.Log.Error(err, "aborting, failed to create runtimeclass")
-			return err
+		// Create kata-cc-nvidia-gpu runtime class only for Intel TDX and AMD SNP
+		if hasIntelTDX || hasAmdSNP {
+			err = r.createRuntimeClass(
+				kataNvidiaGPUCCRuntimeClassName,
+				kataNvidiaGPUCCRuntimeClassCpuOverhead,
+				kataNvidiaGPUCCRuntimeClassMemOverhead,
+				kataCCRuntimeClassExtResOverhead,
+				handler,
+				additionalLabels)
+			if err != nil {
+				r.Log.Error(err, "aborting, failed to create runtimeclass")
+				return err
+			}
 		}
 
 	} else {
