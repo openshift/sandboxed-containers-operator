@@ -3,7 +3,6 @@ FROM registry.access.redhat.com/ubi9/ubi:9.7-1774415752
 # azure-podvm-image-handler.sh script under /scripts/azure-podvm-image-handler.sh
 # aws-podvm-image-handler.sh script under /scripts/aws-podvm-image-handler.sh
 # sources for cloud-api-adaptor under /src/cloud-api-adaptor
-# The podvm binaries are expected to be under /payload/podvm-binaries.tar.gz
 # Binaries like kubectl and yq under /usr/local/bin will be installed by the scripts
 
 
