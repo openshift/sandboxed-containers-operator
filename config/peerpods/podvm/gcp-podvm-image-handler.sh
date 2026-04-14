@@ -88,10 +88,10 @@ function create_image() {
 
   # Based on the value of `IMAGE_TYPE` the image is either build from scratch or
   # usingthethe prebuilt artifact.
-  if [[ "${IMAGE_TYPE}" == "operator-built" ]]; then
-    error_exit "Currently only pre-built is supported for GCP, exiting."
-  elif [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
+  if [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
     create_image_from_prebuilt_artifact
+  else
+    error_exit "Unsupported IMAGE_TYPE: ${IMAGE_TYPE}. Only 'pre-built' is supported."
   fi
 
   # Add the image id as annotation to peer-pods-cm configmap

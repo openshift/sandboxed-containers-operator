@@ -50,14 +50,13 @@ function check_peer_pods_cm_exists() {
 function set_podvm_image_type() {
     echo "Checking if PODVM_IMAGE_URI is set"
 
-    # If the value of the PODVM_IMAGE_URI is empty or not set, then build the image from scratch else use the prebuilt artifact.
+    # PODVM_IMAGE_URI is required as operator-built flow has been deprecated
     if [[ -z "${PODVM_IMAGE_URI}" ]]; then
-      IMAGE_TYPE="operator-built"
-      echo "Initiating the operator to build the podvm image"
-    else
-      IMAGE_TYPE="pre-built"
-      echo "Initiating the operator to use the pre-built podvm image"
+      error_exit "PODVM_IMAGE_URI is required. The operator-built IMAGE_TYPE has been deprecated. Please provide a pre-built podvm image URI."
     fi
+
+    IMAGE_TYPE="pre-built"
+    echo "Initiating the operator to use the pre-built podvm image"
 
     export IMAGE_TYPE
 

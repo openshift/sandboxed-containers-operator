@@ -58,7 +58,7 @@ function verify_vars() {
     [[ -z "${IMAGE_DEFINITION_NAME}" ]] && error_exit "IMAGE_DEFINITION_NAME is empty"
     [[ -z "${IMAGE_DEFINITION_VM_GENERATION}" ]] && error_exit "IMAGE_DEFINITION_VM_GENERATION is empty"
 
-    # Ensure packer variables are set
+    # Ensure VM and image variables are set
     [[ -z "${VM_SIZE}" ]] && error_exit "VM_SIZE is empty"
     [[ -z "${PODVM_DISTRO}" ]] && error_exit "PODVM_DISTRO is empty"
 
@@ -260,57 +260,6 @@ function create_image_definition() {
     echo "Azure image definition created successfully"
 }
 
-# Function to use packer to create Azure image
-
-function create_image_using_packer() {
-    echo "Creating Azure image using packer"
-
-    echo "Deleting any leftover managed image (${IMAGE_NAME}) due to abrupt exit of packer build"
-    # This will be of the form
-    # /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Compute/images/<image-name>
-    # Note that this is not tied to gallery
-    # We ignore any errors here.
-    az image delete --name "${IMAGE_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" || true
-
-    # If any error occurs, exit the script with an error message
-    # The variables are set before calling the function
-
-    # Set the base image details
-
-    if [[ "${PODVM_DISTRO}" != "rhel" ]]; then
-        error_exit "Unsupported distro"
-    fi
-
-    export PKR_VAR_client_id="${AZURE_CLIENT_ID}"
-    export PKR_VAR_client_secret="${AZURE_CLIENT_SECRET}"
-    export PKR_VAR_subscription_id="${AZURE_SUBSCRIPTION_ID}"
-    export PKR_VAR_tenant_id="${AZURE_TENANT_ID}"
-    export PKR_VAR_resource_group="${AZURE_RESOURCE_GROUP}"
-    export PKR_VAR_location="${AZURE_REGION}"
-    export PKR_VAR_az_image_name="${IMAGE_NAME}"
-    export PKR_VAR_vm_size="${VM_SIZE}"
-    export PKR_VAR_ssh_username="${SSH_USERNAME:-peerpod}"
-    export PKR_VAR_publisher="${BASE_IMAGE_PUBLISHER}"
-    export PKR_VAR_offer="${BASE_IMAGE_OFFER}"
-    export PKR_VAR_sku="${BASE_IMAGE_SKU}"
-    export PKR_VAR_az_gallery_name="${IMAGE_GALLERY_NAME}"
-    export PKR_VAR_az_gallery_image_name="${IMAGE_DEFINITION_NAME}"
-    export PKR_VAR_az_gallery_image_version="${IMAGE_VERSION}"
-
-    cd "${CAA_SRC_DIR}"/azure/image ||
-        error_exit "Failed to change directory to ${CAA_SRC_DIR}/azure/image"
-    packer init "${PODVM_DISTRO}"/
-    make BINARIES= PAUSE_BUNDLE= image
-
-    # Check if make resulted in error
-    return_code=$?
-    [[ "$return_code" -ne 0 ]] && error_exit "Failed to create Azure image using packer"
-
-    # Wait for the image to be created
-
-    echo "Azure image created successfully"
-}
-
 # Function to retrieve the image id given gallery, image definition and image version
 
 function get_image_id() {
@@ -429,10 +378,10 @@ function create_image() {
     fi
 
     # Based on the value of `IMAGE_TYPE` the image is either build from scratch or using the prebuilt artifact.
-    if [[ "${IMAGE_TYPE}" == "operator-built" ]]; then
-        create_azure_image_from_scratch
-    elif [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
+    if [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
         create_azure_image_from_prebuilt_artifact
+    else
+        error_exit "Unsupported IMAGE_TYPE: ${IMAGE_TYPE}. Only 'pre-built' is supported."
     fi
 
     # Get the image id
@@ -444,27 +393,6 @@ function create_image() {
 
     echo "Azure image created successfully"
 
-}
-
-# Function to create the azure image from scratch using packer
-function create_azure_image_from_scratch() {
-    echo "Creating Azure image from scratch"
-
-    if [[ "${DOWNLOAD_SOURCES}" == "yes" ]]; then
-        # Download source code from GitHub
-        download_source_code
-    fi
-
-    # Prepare the source code for building the image
-    prepare_source_code
-
-    # Prepare the pause image for embedding into the image
-    download_and_extract_pause_image "${PAUSE_IMAGE_REPO}" "${PAUSE_IMAGE_VERSION}" "${CLUSTER_PULL_SECRET_AUTH_FILE}"
-
-    # Create Azure image using packer
-    create_image_using_packer
-
-    echo "Azure image created successfully from scratch"
 }
 
 # Function to create the azure image from prebuilt artifact
