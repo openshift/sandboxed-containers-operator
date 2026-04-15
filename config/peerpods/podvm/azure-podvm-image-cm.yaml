@@ -4,9 +4,6 @@ metadata:
   name: azure-podvm-image-cm
   namespace: openshift-sandboxed-containers-operator
 data:
-  # PodVM image distro
-  PODVM_DISTRO: rhel
-
   # Gallery
   # Set the gallery name explicitly, otherwise it'll be set by the operator to
   # PodVMGallery_${cluster-id}. If a gallery name is provided, the job will
@@ -26,11 +23,6 @@ data:
   IMAGE_DEFINITION_VM_GENERATION: "V2"
   IMAGE_DEFINITION_ARCHITECTURE: "x64"
 
-  # base image - should be coordinated with IMAGE_DEFINITION_VM_GENERATION
-  BASE_IMAGE_PUBLISHER: "redhat"
-  BASE_IMAGE_OFFER: "RHEL"
-  BASE_IMAGE_SKU: "94_gen2"
-
   # Image
   IMAGE_BASE_NAME: "podvm-image"
   # Must be in Major(int).Minor(int).Patch(int) format
@@ -38,30 +30,10 @@ data:
   # "$clusterid.0.1"
   IMAGE_VERSION: "0.0.1"
 
-  # Packer VM size
-  VM_SIZE: "Standard_D2as_v5"
-
-  # Pod VM sources
-  # If changing the source, then ensure the respective payload binaries are available
-  # for the new source
-  CAA_SRC: "https://gitlab.cee.redhat.com/osc/midstream/cloud-api-adaptor"
-  CAA_REF: "v0.8.0-1.6"
-
   # Booleans
   INSTALL_PACKAGES: "no"
-  DOWNLOAD_SOURCES: "no"
   CONFIDENTIAL_COMPUTE_ENABLED: "no"
-  DISABLE_CLOUD_CONFIG: "true"
-  ENABLE_NVIDIA_GPU: "no"
   UPDATE_PEERPODS_CM: "yes"
-  BOOT_FIPS: "no"
-
-  # NVIDIA GPU vars
-  NVIDIA_DRIVER_VERSION: "535"
-  NVIDIA_USERSPACE_VERSION: "1.13.5-1"
-
-  # Custom Agent Policy
-  #AGENT_POLICY: "" # set to base64 encoded agent policy
 
   # precreated artifacts
   #PODVM_IMAGE_URI: bootc::image-registry.openshift-image-registry.svc:5000/openshift-sandboxed-containers-operator/podvm-bootc

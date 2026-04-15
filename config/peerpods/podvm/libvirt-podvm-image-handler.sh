@@ -17,9 +17,6 @@ source /scripts/lib.sh
 function verify_vars() {
     # Ensure CLOUD_PROVIDER is set to libvirt
     [[ -z "${CLOUD_PROVIDER}" || "${CLOUD_PROVIDER}" != "libvirt" ]] && error_exit "CLOUD_PROVIDER is empty or not set to libvirt"
-
-    [[ -z "${ORG_ID}" ]] && error_exit "ORG_ID is not set"
-    [[ -z "${ACTIVATION_KEY}" ]] && error_exit "ACTIVATION_KEY is not set"
 }
 
 # Function to create the libvirt image based on the type.

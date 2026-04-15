@@ -28,7 +28,6 @@ function verify_vars() {
     "IMAGE_BASE_NAME"
     "IMAGE_VERSION"
     "INSTALL_PACKAGES"
-    "DISABLE_CLOUD_CONFIG"
 
     # From peer-pods-secret:
     "GCP_CREDENTIALS"

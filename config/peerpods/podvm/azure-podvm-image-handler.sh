@@ -58,24 +58,13 @@ function verify_vars() {
     [[ -z "${IMAGE_DEFINITION_NAME}" ]] && error_exit "IMAGE_DEFINITION_NAME is empty"
     [[ -z "${IMAGE_DEFINITION_VM_GENERATION}" ]] && error_exit "IMAGE_DEFINITION_VM_GENERATION is empty"
 
-    # Ensure VM and image variables are set
-    [[ -z "${VM_SIZE}" ]] && error_exit "VM_SIZE is empty"
-    [[ -z "${PODVM_DISTRO}" ]] && error_exit "PODVM_DISTRO is empty"
-
     # Ensure that the image variables are set
     [[ -z "${IMAGE_BASE_NAME}" ]] && error_exit "IMAGE_BASE_NAME is empty"
     [[ -z "${IMAGE_VERSION}" ]] && error_exit "IMAGE_VERSION is empty"
 
-    [[ -z "${CAA_SRC}" ]] && error_exit "CAA_SRC is empty"
-    [[ -z "${CAA_REF}" ]] && error_exit "CAA_REF is empty"
-
     # Ensure booleans are set
     [[ -z "${INSTALL_PACKAGES}" ]] && error_exit "INSTALL_PACKAGES is empty"
-    [[ -z "${DOWNLOAD_SOURCES}" ]] && error_exit "DOWNLOAD_SOURCES is empty"
     [[ -z "${CONFIDENTIAL_COMPUTE_ENABLED}" ]] && error_exit "CONFIDENTIAL_COMPUTE_ENABLED is empty"
-    [[ -z "${DISABLE_CLOUD_CONFIG}" ]] && error_exit "DISABLE_CLOUD_CONFIG is empty"
-    [[ -z "${ENABLE_NVIDIA_GPU}" ]] && error_exit "ENABLE_NVIDIA_GPU is empty"
-    [[ -z "${BOOT_FIPS}" ]] && error_exit "BOOT_FIPS is empty"
 
     echo "All variables are set"
 

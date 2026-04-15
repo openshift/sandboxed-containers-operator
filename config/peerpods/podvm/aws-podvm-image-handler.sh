@@ -22,10 +22,6 @@ function verify_vars() {
     [[ -z "${AWS_ACCESS_KEY_ID}" ]] && error_exit "AWS_ACCESS_KEY_ID is not set"
     [[ -z "${AWS_SECRET_ACCESS_KEY}" ]] && error_exit "AWS_SECRET_ACCESS_KEY is not set"
 
-    # Packer variables
-    [[ -z "${INSTANCE_TYPE}" ]] && error_exit "INSTANCE_TYPE is not set"
-    [[ -z "${PODVM_DISTRO}" ]] && error_exit "PODVM_DISTRO is not set"
-
     # if AWS_REGION is empty, try to get it from the metadata service
     if [[ ! "${AWS_REGION}" ]]; then
         AWS_REGION=$(curl -m 30 -s --show-error http://169.254.169.254/latest/meta-data/placement/region ||
@@ -64,18 +60,8 @@ function verify_vars() {
     [[ -z "${AMI_VERSION}" ]] && error_exit "AMI_VERSION is not set"
     [[ -z "${AMI_VOLUME_SIZE}" ]] && error_exit "AMI_VOLUME_SIZE is not set"
 
-    [[ -z "${PODVM_DISTRO}" ]] && error_exit "PODVM_DISTRO is not set"
-    [[ -z "${DISABLE_CLOUD_CONFIG}" ]] && error_exit "DISABLE_CLOUD_CONFIG is not set"
-
-    [[ -z "${CAA_SRC}" ]] && error_exit "CAA_SRC is empty"
-    [[ -z "${CAA_REF}" ]] && error_exit "CAA_REF is empty"
-
     # Ensure booleans are set
     [[ -z "${INSTALL_PACKAGES}" ]] && error_exit "INSTALL_PACKAGES is empty"
-    [[ -z "${DOWNLOAD_SOURCES}" ]] && error_exit "DOWNLOAD_SOURCES is empty"
-    [[ -z "${CONFIDENTIAL_COMPUTE_ENABLED}" ]] && error_exit "CONFIDENTIAL_COMPUTE_ENABLED is empty"
-    [[ -z "${DISABLE_CLOUD_CONFIG}" ]] && error_exit "DISABLE_CLOUD_CONFIG is empty"
-    [[ -z "${ENABLE_NVIDIA_GPU}" ]] && error_exit "ENABLE_NVIDIA_GPU is empty"
 }
 
 # function to download and install aws cli
