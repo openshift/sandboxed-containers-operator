@@ -85,7 +85,7 @@ function create_image() {
     install_binary_packages
   fi
 
-  create_image_from_prebuilt_artifact
+  create_gcp_image_from_prebuilt_artifact
 
   # Add the image id as annotation to peer-pods-cm configmap
   update_cm_annotation "LATEST_IMAGE_ID" "${IMAGE_NAME}"
@@ -99,7 +99,7 @@ function set_image_name() {
   export IMAGE_NAME
 }
 
-function create_image_from_prebuilt_artifact() {
+function create_gcp_image_from_prebuilt_artifact() {
   echo "Creating GCP image from prebuilt artifact"
 
   # Set the IMAGE_NAME
