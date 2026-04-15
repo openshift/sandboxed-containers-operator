@@ -350,11 +350,7 @@ function create_ami() {
         install_binary_packages
     fi
 
-    if [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
-        create_ami_from_prebuilt_artifact
-    else
-        error_exit "Unsupported IMAGE_TYPE: ${IMAGE_TYPE}. Only 'pre-built' is supported."
-    fi
+    create_ami_from_prebuilt_artifact
 
     # Get the ami id
     # This will set the AMI_ID environment variable

@@ -29,12 +29,7 @@ function create_libvirt_image() {
         create_pool_and_volume
     fi
 
-    # Based on the value of `IMAGE_TYPE` the image is either build from scratch or using the prebuilt artifact.
-    if [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
-        create_libvirt_image_from_prebuilt_artifact
-    else
-        error_exit "Unsupported IMAGE_TYPE: ${IMAGE_TYPE}. Only 'pre-built' is supported."
-    fi
+    create_libvirt_image_from_prebuilt_artifact
 }
 
 # Function to create Libvirt pool and configure libvirt volume to upload qcow2 image

@@ -86,13 +86,7 @@ function create_image() {
     install_binary_packages
   fi
 
-  # Based on the value of `IMAGE_TYPE` the image is either build from scratch or
-  # usingthethe prebuilt artifact.
-  if [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
-    create_image_from_prebuilt_artifact
-  else
-    error_exit "Unsupported IMAGE_TYPE: ${IMAGE_TYPE}. Only 'pre-built' is supported."
-  fi
+  create_image_from_prebuilt_artifact
 
   # Add the image id as annotation to peer-pods-cm configmap
   update_cm_annotation "LATEST_IMAGE_ID" "${IMAGE_NAME}"

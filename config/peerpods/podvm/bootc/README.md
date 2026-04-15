@@ -65,7 +65,7 @@ Upload it to your cloud-provider.
 #### Leverge OSC to upload the disk to your cloud provider
 1. bake an OCI container image with you disk file
 2. push it to some container registry
-3. set in the `<cloud-provider>-podvm-image-cm` IMAGE_TYPE: pre-built and PODVM_IMAGE_URI
+3. set `PODVM_IMAGE_URI` in the `<cloud-provider>-podvm-image-cm` configmap
 that follows this format: `oci::<container-image-uri>::</absolute/path/to/disk>`
 
 **AWS:** See [Bootc Image Builder Instructions for AMI artifact](https://github.com/osbuild/bootc-image-builder?tab=readme-ov-file#amazon-machine-images-amis)
@@ -80,7 +80,6 @@ Once you have OSC operator installed and before applying KataConfig,
 ensure your `<cloud-provider>-podvm-image-cm` values are configured
 correctly:
 ```
-IMAGE_TYPE: pre-built
 PODVM_IMAGE_URI: ${IMG_URI}
 # Custom bootc build configuration: https://osbuild.org/docs/bootc/#-build-config
 # default is used if not set

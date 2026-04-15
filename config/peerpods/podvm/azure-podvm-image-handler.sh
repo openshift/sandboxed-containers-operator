@@ -377,12 +377,7 @@ function create_image() {
         install_binary_packages
     fi
 
-    # Based on the value of `IMAGE_TYPE` the image is either build from scratch or using the prebuilt artifact.
-    if [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
-        create_azure_image_from_prebuilt_artifact
-    else
-        error_exit "Unsupported IMAGE_TYPE: ${IMAGE_TYPE}. Only 'pre-built' is supported."
-    fi
+    create_azure_image_from_prebuilt_artifact
 
     # Get the image id
     # This will set the IMAGE_ID variable

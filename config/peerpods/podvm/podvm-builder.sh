@@ -46,20 +46,16 @@ function check_peer_pods_cm_exists() {
   fi
 }
 
-# Function to check if the image should be built or use the pre-built artifact.
-function set_podvm_image_type() {
+# Function to validate that PODVM_IMAGE_URI is set.
+function validate_podvm_image_uri() {
     echo "Checking if PODVM_IMAGE_URI is set"
 
     # PODVM_IMAGE_URI is required as operator-built flow has been deprecated
     if [[ -z "${PODVM_IMAGE_URI}" ]]; then
-      error_exit "PODVM_IMAGE_URI is required. The operator-built IMAGE_TYPE has been deprecated. Please provide a pre-built podvm image URI."
+      error_exit "PODVM_IMAGE_URI is required. The operator-built flow has been deprecated. Please provide a pre-built podvm image URI."
     fi
 
-    IMAGE_TYPE="pre-built"
-    echo "Initiating the operator to use the pre-built podvm image"
-
-    export IMAGE_TYPE
-
+    echo "Using pre-built podvm image from: ${PODVM_IMAGE_URI}"
 }
 
 # Function to create podvm image
@@ -368,8 +364,8 @@ function display_usage() {
   echo "Usage: $0 {create|delete [-f] [-g]|delete-gallery [-f]}"
 }
 
-# Set the PodVM image type based on the `PODVM_IMAGE_URI`
-set_podvm_image_type
+# Validate that PODVM_IMAGE_URI is set
+validate_podvm_image_uri
 
 # Check if CLOUD_PROVIDER is set to azure or aws or libvirt
 # Install the required dependencies
