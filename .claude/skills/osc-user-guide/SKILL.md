@@ -1,6 +1,10 @@
 ---
 name: osc-user-guide
-description: Provides comprehensive guidance on OpenShift Sandboxed Containers (OSC) by reading official Red Hat documentation. Use when questions involve OSC installation, KataConfig configuration, node setup, bare-metal or cloud deployments, PeerPods, confidential containers, TEE, Trustee, attestation, or troubleshooting.
+description: >-
+  Provides comprehensive guidance on OpenShift Sandboxed Containers (OSC) by reading official
+  Red Hat documentation. ONLY trigger when the user explicitly asks to consult the user guide,
+  official docs, release notes, or says "use the user guide". Do NOT trigger for general code
+  questions, source code inspection, or tasks answerable from the repository itself.
 ---
 
 # OSC User Guide Reader
