@@ -50,7 +50,7 @@ sudo podman run \
        --privileged \
        --security-opt label=type:unconfined_t \
        --authfile ${AUTHFILE} \
-       -v $(pwd)/config.toml:/config.toml:ro \
+#       -v $(pwd)/config.toml:/config.toml:ro \
        -v $(pwd)/output:/output \
        -v /var/lib/containers/storage:/var/lib/containers/storage \
        registry.redhat.io/rhel9/bootc-image-builder:latest \
