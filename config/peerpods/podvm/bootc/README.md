@@ -50,13 +50,13 @@ sudo podman run \
        --privileged \
        --security-opt label=type:unconfined_t \
        --authfile ${AUTHFILE} \
-       -v $(pwd)/config.toml:/config.toml:ro \
+#       -v $(pwd)/config.toml:/config.toml:ro \
        -v $(pwd)/output:/output \
        -v /var/lib/containers/storage:/var/lib/containers/storage \
-       registry.redhat.io/rhel9/bootc-image-builder:latest \
+       registry.redhat.io/rhel10/bootc-image-builder:latest \
        --type qcow2 \
-       --rootfs xfs \
-       --local \ # if pulled locally
+       --rootfs ext4 \
+       --local \
        "${IMG}"
 ```
 Artifact will be located at  output/qcow2/disk.qcow2

@@ -22,8 +22,14 @@ fi
 #
 # Generic case based on OSC_VERSION tag
 #
+# Handle inline comments (YAML, Makefile, etc.)
 sed -Ei "s/[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+([^#]+## OSC_VERSION)/${version}\1/g" \
     $(git grep -El '[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+[^#]+## OSC_VERSION')
+
+# Handle preceding-line comments (Dockerfiles/Containerfiles)
+for file in $(git grep -l "^## OSC_VERSION"); do
+    sed -Ei "/^## OSC_VERSION/{n;s/[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+/${version}/g}" "$file"
+done
 
 #
 # Specific cases in the CSV

@@ -2,7 +2,7 @@
 # Contains common functions used by the scripts
 
 # Bootc Defaults
-BIB_IMAGE=${BIB_IMAGE:-registry.redhat.io/rhel9/bootc-image-builder:9.5}
+BIB_IMAGE=${BIB_IMAGE:-registry.redhat.io/rhel10/bootc-image-builder:10.1}
 
 # Defaults for pause image
 # This pause image is multi-arch
@@ -484,12 +484,12 @@ function bootc_image_builder_conversion() {
         echo "Using Custom Bootc Build Configuration"
         echo "${BOOTC_BUILD_CONFIG}" >./custom-config.toml
         BOOTC_BUILD_CONFIG_PATH=$(pwd)/custom-config.toml
+        run_args+=" -v ${BOOTC_BUILD_CONFIG_PATH}:/config.toml:ro "
+        echo "config.toml:"
+        cat ${BOOTC_BUILD_CONFIG_PATH}
     else
-        echo "Using Default Bootc Build Configuration"
-        BOOTC_BUILD_CONFIG_PATH=/scripts/bootc/config.toml
+        echo "Using Default Bootc Build Configuration from image's /usr/lib/bootc-image-builder directory"
     fi
-    echo "config.toml:"
-    cat ${BOOTC_BUILD_CONFIG_PATH}
 
     # login for local registry pulling # TODO: can we use token instead?
     if [[ "${container_image_repo_url}" == *"image-registry.openshift-image-registry.svc"* ]]; then
@@ -510,13 +510,12 @@ function bootc_image_builder_conversion() {
         -it \
         --privileged \
         --security-opt label=type:unconfined_t \
-        -v ${BOOTC_BUILD_CONFIG_PATH}:/config.toml:ro \
         -v /store:/store \
         -v /var/lib/containers/storage:/var/lib/containers/storage \
         ${run_args} \
         ${BIB_IMAGE} \
         ${bib_args} \
-        --rootfs xfs \
+        --rootfs ext4 \
         --local \
         ${container_image_repo_url}:${image_tag} || error_exit "Failed to convert bootc image"
 }
