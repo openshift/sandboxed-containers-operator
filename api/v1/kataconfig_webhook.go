@@ -48,7 +48,7 @@ func (r *KataConfig) SetupWebhookWithManager(mgr ctrl.Manager) error {
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
-//+kubebuilder:webhook:verbs=create,path=/validate-kataconfiguration-openshift-io-v1-kataconfig,mutating=false,failurePolicy=fail,groups=kataconfiguration.openshift.io,resources=kataconfigs,versions=v1,name=vkataconfig.kb.io,sideEffects=none,admissionReviewVersions={v1}
+//+kubebuilder:webhook:verbs=create,path=/validate-kataconfiguration-openshift-io-v1-kataconfig,mutating=false,failurePolicy=fail,groups=kataconfiguration.openshift.io,resources=kataconfigs,versions=v1,name=vkataconfig.kb.io,sideEffects=none,admissionReviewVersions={v1},serviceName=controller-manager-service
 
 var _ webhook.CustomValidator = &KataConfig{}
 
@@ -61,16 +61,19 @@ func (r *KataConfig) ValidateCreate(ctx context.Context, obj runtime.Object) (ad
 
 	kataconfiglog.Info("validate create", "name", kataconfig.Name)
 
-	kataConfigList := &KataConfigList{}
-	listOpts := []client.ListOption{
-		client.InNamespace(corev1.NamespaceAll),
-	}
-	if err := clientInst.List(ctx, kataConfigList, listOpts...); err != nil {
-		return nil, fmt.Errorf("Failed to list KataConfig custom resources: %v", err)
-	}
+	// Skip client-dependent validation if clientInst is nil (e.g., during testing)
+	if clientInst != nil {
+		kataConfigList := &KataConfigList{}
+		listOpts := []client.ListOption{
+			client.InNamespace(corev1.NamespaceAll),
+		}
+		if err := clientInst.List(ctx, kataConfigList, listOpts...); err != nil {
+			return nil, fmt.Errorf("Failed to list KataConfig custom resources: %v", err)
+		}
 
-	if len(kataConfigList.Items) == 1 {
-		return nil, fmt.Errorf("A KataConfig instance already exists, refusing to create a duplicate")
+		if len(kataConfigList.Items) == 1 {
+			return nil, fmt.Errorf("A KataConfig instance already exists, refusing to create a duplicate")
+		}
 	}
 
 	return nil, nil

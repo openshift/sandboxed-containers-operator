@@ -1,5 +1,31 @@
 ---
 apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: mutating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: controller-manager-service
+      namespace: system
+      path: /mutate-pods-v1
+  failurePolicy: Fail
+  name: mpods.kb.io
+  rules:
+  - apiGroups:
+    - ""
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - pods
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
   name: validating-webhook-configuration
@@ -8,7 +34,7 @@ webhooks:
   - v1
   clientConfig:
     service:
-      name: webhook-service
+      name: controller-manager-service
       namespace: system
       path: /validate-kataconfiguration-openshift-io-v1-kataconfig
   failurePolicy: Fail

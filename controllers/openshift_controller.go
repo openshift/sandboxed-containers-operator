@@ -68,6 +68,8 @@ type KataConfigOpenShiftReconciler struct {
 	ImgMc *mcfgv1.MachineConfig
 
 	DeploymentMode DeploymentMode
+
+	PodMutator *PodMutator
 }
 
 type customKernelConfig struct {
@@ -92,6 +94,10 @@ const (
 	kataNvidiaGPURuntimeClassName        = "kata-nvidia-gpu"
 	kataNvidiaGPURuntimeClassCpuOverhead = "1"
 	kataNvidiaGPURuntimeClassMemOverhead = "4096Mi"
+
+	// qemu-runtime-rs shim; name/handler match upstream kata-deploy.
+	// Nodes must register this CRI handler (same extension as the default kata shim).
+	kataQemuRuntimeRsRuntimeClassName = "kata-qemu-runtime-rs"
 )
 
 var (
@@ -2361,6 +2367,19 @@ func (r *KataConfigOpenShiftReconciler) postKataInstallation() (*ctrl.Result, er
 		}
 	} else {
 		r.Log.Info("Skipping kata-nvidia-gpu runtime class creation on s390x architecture")
+	}
+
+	err = r.createRuntimeClass(
+		kataQemuRuntimeRsRuntimeClassName,
+		kataRuntimeClassCpuOverhead,
+		kataRuntimeClassMemOverhead,
+		"",
+		kataQemuRuntimeRsRuntimeClassName,
+		map[string]string{
+			"feature.node.kubernetes.io/runtime.kata": "true",
+		})
+	if err != nil {
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
 
 	r.Log.Info("create Scc")

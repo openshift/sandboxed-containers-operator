@@ -180,6 +180,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Setup pod mutator webhook for memory overhead annotation injection
+	podMutator := controllers.NewPodMutator(mgr)
+	if err = podMutator.SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "PodMutator")
+		os.Exit(1)
+	}
+
 	if err = (&controllers.SecretReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),

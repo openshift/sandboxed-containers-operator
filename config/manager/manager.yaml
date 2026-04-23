@@ -61,18 +61,28 @@ spec:
             - serviceAccountToken:
                 path: token
                 audience: openshift
+        - name: webhook-certs
+          secret:
+            secretName: webhook-server-cert
       containers:
         - command:
             - /manager
           args:
             - --metrics-bind-address=127.0.0.1:8080
             - --leader-elect
+            - --webhook-port=9443
+          ports:
+            - containerPort: 9443
+              name: webhook-server
+              protocol: TCP
           volumeMounts:
             - mountPath: /root/.ssh/
               name: ssh
               readOnly: true
             - mountPath: /var/run/secrets/openshift/serviceaccount
               name: bound-sa-token
+            - name: webhook-certs
+              mountPath: /tmp/k8s-webhook-server/serving-certs
               readOnly: true
           envFrom:
             - secretRef:

@@ -91,6 +91,7 @@ func (r *KataConfigOpenShiftReconciler) ensureRuntimeClassFinalizers() error {
 		kataCCRuntimeClassName,
 		peerpodsRuntimeClassName,
 		kataRuntimeClassName,
+		kataQemuRuntimeRsRuntimeClassName,
 	}
 
 	for _, name := range runtimeClasses {

@@ -1,0 +1,18 @@
+# Example Kata pod. The webhook injects io.katacontainers.config.hypervisor.memory_overhead
+# based on osc-feature-gates ConfigMap (memoryOverheadMB), or 350 if unset.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example-kata-pod
+spec:
+  runtimeClassName: kata
+  containers:
+  - name: app
+    image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+    command: ["sleep", "infinity"]
+    resources:
+      requests:
+        memory: "1Gi"
+      limits:
+        memory: "2Gi"
+  restartPolicy: Never
