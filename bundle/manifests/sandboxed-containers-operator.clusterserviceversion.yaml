@@ -415,7 +415,7 @@ spec:
                 - name: RELATED_IMAGE_PCCS
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-pccs@sha256:0ff0ebb4ffe183c3e40c6bddee09cbaed694de5f8b5921baead0053fe75fc9f2
                 - name: RELATED_IMAGE_TDX_QGS
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:38420679db9df3d873beb6a6d40b0f5d34cd784f02dc4123d1acc4187938541e
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:e32574c29af43a228c26f627b43a4492bfcefe6bb1135cba962fbf24f127a6e6
                 - name: RELATED_IMAGE_STORAGE_HELPER
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:b532be25523978eba3bfe8bf00ce82f8a9fcd0dcecf1b3af1dc895cf3dc9ac3c
                 envFrom:
@@ -589,7 +589,7 @@ spec:
     name: must-gather
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-pccs@sha256:0ff0ebb4ffe183c3e40c6bddee09cbaed694de5f8b5921baead0053fe75fc9f2
     name: pccs
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:38420679db9df3d873beb6a6d40b0f5d34cd784f02dc4123d1acc4187938541e
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:e32574c29af43a228c26f627b43a4492bfcefe6bb1135cba962fbf24f127a6e6
     name: tdx-qgs
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:b532be25523978eba3bfe8bf00ce82f8a9fcd0dcecf1b3af1dc895cf3dc9ac3c
     name: storage-helper
