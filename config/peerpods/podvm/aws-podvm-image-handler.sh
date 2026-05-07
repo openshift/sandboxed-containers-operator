@@ -22,10 +22,6 @@ function verify_vars() {
     [[ -z "${AWS_ACCESS_KEY_ID}" ]] && error_exit "AWS_ACCESS_KEY_ID is not set"
     [[ -z "${AWS_SECRET_ACCESS_KEY}" ]] && error_exit "AWS_SECRET_ACCESS_KEY is not set"
 
-    # Packer variables
-    [[ -z "${INSTANCE_TYPE}" ]] && error_exit "INSTANCE_TYPE is not set"
-    [[ -z "${PODVM_DISTRO}" ]] && error_exit "PODVM_DISTRO is not set"
-
     # if AWS_REGION is empty, try to get it from the metadata service
     if [[ ! "${AWS_REGION}" ]]; then
         AWS_REGION=$(curl -m 30 -s --show-error http://169.254.169.254/latest/meta-data/placement/region ||
@@ -64,18 +60,8 @@ function verify_vars() {
     [[ -z "${AMI_VERSION}" ]] && error_exit "AMI_VERSION is not set"
     [[ -z "${AMI_VOLUME_SIZE}" ]] && error_exit "AMI_VOLUME_SIZE is not set"
 
-    [[ -z "${PODVM_DISTRO}" ]] && error_exit "PODVM_DISTRO is not set"
-    [[ -z "${DISABLE_CLOUD_CONFIG}" ]] && error_exit "DISABLE_CLOUD_CONFIG is not set"
-
-    [[ -z "${CAA_SRC}" ]] && error_exit "CAA_SRC is empty"
-    [[ -z "${CAA_REF}" ]] && error_exit "CAA_REF is empty"
-
     # Ensure booleans are set
     [[ -z "${INSTALL_PACKAGES}" ]] && error_exit "INSTALL_PACKAGES is empty"
-    [[ -z "${DOWNLOAD_SOURCES}" ]] && error_exit "DOWNLOAD_SOURCES is empty"
-    [[ -z "${CONFIDENTIAL_COMPUTE_ENABLED}" ]] && error_exit "CONFIDENTIAL_COMPUTE_ENABLED is empty"
-    [[ -z "${DISABLE_CLOUD_CONFIG}" ]] && error_exit "DISABLE_CLOUD_CONFIG is empty"
-    [[ -z "${ENABLE_NVIDIA_GPU}" ]] && error_exit "ENABLE_NVIDIA_GPU is empty"
 }
 
 # function to download and install aws cli
@@ -104,41 +90,6 @@ function install_aws_cli() {
     rm -f "/tmp/awscliv2.zip"
 }
 
-# Function to use packer to create AWS ami
-
-function create_ami_using_packer() {
-    echo "Creating AWS AMI using packer"
-
-    # Create AWS image using packer
-    # If any error occurs, exit the script with an error message
-    # The variables are set before calling the function
-
-    # If PODVM_DISTRO is not set to rhel then exit
-    [[ "${PODVM_DISTRO}" != "rhel" ]] && error_exit "unsupported distro"
-
-    # Set the packer variables
-
-    export PKR_VAR_instance_type="${INSTANCE_TYPE}"
-    export PKR_VAR_region="${AWS_REGION}"
-    export PKR_VAR_vpc_id="${AWS_VPC_ID}"
-    export PKR_VAR_subnet_id="${AWS_SUBNET_ID}"
-    export PKR_VAR_ami_name="${AMI_NAME}"
-    export PKR_VAR_volume_size="${AMI_VOLUME_SIZE}"
-
-    # The makefile in aws/image directory is explicitly using these
-    # TBD: fix the makefile
-    export IMAGE_NAME="${AMI_NAME}"
-    export VOL_SIZE="${AMI_VOLUME_SIZE}"
-
-    cd "${CAA_SRC_DIR}"/aws/image ||
-        error_exit "Failed to change directory to ${CAA_SRC_DIR}/aws/image"
-    packer init "${PODVM_DISTRO}"/
-    make BINARIES= PAUSE_BUNDLE= image
-
-    # Wait for the ami to be created
-
-}
-
 function set_ami_name() {
     # Set the image name
     AMI_NAME="${AMI_BASE_NAME}-${AMI_VERSION}"
@@ -161,26 +112,6 @@ function get_ami_id() {
     export AMI_ID
 
     echo "ID of the newly created ami: ${AMI_ID}"
-
-}
-
-# Function to get all the ami ids for the given base name
-
-function get_all_ami_ids() {
-    echo "Getting all ami ids"
-
-    # Get all the ami ids for the given base name
-    # If any error occurs, exit the script with an error message
-
-    # Get the ami id list
-    AMI_ID_LIST=$(aws ec2 describe-images --region "${AWS_REGION}" --filters "Name=name,Values=${AMI_BASE_NAME}-*" --query 'Images[*].ImageId' --output text) ||
-        error_exit "Failed to get the ami id list"
-
-    # Set the ami id list as an environment variable
-    export AMI_ID_LIST
-
-    # Display the list of amis
-    echo "${AMI_ID_LIST}"
 
 }
 
@@ -372,27 +303,6 @@ EOF
     echo "AMI ID: ${AMI_ID}"
 }
 
-function create_ami_from_scratch() {
-    echo "Creating AWS AMI from scratch"
-
-    # Create the AWS image
-    # If any error occurs, exit the script with an error message
-
-    if [[ "${DOWNLOAD_SOURCES}" == "yes" ]]; then
-        # Download source code from GitHub
-        download_source_code
-    fi
-
-    # Prepare the source code for building the ami
-    prepare_source_code
-
-    # Prepare the pause image for embedding into the ami
-    download_and_extract_pause_image "${PAUSE_IMAGE_REPO}" "${PAUSE_IMAGE_VERSION}" "${CLUSTER_PULL_SECRET_AUTH_FILE}"
-
-    # Create AWS ami using packer
-    create_ami_using_packer
-}
-
 # Function to create the ami in AWS
 
 function create_ami() {
@@ -426,11 +336,7 @@ function create_ami() {
         install_binary_packages
     fi
 
-    if [[ "${IMAGE_TYPE}" == "operator-built" ]]; then
-        create_ami_from_scratch
-    elif [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
-        create_ami_from_prebuilt_artifact
-    fi
+    create_ami_from_prebuilt_artifact
 
     # Get the ami id
     # This will set the AMI_ID environment variable

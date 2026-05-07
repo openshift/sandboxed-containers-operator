@@ -3,8 +3,7 @@ FROM registry.access.redhat.com/ubi9/ubi:9.7-1776834047
 # azure-podvm-image-handler.sh script under /scripts/azure-podvm-image-handler.sh
 # aws-podvm-image-handler.sh script under /scripts/aws-podvm-image-handler.sh
 # sources for cloud-api-adaptor under /src/cloud-api-adaptor
-# The podvm binaries are expected to be under /payload/podvm-binaries.tar.gz
-# Binaries like kubectl, packer and yq under /usr/local/bin will be installed by the scripts
+# Binaries like kubectl and yq under /usr/local/bin will be installed by the scripts
 
 
 LABEL kata_src=https://github.com/kata-containers/kata-containers

@@ -28,7 +28,6 @@ function verify_vars() {
     "IMAGE_BASE_NAME"
     "IMAGE_VERSION"
     "INSTALL_PACKAGES"
-    "DISABLE_CLOUD_CONFIG"
 
     # From peer-pods-secret:
     "GCP_CREDENTIALS"
@@ -86,13 +85,7 @@ function create_image() {
     install_binary_packages
   fi
 
-  # Based on the value of `IMAGE_TYPE` the image is either build from scratch or
-  # usingthethe prebuilt artifact.
-  if [[ "${IMAGE_TYPE}" == "operator-built" ]]; then
-    error_exit "Currently only pre-built is supported for GCP, exiting."
-  elif [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
-    create_image_from_prebuilt_artifact
-  fi
+  create_gcp_image_from_prebuilt_artifact
 
   # Add the image id as annotation to peer-pods-cm configmap
   update_cm_annotation "LATEST_IMAGE_ID" "${IMAGE_NAME}"
@@ -106,7 +99,7 @@ function set_image_name() {
   export IMAGE_NAME
 }
 
-function create_image_from_prebuilt_artifact() {
+function create_gcp_image_from_prebuilt_artifact() {
   echo "Creating GCP image from prebuilt artifact"
 
   # Set the IMAGE_NAME

@@ -69,7 +69,6 @@ function install_rpm_packages() {
 # are available in the variable REQUIRED_BINARY_PACKAGES
 # the function will download the packages, extract them and install them in /usr/local/bin
 # Following are the packages that are installed:
-#"packer=https://releases.hashicorp.com/packer/1.9.4/packer_1.9.4_linux_amd64.zip"
 #"kubectl=https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.14.9/openshift-client-linux.tar.gz"
 #"yq=https://github.com/mikefarah/yq/releases/download/v4.35.2/yq_linux_amd64.tar.gz"
 #"umoci=https://github.com/opencontainers/umoci/releases/download/v0.4.7/umoci.amd64"
@@ -85,7 +84,6 @@ install_binary_packages() {
     else
         # Define the required binary packages
         REQUIRED_BINARY_PACKAGES=(
-            "packer=https://releases.hashicorp.com/packer/1.9.4/packer_1.9.4_linux_amd64.zip"
             "kubectl=https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.14.9/openshift-client-linux.tar.gz"
             "yq=https://github.com/mikefarah/yq/releases/download/v4.35.2/yq_linux_amd64.tar.gz"
             "umoci=https://github.com/opencontainers/umoci/releases/download/v0.4.7/umoci.amd64"
@@ -136,163 +134,6 @@ install_binary_packages() {
 
     echo "All binary packages installed successfully."
 
-}
-
-# Function to download source code from GitHub
-
-function download_source_code() {
-
-    # Download source code from GitHub
-    # If any error occurs, exit the script with an error message
-
-    # CAA_SRC_DIR is set to CAA_SRC_DOWNLOAD_DIR/src/cloud-api-adaptor
-    # The default value of CAA_SRC_DOWNLOAD_DIR is /src/cloud-api-adaptor
-
-    # Delete the source code download directory if it exists
-    [[ -d "${CAA_SRC_DOWNLOAD_DIR}" ]] &&
-        rm -rf "${CAA_SRC_DOWNLOAD_DIR}"
-
-    # Create the root directory for source code
-    mkdir -p "${CAA_SRC_DOWNLOAD_DIR}"
-
-    # Download the source code from GitHub
-    git clone "${CAA_SRC}" "${CAA_SRC_DOWNLOAD_DIR}" ||
-        error_exit "Failed to download source code from GitHub"
-
-    # Checkout the required commit
-    cd "${CAA_SRC_DOWNLOAD_DIR}" ||
-        error_exit "Failed to change directory to ${CAA_SRC_DOWNLOAD_DIR}"
-
-    git checkout "${CAA_REF}" ||
-        error_exit "Failed to checkout the required commit"
-
-}
-
-# Function to prepare the source code for building the image
-# Patch any files that need to be patched
-# Copy any files that need to be copied
-
-function prepare_source_code() {
-
-    # Prepare the source code for building the image
-    # If any error occurs, exit the script with an error message
-
-    # Ensure CAA_SRC_DIR is set
-    [[ -z "${CAA_SRC_DIR}" ]] && error_exit "CAA_SRC_DIR is not set"
-
-    local podvm_dir="${CAA_SRC_DIR}/podvm"
-
-    mkdir -p "${podvm_dir}"/files
-
-    # Download the podvm binaries and copy it to the podvm/files directory
-    tar xvf /payload/podvm-binaries.tar.gz -C "${podvm_dir}"/files ||
-        error_exit "Failed to download podvm binaries"
-
-    # Set the NVIDIA_DRIVER_VERSION if variable is set
-    if [[ "${NVIDIA_DRIVER_VERSION}" ]]; then
-        echo "NVIDIA_DRIVER_VERSION is set to ${NVIDIA_DRIVER_VERSION}"
-        sed -i "s/535/${NVIDIA_DRIVER_VERSION}/g" "${podvm_dir}"/addons/nvidia_gpu/setup.sh ||
-            error_exit "Failed to set NVIDIA_DRIVER_VERSION"
-    fi
-
-    # Set the NVIDIA_USERSPACE_VERSION if variable is set
-    if [[ "${NVIDIA_USERSPACE_VERSION}" ]]; then
-        echo "NVIDIA_USERSPACE_VERSION is set to ${NVIDIA_USERSPACE_VERSION}"
-        sed -i "s/1.13.5-1/${NVIDIA_USERSPACE_VERSION}/g" "${podvm_dir}"/addons/nvidia_gpu/setup.sh ||
-            error_exit "Failed to set NVIDIA_USERSPACE_VERSION"
-    fi
-
-    if [[ "$BOOT_FIPS" == "yes" ]]; then
-        echo "FIPS mode is enabled"
-        sed -i '/exit 0/ifips-mode-setup --enable' "${podvm_dir}"/qcow2/misc-settings.sh ||
-            error_exit "Failed to enable fips mode"
-    fi
-
-    # links must be relative
-    if [[ "${AGENT_POLICY}" ]]; then
-        echo "Custom agent policy is being set through the AGENT_POLICY value (this can be overridden if initData policy is set)"
-        echo "${AGENT_POLICY}" | base64 -d >"${podvm_dir}"/files/etc/kata-opa/custom.rego
-        return_code=$?
-        if [[ "$return_code" == 0 ]] && grep -q "agent_policy" "${podvm_dir}"/files/etc/kata-opa/custom.rego; then # checks policy validity
-            sed -i 's/allow-all.rego/custom.rego/g' "${podvm_dir}"/files/etc/tmpfiles.d/policy.conf || error_exit "Failed 
-to edit policy.conf"
-        else
-            error_exit "Invalid AGENT_POLICY value set, expected base64 encoded valid agent policy, got: \"${AGENT_POLICY}\""
-        fi
-        echo "~~~ Fallback default policy is set to: ~~~" && cat "${podvm_dir}"/files/etc/kata-opa/custom.rego
-    elif [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]]; then
-        echo "Setting custom agent policy to CoCo's recommended policy"
-        sed 's/default ReadStreamRequest := true/default ReadStreamRequest := false/;
-            s/default ExecProcessRequest := true/default ExecProcessRequest := false/' \
-            "${podvm_dir}"/files/etc/kata-opa/allow-all.rego >"${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
-        sed -i 's/allow-all.rego/coco-default-policy.rego/g' "${podvm_dir}"/files/etc/tmpfiles.d/policy.conf || error_exit "Failed to edit policy.conf"
-        echo "~~~ Fallback default policy is set to: ~~~" && cat "${podvm_dir}"/files/etc/kata-opa/coco-default-policy.rego
-    fi
-
-    # Fix disk mounts for CoCo
-    if [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]]; then
-        create_overlay_mount_unit
-    fi
-
-    # disable ssh and unsafe cloud-init modules
-    if [[ "$CONFIDENTIAL_COMPUTE_ENABLED" == "yes" ]] || [[ -n "$CUSTOM_CLOUD_INIT_MODULES" ]]; then
-        [[ "$CUSTOM_CLOUD_INIT_MODULES" != "no" ]] && [[ "$CLOUD_PROVIDER" != "libvirt" ]] && set_custom_cloud_init_modules
-    fi
-
-    # Validate and copy HKD for IBM Z Secure Enablement
-    if [[ "$SE_BOOT" == "true" ]]; then
-        if [[ -z "$HOST_KEY_CERTS" ]]; then
-            error_exit "Error: HKD is not present."
-        else
-            echo "$HOST_KEY_CERTS" >>"${podvm_dir}/files/HKD.crt"
-            if [[ "$SE_VERIFY" == "true" ]]; then
-               curl -o "${podvm_dir}/files/ibm-z-host-key-signing-gen2.crt" "https://www.ibm.com/support/resourcelink/api/content/public/ibm-z-host-key-signing-gen2.crt"
-               if [[ $? -ne 0 ]]; then
-                       error_exit "Error: Failed to download ibm-z-host-key-signing-gen2.crt."
-               fi
-
-               curl -o "${podvm_dir}/files/DigiCertCA.crt" "https://www.ibm.com/support/resourcelink/api/content/public/DigiCertCA.crt"
-               if [[ $? -ne 0 ]]; then
-                       error_exit "Error: Failed to download DigiCertCA.crt."
-               fi
-
-               curl -o "${podvm_dir}/files/ibm-z-host-key-gen2.crl" "https://www.ibm.com/support/resourcelink/api/content/public/ibm-z-host-key-gen2.crl"
-               if [[ $? -ne 0 ]]; then
-                       error_exit "Error: Failed to download ibm-z-host-key-gen2.crl."
-               fi
-           fi
-        fi
-    fi
-
-}
-
-# Download and extract the pause container image
-# Accepts three arguments:
-# 1. pause_image_repo_url: The registry URL of the OCP pause image.
-# 2. pause_image_tag: The tag of the OCP pause image.
-# 3. auth_json_file (optional): Path to the registry secret file to use for downloading the image
-function download_and_extract_pause_image() {
-
-    # Set default values for the OCP pause image
-    pause_image_repo_url="${1:-${PAUSE_IMAGE_REPO_DEFAULT}}"
-    pause_image_tag="${2:-${PAUSE_IMAGE_VERSION_DEFAULT}}"
-    auth_json_file="${3:-${CLUSTER_PULL_SECRET_AUTH_FILE}}"
-
-    # If arguments are not provided, exit the script with an error message
-    [[ $# -lt 2 ]] &&
-        error_exit "Usage: download_and_extract_pause_image <pause_image_repo_url> <pause_image_tag> [registry_secret]"
-
-    # Ensure CAA_SRC_DIR is set
-    [[ -z "${CAA_SRC_DIR}" ]] && error_exit "CAA_SRC_DIR is not set"
-
-    local podvm_dir="${CAA_SRC_DIR}/podvm"
-    local pause_src="/tmp/pause"
-    local pause_bundle="${podvm_dir}/files/pause_bundle"
-
-    mkdir -p "${pause_bundle}" ||
-        error_exit "Failed to create the pause_bundle directory"
-
-    extract_container_image "${pause_image_repo_url}" "${pause_image_tag}" "${pause_src}" "${pause_bundle}" "${auth_json_file}"
 }
 
 # Function to download and extract a container image.

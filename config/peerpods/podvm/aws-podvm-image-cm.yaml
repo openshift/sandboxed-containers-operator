@@ -4,9 +4,6 @@ metadata:
   name: aws-podvm-image-cm
   namespace: openshift-sandboxed-containers-operator
 data:
-  # PodVM image distro
-  PODVM_DISTRO: rhel
-
   # Image
   AMI_BASE_NAME: "podvm-image"
   # Must be in Major(int).Minor(int).Patch(int) format. Not mandatory for AWS, but
@@ -16,30 +13,9 @@ data:
   AMI_VERSION: "0.0.1"
   AMI_VOLUME_SIZE: "30"
 
-  # Packer Instance type
-  INSTANCE_TYPE: "c4.xlarge"
-
-  # Pod VM sources
-  # If changing the source, then ensure the respective payload binaries are available
-  # for the new source
-  CAA_SRC: "https://gitlab.cee.redhat.com/osc/midstream/cloud-api-adaptor"
-  CAA_REF: "v0.8.0-1.6"
-
   # Booleans
   INSTALL_PACKAGES: "no"
-  DOWNLOAD_SOURCES: "no"
-  CONFIDENTIAL_COMPUTE_ENABLED: "no"
-  DISABLE_CLOUD_CONFIG: "true"
-  ENABLE_NVIDIA_GPU: "no"
   UPDATE_PEERPODS_CM: "yes"
-  BOOT_FIPS: "no"
-
-  # NVIDIA GPU vars
-  NVIDIA_DRIVER_VERSION: "535"
-  NVIDIA_USERSPACE_VERSION: "1.13.5-1"
-
-  # Custom Agent Policy
-  #AGENT_POLICY: "" # set to base64 encoded agent policy
 
   # precreated artifacts
   #BUCKET_NAME: existing-bucket-name
