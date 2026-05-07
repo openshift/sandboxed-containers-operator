@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2026-02-24T18:05:19Z"
+    createdAt: "2026-05-07T10:41:36Z"
     features.operators.openshift.io/cnf: "false"
     features.operators.openshift.io/cni: "false"
     features.operators.openshift.io/csi: "false"
@@ -24,7 +24,7 @@ metadata:
     features.operators.openshift.io/token-auth-aws: "true"
     features.operators.openshift.io/token-auth-azure: "true"
     features.operators.openshift.io/token-auth-gcp: "true"
-    olm.skipRange: '>=1.1.0 <1.12.0'
+    olm.skipRange: '>=1.1.0 <1.12.1'
     operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
     operators.openshift.io/valid-subscription: '["OpenShift Container Platform", "OpenShift
       Platform Plus"]'
@@ -36,7 +36,7 @@ metadata:
     operatorframework.io/arch.amd64: supported
     operatorframework.io/arch.s390x: supported
     operatorframework.io/os.linux: supported
-  name: sandboxed-containers-operator.v1.12.0
+  name: sandboxed-containers-operator.v1.12.1
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
@@ -593,8 +593,8 @@ spec:
     name: tdx-qgs
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:c893a5e46565307f5e00644f66463cae08ce4f5c6e67fe49e7483e1988425c4d
     name: storage-helper
-  replaces: sandboxed-containers-operator.v1.11.1
-  version: 1.12.0
+  replaces: sandboxed-containers-operator.v1.12.0
+  version: 1.12.1
   webhookdefinitions:
   - admissionReviewVersions:
     - v1
