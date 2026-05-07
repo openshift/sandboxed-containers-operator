@@ -111,7 +111,7 @@ spec:
   name: sandboxed-containers-operator
   source: redhat-operators
   sourceNamespace: openshift-marketplace
-  startingCSV: sandboxed-containers-operator.v1.12.0
+  startingCSV: sandboxed-containers-operator.v1.12.1
 ```
 5. Continue following the OSC installation instructions while making sure your created RG is always the one used (the one in use also above), in peer-pods-cm and in configuring the default worker subnet
 
