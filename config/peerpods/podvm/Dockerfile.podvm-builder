@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/ubi:9.7-1778044007
+FROM registry.access.redhat.com/ubi9/ubi:9.7-1778576335
 
 # azure-podvm-image-handler.sh script under /scripts/azure-podvm-image-handler.sh
 # aws-podvm-image-handler.sh script under /scripts/aws-podvm-image-handler.sh
