@@ -200,6 +200,14 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookDeployment() error 
 							Name:  "POD_VM_EXTENDED_RESOURCE",
 							Value: "kata.peerpods.io/vm",
 						},
+						{
+							Name:  "TLS_MIN_VERSION",
+							Value: string(r.TLSProfileSpec.MinTLSVersion),
+						},
+						{
+							Name:  "TLS_CIPHER_SUITES",
+							Value: r.tlsCipherSuitesEnvValue(r.TLSProfileSpec),
+						},
 					},
 					// Define resources
 					Resources: corev1.ResourceRequirements{

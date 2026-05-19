@@ -112,6 +112,14 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVer
 									},
 								},
 							},
+							{
+								Name:  "TLS_MIN_VERSION",
+								Value: string(r.TLSProfileSpec.MinTLSVersion),
+							},
+							{
+								Name:  "TLS_CIPHER_SUITES",
+								Value: r.tlsCipherSuitesEnvValue(r.TLSProfileSpec),
+							},
 						},
 						EnvFrom: []corev1.EnvFromSource{
 							{

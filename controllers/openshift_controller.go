@@ -69,6 +69,8 @@ type KataConfigOpenShiftReconciler struct {
 	ImgMc *mcfgv1.MachineConfig
 
 	DeploymentMode DeploymentMode
+
+	TLSProfileSpec configv1.TLSProfileSpec
 }
 
 type customKernelConfig struct {
