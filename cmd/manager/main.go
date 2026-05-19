@@ -208,9 +208,10 @@ func main() {
 		setupLog.Info("added labels")
 
 		if err = (&controllers.KataConfigOpenShiftReconciler{
-			Client: mgr.GetClient(),
-			Log:    ctrl.Log.WithName("controllers").WithName("KataConfig"),
-			Scheme: mgr.GetScheme(),
+			Client:         mgr.GetClient(),
+			Log:            ctrl.Log.WithName("controllers").WithName("KataConfig"),
+			Scheme:         mgr.GetScheme(),
+			TLSProfileSpec: tlsProfileSpec,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create KataConfig controller for OpenShift cluster", "controller", "KataConfig")
 			os.Exit(1)
