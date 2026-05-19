@@ -37,6 +37,33 @@ ARG CAA_SRC=https://github.com/confidential-containers/cloud-api-adaptor
 ARG CAA_REF=main
 ARG CERT_RPM
 
+RUN dnf install -y golang python3 python3-pip python3-wheel krb5-devel gpgme-devel libassuan-devel gcc libffi-devel python3-devel rust cargo openssl-devel && dnf clean all
+
+# Copy go.mod, go.sum and azure-cli-pip.txt to use our dependency versions
+COPY go.mod go.sum azure-cli-pip.txt /tmp/tools/
+WORKDIR /tmp/tools
+
+# Build and install tools using our module's dependency versions
+RUN GOSUMDB=off GOBIN=/usr/local/bin go install github.com/mikefarah/yq/v4 && \
+    GOSUMDB=off GOBIN=/usr/local/bin go install github.com/opencontainers/umoci/cmd/umoci && \
+    GOSUMDB=off GOBIN=/usr/local/bin go install github.com/openshift/oc/cmd/oc && \
+    ln -s /usr/local/bin/oc /usr/local/bin/kubectl
+
+# Install Azure CLI from prefetched pip packages
+RUN if [ -d "/cachi2/output/deps/pip" ]; then \
+        echo "Installing Azure CLI from prefetched packages..." && \
+        pip3 install --no-index --find-links /cachi2/output/deps/pip --require-hashes -r /tmp/tools/azure-cli-pip.txt && \
+        echo "Azure CLI installed successfully from prefetched packages"; \
+    else \
+        echo "Installing Azure CLI from pip packages..."; \
+        pip3 install -r /tmp/tools/azure-cli-pip.txt && \
+        echo "Azure CLI installed successfully from pip packages"; \
+    fi
+
+# Clean up the tools directory to reduce the image size
+RUN cd / && rm -rf /tmp/tools
+
+WORKDIR /
 
 ENV CAA_SRC=$CAA_SRC
 ENV CAA_REF=$CAA_REF
@@ -62,5 +89,13 @@ description="Container image containing artefacts that is required for creating 
 io.k8s.display-name="openshift-sandboxed-containers-podvm-builder" \
 io.k8s.description="Container image containing artefacts that is required for creating Pod VM images" \
 io.openshift.tags=""
+
+# Remove the build dependencies to reduce the image size (keep python3 and pip for azure-cli)
+RUN dnf remove -y golang krb5-devel gpgme-devel libassuan-devel gcc libffi-devel python3-devel rust cargo openssl-devel && dnf clean all
+
+RUN echo "Cleaning up unnecessary binaries from /usr/local/bin..." && \
+    cd /usr/local/bin && \
+    rm -rf __pycache__ && \
+    rm -f activate-global-python-argcomplete az.bat azps.ps1 chardetect distro fab humanfriendly inv invoke jdiff jp.py normalizer pkginfo pygmentize pygrun pysemver python-argcomplete-check-easy-install-script register-python-argcomplete sshtunnel tabulate wsdump cygdb cython cythonize hatchling maturin setuptools-scm trove-classifiers wheel idna
 
 ENTRYPOINT ["/podvm-builder.sh"]

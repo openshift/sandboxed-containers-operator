@@ -1,0 +1,29 @@
+# azure-cli-pip.in is for downloading the azure-cli package from the pip repository in hermeto pre-fetch
+# This is used to install the azure-cli package on the podvm image for disconnected environments.
+# To upgrade the azure-cli package, update the version in the azure-cli-pip.in file and re generate the azure-cli-pip.txt file
+# with the following command (run from config/peerpods/podvm directory, base image should be the same as in Dockerfile.podvm-builder):
+#
+# podman run --rm -v $(pwd):/work:Z -w /work registry.access.redhat.com/ubi9/ubi:9.8-1779808651 bash -c \
+#   "dnf install -y python3 python3-pip && \
+#    pip3 install pip-tools && \
+#    rm -f azure-cli-pip.txt && \
+#    pip-compile --generate-hashes --allow-unsafe azure-cli-pip.in"
+#
+# Note: azure-cli 2.79.0 supports Python 3.9 (which is available in UBI9)
+# Note: Build backends are included for hermetic builds where packages may need to be built from source
+azure-cli==2.79.0
+setuptools
+setuptools_scm[toml]
+setuptools-rust
+wheel
+hatchling
+hatch-vcs
+flit-core
+maturin
+Cython
+tomli<=2.0.2
+calver
+pathspec
+pluggy
+packaging
+trove-classifiers

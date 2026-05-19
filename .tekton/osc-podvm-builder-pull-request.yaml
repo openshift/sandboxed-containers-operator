@@ -42,7 +42,12 @@ spec:
   - name: build-args-file
     value: .tekton/build-args.env
   - name: prefetch-input
-    value: '{"type": "rpm", "path": "./config/peerpods/podvm/"}'
+    value: >-
+      [
+        {"type": "gomod", "path": "./config/peerpods/podvm/"},
+        {"type": "pip", "path": "./config/peerpods/podvm/", "requirements_files": ["azure-cli-pip.txt"]},
+        {"type": "rpm", "path": "./config/peerpods/podvm/"}
+      ]
   pipelineRef:
     name: build-pipeline
   taskRunTemplate:
