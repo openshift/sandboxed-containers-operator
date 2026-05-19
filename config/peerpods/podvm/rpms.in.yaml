@@ -7,6 +7,20 @@ packages:
   - jq
   - qemu-img
   - podman
+  - golang  # for oc cli build
+  - krb5-devel # for oc cli build
+  - gpgme-devel # for oc cli build
+  - libassuan-devel # for oc cli build
+  - python3  # for azure cli build
+  - python3-pip  # for azure cli build
+  - python3-wheel  # for azure cli build
+  - python3-devel  # for azure cli build
+  - gcc  # for azure cli build
+  - rust  # for azure cli build
+  - cargo  # for azure cli build
+  - openssl-devel  # for azure cli build
+  - libffi-devel  # for azure cli build
+
 
 contentOrigin:
   repofiles:
