@@ -8,6 +8,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	// import apps/v1 for Deployment
 	appsv1 "k8s.io/api/apps/v1"
@@ -254,12 +255,24 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookDeployment() error 
 
 	// Create webhook deployment
 	if err := r.Client.Create(context.Background(), webhookDeployment); err != nil {
-		// Check if the webhook deployment already exists
 		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
+		existing := &appsv1.Deployment{}
+		if err := r.Client.Get(context.Background(), client.ObjectKeyFromObject(webhookDeployment), existing); err != nil {
+			return err
+		}
+		for i := range existing.Spec.Template.Spec.Containers {
+			if existing.Spec.Template.Spec.Containers[i].Name == webhookDeploymentName {
+				existing.Spec.Template.Spec.Containers[i].Env = webhookDeployment.Spec.Template.Spec.Containers[0].Env
+				break
+			}
+		}
+		if err := r.Client.Update(context.Background(), existing); err != nil {
+			return err
+		}
 	}
-	r.Log.Info("created peerpods mutating webhook deployment")
+	r.Log.Info("reconciled peerpods mutating webhook deployment")
 	return nil
 }
 
