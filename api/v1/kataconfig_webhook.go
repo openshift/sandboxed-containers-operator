@@ -49,6 +49,7 @@ func (r *KataConfig) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 var _ admission.Validator[*KataConfig] = &KataConfig{}
 
+// ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *KataConfig) ValidateCreate(ctx context.Context, obj *KataConfig) (admission.Warnings, error) {
 	kataconfiglog.Info("validate create", "name", obj.Name)
 
@@ -67,6 +68,7 @@ func (r *KataConfig) ValidateCreate(ctx context.Context, obj *KataConfig) (admis
 	return nil, nil
 }
 
+// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *KataConfig) ValidateUpdate(ctx context.Context, oldObj, newObj *KataConfig) (admission.Warnings, error) {
 	kataconfiglog.Info("validate update", "name", newObj.Name)
 
@@ -74,6 +76,7 @@ func (r *KataConfig) ValidateUpdate(ctx context.Context, oldObj, newObj *KataCon
 	return nil, nil
 }
 
+// ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *KataConfig) ValidateDelete(ctx context.Context, obj *KataConfig) (admission.Warnings, error) {
 	kataconfiglog.Info("validate delete", "name", obj.Name)
 
