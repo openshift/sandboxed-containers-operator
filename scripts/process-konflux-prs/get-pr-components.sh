@@ -54,8 +54,9 @@ pr_data=$(gh pr view "$PR_NUMBER" \
 # Extract component names from Konflux checks
 # Pattern: "Red Hat Konflux / {component-name}-on-pull-request"
 # Exclude: enterprise-contract checks (validation, not component builds)
+# Note: statusCheckRollup can be null for fresh PRs without checks
 components=$(echo "$pr_data" | jq -r '
-    [.statusCheckRollup[] |
+    [(.statusCheckRollup // [])[] |
      select(.name != null) |
      select(.name | type == "string") |
      select(.name | startswith("Red Hat Konflux / ")) |

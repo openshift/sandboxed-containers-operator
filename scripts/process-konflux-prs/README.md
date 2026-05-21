@@ -104,13 +104,17 @@ Check the status of Konflux pipelines for a component.
 
 **Usage:**
 ```bash
-./check-pipeline-status.sh --component COMPONENT_NAME [--type on-pull-request|on-push] [--pr-id PR_ID] [--namespace NAMESPACE]
+# For on-push pipelines (default)
+./check-pipeline-status.sh --component COMPONENT_NAME [--namespace NAMESPACE]
+
+# For on-pull-request pipelines (--pr-id is REQUIRED)
+./check-pipeline-status.sh --component COMPONENT_NAME --type on-pull-request --pr-id PR_ID [--namespace NAMESPACE]
 ```
 
 **Options:**
 - `--component COMPONENT_NAME`: Component name (e.g., osc-operator, osc-caa)
 - `--type TYPE`: Pipeline type (on-pull-request or on-push, default: on-push)
-- `--pr-id PR_ID`: PR identifier for on-pull-request pipelines
+- `--pr-id PR_ID`: PR identifier (REQUIRED for on-pull-request, must match the suffix in the pipelinerun name)
 - `--namespace NAMESPACE`: Konflux namespace (default: ose-osc-tenant)
 
 **Output:** JSON with pipeline status including latest run and all matching runs.
@@ -120,7 +124,7 @@ Check the status of Konflux pipelines for a component.
 # Check on-push pipeline for osc-operator
 ./check-pipeline-status.sh --component osc-operator
 
-# Check on-pull-request pipeline
+# Check on-pull-request pipeline (--pr-id is mandatory to avoid matching runs from different PRs)
 ./check-pipeline-status.sh --component osc-caa --type on-pull-request --pr-id abc123
 ```
 

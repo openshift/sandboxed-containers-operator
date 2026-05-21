@@ -52,7 +52,8 @@ pr_data=$(gh pr view "$PR_NUMBER" \
     --json number,title,state,labels,statusCheckRollup)
 
 # Extract status checks
-checks=$(echo "$pr_data" | jq '[.statusCheckRollup[] | {
+# Note: statusCheckRollup can be null for fresh PRs without checks
+checks=$(echo "$pr_data" | jq '[(.statusCheckRollup // [])[] | {
     name: .name,
     status: .status,
     conclusion: .conclusion,
@@ -60,7 +61,8 @@ checks=$(echo "$pr_data" | jq '[.statusCheckRollup[] | {
 }]')
 
 # Extract labels
-labels=$(echo "$pr_data" | jq '[.labels[].name]')
+# Note: labels can be null for PRs without labels
+labels=$(echo "$pr_data" | jq '[(.labels // [])[].name]')
 
 # Build result
 result=$(echo "$pr_data" | jq \
