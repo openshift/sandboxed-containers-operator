@@ -49,6 +49,15 @@ MINTMAKER_PREFIXES=(
     "chore(deps): update registry.access.redhat.com/ubi10/go-toolset"
 )
 
+# Validate repo filter if provided
+if [[ -n "$REPO_FILTER" ]]; then
+    if [[ -z "${REPOS[$REPO_FILTER]:-}" ]]; then
+        echo "Error: Unknown repository '$REPO_FILTER'" >&2
+        echo "Valid repositories: ${!REPOS[*]}" >&2
+        exit 1
+    fi
+fi
+
 is_mintmaker_pr() {
     local title="$1"
     for prefix in "${MINTMAKER_PREFIXES[@]}"; do

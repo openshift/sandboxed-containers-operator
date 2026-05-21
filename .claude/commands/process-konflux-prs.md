@@ -85,9 +85,14 @@ Output: JSON with {success, repo, pr, label}
 ## check-pipeline-status.sh
 Check Konflux pipeline status.
 ```bash
-./check-pipeline-status.sh --component COMPONENT_NAME [--type on-pull-request|on-push] [--pr-id PR_ID]
+# For on-push (default)
+./check-pipeline-status.sh --component COMPONENT_NAME
+
+# For on-pull-request (--pr-id REQUIRED)
+./check-pipeline-status.sh --component COMPONENT_NAME --type on-pull-request --pr-id PR_ID
 ```
 Output: JSON with {component, pipeline_type, latest, all_runs}
+Note: --pr-id is mandatory for on-pull-request to avoid matching runs from different PRs
 
 ## get-nudge-prs.sh
 Find nudge PRs for a component.

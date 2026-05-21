@@ -42,8 +42,15 @@ if [[ -z "$COMPONENT" ]]; then
     exit 1
 fi
 
+# Validate PR_ID is provided for on-pull-request type
+if [[ "$PIPELINE_TYPE" == "on-pull-request" && -z "$PR_ID" ]]; then
+    echo "Error: --pr-id is required when --type is on-pull-request" >&2
+    echo "Usage: $0 --component COMPONENT_NAME --type on-pull-request --pr-id PR_ID [--namespace NAMESPACE]" >&2
+    exit 1
+fi
+
 # Construct pipeline name pattern
-if [[ "$PIPELINE_TYPE" == "on-pull-request" && -n "$PR_ID" ]]; then
+if [[ "$PIPELINE_TYPE" == "on-pull-request" ]]; then
     PATTERN="${COMPONENT}-on-pull-request-${PR_ID}"
 else
     PATTERN="${COMPONENT}-${PIPELINE_TYPE}"
