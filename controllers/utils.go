@@ -11,7 +11,6 @@ import (
 	yaml "github.com/ghodss/yaml"
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ccov1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 	"github.com/openshift/oc/pkg/cli/admin/release"
 	batchv1 "k8s.io/api/batch/v1"
@@ -87,15 +86,6 @@ func readYamlFile(yamlFile string) ([]byte, error) {
 		return nil, err
 	}
 	return yamlData, nil
-}
-
-func parseMachineConfigYAML(yamlData []byte) (*mcfgv1.MachineConfig, error) {
-	machineConfig := &mcfgv1.MachineConfig{}
-	err := yaml.Unmarshal(yamlData, machineConfig)
-	if err != nil {
-		return nil, err
-	}
-	return machineConfig, nil
 }
 
 func parseCredentialsRequestYAML(yamlData []byte) (*ccov1.CredentialsRequest, error) {
@@ -325,7 +315,7 @@ func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
 	var err error
 
 	pullSecret := &corev1.Secret{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: "pull-secret", Namespace: "openshift-config"}, pullSecret)
+	err = r.Get(context.TODO(), types.NamespacedName{Name: "pull-secret", Namespace: "openshift-config"}, pullSecret)
 	if err != nil {
 		r.Log.Info("Error fetching pull-secret", "err", err)
 		return err
@@ -342,10 +332,10 @@ func (r *KataConfigOpenShiftReconciler) createAuthJsonSecret() error {
 		Type: corev1.SecretTypeOpaque,
 	}
 
-	err = r.Client.Create(context.TODO(), &authJsonSecret)
+	err = r.Create(context.TODO(), &authJsonSecret)
 	if err != nil {
 		if k8serrors.IsAlreadyExists(err) {
-			err = r.Client.Update(context.TODO(), &authJsonSecret)
+			err = r.Update(context.TODO(), &authJsonSecret)
 			if err != nil {
 				r.Log.Info("Error updating auth-json-secret", "err", err)
 				return err

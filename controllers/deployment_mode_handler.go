@@ -106,7 +106,7 @@ func (r *KataConfigOpenShiftReconciler) isMachineConfigAvailable() (bool, error)
 
 	// Attempt to GET any MachineConfig to verify if the GVK is known.
 	// If the CRD isn’t installed, it will return a NoMatchError.
-	err := r.Client.Get(context.Background(), client.ObjectKey{Name: "dummy-machine-config"}, machineConfig)
+	err := r.Get(context.Background(), client.ObjectKey{Name: "dummy-machine-config"}, machineConfig)
 	if err == nil || k8serrors.IsNotFound(err) {
 		r.Log.Info("MachineConfig CRD is present")
 		return true, nil

@@ -179,7 +179,7 @@ func (r *KataConfigOpenShiftReconciler) validateOCPVersion() (bool, error) {
 	if currentVersion == "" {
 		// FIXME: Look into having a single util function to return the ClusterVersion
 		clusterVersion := &configv1.ClusterVersion{}
-		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
+		err := r.Get(context.TODO(), types.NamespacedName{Name: "version"}, clusterVersion)
 		if err != nil {
 			return false, err
 		}
@@ -340,7 +340,7 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state Featur
 		err := r.deleteRuntimeClass(kataCCRuntimeClassName)
 		if err != nil {
 			r.Log.Info("Error deleting "+kataCCRuntimeClassName+" runtime class", "err", err)
-			return fmt.Errorf("Error deleting "+kataCCRuntimeClassName+" runtime class: %w", err)
+			return fmt.Errorf("error deleting "+kataCCRuntimeClassName+" runtime class: %w", err)
 		}
 
 		r.Log.Info("Deleting " + kataNvidiaGPUCCRuntimeClassName + " runtime class for confidential containers")
@@ -349,7 +349,7 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state Featur
 		err = r.deleteRuntimeClass(kataNvidiaGPUCCRuntimeClassName)
 		if err != nil {
 			r.Log.Info("Error deleting "+kataNvidiaGPUCCRuntimeClassName+" runtime class", "err", err)
-			return fmt.Errorf("Error deleting "+kataNvidiaGPUCCRuntimeClassName+" runtime class: %w", err)
+			return fmt.Errorf("error deleting "+kataNvidiaGPUCCRuntimeClassName+" runtime class: %w", err)
 		}
 	}
 
@@ -367,7 +367,7 @@ func (r *KataConfigOpenShiftReconciler) computeTEE() (hasIntelTDX, hasAmdSNP, ha
 	listOpts := []client.ListOption{
 		client.MatchingLabelsSelector{Selector: selector},
 	}
-	if err = r.Client.List(context.TODO(), nodes, listOpts...); err != nil {
+	if err = r.List(context.TODO(), nodes, listOpts...); err != nil {
 		err = fmt.Errorf("failed to list nodes: %w", err)
 		return
 	}

@@ -307,8 +307,8 @@ func (r *ImageGenerator) createJobFromFile(jobFileName string) (*batchv1.Job, er
 
 		// If provider is Azure set IMAGE_ID, if provider is AWS set AMI_ID
 		// Also for Azure, update the command to add a "-g" option to delete the gallery
-		if r.provider == AzureProvider {
-
+		switch r.provider {
+		case AzureProvider:
 			job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
 				Name:  "IMAGE_ID",
 				Value: imageId,
@@ -319,17 +319,17 @@ func (r *ImageGenerator) createJobFromFile(jobFileName string) (*batchv1.Job, er
 			// Updated command: ["/podvm-builder.sh", "delete", "-f", "-g"]
 			job.Spec.Template.Spec.Containers[0].Command = append(job.Spec.Template.Spec.Containers[0].Command, "-g")
 
-		} else if r.provider == AWSProvider {
+		case AWSProvider:
 			job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
 				Name:  "AMI_ID",
 				Value: imageId,
 			})
-		} else if r.provider == GCPProvider {
+		case GCPProvider:
 			job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
 				Name:  "IMAGE_NAME",
 				Value: imageId,
 			})
-		} else if r.provider == LibvirtProvider {
+		case LibvirtProvider:
 			job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
 				Name:  "LIBVIRT_IMAGE_ID",
 				Value: imageId,
@@ -647,7 +647,7 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 
 	case "azure":
 		// Check if azure Secret Keys are present in the peerPodsSecret
-		if !(checkKeysPresentAndNotEmpty(peerPodsSecret.Data, azureSecretKeys) || checkKeysPresentAndNotEmpty(peerPodsSecret.Data, azureSecretFederatedKeys)) {
+		if !checkKeysPresentAndNotEmpty(peerPodsSecret.Data, azureSecretKeys) && !checkKeysPresentAndNotEmpty(peerPodsSecret.Data, azureSecretFederatedKeys) {
 			return fmt.Errorf("validatePeerPodsConfigs: cannot find the required keys in peer-pods-secret Secret")
 		}
 

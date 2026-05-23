@@ -52,7 +52,7 @@ func (r *KataConfigOpenShiftReconciler) handleLayeredImageDeploymentFeature(stat
 		r.Log.Info("LayeredImageDeployment feature is enabled")
 
 		cm := &corev1.ConfigMap{}
-		err := r.Client.Get(context.Background(), types.NamespacedName{
+		err := r.Get(context.Background(), types.NamespacedName{
 			Name:      LayeredImageDeployCm,
 			Namespace: OperatorNamespace,
 		}, cm)
@@ -85,7 +85,7 @@ func (r *KataConfigOpenShiftReconciler) getExistingMachineConfig() (*mcfgv1.Mach
 	// Check for label "app":r.kataConfig.Name
 	// and name "50-enable-sandboxed-containers-extension" or name "50-enable-sandboxed-containers-image"
 	mcList := &mcfgv1.MachineConfigList{}
-	err := r.Client.List(context.Background(), mcList)
+	err := r.List(context.Background(), mcList)
 	if err != nil {
 		r.Log.Info("Error in listing MachineConfigs", "err", err)
 		return nil, err

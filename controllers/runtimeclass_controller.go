@@ -49,7 +49,7 @@ const (
 
 // Reconcile handles RuntimeClass lifecycle, specifically finalizer cleanup
 func (r *RuntimeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("runtimeclass", req.NamespacedName.Name)
+	log := r.Log.WithValues("runtimeclass", req.Name)
 
 	runtimeClass := &nodeapi.RuntimeClass{}
 	err := r.Get(ctx, req.NamespacedName, runtimeClass)
