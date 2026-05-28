@@ -2,7 +2,7 @@
 FROM registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9:1.12.1 as payload  ## OSC_VERSION
 
 # Build bootc rhel podvm
-FROM registry.redhat.io/rhel9/rhel-bootc:9.8-1779340394 as podvm-bootc
+FROM registry.redhat.io/rhel9/rhel-bootc:9.8-1779929863 as podvm-bootc
 
 ARG ORG_ID
 ARG ACTIVATION_KEY
