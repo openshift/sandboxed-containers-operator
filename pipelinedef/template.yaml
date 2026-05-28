@@ -41,6 +41,13 @@ spec:
     spec:
       displayName: "osc-dm-verity-image-debug-{{.versionName}}"
 
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Application
+    metadata:
+      name: "build-initrds-{{.versionName}}"
+    spec:
+      displayName: "build-initrds-{{.versionName}}"
+
   # Components
 
   - apiVersion: appstudio.redhat.com/v1alpha1
@@ -257,6 +264,7 @@ spec:
       build-nudges-ref:
       - "osc-operator-bundle-{{.versionName}}"
       - "osc-dm-verity-image-{{.versionName}}"
+      - "initrd-builder-{{.versionName}}"
       componentName: "osc-podvm-payload-{{.versionName}}"
       resources: {}
       source:
@@ -363,7 +371,7 @@ spec:
           17 Nov 2025 15:31:45 UTC"},"message":"done"}'
         git-provider: github
         git-provider-url: https://github.com
-      name: "build-dm-verity-image-task-{{.versionName}}"
+      name: "osc-dm-verity-image-debug-{{.versionName}}"
     spec:
       application: "osc-dm-verity-image-debug-{{.versionName}}"
       componentName: "osc-dm-verity-image-debug-{{.versionName}}"
@@ -372,6 +380,26 @@ spec:
         git:
           revision: "osc-release-{{.version}}"
           url: https://github.com/confidential-devhub/coco-podvm-scripts/
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Component
+    metadata:
+      annotations:
+        build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
+        build.appstudio.openshift.io/status: '{"pac":{"state":"enabled","merge-url":"https://github.com/openshift/confidential-compute-artifacts/pull/123","configuration-time":"Wed,
+          11 Feb 2026 09:14:33 UTC"},"message":"done"}'
+        git-provider: github
+        git-provider-url: https://github.com
+      name: "initrd-builder-{{.versionName}}"
+    spec:
+      application: "build-initrds-{{.versionName}}"
+      componentName: "initrd-builder-{{.versionName}}"
+      source:
+        git:
+          context: containerfiles/initrd-builder/
+          dockerfileUrl: Containerfile
+          revision: "osc-release-{{.version}}"
+          url: https://github.com/openshift/confidential-compute-artifacts
 
     # ImageRepository is the object that links the component to a location on quay.io
     # where the built images will be stored.
@@ -678,6 +706,26 @@ spec:
         method: webhook
         title: SBOM-event-to-Bombino
 
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: ImageRepository
+    metadata:
+      annotations:
+        image-controller.appstudio.redhat.com/update-component-image: 'true'
+      labels:
+        appstudio.redhat.com/application: "build-initrds-{{.versionName}}"
+        appstudio.redhat.com/component: "initrd-builder-{{.versionName}}"
+      name: "initrd-builder-{{.versionName}}"
+    spec:
+      image:
+        name: "ose-osc-tenant/initrd-builder-{{.versionName}}"
+        visibility: public
+      notifications:
+      - config:
+          url: https://bombino.api.redhat.com/v1/sbom/quay/push
+        event: repo_push
+        method: webhook
+        title: SBOM-event-to-Bombino
+
   # IntegrationTestScenario
   # NOTE: we don't need to duplicate the Enterprise Contract, as it will be
   # created automatically when the ReleasePlan is created.
@@ -729,3 +777,4 @@ spec:
           value: tests/osc-test-fbc-integration.yaml
         resolver: git
         resourceKind: pipeline
+
