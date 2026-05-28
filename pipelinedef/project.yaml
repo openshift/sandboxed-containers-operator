@@ -6,7 +6,9 @@ spec:
   displayName: "This project is used to deploy sandboxed containers pipelines"
   description: |
     Most of the development for Sandboxed Containers happen in the default branch
-    of its repositories, releasing a new version every 6 months.
+    of its repositories, releasing a new version every 4 months.
     Now sometimes we need to release an intermediate version without stopping
     work on the future longer term release.
     This project is used to deploy pipelines that support such concurrent work.
+    This is supposed to be temporary - as a single-stream product, releasing a
+    new version makes the previous one EOL and we can remove the pipelines for it.
