@@ -7,3 +7,6 @@ settings.local.json
 # Python cache
 __pycache__/
 *.pyc
+
+data/*
+logs/*
