@@ -245,41 +245,56 @@ func (r *KataConfigOpenShiftReconciler) configureCAAProvider(ds *appsv1.DaemonSe
 		// Check for all STS environment variables (set during OLM installation)
 		hasAzureSTSCreds := os.Getenv("CLIENTID") != "" && os.Getenv("TENANTID") != "" && os.Getenv("SUBSCRIPTIONID") != ""
 		if hasAzureSTSCreds {
-			r.Log.Info("STS flow detected for Azure, adding bound-sa-token volume mount")
-			boundSATokenVolume := corev1.Volume{
-				Name: "bound-sa-token",
-				VolumeSource: corev1.VolumeSource{
-					Projected: &corev1.ProjectedVolumeSource{
-						Sources: []corev1.VolumeProjection{
-							{
-								ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-									Path:     "token",
-									Audience: "openshift",
-								},
-							},
-						},
-					},
-				},
-			}
+			r.addBoundSATokenVolume(ds)
+		}
 
-			boundSATokenVolumeMount := corev1.VolumeMount{
-				MountPath: "/var/run/secrets/openshift/serviceaccount",
-				Name:      "bound-sa-token",
-				ReadOnly:  true,
-			}
-
-			ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, boundSATokenVolume)
-			for i := range ds.Spec.Template.Spec.Containers {
-				container := &ds.Spec.Template.Spec.Containers[i]
-				if container.Name == "caa-pod" {
-					container.VolumeMounts = append(container.VolumeMounts, boundSATokenVolumeMount)
-				}
-			}
+		return ds, nil
+	case AWSProvider:
+		// Only add bound-sa-token volume for AWS IRSA if using STS flow
+		// Check for STS environment variable (set during OLM installation)
+		hasAWSSTSCreds := os.Getenv("ROLEARN") != ""
+		if hasAWSSTSCreds {
+			r.addBoundSATokenVolume(ds)
 		}
 
 		return ds, nil
 	default:
 		return ds, nil
+	}
+}
+
+// addBoundSATokenVolume adds bound-sa-token volume and mount to the DaemonSet for STS/workload identity flows
+func (r *KataConfigOpenShiftReconciler) addBoundSATokenVolume(ds *appsv1.DaemonSet) {
+	r.Log.Info("STS flow detected, adding bound-sa-token volume mount")
+
+	boundSATokenVolume := corev1.Volume{
+		Name: "bound-sa-token",
+		VolumeSource: corev1.VolumeSource{
+			Projected: &corev1.ProjectedVolumeSource{
+				Sources: []corev1.VolumeProjection{
+					{
+						ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+							Path:     "token",
+							Audience: "openshift",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	boundSATokenVolumeMount := corev1.VolumeMount{
+		MountPath: "/var/run/secrets/openshift/serviceaccount",
+		Name:      "bound-sa-token",
+		ReadOnly:  true,
+	}
+
+	ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, boundSATokenVolume)
+	for i := range ds.Spec.Template.Spec.Containers {
+		container := &ds.Spec.Template.Spec.Containers[i]
+		if container.Name == "caa-pod" {
+			container.VolumeMounts = append(container.VolumeMounts, boundSATokenVolumeMount)
+		}
 	}
 }
 

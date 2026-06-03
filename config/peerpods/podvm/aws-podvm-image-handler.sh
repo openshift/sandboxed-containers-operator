@@ -19,8 +19,14 @@ function verify_vars() {
     # Ensure CLOUD_PROVIDER is set to aws
     [[ -z "${CLOUD_PROVIDER}" || "${CLOUD_PROVIDER}" != "aws" ]] && error_exit "CLOUD_PROVIDER is empty or not set to aws"
 
-    [[ -z "${AWS_ACCESS_KEY_ID}" ]] && error_exit "AWS_ACCESS_KEY_ID is not set"
-    [[ -z "${AWS_SECRET_ACCESS_KEY}" ]] && error_exit "AWS_SECRET_ACCESS_KEY is not set"
+    # Check for AWS credentials - support both static credentials and IRSA
+    if [[ -n "${AWS_ACCESS_KEY_ID}" && -n "${AWS_SECRET_ACCESS_KEY}" ]]; then
+        echo "Verified static AWS credentials"
+    elif [[ -n "${AWS_ROLE_ARN}" && -n "${AWS_WEB_IDENTITY_TOKEN_FILE}" ]]; then
+        echo "Verified AWS IRSA (IAM Roles for Service Accounts) variables"
+    else
+        error_exit "Neither static credentials (AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY) nor IRSA credentials (AWS_ROLE_ARN + AWS_WEB_IDENTITY_TOKEN_FILE) are set"
+    fi
 
     # Packer variables
     [[ -z "${INSTANCE_TYPE}" ]] && error_exit "INSTANCE_TYPE is not set"
@@ -200,11 +206,36 @@ function bootc_to_ami() {
     aws_ami_name="${4}"
     aws_bucket="${5}" # bucket must exist
 
-    [[ -n "$AWS_ACCESS_KEY_ID" ]] && [[ -n "$AWS_SECRET_ACCESS_KEY" ]] && [[ -n "$AWS_REGION" ]] || error_exit "bootc_to_ami failed: AWS_* keys or AWS_REGION are missing"
-    # TODO: check permissions
-    run_args="--env AWS_ACCESS_KEY_ID --env AWS_SECRET_ACCESS_KEY"
+    # Validate credentials - support both static and IRSA
+    # Note: IRSA check is also done earlier in create_ami_from_prebuilt_artifact() to prevent resource leaks,
+    # but kept here for consistency and future use
+    if [[ -n "$AWS_ACCESS_KEY_ID" && -n "$AWS_SECRET_ACCESS_KEY" ]]; then
+        echo "bootc_to_ami: Using static AWS credentials"
+	# TODO: pass as env file
+        run_args="--env AWS_ACCESS_KEY_ID --env AWS_SECRET_ACCESS_KEY"
+    elif [[ -n "$AWS_ROLE_ARN" && -n "$AWS_WEB_IDENTITY_TOKEN_FILE" ]]; then
+        error_exit "bootc_to_ami failed: IRSA are not yet supported by the Bootc Image Builder"
+	# see https://github.com/osbuild/bootc-image-builder#aws-credentials-file
+    else
+        error_exit "bootc_to_ami failed: no valid credentials are properly configured"
+    fi
+
     bib_args="--type ami --aws-ami-name ${aws_ami_name} --aws-bucket ${aws_bucket} --aws-region ${AWS_REGION}"
     bootc_image_builder_conversion "${container_image_repo_url}" "${image_tag}" "${auth_json_file}" "${run_args}" "${bib_args}"
+}
+
+# Check if peer-pods-secret is based on CCO-created secret (needs permissions extension) or otherwise (should have full permissions).
+# Returns 0 if CCO flow, 1 otherwise (should have full permissions).
+function is_cco_flow_secret() {
+    local cco_label=$(kubectl get secret peer-pods-secret \
+        -n openshift-sandboxed-containers-operator \
+        -o jsonpath='{.metadata.labels.kataconfiguration\.openshift\.io/credentials-request-based}' 2>/dev/null)
+
+    if [[ "$cco_label" == "true" ]]; then
+        return 0
+    else
+        return 1
+    fi
 }
 
 function prepare_for_prebuilt_artifact() {
@@ -215,17 +246,39 @@ function prepare_for_prebuilt_artifact() {
     # Update the BUCKET_NAME in the aws-podvm-image-cm configmap
     kubectl patch configmap aws-podvm-image-cm -n openshift-sandboxed-containers-operator --type merge -p "{\"data\":{\"BUCKET_NAME\":\"${BUCKET_NAME}\"}}"
 
-    echo "Calling the helper script to extend credentials, create vmimport role and a bucket"
-    /scripts/ami-helper.sh -i -b ${BUCKET_NAME} || error_exit "Failed to extend credentials, create vmimport role and a bucket using the helper script"
-
-    echo "Extending the credentials in use"
+    # Determine credential source and handle appropriately
     local extended_secret_name="peer-pods-image-creation-secret"
-    export AWS_ACCESS_KEY_ID=$(oc get secret ${extended_secret_name} -n openshift-sandboxed-containers-operator -o jsonpath='{.data.aws_access_key_id}' | base64 -d)
-    export AWS_SECRET_ACCESS_KEY=$(oc get secret ${extended_secret_name} -n openshift-sandboxed-containers-operator -o jsonpath='{.data.aws_secret_access_key}' | base64 -d)
+
+    if [[ -n "${AWS_ROLE_ARN}" && -n "${AWS_WEB_IDENTITY_TOKEN_FILE}" ]]; then
+        echo "Using IRSA credentials for image creation"
+        /scripts/ami-helper.sh -s -b ${BUCKET_NAME} || error_exit "Failed to create bucket using the helper script"
+    elif is_cco_flow_secret; then
+        echo "CCO flow detected, requesting credential extension"
+        /scripts/ami-helper.sh -i -b ${BUCKET_NAME} || error_exit "Failed to extend credentials using the helper script"
+        export AWS_ACCESS_KEY_ID=$(kubectl get secret ${extended_secret_name} -n openshift-sandboxed-containers-operator -o jsonpath='{.data.aws_access_key_id}' | base64 -d)
+        export AWS_SECRET_ACCESS_KEY=$(kubectl get secret ${extended_secret_name} -n openshift-sandboxed-containers-operator -o jsonpath='{.data.aws_secret_access_key}' | base64 -d)
+    else
+        echo "Using manual credentials (expecting s3 ${BUCKET_NAME} bucket to exist and vmimport service role to be set)"
+
+        # Validate bucket exists
+        aws s3api head-bucket --bucket ${BUCKET_NAME} --region ${AWS_REGION} 2>/dev/null || \
+            error_exit "Bucket ${BUCKET_NAME} not found or not accessible. When using manual credentials, you must create the bucket and vmimport role before image creation. Use ami-helper.sh or see docs/credentials-handling.md for details."
+
+        echo "Verified bucket ${BUCKET_NAME} is accessible"
+    fi
 }
 
 function create_ami_from_prebuilt_artifact() {
     echo "Creating AWS AMI image from prebuilt artifact"
+
+    # Get the PODVM_IMAGE_TYPE, PODVM_IMAGE_TAG and PODVM_IMAGE_SRC_PATH early
+    get_image_type_url_and_path
+
+    # Reject IRSA for bootc image type before creating any resources
+    # see https://github.com/osbuild/bootc-image-builder#aws-credentials-file
+    if [[ "${PODVM_IMAGE_TYPE}" == "bootc" && -n "${AWS_ROLE_ARN}" && -n "${AWS_WEB_IDENTITY_TOKEN_FILE}" ]]; then
+        error_exit "bootc image type with IRSA credentials is not yet supported by the Bootc Image Builder"
+    fi
 
     prepare_for_prebuilt_artifact
 
@@ -235,9 +288,6 @@ function create_ami_from_prebuilt_artifact() {
     image_repo_auth_file="/tmp/regauth/auth.json"
 
     [[ ! ${BUCKET_NAME} ]] && error_exit "BUCKET_NAME is not defined"
-
-    # Get the PODVM_IMAGE_TYPE, PODVM_IMAGE_TAG and PODVM_IMAGE_SRC_PATH
-    get_image_type_url_and_path
 
     case "${PODVM_IMAGE_TYPE}" in
     oci)
@@ -271,11 +321,16 @@ function create_ami_from_prebuilt_artifact() {
         ;;
     esac
 
-    echo "Deleting the bucket"
-    /scripts/ami-helper.sh -i -d -b ${BUCKET_NAME} || error_exit "Failed to delete the bucket using the helper script"
-
-    echo "Cleaning the credentials"
-    /scripts/ami-helper.sh -i -c || error_exit "Failed to clean the credentials using the helper script"
+    # Cleanup: delete bucket and credentials based on credential source
+    if [[ -n "${AWS_ROLE_ARN}" ]]; then
+        echo "IRSA flow: deleting bucket only (no credential cleanup needed)"
+        /scripts/ami-helper.sh -s -d -b ${BUCKET_NAME} || echo "Warning: Failed to delete bucket"
+    elif is_cco_flow_secret; then
+        echo "CCO flow: deleting bucket and cleaning extended credentials"
+        /scripts/ami-helper.sh -i -c -d -b ${BUCKET_NAME} || echo "Warning: Failed to clean up"
+    else
+        echo "Manual credentials: bucket and vmimport role were pre-created, perform manual cleanup"
+    fi
 }
 
 function upload_image_to_s3() {
