@@ -13,9 +13,9 @@ Usage: $(basename $0) [options]
    -c               Clean credentials and exit
    -d               Delete the bucket and exit
    -h               Print this help message
-   -i               In cluster
+   -i               Request and use extended credentials in-place for this execution
    -r <region>      Set the region (otherwise it will be fetched from the cluster)
-   -s               Skip credentials request
+   -s               Skip requesting extended credentials for operator image operations
 EOF
 }
 
@@ -25,13 +25,16 @@ while getopts ":b:cdhir:s" opt; do
 		c ) clean_credentials=true;;
 		d ) delete_bucket=true;;
 		h ) usage && exit 0;;
-		i ) in_cluster=true;;
+		i ) in_place=true;;
 		r ) REGION=$OPTARG;;
 		s ) skip_cr=true;;
 		\? ) echo "Invalid option: -$OPTARG" >&2 && usage && exit 1;;
 	esac
 done
 
+# Request extended credentials from CCO and export them to the current environment
+# for immediate use during this script execution. Used when running with -i flag
+# (typically inside cluster jobs that need elevated permissions).
 extended_credentials() {
 	echo "Creating extended credentials for IAM role management, bucket creation and operation credentials"
 
@@ -224,9 +227,12 @@ clean_credentials() {
 	oc delete credentialsrequest openshift-sandboxed-containers-aws-image -n openshift-cloud-credential-operator
 }
 
+# Request extended credentials from CCO for future operator image creation operations.
+# Creates peer-pods-image-creation-secret that will be used by automated image jobs.
+# Does NOT modify current environment - credentials are saved in secret for later use only.
 get_operation_credentials() {
 	[[ $skip_cr ]] && return
-	echo "Ask for addtional credentials"
+	echo "Ask for additional credentials"
 	oc get ns openshift-sandboxed-containers-operator >/dev/null 2>&1 || (echo "OSC namespace is missing, re-run after installting the operator" && exit 1)
 
 	cat <<EOF > "${CREDENTIALS_REQUEST_YAML_FILE}"
@@ -295,7 +301,7 @@ init
 
 prepare
 
-[[ $in_cluster ]] && extended_credentials
+[[ $in_place ]] && extended_credentials
 
 [[ $clean_credentials ]] && clean_credentials; [[ $delete_bucket ]] && delete_bucket; [[ $clean_credentials || $delete_bucket ]] && exit 0
 
@@ -303,4 +309,4 @@ create_bucket
 
 set_service_role
 
-[[ $in_cluster ]] || get_operation_credentials
+[[ $in_place ]] || get_operation_credentials
