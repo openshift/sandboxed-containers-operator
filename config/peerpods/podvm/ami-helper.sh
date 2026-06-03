@@ -71,7 +71,7 @@ spec:
       resource: "arn:aws:s3:::${BUCKET_NAME}"
     - effect: Allow
       action:
-        - s3:GetOcbject
+        - s3:GetObject
         - s3:PutObject
         - s3:DeleteObject
       resource: "arn:aws:s3:::${BUCKET_NAME}/*"
@@ -253,7 +253,7 @@ spec:
       resource: "arn:aws:s3:::${BUCKET_NAME}"
     - effect: Allow
       action:
-        - s3:GetOcbject
+        - s3:GetObject
         - s3:PutObject
         - s3:DeleteObject
       resource: "arn:aws:s3:::${BUCKET_NAME}/*"
