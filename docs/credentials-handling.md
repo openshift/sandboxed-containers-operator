@@ -40,7 +40,7 @@ OIDC_PROVIDER=$(oc get authentication cluster -ojson | jq -r .spec.serviceAccoun
 2. Create the IAM role with trust policy:
 ```bash
 # Set variables
-ROLE_NAME=openshift-sandboxed-containers-role
+export ROLE_NAME=openshift-sandboxed-containers-role
 
 # Create trust policy document
 cat > trust-policy.json <<EOF
@@ -190,10 +190,6 @@ aws iam delete-role --role-name $ROLE_NAME
 
 # Delete the custom policy
 aws iam delete-policy --policy-arn arn:aws:iam::${AWS_ACCOUNT_ID}:policy/OSC-ImageCreation-Policy
-
-# Delete vmimport role (created during image creation)
-aws iam delete-role-policy --role-name vmimport --policy-name vmimport
-aws iam delete-role --role-name vmimport
 ```
 
 #### How it works

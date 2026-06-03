@@ -169,6 +169,26 @@ delete_bucket() {
 	aws s3api delete-bucket --bucket ${BUCKET_NAME} --region ${REGION}
 }
 
+delete_vmimport_role() {
+	echo "Delete vmimport role"
+	if ! aws iam get-role --role-name vmimport --region ${REGION} &>/dev/null; then
+		echo "vmimport role does not exist, skipping deletion"
+		return 0
+	fi
+
+	echo "Deleting inline policy from vmimport role"
+	# Ignore NoSuchEntity error to make cleanup idempotent
+	aws iam delete-role-policy --role-name vmimport --policy-name vmimport --region ${REGION} 2>/dev/null || true
+
+	echo "Deleting vmimport role"
+	if ! aws iam delete-role --role-name vmimport --region ${REGION}; then
+		echo "Error: Failed to delete vmimport role"
+		return 1
+	fi
+
+	echo "Successfully deleted vmimport role"
+}
+
 create_bucket() {
 	echo "Create s3 Bucket named ${BUCKET_NAME} at ${REGION}"
 	if [[ ${REGION} == us-east-1 ]]; then
@@ -303,7 +323,7 @@ prepare
 
 [[ $in_place ]] && extended_credentials
 
-[[ $clean_credentials ]] && clean_credentials; [[ $delete_bucket ]] && delete_bucket; [[ $clean_credentials || $delete_bucket ]] && exit 0
+[[ $delete_bucket ]] && delete_bucket && delete_vmimport_role; [[ $clean_credentials ]] && clean_credentials; [[ $clean_credentials || $delete_bucket ]] && exit 0
 
 create_bucket
 
