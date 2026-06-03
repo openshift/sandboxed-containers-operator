@@ -349,7 +349,7 @@ func (kh *KataConfigHandler) teardownPeerPodsCredentials(ctx context.Context) (b
 
 // checkAndSetupSTSWorkflow checks if STS (Security Token Service) workflow environment variables
 // are set and creates/updates the peer-pods-secret accordingly.
-// Currently supports Azure only.
+// Currently supports Azure and AWS.
 // Returns true if STS workflow is detected and secret was created/updated successfully.
 // Returns false if no STS environment variables are found or if there's an error.
 func (kh *KataConfigHandler) checkAndSetupSTSWorkflow(ctx context.Context) (bool, error) {
@@ -360,10 +360,16 @@ func (kh *KataConfigHandler) checkAndSetupSTSWorkflow(ctx context.Context) (bool
 	clientID := os.Getenv("CLIENTID")             // Azure client ID
 	tenantID := os.Getenv("TENANTID")             // Azure tenant ID
 	subscriptionID := os.Getenv("SUBSCRIPTIONID") // Azure subscription ID
+
+	// AWS
+	roleARN := os.Getenv("ROLEARN") // AWS IAM Role ARN
+
 	tokenPath := "/var/run/secrets/openshift/serviceaccount/token"
 
 	// Check if Azure STS credentials are provided
 	hasAzureSTSCreds := len(clientID) > 0 && len(tenantID) > 0 && len(subscriptionID) > 0
+	// Check if AWS STS credentials are provided
+	hasAWSSTSCreds := len(roleARN) > 0
 
 	// Label to mark this as an STS-based secret
 	labels := map[string]string{
@@ -371,12 +377,17 @@ func (kh *KataConfigHandler) checkAndSetupSTSWorkflow(ctx context.Context) (bool
 	}
 	secretData := map[string][]byte{}
 	if hasAzureSTSCreds {
-		kh.reconciler.Log.Info("STS workflow detected, creating peer-pods-secret")
+		kh.reconciler.Log.Info("Azure STS workflow detected, creating peer-pods-secret")
 		secretData["AZURE_CLIENT_ID"] = []byte(clientID)
 		secretData["AZURE_TENANT_ID"] = []byte(tenantID)
 		secretData["AZURE_SUBSCRIPTION_ID"] = []byte(subscriptionID)
 		secretData["AZURE_FEDERATED_TOKEN_FILE"] = []byte(tokenPath)
 		labels[labelSTS] = "azure"
+	} else if hasAWSSTSCreds {
+		kh.reconciler.Log.Info("AWS STS workflow detected, creating peer-pods-secret")
+		secretData["AWS_ROLE_ARN"] = []byte(roleARN)
+		secretData["AWS_WEB_IDENTITY_TOKEN_FILE"] = []byte(tokenPath)
+		labels[labelSTS] = "aws"
 	} else {
 		// No STS credentials found
 		return false, nil
