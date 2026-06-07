@@ -42,6 +42,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	nodeapi "k8s.io/api/node/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -761,12 +762,24 @@ func (r *KataConfigOpenShiftReconciler) kataOcExists() (bool, error) {
 }
 
 func (r *KataConfigOpenShiftReconciler) checkConvergedCluster() (bool, error) {
-	//Check if only master and worker MCP exists
-	//Worker machinecount should be 0
+	mcpAvailable, err := r.isMachineConfigPoolAvailable()
+	if err != nil {
+		return false, err
+	}
+	if !mcpAvailable {
+		r.Log.Info("MachineConfigPool API unavailable; assuming cluster is not converged")
+		return false, nil
+	}
+
+	// Check if only master and worker MCP exists. Worker machinecount should be 0.
 	listOpts := []client.ListOption{}
 	mcpList := &mcfgv1.MachineConfigPoolList{}
-	err := r.Client.List(context.TODO(), mcpList, listOpts...)
+	err = r.Client.List(context.TODO(), mcpList, listOpts...)
 	if err != nil {
+		if meta.IsNoMatchError(err) {
+			r.Log.Info("MachineConfigPool API unavailable; assuming cluster is not converged")
+			return false, nil
+		}
 		r.Log.Error(err, "Unable to get the list of MCPs")
 		return false, err
 	}
@@ -1736,18 +1749,29 @@ func (eh *NodeEventHandler) Generic(ctx context.Context, event event.GenericEven
 }
 
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
-		Watches(
-			&mcfgv1.MachineConfigPool{},
-			&McpEventHandler{r}).
 		Watches(
 			&corev1.Node{},
 			&NodeEventHandler{r}).
 		Watches(
 			&corev1.ConfigMap{},
 			&ConfigMapEventHandler{r},
-		).Complete(r)
+		)
+
+	mcpAvailable, err := r.isMachineConfigPoolAvailable()
+	if err != nil {
+		return err
+	}
+	if mcpAvailable {
+		builder = builder.Watches(
+			&mcfgv1.MachineConfigPool{},
+			&McpEventHandler{r})
+	} else {
+		r.Log.Info("MachineConfigPool API unavailable; skipping MCP watch (use DaemonSet deployment mode on HCP)")
+	}
+
+	return builder.Complete(r)
 }
 
 func (r *KataConfigOpenShiftReconciler) getNodes() (*corev1.NodeList, error) {
