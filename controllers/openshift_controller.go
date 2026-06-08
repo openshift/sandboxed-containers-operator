@@ -1903,8 +1903,30 @@ func (r *KataConfigOpenShiftReconciler) updateStatus() error {
 		return len(nodes.Items)
 	}()
 
+	// Pre-compute cluster-level attributes outside the node loop for performance.
+	// isConvergedCluster is a cluster attribute, not a node-level attribute.
+	isConvergedCluster, err := r.checkConvergedCluster()
+	if err != nil {
+		return fmt.Errorf("failed to check if cluster is converged: %w", err)
+	}
+
+	// Build the effective KataConfig node selector once for the entire reconciliation.
+	kataNodeSelector, err := r.getKataConfigNodeSelectorAsSelector()
+	if err != nil {
+		return fmt.Errorf("failed to build KataConfig node selector: %w", err)
+	}
+
 	for _, node := range nodeList.Items {
-		e := r.putNodeOnStatusList(&node)
+		// On non-converged clusters, skip nodes that don't match the selector AND
+		// never had kata-oc label (i.e., were never targeted for Kata installation).
+		// Include nodes with kata-oc label even if they no longer match the selector,
+		// as they may be uninstalling Kata and should appear in status lists.
+		_, hasKataLabel := node.Labels["node-role.kubernetes.io/kata-oc"]
+		if !isConvergedCluster && !kataNodeSelector.Matches(labels.Set(node.Labels)) && !hasKataLabel {
+			continue
+		}
+
+		e := r.putNodeOnStatusList(&node, isConvergedCluster)
 		if e != nil {
 			err = e
 		}
@@ -1953,12 +1975,7 @@ func isNodeFailedToUninstall(nodeMcoState string, nodeCurrMc string, nodeTargetM
 	return nodeMcoState == NodeDegraded && !isKataEnabledOnNode
 }
 
-func (r *KataConfigOpenShiftReconciler) putNodeOnStatusList(node *corev1.Node) error {
-
-	isConvergedCluster, err := r.checkConvergedCluster()
-	if err != nil {
-		return err
-	}
+func (r *KataConfigOpenShiftReconciler) putNodeOnStatusList(node *corev1.Node, isConvergedCluster bool) error {
 
 	targetMcpName := func() string {
 		if isConvergedCluster {
