@@ -176,9 +176,25 @@ delete_vmimport_role() {
 		return 0
 	fi
 
-	echo "Deleting inline policy from vmimport role"
-	# Ignore NoSuchEntity error to make cleanup idempotent
-	aws iam delete-role-policy --role-name vmimport --policy-name vmimport --region ${REGION} 2>/dev/null || true
+	echo "Detaching managed policies from vmimport role"
+	# List and detach any managed policies
+	managed_policies=$(aws iam list-attached-role-policies --role-name vmimport --region ${REGION} --query 'AttachedPolicies[*].PolicyArn' --output text 2>/dev/null || true)
+	if [[ -n "$managed_policies" ]]; then
+		for policy_arn in $managed_policies; do
+			echo "Detaching managed policy: $policy_arn"
+			aws iam detach-role-policy --role-name vmimport --policy-arn "$policy_arn" --region ${REGION} || true
+		done
+	fi
+
+	echo "Deleting inline policies from vmimport role"
+	# List and delete all inline policies
+	inline_policies=$(aws iam list-role-policies --role-name vmimport --region ${REGION} --query 'PolicyNames[*]' --output text 2>/dev/null || true)
+	if [[ -n "$inline_policies" ]]; then
+		for policy_name in $inline_policies; do
+			echo "Deleting inline policy: $policy_name"
+			aws iam delete-role-policy --role-name vmimport --policy-name "$policy_name" --region ${REGION} || true
+		done
+	fi
 
 	echo "Deleting vmimport role"
 	if ! aws iam delete-role --role-name vmimport --region ${REGION}; then
