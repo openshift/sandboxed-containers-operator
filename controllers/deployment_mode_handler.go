@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/api/meta"
@@ -29,9 +30,10 @@ const (
 )
 
 const (
-	machineConfigGroup   = "machineconfiguration.openshift.io"
-	machineConfigVersion = "v1"
-	machineConfigKind    = "MachineConfig"
+	machineConfigGroup    = "machineconfiguration.openshift.io"
+	machineConfigVersion  = "v1"
+	machineConfigKind     = "MachineConfig"
+	machineConfigPoolKind = "MachineConfigPool"
 )
 
 func ParseDeploymentModeOption(s string) (DeploymentModeOption, error) {
@@ -106,7 +108,9 @@ func (r *KataConfigOpenShiftReconciler) isMachineConfigAvailable() (bool, error)
 
 	// Attempt to GET any MachineConfig to verify if the GVK is known.
 	// If the CRD isn’t installed, it will return a NoMatchError.
-	err := r.Client.Get(context.Background(), client.ObjectKey{Name: "dummy-machine-config"}, machineConfig)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := r.Client.Get(ctx, client.ObjectKey{Name: "dummy-machine-config"}, machineConfig)
 	if err == nil || k8serrors.IsNotFound(err) {
 		r.Log.Info("MachineConfig CRD is present")
 		return true, nil
@@ -114,6 +118,33 @@ func (r *KataConfigOpenShiftReconciler) isMachineConfigAvailable() (bool, error)
 
 	if meta.IsNoMatchError(err) {
 		r.Log.Info("MachineConfig CRD not found")
+		return false, nil
+	}
+
+	return false, err
+}
+
+// isMachineConfigPoolAvailable reports whether the MachineConfigPool API is registered.
+// Hosted control plane guest clusters often omit MCP while still exposing other MCO types;
+// an unconditional MCP watch prevents the operator manager from starting (see KATA-4840).
+func (r *KataConfigOpenShiftReconciler) isMachineConfigPoolAvailable() (bool, error) {
+	mcp := &unstructured.Unstructured{}
+	mcp.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   machineConfigGroup,
+		Version: machineConfigVersion,
+		Kind:    machineConfigPoolKind,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := r.Client.Get(ctx, client.ObjectKey{Name: "dummy-machine-config-pool"}, mcp)
+	if err == nil || k8serrors.IsNotFound(err) {
+		r.Log.Info("MachineConfigPool CRD is present")
+		return true, nil
+	}
+
+	if meta.IsNoMatchError(err) {
+		r.Log.Info("MachineConfigPool CRD not found")
 		return false, nil
 	}
 
