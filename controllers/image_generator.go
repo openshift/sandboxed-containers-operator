@@ -611,6 +611,8 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 
 	// aws Secret Keys
 	awsSecretKeys := []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"}
+	// aws Secret Keys for IRSA (IAM Roles for Service Accounts)
+	awsSecretIRSAKeys := []string{"AWS_ROLE_ARN", "AWS_WEB_IDENTITY_TOKEN_FILE"}
 	// aws ConfigMap Keys
 	awsConfigMapKeys := []string{"AWS_REGION", "AWS_SUBNET_ID", "AWS_VPC_ID", "AWS_SG_IDS", "CLOUD_PROVIDER"}
 	// azure Secret Keys
@@ -635,8 +637,9 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 	// Check for each cloud provider if respective ConfigMap keys are present in the peerPodsConfigMap
 	switch r.provider {
 	case "aws":
-		// Check if aws Secret Keys are present in the peerPodsSecret by calling checkKeysPresentAndNotEmpty
-		if !checkKeysPresentAndNotEmpty(peerPodsSecret.Data, awsSecretKeys) {
+		// Check if aws Secret Keys are present in the peerPodsSecret
+		// Support both static credentials and IRSA (federated tokens)
+		if !(checkKeysPresentAndNotEmpty(peerPodsSecret.Data, awsSecretKeys) || checkKeysPresentAndNotEmpty(peerPodsSecret.Data, awsSecretIRSAKeys)) {
 			return fmt.Errorf("validatePeerPodsConfigs: cannot find the required keys in peer-pods-secret Secret")
 		}
 
