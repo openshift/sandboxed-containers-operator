@@ -14,6 +14,14 @@ TEMPLATE_NAME="catalog-template.yaml"
 ICON="icon.png"
 ICON_BASE64="$ICON.base64"
 
+# Use BRANCH_BUILD_SUFFIX to add a suffix to the build registry's image
+# When we build from a release branch, the resulting builds have a suffix corresponding
+# to that branch. The released image is the same, but the render script must know
+# what version we're building from in order to find the build image.
+# Format: BRANCH_BUILD_SUFFIX="-vX-Y"
+# e.g: BRANCH_BUILD_SUFFIX="-v1-12"
+BRANCH_BUILD_SUFFIX=${BRANCH_BUILD_SUFFIX:-""}
+
 echo
 
 base64 "$ICON" > "$ICON_BASE64"
@@ -23,7 +31,8 @@ do
     pushd "$OCP_VERSION"
 
     RELEASE_IMAGE=$(yq '.entries[] | select(.schema == "olm.bundle") | .image' "$TEMPLATE_NAME" | tail -n1)
-    BUILD_IMAGE=$(echo $RELEASE_IMAGE | sed "s|$RELEASE_REGISTRY|$BUILD_REGISTRY|")
+    BUILD_IMAGE=$(echo "$RELEASE_IMAGE" | sed "s|$RELEASE_REGISTRY|$BUILD_REGISTRY|")
+    BUILD_IMAGE=$(echo "$BUILD_IMAGE" | sed "s|@|${BRANCH_BUILD_SUFFIX}@|")
 
     # Switch to the build registry, so `opm` can pull freely.
     sed -i "s|$RELEASE_IMAGE|$BUILD_IMAGE|" "$TEMPLATE_NAME"
