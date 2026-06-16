@@ -32,47 +32,12 @@ label_node() {
 	kubectl label node "${NODE_NAME}" "${NODE_LABEL}=${state}" --overwrite
 }
 
-# Check whether a package has staged updates
-check_package_updated() {
-	local pkg="$1"
-	local booted staged
-
-	booted=$(chroot /host /bin/bash -c "rpm-ostree status --json | jq -r '.deployments[] | select(.booted==true) | .checksum'")
-	staged=$(chroot /host /bin/bash -c "rpm-ostree status --json | jq -r '.deployments[] | select(.staged==true) | .checksum'")
-
-	if [ -n "$staged" ]; then
-		if chroot /host rpm-ostree db diff "$booted" "$staged" | grep -q "$pkg"; then
-			return 0 # Package was updated
-		fi
-	fi
-
-	return 1 # Package not updated or no staged deployment
-}
-
-# Function to check if a reboot is required by looking for "Staged: yes"
-is_reboot_required() {
-	check_package_updated "kata-containers"
-}
-
-# Loop until reboot is no longer required
-wait_for_reboot_clear() {
-	while is_reboot_required; do
-		echo "Reboot required"
-		set_status_waiting_for_reboot
-		sleep 60
-	done
-}
-
 set_status_installed() {
 	label_node "installed"
 }
 
 set_status_installing() {
 	label_node "installing"
-}
-
-set_status_waiting_for_reboot() {
-	label_node "waiting_for_reboot"
 }
 
 set_status_uninstalling() {
@@ -84,13 +49,26 @@ set_status_uninstalled() {
 }
 
 install_kata() {
-	# Initial wait: avoid doing anything if a previous staged update is pending
-	wait_for_reboot_clear
+	# Compares installed and available package versions. If any packages need
+	# installing or upgrading, runs rpm-ostree install --apply-live so changes
+	# take effect immediately without a node reboot. rpm-ostree cannot upgrade
+	# local layered packages in-place, so outdated versions are uninstalled first.
 
-	# This compares installed and available versions of packages.
-	# If updates or installations are needed, it prepares and runs an rpm-ostree install command with uninstall flags.
-	# rpm-ostree can't update local packages directly, so old versions must be explicitly removed.
-	# If no action is needed, it sleeps indefinitely to prevent pod restarts in a DaemonSet.
+	# If a prior uninstall_kata staged the removal of kata-containers, rpm -q
+	# below still sees kata as installed (the booted deployment still has it)
+	# and would skip reinstalling — leaving the staged removal to silently drop
+	# kata at the next reboot. Detect and cancel that staged removal now.
+	if chroot /host bash -c "
+		s=\$(rpm-ostree status --json)
+		n_staged=\$(echo \"\$s\" | jq '[.deployments[] | select(.staged)] | length')
+		[[ \$n_staged -eq 0 ]] && exit 1
+		n_kata_staged=\$(echo \"\$s\" | jq '[.deployments[] | select(.staged) | (.\"requested-packages\" // [])[] | select(startswith(\"kata-containers\"))] | length')
+		n_kata_booted=\$(echo \"\$s\" | jq '[.deployments[] | select(.booted) | (.\"requested-packages\" // [])[] | select(startswith(\"kata-containers\"))] | length')
+		[[ \$n_kata_booted -gt 0 && \$n_kata_staged -eq 0 ]]
+	"; then
+		echo "Staged removal of kata-containers detected; cancelling pending deployment"
+		chroot /host rpm-ostree cleanup -p
+	fi
 
 	local uninstall_list=()
 	local install_rpms=()
@@ -125,7 +103,28 @@ install_kata() {
 		fi
 	done
 
-	# If nothing to install, exit early
+	# If all packages are live and up-to-date, check they're also staged in
+	# rpm-ostree. After an uninstall cycle without a reboot, packages remain
+	# live via --apply-live but are absent from the staged deployment. Without
+	# re-staging, a subsequent uninstall would fail with "not currently
+	# requested". Force a re-stage if kata is not tracked in any deployment.
+	if [[ ${#install_rpms[@]} -eq 0 ]]; then
+		local n_kata_tracked
+		n_kata_tracked=$(chroot /host bash -c '
+			rpm-ostree status --json | jq "[.deployments[] |
+			  ((.\"requested-packages\" // []) + (.\"requested-local-packages\" // []))[]]
+			| map(select(startswith(\"kata-containers\"))) | length" 2>/dev/null || echo 0
+		')
+		if [[ "${n_kata_tracked:-0}" -eq 0 ]]; then
+			echo "Packages live but absent from rpm-ostree deployments; re-staging all packages"
+			for package in $PACKAGES; do
+				rpm_path=$(find /usr/share/rpm-ostree/extensions/ -maxdepth 1 -type f -name "${package}-*.rpm" 2>/dev/null | head -n1)
+				[[ -n "$rpm_path" ]] && install_rpms+=("$rpm_path")
+			done
+		fi
+	fi
+
+	# If nothing to install or re-stage, exit early
 	if [[ ${#install_rpms[@]} -eq 0 ]]; then
 		set_status_installed
 	else
@@ -140,8 +139,8 @@ install_kata() {
 			cp "$rpm_path" /host/tmp/extensions/
 		done
 
-		# Build install command
-		install_cmd="rpm-ostree install"
+		# Build install command with --apply-live to avoid a node reboot
+		install_cmd="rpm-ostree install --apply-live"
 		for pkg in "${uninstall_list[@]}"; do
 			install_cmd+=" --uninstall=$pkg"
 		done
@@ -157,19 +156,47 @@ install_kata() {
 		# Clean up temp dir
 		rm -rf /host/tmp/extensions/
 
-		# Wait again: rpm-ostree install stages changes, requiring a reboot
-		wait_for_reboot_clear
+		# rpm-ostree --apply-live updates /usr immediately but /etc changes from
+		# RPMs only land after reboot (OSTree three-way merge). Copy the kata
+		# CRI-O drop-ins from the RPM's factory-defaults location now so CRI-O
+		# can see the runtime handlers without a reboot.
+		for conf in /host/usr/etc/crio/crio.conf.d/50-kata*; do
+			[ -f "$conf" ] && cp "$conf" /host/etc/crio/crio.conf.d/
+		done
+
+		# rpm-ostree --apply-live does not run RPM scriptlets on the live system.
+		# Run the steps from kata-containers %post manually:
+		#
+		# 1. Build host-kernel-derived kata VM images. The %post script skips
+		#    this on RHCOS (guards on /var/cache/kata-containers being writable)
+		#    and instead installs kata-osbuilder-generate.service to do it after
+		#    boot. Start that service now so the images are ready immediately.
+		chroot /host systemctl start kata-osbuilder-generate.service
+
+		# 2. Run the %posttrans SELinux steps: load the kata SELinux policy
+		#    modules and grant containers access to /dev/sev and similar devices.
+		chroot /host semodule -i \
+			/usr/share/udica/templates/base_container.cil \
+			/usr/share/udica/templates/net_container.cil \
+			/usr/share/kata-containers/defaults/osc_monitor.cil
+		chroot /host setsebool -P container_use_devices 1
+
+		# Restart CRI-O to pick up the new runtime configuration. A reload
+		# (SIGHUP) only re-reads the config struct; it does not rebuild the
+		# internal OCI handler map, so kata would not appear as a valid runtime
+		# until the next full CRI-O start. Existing pod processes survive the
+		# restart — only new CRI operations are briefly unavailable.
+		chroot /host systemctl restart crio
+
+		set_status_installed
 	fi
 }
 
 uninstall_kata() {
-	# Initial wait: avoid doing anything if a previous staged update is pending
-	wait_for_reboot_clear
-
-	# Check if kata-containers is installed
-	# If kata-containers is not installed we are done
-	# Create uninstalled file to signal readiness
-	# Sleep infinity to prevent pod restart (DaemonSets always restart exited pods)
+	# If kata-containers is already uninstalled, mark the node and sleep to
+	# prevent DaemonSet pod restarts. Otherwise, stage removal via rpm-ostree
+	# uninstall (takes effect at next reboot) and immediately clean up CRI-O
+	# config so kata becomes unavailable without waiting for that reboot.
 	installed_version=$(chroot /host rpm -q kata-containers 2>/dev/null || true)
 	if [[ "$installed_version" == "package kata-containers is not installed" ]]; then
 		echo "Package already uninstalled"
@@ -180,11 +207,47 @@ uninstall_kata() {
 	# Set installation status to uninstalling
 	set_status_uninstalling
 
-	# Uninstall extensions from the node
-	chroot /host /bin/bash -c "rpm-ostree uninstall $PACKAGES"
+	# rpm-ostree uninstall does not support --apply-live (only install does).
+	# Stage the removal for the next boot; clean up CRI-O config immediately
+	# so kata becomes unavailable without waiting for a reboot.
+	#
+	# Only uninstall packages that rpm-ostree is currently tracking. After a
+	# reinstall where packages were live but not re-staged, they won't appear
+	# in requested-packages and the uninstall command would fail with "not
+	# currently requested". Packages absent from all deployments are already
+	# absent from the staged deployment and need no further action.
+	local ostree_pkg_list
+	ostree_pkg_list=$(chroot /host bash -c '
+		rpm-ostree status --json | jq -r "[.deployments[] |
+		  ((.\"requested-packages\" // []) + (.\"requested-local-packages\" // []))[]]
+		| .[]" 2>/dev/null
+	' || true)
+	local uninstall_args=()
+	for pkg in $PACKAGES; do
+		echo "$ostree_pkg_list" | grep -qF "$pkg" && uninstall_args+=("$pkg")
+	done
+	if [[ ${#uninstall_args[@]} -gt 0 ]]; then
+		chroot /host /bin/bash -c "rpm-ostree uninstall ${uninstall_args[*]}"
+	else
+		echo "No kata packages tracked in rpm-ostree deployments; skipping rpm-ostree uninstall (packages will be absent after next reboot)"
+	fi
 
-	# Wait again: rpm-ostree uninstall stages changes, requiring a reboot
-	wait_for_reboot_clear
+	# Remove the CRI-O drop-ins we copied during install
+	rm -f /host/etc/crio/crio.conf.d/50-kata*
+
+	# Run the steps from kata-containers %preun manually (rpm-ostree uninstall
+	# does not run scriptlets on the live system): remove the kata SELinux policy
+	# module and revoke device access granted during install.
+	chroot /host semodule -r osc_monitor 2>/dev/null || echo "osc_monitor module not loaded; skipping removal"
+	chroot /host setsebool -P container_use_devices 0
+
+	# Restart CRI-O to drop the removed runtime configuration (same reason as
+	# install: reload does not rebuild the internal OCI handler map).
+	chroot /host systemctl restart crio
+
+	set_status_uninstalled
+	# Sleep to prevent pod restart while staged RPM removal awaits next reboot.
+	sleep infinity
 }
 
 get_cloud_provider() {
