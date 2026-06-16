@@ -42,7 +42,6 @@ const (
 	KataWaitingToInstall   KataInstallationDaemonSetState = "waiting_to_install"
 	KataInstalled          KataInstallationDaemonSetState = "installed"
 	KataInstalling         KataInstallationDaemonSetState = "installing"
-	KataWaitingForReboot   KataInstallationDaemonSetState = "waiting_for_reboot" // rpm-ostree changes applied after reboot
 	KataWaitingToUninstall KataInstallationDaemonSetState = "waiting_to_uninstall"
 	KataUninstalling       KataInstallationDaemonSetState = "uninstalling"
 	KataUninstalled        KataInstallationDaemonSetState = "uninstalled"
@@ -135,13 +134,9 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 	}
 
 	// Wait for the Kata uninstall DaemonSet to uninstall the kata-containers rpm package and its dependencies
-	// The daemonset will change the node label when the uninstallation is completed or reboot is required and will trigger reconciliation
+	// The daemonset will change the node label when the uninstallation is completed and will trigger reconciliation
 	if isUninstallDaemonSetJustCreated || uninstallInProgress {
 		r.Log.Info("Waiting for KataUninstall DaemonSet to finish")
-		nodes, _ := r.isNodeRebootRequired()
-		for _, node := range nodes {
-			r.Log.Info("node must be rebooted", "node", node.Name)
-		}
 		return ctrl.Result{}, nil
 	}
 
@@ -313,10 +308,6 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 		// NodeEventHandler should trigger reconciliation on label changes
 		// so no need for that.
 		r.Log.Info("Waiting for kata installation DaemonSet to finish", "daemonSet", kataInstallDaemonSet.Name)
-		nodes, _ := r.isNodeRebootRequired()
-		for _, node := range nodes {
-			r.Log.Info("node must be rebooted", "node", node.Name)
-		}
 	}
 
 	return ctrl.Result{}, nil
@@ -640,29 +631,6 @@ func (r *KataConfigOpenShiftReconciler) isKataInstallDaemonSetInstalling() (bool
 	return !allNodeInstalled, nil
 }
 
-// isNodeRebootRequired checks if any nodes require a reboot based on their labels.
-// It returns a list of nodes that need a reboot and an error if any occurs.
-func (r *KataConfigOpenShiftReconciler) isNodeRebootRequired() ([]corev1.Node, error) {
-	nodes, err := r.getNodesWithLabels(r.getNodeSelectorAsMap())
-	if err != nil {
-		r.Log.Error(err, "Getting Node List failed")
-		return nil, err
-	}
-
-	result := make([]corev1.Node, 0)
-
-	for _, node := range nodes.Items {
-		currentState, ok := node.Labels[kataInstallationDaemonSetLabel]
-		if ok {
-			if currentState == string(KataWaitingForReboot) {
-				result = append(result, node)
-			}
-		}
-	}
-
-	return result, nil
-}
-
 // updateStatusDaemonSet updates the status of DaemonSet based on the given action.
 // It fetches nodes with appropriate labels, clears existing node status lists,
 // updates node count, and move nodes in the status list based on the action.
@@ -714,9 +682,6 @@ func (r *KataConfigOpenShiftReconciler) putNodeOnStatusListDaemonSetInstall(node
 		r.kataConfig.Status.KataNodes.WaitingToInstall = append(r.kataConfig.Status.KataNodes.WaitingToInstall, node.GetName())
 	case string(KataInstalling):
 		r.kataConfig.Status.KataNodes.Installing = append(r.kataConfig.Status.KataNodes.Installing, node.GetName())
-		// rpm-ostree changes applied after reboot
-	case string(KataWaitingForReboot):
-		r.kataConfig.Status.KataNodes.Installing = append(r.kataConfig.Status.KataNodes.Installing, node.GetName())
 	case string(KataInstalled):
 		r.kataConfig.Status.KataNodes.Installed = append(r.kataConfig.Status.KataNodes.Installed, node.GetName())
 	default:
@@ -733,9 +698,6 @@ func (r *KataConfigOpenShiftReconciler) putNodeOnStatusListDaemonSetUninstall(no
 	case string(KataWaitingToUninstall):
 		r.kataConfig.Status.KataNodes.WaitingToUninstall = append(r.kataConfig.Status.KataNodes.WaitingToUninstall, node.GetName())
 	case string(KataUninstalling):
-		r.kataConfig.Status.KataNodes.Uninstalling = append(r.kataConfig.Status.KataNodes.Uninstalling, node.GetName())
-		// rpm-ostree changes applied after reboot
-	case string(KataWaitingForReboot):
 		r.kataConfig.Status.KataNodes.Uninstalling = append(r.kataConfig.Status.KataNodes.Uninstalling, node.GetName())
 	case string(KataUninstalled):
 	default:
