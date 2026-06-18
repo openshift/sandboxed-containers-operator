@@ -104,11 +104,11 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="{./api/v1,./cmd/manager,./cmd/metrics,./controllers}" output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="{./api/v1,./cmd/manager,./controllers}" output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="{./api/v1,./cmd/manager,./cmd/metrics,./controllers}"
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="{./api/v1,./cmd/manager,./controllers}"
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -140,9 +140,8 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 ##@ Build
 
 .PHONY: build
-build: manifests generate fmt vet ## Build manager and metrics-server binaries.
+build: manifests generate fmt vet ## Build manager binary.
 	CGO_ENABLED=1 GOOS=linux go build $(GOFLAGS) -o bin/manager cmd/manager/main.go
-	CGO_ENABLED=1 GOOS=linux go build $(GOFLAGS) -o bin/metrics-server cmd/metrics/metrics.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -186,7 +185,6 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	cd config/metrics && $(KUSTOMIZE) edit set image metrics-server=$(IMG)
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
 ##@ Deployment
@@ -206,7 +204,6 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	cd config/metrics && $(KUSTOMIZE) edit set image metrics-server=$(IMG)
 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
 
 .PHONY: undeploy
@@ -290,7 +287,6 @@ endif
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	$(OPERATOR_SDK) generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	cd config/metrics && $(KUSTOMIZE) edit set image metrics-server=$(IMG)
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
 	$(OPERATOR_SDK) bundle validate ./bundle
 
