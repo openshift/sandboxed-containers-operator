@@ -489,31 +489,6 @@ spec:
                   - serviceAccountToken:
                       audience: openshift
                       path: token
-      - label:
-          app: operator-metrics-server
-        name: operator-metrics-server
-        spec:
-          replicas: 1
-          selector:
-            matchLabels:
-              app: operator-metrics-server
-          strategy: {}
-          template:
-            metadata:
-              labels:
-                app: operator-metrics-server
-            spec:
-              containers:
-              - command:
-                - /metrics-server
-                image: registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:a602b4a41c223b18a4b812d40be5e0a8651c570633776090eaa7f438d8baf9e2
-                name: metrics-server
-                ports:
-                - containerPort: 8091
-                resources:
-                  requests:
-                    cpu: 50m
-                    memory: 64Mi
       permissions:
       - rules:
         - apiGroups:
