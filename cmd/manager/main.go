@@ -169,6 +169,7 @@ func main() {
 						controllers.DashboardConfigMapNamespace: {},
 					},
 				},
+				&corev1.Pod{}: {}, // needed by OscMetricsCollector; cluster-wide
 			},
 		},
 	})
@@ -253,6 +254,11 @@ func main() {
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
+
+	if err := controllers.RegisterOscMetricsCollector(mgr); err != nil {
+		setupLog.Error(err, "unable to register OSC metrics collector")
+		os.Exit(1)
+	}
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctx); err != nil {
