@@ -32,7 +32,6 @@ RUN . ./controller-tools-ver && make build
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8-1786987521
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
-COPY --from=builder /workspace/bin/metrics-server .
 COPY --from=builder /workspace/config/peerpods /config/peerpods
 
 RUN useradd  -r -u 499 nonroot
