@@ -62,15 +62,17 @@ const (
 // and SecurityContextConstraints needed for the kata-install DaemonSet to function.
 func (r *KataConfigOpenShiftReconciler) ensureKataInstallRBAC() error {
 	ctx := context.TODO()
+	namespace := r.kataConfig.Namespace
 
-	// 1. Create ServiceAccount in the operator namespace
-	// Note: No controller reference - ServiceAccount is shared infrastructure
-	// and outlives any individual KataConfig
+	// 1. Create ServiceAccount
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kata-install",
-			Namespace: OperatorNamespace,
+			Namespace: namespace,
 		},
+	}
+	if err := controllerutil.SetControllerReference(r.kataConfig, sa, r.Scheme); err != nil {
+		return fmt.Errorf("failed to set controller reference for ServiceAccount: %w", err)
 	}
 	if err := r.Client.Create(ctx, sa); err != nil && !k8serrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to create ServiceAccount: %w", err)
@@ -109,7 +111,7 @@ func (r *KataConfigOpenShiftReconciler) ensureKataInstallRBAC() error {
 			{
 				Kind:      "ServiceAccount",
 				Name:      "kata-install",
-				Namespace: OperatorNamespace,
+				Namespace: namespace,
 			},
 		},
 	}
@@ -137,7 +139,7 @@ func (r *KataConfigOpenShiftReconciler) ensureKataInstallRBAC() error {
 			Type: securityv1.SELinuxStrategyRunAsAny,
 		},
 		Users: []string{
-			fmt.Sprintf("system:serviceaccount:%s:kata-install", OperatorNamespace),
+			fmt.Sprintf("system:serviceaccount:%s:kata-install", namespace),
 		},
 		Volumes: []securityv1.FSType{
 			securityv1.FSTypeHostPath,
