@@ -2,11 +2,13 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -16,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	securityv1 "github.com/openshift/api/security/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -54,6 +57,101 @@ const (
 	InstallKata   KataDaemonSetAction = "install"
 	UninstallKata KataDaemonSetAction = "uninstall"
 )
+
+// ensureKataInstallRBAC creates the ServiceAccount, ClusterRole, ClusterRoleBinding,
+// and SecurityContextConstraints needed for the kata-install DaemonSet to function.
+func (r *KataConfigOpenShiftReconciler) ensureKataInstallRBAC() error {
+	ctx := context.TODO()
+
+	// 1. Create ServiceAccount in the operator namespace
+	// Note: No controller reference - ServiceAccount is shared infrastructure
+	// and outlives any individual KataConfig
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kata-install",
+			Namespace: OperatorNamespace,
+		},
+	}
+	if err := r.Client.Create(ctx, sa); err != nil && !k8serrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create ServiceAccount: %w", err)
+	}
+	r.Log.Info("Ensured ServiceAccount kata-install exists")
+
+	// 2. Create ClusterRole
+	cr := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kata-install",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"nodes"},
+				Verbs:     []string{"get", "list", "patch", "update"},
+			},
+		},
+	}
+	if err := r.Client.Create(ctx, cr); err != nil && !k8serrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create ClusterRole: %w", err)
+	}
+	r.Log.Info("Ensured ClusterRole kata-install exists")
+
+	// 3. Create ClusterRoleBinding
+	crb := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kata-install",
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "kata-install",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "kata-install",
+				Namespace: OperatorNamespace,
+			},
+		},
+	}
+	if err := r.Client.Create(ctx, crb); err != nil && !k8serrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create ClusterRoleBinding: %w", err)
+	}
+	r.Log.Info("Ensured ClusterRoleBinding kata-install exists")
+
+	// 4. Create SecurityContextConstraints (OpenShift specific)
+	scc := &securityv1.SecurityContextConstraints{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kata-install-scc",
+		},
+		AllowPrivilegedContainer: true,
+		AllowHostDirVolumePlugin: true,
+		AllowHostPID:             true,
+		AllowHostNetwork:         false,
+		AllowHostPorts:           false,
+		AllowHostIPC:             false,
+		ReadOnlyRootFilesystem:   false,
+		RunAsUser: securityv1.RunAsUserStrategyOptions{
+			Type: securityv1.RunAsUserStrategyRunAsAny,
+		},
+		SELinuxContext: securityv1.SELinuxContextStrategyOptions{
+			Type: securityv1.SELinuxStrategyRunAsAny,
+		},
+		Users: []string{
+			fmt.Sprintf("system:serviceaccount:%s:kata-install", OperatorNamespace),
+		},
+		Volumes: []securityv1.FSType{
+			securityv1.FSTypeHostPath,
+			securityv1.FSTypeSecret,
+			securityv1.FSTypeConfigMap,
+		},
+	}
+	if err := r.Client.Create(ctx, scc); err != nil && !k8serrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create SecurityContextConstraints: %w", err)
+	}
+	r.Log.Info("Ensured SecurityContextConstraints kata-install-scc exists")
+
+	return nil
+}
 
 func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet() (ctrl.Result, error) {
 	r.Log.Info("KataConfig deletion in progress: ")
@@ -228,6 +326,12 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 		if err := r.addFinalizer(); err != nil {
 			return ctrl.Result{}, err
 		}
+	}
+
+	// Ensure RBAC resources exist for kata-install DaemonSet
+	if err := r.ensureKataInstallRBAC(); err != nil {
+		r.Log.Error(err, "Failed to ensure kata-install RBAC resources")
+		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
 
 	// TODO: Logic that checks failed installation
@@ -407,7 +511,7 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 					Labels: daemonsetLabelSelectors,
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName: "default",
+					ServiceAccountName: "kata-install",
 					NodeSelector:       nodeSelector,
 					HostPID:            true,
 					Containers: []corev1.Container{
