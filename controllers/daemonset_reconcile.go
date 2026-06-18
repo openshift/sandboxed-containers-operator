@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	securityv1 "github.com/openshift/api/security/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -54,6 +56,65 @@ const (
 	InstallKata   KataDaemonSetAction = "install"
 	UninstallKata KataDaemonSetAction = "uninstall"
 )
+
+// ensureKataInstallSCC creates or updates the SecurityContextConstraints
+// needed for the kata-install DaemonSet. SA and RBAC are bundled statically.
+func (r *KataConfigOpenShiftReconciler) ensureKataInstallSCC() error {
+	ctx := context.TODO()
+
+	scc := &securityv1.SecurityContextConstraints{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kata-install-scc",
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, scc, func() error {
+		scc.AllowPrivilegedContainer = true
+		scc.AllowHostDirVolumePlugin = true
+		scc.AllowHostPID = true
+		scc.AllowHostNetwork = false
+		scc.AllowHostPorts = false
+		scc.AllowHostIPC = false
+		scc.ReadOnlyRootFilesystem = false
+		scc.RunAsUser = securityv1.RunAsUserStrategyOptions{
+			Type: securityv1.RunAsUserStrategyRunAsAny,
+		}
+		scc.SELinuxContext = securityv1.SELinuxContextStrategyOptions{
+			Type: securityv1.SELinuxStrategyRunAsAny,
+		}
+		scc.Users = []string{
+			fmt.Sprintf("system:serviceaccount:%s:kata-install", OperatorNamespace),
+		}
+		scc.Volumes = []securityv1.FSType{
+			securityv1.FSTypeHostPath,
+			securityv1.FSTypeSecret,
+			securityv1.FSTypeConfigMap,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to create or update SecurityContextConstraints: %w", err)
+	}
+	r.Log.Info("Ensured SecurityContextConstraints kata-install-scc exists")
+
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) deleteKataInstallScc() error {
+	scc := &securityv1.SecurityContextConstraints{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kata-install-scc",
+		},
+	}
+	err := r.Client.Delete(context.TODO(), scc)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("kata-install SCC was already deleted")
+		} else {
+			r.Log.Error(err, "error when deleting kata-install SCC, retrying")
+			return err
+		}
+	}
+	return nil
+}
 
 func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet() (ctrl.Result, error) {
 	r.Log.Info("KataConfig deletion in progress: ")
@@ -169,6 +230,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
 
+	err = r.deleteKataInstallScc()
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	kataNodeSelector, err := r.getKataConfigNodeSelectorAsSelector()
 	if err != nil {
 		r.Log.Info("Couldn't get node selector for unlabelling nodes", "err", err)
@@ -228,6 +294,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 		if err := r.addFinalizer(); err != nil {
 			return ctrl.Result{}, err
 		}
+	}
+
+	if err := r.ensureKataInstallSCC(); err != nil {
+		r.Log.Error(err, "Failed to ensure kata-install SCC")
+		return ctrl.Result{}, err
 	}
 
 	// TODO: Logic that checks failed installation
@@ -407,7 +478,7 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 					Labels: daemonsetLabelSelectors,
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName: "default",
+					ServiceAccountName: "kata-install",
 					NodeSelector:       nodeSelector,
 					HostPID:            true,
 					Containers: []corev1.Container{
