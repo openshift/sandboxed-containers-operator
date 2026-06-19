@@ -102,6 +102,25 @@ gather_single_pod() {
         mkdir -p "${VC_PATH}"
         oc cp "$pod:/host/run/vc/" "${VC_PATH}" -n node-gather 2>/dev/null
     fi
+
+    # Collect kata-containers configuration
+    if oc exec "$pod" -n node-gather -- [ -d "/host/etc/kata-containers" ] 2>/dev/null; then
+        KATA_CONFIG_PATH="$NODE_PATH/etc/kata-containers/"
+        mkdir -p "${KATA_CONFIG_PATH}"
+        oc cp "$pod:/host/etc/kata-containers/" "${KATA_CONFIG_PATH}" -n node-gather 2>/dev/null
+    fi
+
+    # Collect CRI-O configuration
+    if oc exec "$pod" -n node-gather -- [ -d "/host/etc/crio" ] 2>/dev/null; then
+        CRIO_CONFIG_PATH="$NODE_PATH/etc/crio/"
+        mkdir -p "${CRIO_CONFIG_PATH}"
+        oc cp "$pod:/host/etc/crio/" "${CRIO_CONFIG_PATH}" -n node-gather 2>/dev/null
+    fi
+
+    # Collect OVMF firmware listing
+    if oc exec "$pod" -n node-gather -- [ -d "/host/usr/share/edk2" ] 2>/dev/null; then
+        oc exec "$pod" -n node-gather -- ls -la /host/usr/share/edk2 2>/dev/null >> "$NODE_PATH/usr_share_edk2_listing"
+    fi
 }
 
 for line in $(oc get pod -o=custom-columns=NODE:.spec.nodeName,NAME:.metadata.name --no-headers --field-selector=status.phase=Running -n node-gather)
