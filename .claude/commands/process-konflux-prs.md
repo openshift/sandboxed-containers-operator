@@ -33,9 +33,12 @@ When implementing this skill:
 3. **Never hardcode PR numbers**: Do not use PR numbers from memory, previous runs, or earlier conversation turns
 4. **Verify state before processing**: Use `get-pr-status.sh` to verify PR state before taking action
 
+All scripts must be called from the **repository root** using the full relative path
+`./scripts/process-konflux-prs/<script>.sh`. Never `cd` into the scripts directory.
+
 Example correct workflow:
 ```bash
-# CORRECT: Discover PRs dynamically
+# CORRECT: call from repo root, discover PRs dynamically
 prs=$(./scripts/process-konflux-prs/list-prs.sh --mintmaker)
 for pr in $(echo "$prs" | jq -c '.[]'); do
   repo=$(echo "$pr" | jq -r '.repo')
@@ -46,6 +49,21 @@ done
 # WRONG: Using hardcoded or remembered PR numbers
 for pr_num in 2147 2146 2144 2143; do  # ❌ Never do this
   # ...
+done
+```
+
+**Efficiency**: fetch status for all PRs in a **single bash loop** rather than one tool
+call per PR. For N PRs, one loop invocation avoids N round-trips:
+
+```bash
+# Fetch status + components for every PR in one bash call
+mintmaker_prs=$(./scripts/process-konflux-prs/list-prs.sh --mintmaker)
+echo "$mintmaker_prs" | jq -c '.[]' | while read -r pr; do
+  repo=$(echo "$pr" | jq -r '.repo')
+  number=$(echo "$pr" | jq -r '.number')
+  status=$(./scripts/process-konflux-prs/get-pr-status.sh --repo "$repo" --pr "$number" 2>/dev/null)
+  echo "$status" | jq --arg repo "$repo" \
+    '{repo: $repo, pr: .number, components, build_checks_passed, build_checks_failed, pending_checks, has_ok_to_test, has_lgtm}'
 done
 ```
 
@@ -65,28 +83,52 @@ All scripts are located in `scripts/process-konflux-prs/` and output JSON.
 ## list-prs.sh
 List Konflux PRs from repositories.
 ```bash
-./list-prs.sh [--mintmaker|--nudge] [--repo REPO_NAME]
+./scripts/process-konflux-prs/list-prs.sh [--mintmaker|--nudge] [--repo REPO_NAME]
 ```
-Output: JSON array with {number, title, url, repo, type}
+Output: JSON array with `{number, title, url, repo, type}`
 
 ## get-pr-status.sh
-Get PR status including checks and labels.
+Get PR status including checks, labels, and rebuilt components — **one call replaces a
+separate `get-pr-components.sh` call**.
 ```bash
-./get-pr-status.sh --repo REPO_NAME --pr PR_NUMBER
+./scripts/process-konflux-prs/get-pr-status.sh --repo REPO_NAME --pr PR_NUMBER
 ```
-Output: JSON with {number, title, state, labels, checks, has_ok_to_test, has_lgtm, all_checks_passed, pending_checks}
+Output: JSON object — exact shape:
+```json
+{
+  "number": 1234,
+  "title": "chore(deps): update …",
+  "state": "OPEN",
+  "labels": ["ok-to-test"],          // array of strings, NOT objects
+  "has_ok_to_test": true,
+  "has_lgtm": false,
+  "components": ["osc-operator"],    // rebuilt components (from build pipeline checks)
+  "build_checks_passed": true,       // true only when all build pipeline checks are SUCCESS
+                                     // enterprise-contract checks (conclusion=NEUTRAL) excluded
+  "build_checks_failed": [],         // names of build checks with FAILURE conclusion
+  "pending_checks": 0,               // integer count of IN_PROGRESS/QUEUED checks
+  "checks": [...]                    // raw checks array, null entries filtered
+}
+```
+
+**Use `build_checks_passed` (not `all_checks_passed`) to determine if a PR is ready.**
+Enterprise-contract checks legitimately return `NEUTRAL` and are excluded from
+`build_checks_passed`. If `pending_checks > 0`, checks are still running — wait for
+the next run.
 
 ## get-pr-components.sh
 Identify components that will be rebuilt (excludes enterprise-contract validation checks).
 ```bash
-./get-pr-components.sh --repo REPO_NAME --pr PR_NUMBER
+./scripts/process-konflux-prs/get-pr-components.sh --repo REPO_NAME --pr PR_NUMBER
 ```
-Output: JSON array of component names
+Output: JSON array of component names.
+**Note:** `get-pr-status.sh` already returns `components` — prefer using that to avoid
+a redundant GitHub API call.
 
 ## label-pr.sh
 Add a label to a PR.
 ```bash
-./label-pr.sh --repo REPO_NAME --pr PR_NUMBER --label LABEL_NAME
+./scripts/process-konflux-prs/label-pr.sh --repo REPO_NAME --pr PR_NUMBER --label LABEL_NAME
 ```
 Labels: "ok-to-test" or "lgtm"
 Output: JSON with {success, repo, pr, label, comment}
@@ -96,10 +138,10 @@ Note: when label is "ok-to-test", also posts a `/ok-to-test` comment; `comment` 
 Check Konflux pipeline status.
 ```bash
 # For on-push (default)
-./check-pipeline-status.sh --component COMPONENT_NAME
+./scripts/process-konflux-prs/check-pipeline-status.sh --component COMPONENT_NAME
 
 # For on-pull-request (--pr-id REQUIRED)
-./check-pipeline-status.sh --component COMPONENT_NAME --type on-pull-request --pr-id PR_ID
+./scripts/process-konflux-prs/check-pipeline-status.sh --component COMPONENT_NAME --type on-pull-request --pr-id PR_ID
 ```
 Output: JSON with {component, pipeline_type, latest, all_runs}
 Note: --pr-id is mandatory for on-pull-request to avoid matching runs from different PRs
@@ -107,14 +149,14 @@ Note: --pr-id is mandatory for on-pull-request to avoid matching runs from diffe
 ## get-nudge-prs.sh
 Find nudge PRs for a component.
 ```bash
-./get-nudge-prs.sh --component COMPONENT_NAME
+./scripts/process-konflux-prs/get-nudge-prs.sh --component COMPONENT_NAME
 ```
 Output: JSON array of nudge PRs
 
 ## get-component-info.sh
 Get component metadata.
 ```bash
-./get-component-info.sh [--component COMPONENT_NAME]
+./scripts/process-konflux-prs/get-component-info.sh [--component COMPONENT_NAME]
 ```
 Output: JSON with {name, repository, build_time_minutes, nudges}
 
@@ -154,7 +196,9 @@ The rule typically is:
 - if a PR doesn't have "ok-to-test", set the "ok-to-test" label **and post a
   `/ok-to-test` comment**. Some bots monitoring PRs only react to maintainer
   comments, not to label additions alone, so both actions are required.
-- if a PR has "ok-to-test" AND all the checks are passing, set the "lgtm" label
+- if a PR has "ok-to-test" AND `build_checks_passed` is true AND `pending_checks` is 0,
+  set the "lgtm" label. (`build_checks_passed` excludes enterprise-contract checks that
+  return `NEUTRAL` — do not use `all_checks_passed` as it gives false negatives.)
 
 Labelling can be done in parallel for all PRs from all repositories, as there
 is no conflict with "on-pull-request" pipelines running in parallel.
