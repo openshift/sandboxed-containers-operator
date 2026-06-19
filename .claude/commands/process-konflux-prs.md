@@ -15,6 +15,15 @@ Process the pull requests from Mintmaker and Konflux
 
 # Implementation Requirements
 
+**CRITICAL: Parameter-gated behavior**: The command behavior is strictly controlled by parameters:
+
+- **No parameter**: ONLY list PRs. For each PR, show which images will be rebuilt and the
+  suggested action (see [Status output format](#status-output-format)). Do NOT label or merge.
+- **`--label`**: ONLY perform labelling steps. Do NOT merge.
+- **`--dry-run`**: Show what would be done. Do NOT label or merge.
+
+**This skill is in development and must NEVER merge any PR.**
+
 **CRITICAL**: Always query fresh data. Never use PR numbers from previous runs or earlier in the conversation.
 
 When implementing this skill:
@@ -108,22 +117,6 @@ Get component metadata.
 ```
 Output: JSON with {name, repository, build_time_minutes, nudges}
 
-# Usage
-
-Without any parameter, the command will list the PRs from the different repositories,
-and state for each PR which images will be rebuilt if the PR is merged. It will
-also provide the suggested action for each PR.
-See [Status output format](#status-output-format) for details.
-
-With the --label parameter, the command will only perform the "labelling" steps,
-and not merge any PR.
-
-With the --dry-run parameter, the command will show the commands it would execute,
-but will not label nor merge any PR.
-
-At this point, this skill is considered to be "in development" and should NEVER
-merge any PR.
-
 # Workflow definition
 
 We receive two types of pull requests from Konflux:
@@ -142,6 +135,8 @@ The processing of each PR is done in two steps: labelling, and merging.
 
 ## Labelling
 
+**Only performed when `--label` parameter is passed. Skip entirely otherwise.**
+
 Using labels allows to mark the progression of PRs towards merging, making it
 possible to run the command multiple time, and continue the processing without
 having to keep a separate status.
@@ -149,6 +144,7 @@ It also allows developers to mark the PRs themselves, and have this automated
 process take their labels into account.
 
 We're using two labels:
+
 - `ok-to-test` is used to make our automated tests run on the PR.
 - `lgtm` is used to mark the PR as ready to merge.
 
@@ -208,9 +204,11 @@ and stop processing any other PR related to the same component.
 # Mintmaker PRs filter
 
 Implemented in `list-prs.sh --mintmaker`:
+
 - status is "open"
 - author is the "app/red-hat-konflux" bot
 - title starts with one of the following:
+
   - "chore(deps): update konflux references"
   - "chore(deps): update registry.access.redhat.com/ubi9/ubi"
   - "chore(deps): update registry.access.redhat.com/ubi9/go-toolset"
@@ -220,6 +218,7 @@ Implemented in `list-prs.sh --mintmaker`:
 # Nudge PRs filter
 
 Implemented in `list-prs.sh --nudge`:
+
 - status is "open"
 - author is the "app/red-hat-konflux" bot
 - label "konflux-nudge" is set
