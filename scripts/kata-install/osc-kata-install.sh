@@ -130,22 +130,32 @@ install_kata() {
 		# rpm-ostree --apply-live does not run RPM %post scripts on the live
 		# system. The kata-containers %post script normally runs kata-osbuilder
 		# to build a host-kernel-derived kata.kernel/kata.initrd at
-		# /var/cache/kata-containers/osbuilder-images/. We skip that step
-		# intentionally: the kata guest kernel runs inside a VM and is fully
-		# independent of the host kernel, so a host-kernel-specific build is
-		# unnecessary. The RPM already ships pre-built CC images in /usr/share/
-		# that are tested against this kata-containers release. We symlink them
-		# into the path that configuration.toml expects. The symlinks are updated
-		# automatically whenever kata-containers is re-installed at a new version.
-		local kata_cache=/host/var/cache/kata-containers/osbuilder-images
-		local kata_share=/usr/share/kata-containers/osbuilder-images
-		if [[ ! -f /host${kata_share}/kata-cc.kernel ]]; then
-			echo "WARNING: kata-cc.kernel not found in ${kata_share}, skipping image symlinks"
-		elif [[ ! -f "${kata_cache}/kata.kernel" ]]; then
-			mkdir -p "${kata_cache}"
-			ln -sf "${kata_share}/kata-cc.kernel" "${kata_cache}/kata.kernel"
-			ln -sf "${kata_share}/kata-cc.initrd" "${kata_cache}/kata.initrd"
-			echo "Linked kata VM images: ${kata_cache}/kata.{kernel,initrd} -> ${kata_share}/kata-cc.*"
+		# /var/cache/kata-containers/osbuilder-images/. Run it manually here
+		# to replicate what the RPM %post would have done.
+		if [[ -x /host/usr/libexec/kata-containers/osbuilder/kata-osbuilder.sh ]]; then
+			echo "Running kata-osbuilder.sh to generate kata VM images..."
+			chroot /host /usr/libexec/kata-containers/osbuilder/kata-osbuilder.sh
+			if [[ $? -eq 0 ]]; then
+				echo "kata-osbuilder.sh completed successfully"
+			else
+				echo "WARNING: kata-osbuilder.sh failed, kata runtime may not work"
+			fi
+		else
+			echo "WARNING: kata-osbuilder.sh not found, skipping VM image generation"
+		fi
+
+		# Run %posttrans steps from kata-containers.spec
+		# Load SELinux modules for kata-monitor and container device access
+		if command -v semodule >/dev/null 2>&1 && command -v setsebool >/dev/null 2>&1; then
+			echo "Loading SELinux modules..."
+			chroot /host semodule -i \
+				/usr/share/udica/templates/base_container.cil \
+				/usr/share/udica/templates/net_container.cil \
+				/usr/share/kata-containers/defaults/osc_monitor.cil
+			echo "Enabling container_use_devices SELinux boolean..."
+			chroot /host setsebool -P container_use_devices 1
+		else
+			echo "WARNING: SELinux tools not available, skipping SELinux configuration"
 		fi
 
 		# Restart CRI-O to pick up the new runtime configuration. A reload
@@ -173,6 +183,17 @@ uninstall_kata() {
 
 	# Set installation status to uninstalling
 	set_status_uninstalling
+
+	# Run %preun steps from kata-containers.spec
+	# Remove osc_monitor SELinux module and revoke container device access
+	if command -v semodule >/dev/null 2>&1 && command -v setsebool >/dev/null 2>&1; then
+		echo "Removing osc_monitor SELinux module..."
+		chroot /host semodule -r osc_monitor || true
+		echo "Disabling container_use_devices SELinux boolean..."
+		chroot /host setsebool -P container_use_devices 0 || true
+	else
+		echo "WARNING: SELinux tools not available, skipping SELinux cleanup"
+	fi
 
 	# rpm-ostree uninstall does not support --apply-live (only install does).
 	# Stage the removal for the next boot; clean up CRI-O config immediately
