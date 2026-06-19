@@ -61,8 +61,20 @@ fi
 if gh pr edit "$PR_NUMBER" \
     --repo "$REPO_URL" \
     --add-label "$LABEL"; then
-    echo "{\"success\": true, \"repo\": \"$(basename "$REPO_URL")\", \"pr\": $PR_NUMBER, \"label\": \"$LABEL\"}" | jq '.'
+
+    COMMENT_POSTED=false
+    # When adding ok-to-test, also post the /ok-to-test comment. Some bots
+    # monitoring PRs only react to maintainer comments, not to label additions.
+    if [[ "$LABEL" == "ok-to-test" ]]; then
+        if gh pr comment "$PR_NUMBER" \
+            --repo "$REPO_URL" \
+            --body "/ok-to-test"; then
+            COMMENT_POSTED=true
+        fi
+    fi
+
+    echo "{\"success\": true, \"repo\": \"$(basename "$REPO_URL")\", \"pr\": $PR_NUMBER, \"label\": \"$LABEL\", \"comment\": $COMMENT_POSTED}" | jq '.'
 else
-    echo "{\"success\": false, \"repo\": \"$(basename "$REPO_URL")\", \"pr\": $PR_NUMBER, \"label\": \"$LABEL\"}" | jq '.'
+    echo "{\"success\": false, \"repo\": \"$(basename "$REPO_URL")\", \"pr\": $PR_NUMBER, \"label\": \"$LABEL\", \"comment\": false}" | jq '.'
     exit 1
 fi
