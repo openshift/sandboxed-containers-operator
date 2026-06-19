@@ -14,18 +14,21 @@ const (
 	ConfidentialFeatureGate = "confidential"
 	LayeredImageDeployment  = "layeredImageDeployment"
 	DeploymentModeConfig    = "deploymentMode"
+	DaemonSetImageOverride  = "daemonSetImage"
 )
 
 var DefaultFeatureGates = FeatureGateStatus{
 	Confidential:           false,
 	LayeredImageDeployment: false,
 	DeploymentModeOption:   MachineConfigOption,
+	DaemonSetImage:         "",
 }
 
 type FeatureGateStatus struct {
 	Confidential           bool
 	LayeredImageDeployment bool
 	DeploymentModeOption   DeploymentModeOption
+	DaemonSetImage         string
 }
 
 // Create enum to represent the state of the feature gates
@@ -48,6 +51,7 @@ func (r *KataConfigOpenShiftReconciler) NewFeatureGateStatus() (*FeatureGateStat
 		Confidential:           DefaultFeatureGates.Confidential,
 		LayeredImageDeployment: DefaultFeatureGates.LayeredImageDeployment,
 		DeploymentModeOption:   DefaultFeatureGates.DeploymentModeOption,
+		DaemonSetImage:         DefaultFeatureGates.DaemonSetImage,
 	}
 
 	cfgMap := &corev1.ConfigMap{}
@@ -76,6 +80,12 @@ func (r *KataConfigOpenShiftReconciler) NewFeatureGateStatus() (*FeatureGateStat
 				r.Log.Info("Couldn't parse deploymentMode status, using default value", "default", DefaultFeatureGates.DeploymentModeOption, "error", err)
 			} else {
 				fgStatus.DeploymentModeOption = mode
+			}
+		}
+		if value, ok := cfgMap.Data[DaemonSetImageOverride]; ok {
+			if value != "" {
+				fgStatus.DaemonSetImage = value
+				r.Log.Info("Using custom DaemonSet image from ConfigMap", "image", value)
 			}
 		}
 	}

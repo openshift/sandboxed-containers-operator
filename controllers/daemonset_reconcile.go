@@ -435,6 +435,16 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 		return nil, err
 	}
 
+	// Check feature gates for custom DaemonSet image override
+	dsImage := daemonSetImage
+	fgStatus, err := r.NewFeatureGateStatus()
+	if err != nil {
+		r.Log.Error(err, "couldn't get feature gate status, using default DaemonSet image")
+	} else if fgStatus.DaemonSetImage != "" {
+		dsImage = fgStatus.DaemonSetImage
+		r.Log.Info("Using custom DaemonSet image from feature gates", "image", dsImage)
+	}
+
 	// Because we use chroot and modify the node we need root priviliges
 	var (
 		runPrivileged       = true
@@ -517,7 +527,7 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 					Containers: []corev1.Container{
 						{
 							Name:            "kata-install",
-							Image:           daemonSetImage,
+							Image:           dsImage,
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
@@ -530,7 +540,7 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 						},
 						{
 							Name:            "set-log-level",
-							Image:           daemonSetImage,
+							Image:           dsImage,
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
