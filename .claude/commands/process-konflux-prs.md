@@ -89,7 +89,8 @@ Add a label to a PR.
 ./label-pr.sh --repo REPO_NAME --pr PR_NUMBER --label LABEL_NAME
 ```
 Labels: "ok-to-test" or "lgtm"
-Output: JSON with {success, repo, pr, label}
+Output: JSON with {success, repo, pr, label, comment}
+Note: when label is "ok-to-test", also posts a `/ok-to-test` comment; `comment` indicates whether it succeeded.
 
 ## check-pipeline-status.sh
 Check Konflux pipeline status.
@@ -150,7 +151,9 @@ We're using two labels:
 
 The rule typically is:
 
-- if a PR don't have "ok-to-test", set the "ok-to-test" label
+- if a PR doesn't have "ok-to-test", set the "ok-to-test" label **and post a
+  `/ok-to-test` comment**. Some bots monitoring PRs only react to maintainer
+  comments, not to label additions alone, so both actions are required.
 - if a PR has "ok-to-test" AND all the checks are passing, set the "lgtm" label
 
 Labelling can be done in parallel for all PRs from all repositories, as there
