@@ -84,7 +84,7 @@ spec:
 
       On the Install Operator page:
 
-      1. Select `candidate` from the list of available **Update Channel** options.
+      1. Select `stable` from the list of available **Update Channel** options.
       This ensures that you install the latest version of OpenShift sandboxed containers
       that is compatible with your OpenShift Container Platform version.
 
