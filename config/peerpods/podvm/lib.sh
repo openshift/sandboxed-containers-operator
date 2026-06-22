@@ -73,6 +73,7 @@ function install_rpm_packages() {
 #"kubectl=https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.14.9/openshift-client-linux.tar.gz"
 #"yq=https://github.com/mikefarah/yq/releases/download/v4.35.2/yq_linux_amd64.tar.gz"
 #"umoci=https://github.com/opencontainers/umoci/releases/download/v0.4.7/umoci.amd64"
+# packer is only needed for libvirt provider on s390x architecture, it will be installed from source in the libvirt-podvm-image-handler.sh script.
 
 install_binary_packages() {
     ARCH=$(uname -m)
@@ -85,7 +86,6 @@ install_binary_packages() {
     else
         # Define the required binary packages
         REQUIRED_BINARY_PACKAGES=(
-            "packer=https://releases.hashicorp.com/packer/1.9.4/packer_1.9.4_linux_amd64.zip"
             "kubectl=https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.14.9/openshift-client-linux.tar.gz"
             "yq=https://github.com/mikefarah/yq/releases/download/v4.35.2/yq_linux_amd64.tar.gz"
             "umoci=https://github.com/opencontainers/umoci/releases/download/v0.4.7/umoci.amd64"
