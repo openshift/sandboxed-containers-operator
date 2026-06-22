@@ -49,9 +49,11 @@ spec:
           - name: opt
             mountPath: /host/opt
           - name: var
-            mountPath: /host/var            
+            mountPath: /host/var
           - name: run
             mountPath: /host/run
+          - name: usr
+            mountPath: /host/usr
         securityContext:
           privileged: true
       volumes:
@@ -82,4 +84,8 @@ spec:
       - name: run
         hostPath:
           path: /run
+          type: Directory
+      - name: usr
+        hostPath:
+          path: /usr
           type: Directory
