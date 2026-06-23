@@ -19,8 +19,16 @@ Process the pull requests from Mintmaker and Konflux
 
 - **No parameter**: ONLY list PRs. For each PR, show which images will be rebuilt and the
   suggested action (see [Status output format](#status-output-format)). Do NOT label or merge.
-- **`--label`**: ONLY perform labelling steps. Do NOT merge.
-- **`--dry-run`**: Show what would be done. Do NOT label or merge.
+- **`--step1`**: Process Mintmaker PRs ONLY. Apply labels (ok-to-test, lgtm). Do NOT touch
+  Nudge PRs. Do NOT merge.
+- **`--step2`**: Process Nudge PRs ONLY, with the Mintmaker safeguard (see
+  [Step 2 - Nudge PR processing](#step-2---nudge-pr-processing)). Do NOT touch Mintmaker PRs.
+  Do NOT merge.
+- **`--dry-run`**: Show what would be done. Do NOT label or merge. Can be combined with
+  `--step1` or `--step2` to preview that specific step.
+
+`--step1` and `--step2` are mutually exclusive. If neither is given, only list/status output
+is produced.
 
 **This skill is in development and must NEVER merge any PR.**
 
@@ -177,58 +185,110 @@ Output: JSON with {name, repository, build_time_minutes, nudges}
 
 We receive two types of pull requests from Konflux:
 
-- Mintmaker PRs: update of dependencies
-- Nudge PRs: updated reference to a newly built image from our own pipelines
+- **Mintmaker PRs**: dependency updates (base images, konflux references).
+- **Nudge PRs**: updated reference to a newly built image from our own pipelines.
 
 The first type comes on a regular basis from Mintmaker.
-The other comes from merging pull requests: each PR we merge will generate the
-build of (at least) one image. When an image is rebuilt, its reference is updated
-on some other component(s) automatically, with a nudge PR.
-See the [list of components](#list-of-components) for our nudge relationship.
+The second is triggered automatically when a PR is merged: each merge builds (at
+least) one image, which then causes Konflux to open or update a Nudge PR in the
+downstream component(s).
+See the [list of components](#list-of-components) for nudge relationships.
 
-The workflow requires to process Mintmaker PRs first, then Nudge PRs.
-The processing of each PR is done in two steps: labelling, and merging.
+**The workflow is two separate steps, run independently:**
 
-## Labelling
+1. **Step 1 — Mintmaker PRs** (`--step1`): label and advance Mintmaker PRs.
+2. **Step 2 — Nudge PRs** (`--step2`): label and advance Nudge PRs, but ONLY
+   those that are safe to process (see below).
 
-**Only performed when `--label` parameter is passed. Skip entirely otherwise.**
+Merging Mintmaker PRs triggers component rebuilds, which in turn refresh the
+existing Nudge PRs. Processing a Nudge PR before the corresponding Mintmaker PRs
+are done would merge a stale image reference that gets immediately superseded.
+Steps 1 and 2 must therefore stay separate.
 
-Using labels allows to mark the progression of PRs towards merging, making it
-possible to run the command multiple time, and continue the processing without
-having to keep a separate status.
-It also allows developers to mark the PRs themselves, and have this automated
-process take their labels into account.
+## Labelling rules (applies to both steps)
 
-We're using two labels:
+Using labels marks the progression of PRs towards merging, so the command can be
+re-run without keeping external state. Developers can also set labels manually and
+this process will respect them.
 
-- `ok-to-test` is used to make our automated tests run on the PR.
-- `lgtm` is used to mark the PR as ready to merge.
+Labels used:
 
-The rule typically is:
+- `ok-to-test`: triggers automated CI on the PR.
+- `lgtm`: marks the PR as ready to merge.
 
-- if a PR doesn't have "ok-to-test", set the "ok-to-test" label **and post a
-  `/ok-to-test` comment**. Some bots monitoring PRs only react to maintainer
-  comments, not to label additions alone, so both actions are required.
-- if a PR has "ok-to-test" AND `build_checks_passed` is true AND `pending_checks` is 0,
-  set the "lgtm" label. (`build_checks_passed` excludes enterprise-contract checks that
-  return `NEUTRAL` — do not use `all_checks_passed` as it gives false negatives.)
+Rules:
+
+- If a PR does NOT have `ok-to-test`, set it **and** post a `/ok-to-test` comment.
+  Some bots only react to maintainer comments, not label additions alone.
+- If a PR has `ok-to-test` AND `build_checks_passed` is `true` AND `pending_checks`
+  is `0`, set `lgtm`. (`build_checks_passed` excludes enterprise-contract checks
+  that return `NEUTRAL` — do NOT use `all_checks_passed`.)
 
 Labelling can be done in parallel for all PRs from all repositories, as there
-is no conflict with "on-pull-request" pipelines running in parallel.
+is no conflict between "on-pull-request" pipelines running concurrently.
 
 Note that Nudge PRs in the osc repository are configured to auto-merge when
-the tests are passing. Setting the "ok-to-test" label on those PRs is then the
-only required labelling. But it means we have to look for the merge pipeline
-when the PR auto-merges, and make sure it succeeds (see [merging](#merging)).
+tests pass. Setting `ok-to-test` on those PRs is therefore the only required
+label. Track the merge pipeline when the PR auto-merges to confirm success
+(see [merging](#merging)).
+
+## Step 1 - Mintmaker PR processing
+
+**Only executed when `--step1` is passed.**
+
+1. Call `list-prs.sh --mintmaker` to discover open Mintmaker PRs.
+2. For each Mintmaker PR, apply labelling rules above.
+3. Report which PRs received labels and which are still waiting for checks.
+
+Do NOT touch Nudge PRs during Step 1.
+
+## Step 2 - Nudge PR processing
+
+**Only executed when `--step2` is passed.**
+
+Nudge PRs must only be processed when we are certain that no open Mintmaker PR
+will trigger a rebuild of the same source component. If a Mintmaker PR would
+rebuild component C, and a Nudge PR carries an updated reference for C, merging
+the Nudge PR now would be immediately obsoleted by the Mintmaker rebuild.
+
+### Step 2 algorithm
+
+**Phase A — Build the "Mintmaker-blocked" component set**
+
+1. Call `list-prs.sh --mintmaker` to get all open Mintmaker PRs.
+2. For each Mintmaker PR, call `get-pr-status.sh` and collect its `components`
+   array (the components that will be rebuilt when that PR is merged).
+3. Union all these component arrays into a single set:
+   `mintmaker_rebuilding_components`.
+
+**Phase B — Filter and process Nudge PRs**
+
+1. Call `list-prs.sh --nudge` to get all open Nudge PRs.
+2. For each Nudge PR, identify the **source component** — the component whose
+   reference was updated — by matching known component names against the PR title.
+   (Nudge PR titles contain the source component name, e.g.
+   "chore(deps): update osc-monitor …".)
+   Use `get-component-info.sh` (no args) to get the full list of component names
+   to match against.
+3. If the source component is in `mintmaker_rebuilding_components`: **skip** this
+   Nudge PR and note it as "blocked by open Mintmaker PR". Do NOT label it.
+4. If the source component is NOT in `mintmaker_rebuilding_components`: apply the
+   labelling rules above to this Nudge PR.
+
+**Phase C — Report**
+
+Show two groups:
+- Nudge PRs processed (with actions taken or their current label/check status).
+- Nudge PRs skipped (with the reason: which open Mintmaker PR blocks them and
+  which component it will rebuild).
 
 ## Merging
 
-PRs are ready to merge when they have the label "lgtm" and all the checks are
-passing.
+PRs are ready to merge when they have `lgtm` and all checks are passing.
 
-We need to be careful when merging a PR: each time we merge a PR, we need to verify
-that the on-push pipelines (triggered when we merge) are successful before merging
-another PR that rebuilds the same component.
+We need to be careful when merging a PR: each merge triggers on-push pipelines
+that rebuild the component. A second PR for the same component must not be merged
+until those pipelines succeed.
 
 The checks that run on the pull request itself include Konflux pipeline builds.
 The same pipelines will run on-push when the PR is merged. It is then possible
@@ -242,7 +302,7 @@ wait for their completion before merging another PR for the same component.
 
 When the on-push pipeline is successful, a Nudge PR can be created.
 If the Nudge PR already exists, it is updated every time the same component is rebuilt.
-We then let the Nudge PRs opened as long as we are processing Mintmaker PRs, and
+We then let the Nudge PRs open as long as we are processing Mintmaker PRs, and
 process the Nudge PRs as a second step, to avoid unnecessary rebuilds.
 Use `get-component-info.sh` to see which components are nudged when a component is rebuilt.
 
