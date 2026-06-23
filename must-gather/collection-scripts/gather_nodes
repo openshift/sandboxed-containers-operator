@@ -1,5 +1,82 @@
 #!/bin/bash
 
+# Error tracking
+ERROR_LOG="/must-gather/must-gather-errors.log"
+ERROR_COUNT=0
+
+# Initialize error log
+echo "Must-gather error log - $(date)" > "$ERROR_LOG"
+echo "======================================" >> "$ERROR_LOG"
+echo "" >> "$ERROR_LOG"
+
+# Log error helper function
+log_error() {
+    local context="$1"
+    local command="$2"
+    local exit_code="$3"
+    local output="$4"
+
+    ((ERROR_COUNT++))
+
+    {
+        echo "ERROR #${ERROR_COUNT} at $(date)"
+        echo "Context: $context"
+        echo "Command: $command"
+        echo "Exit Code: $exit_code"
+        if [[ -n "$output" ]]; then
+            echo "Output:"
+            echo "$output"
+        fi
+        echo "---"
+        echo ""
+    } >> "$ERROR_LOG"
+}
+
+# Execute oc command with retry logic
+oc_exec_with_retry() {
+    local max_retries=3
+    local retry_delay=2
+    local timeout=30
+    local attempt=1
+    local cmd="$*"
+    local output
+    local exit_code
+
+    while [[ $attempt -le $max_retries ]]; do
+        output=$(timeout "$timeout" $cmd 2>&1)
+        exit_code=$?
+
+        if [[ $exit_code -eq 0 ]]; then
+            echo "$output"
+            return 0
+        fi
+
+        if [[ $exit_code -eq 124 ]]; then
+            # Timeout occurred
+            if [[ $attempt -lt $max_retries ]]; then
+                echo "Timeout on attempt $attempt, retrying..." >&2
+                sleep "$retry_delay"
+                ((attempt++))
+                ((retry_delay *= 2))  # Exponential backoff
+                continue
+            fi
+        fi
+
+        # Command failed
+        if [[ $attempt -lt $max_retries ]]; then
+            sleep "$retry_delay"
+            ((attempt++))
+            continue
+        fi
+
+        # All retries exhausted
+        echo "$output"
+        return "$exit_code"
+    done
+
+    return "$exit_code"
+}
+
 check_node_gather_pods_ready() {
     line=$(oc get ds node-gather-daemonset -o=custom-columns=DESIRED:.status.desiredNumberScheduled,READY:.status.numberReady --no-headers -n node-gather)
 
@@ -56,51 +133,213 @@ gather_single_pod() {
 
     echo "$pod - Gathering node data"
 
-    oc exec "$pod" -n node-gather -- ip a 2>/dev/null >> "$NODE_PATH/ip.txt"
-    oc exec "$pod" -n node-gather -- ip -o link show type bridge 2>/dev/null >> "$NODE_PATH/bridge"
-    oc exec "$pod" -n node-gather -- bridge -j vlan show 2>/dev/null >> "$NODE_PATH/vlan"
+    # IP address information
+    if ! output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- ip a); then
+        log_error "Gathering IP addresses for node $node" \
+                  "oc exec $pod -n node-gather -- ip a" \
+                  "$?" \
+                  "$output"
+    else
+        echo "$output" >> "$NODE_PATH/ip.txt"
+    fi
 
-    for i in $(oc exec "$pod" -n node-gather -- nft list tables 2>/dev/null);
-    do
-        family=$(echo "$i" | awk -F ' ' '{print $2}' | sed 's/\r//')
-        table=$(echo "$i" | awk -F ' ' '{print $3}' | sed 's/\r//')
-        oc exec "$pod" -n node-gather -- nft list table "$family" "$table" 2>/dev/null > "$NODE_PATH/nft-${family}-${table}"
-    done
+    # Bridge information
+    if ! output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- ip -o link show type bridge); then
+        log_error "Gathering bridge info for node $node" \
+                  "oc exec $pod -n node-gather -- ip -o link show type bridge" \
+                  "$?" \
+                  "$output"
+    else
+        echo "$output" >> "$NODE_PATH/bridge"
+    fi
+
+    # VLAN information
+    if ! output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- bridge -j vlan show); then
+        log_error "Gathering VLAN info for node $node" \
+                  "oc exec $pod -n node-gather -- bridge -j vlan show" \
+                  "$?" \
+                  "$output"
+    else
+        echo "$output" >> "$NODE_PATH/vlan"
+    fi
+
+    # NFT tables
+    if output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- nft list tables); then
+        for i in $output;
+        do
+            family=$(echo "$i" | awk -F ' ' '{print $2}' | sed 's/\r//')
+            table=$(echo "$i" | awk -F ' ' '{print $3}' | sed 's/\r//')
+            if ! nft_output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- nft list table "$family" "$table"); then
+                log_error "Gathering NFT table $family/$table for node $node" \
+                          "oc exec $pod -n node-gather -- nft list table $family $table" \
+                          "$?" \
+                          "$nft_output"
+            else
+                echo "$nft_output" > "$NODE_PATH/nft-${family}-${table}"
+            fi
+        done
+    else
+        log_error "Listing NFT tables for node $node" \
+                  "oc exec $pod -n node-gather -- nft list tables" \
+                  "$?" \
+                  "$output"
+    fi
+
+    # SR-IOV information
+    # shellcheck disable=SC2016
+    if ! output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- /bin/bash -c 'for dev in /host/sys/bus/pci/devices/*; do if [[ -e $dev/sriov_numvfs ]]; then echo "sriov_numvfs on dev ${dev##*/}: $(cat $dev/sriov_numvfs)"; fi; done'); then
+        log_error "Gathering SR-IOV numvfs for node $node" \
+                  "oc exec $pod -n node-gather -- /bin/bash -c '...sriov_numvfs...'" \
+                  "$?" \
+                  "$output"
+    else
+        echo "$output" >> "$NODE_PATH/sys_sriov_numvfs"
+    fi
 
     # shellcheck disable=SC2016
-    oc exec "$pod" -n node-gather -- /bin/bash -c 'for dev in /host/sys/bus/pci/devices/*; do if [[ -e $dev/sriov_numvfs ]]; then echo "sriov_numvfs on dev ${dev##*/}: $(cat $dev/sriov_numvfs)"; fi; done' >> "$NODE_PATH/sys_sriov_numvfs"
-    # shellcheck disable=SC2016
-    oc exec "$pod" -n node-gather -- /bin/bash -c 'for dev in /host/sys/bus/pci/devices/*; do if [[ -e $dev/sriov_totalvfs ]]; then echo "sriov_totalvfs on dev ${dev##*/}: $(cat $dev/sriov_totalvfs)"; fi; done' >> "$NODE_PATH/sys_sriov_totalvfs"
+    if ! output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- /bin/bash -c 'for dev in /host/sys/bus/pci/devices/*; do if [[ -e $dev/sriov_totalvfs ]]; then echo "sriov_totalvfs on dev ${dev##*/}: $(cat $dev/sriov_totalvfs)"; fi; done'); then
+        log_error "Gathering SR-IOV totalvfs for node $node" \
+                  "oc exec $pod -n node-gather -- /bin/bash -c '...sriov_totalvfs...'" \
+                  "$?" \
+                  "$output"
+    else
+        echo "$output" >> "$NODE_PATH/sys_sriov_totalvfs"
+    fi
 
-    oc exec "$pod" -n node-gather -- /bin/bash -c 'if [[ -d /host/opt/cni/bin ]]; then ls -l /host/opt/cni/bin; fi' > "${NODE_PATH}/opt-cni-bin"
-    oc exec "$pod" -n node-gather -- /bin/bash -c 'if [[ -d /host/var/lib/must-gather/cni/bin ]]; then ls -l /host/var/lib/cni/bin; fi' > "${NODE_PATH}/var-lib-cni-bin"
+    # CNI binary information
+    if ! output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- /bin/bash -c 'if [[ -d /host/opt/cni/bin ]]; then ls -l /host/opt/cni/bin; fi'); then
+        log_error "Gathering CNI bin listing for node $node" \
+                  "oc exec $pod -n node-gather -- /bin/bash -c 'ls -l /host/opt/cni/bin'" \
+                  "$?" \
+                  "$output"
+    else
+        echo "$output" > "${NODE_PATH}/opt-cni-bin"
+    fi
 
+    if ! output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- /bin/bash -c 'if [[ -d /host/var/lib/must-gather/cni/bin ]]; then ls -l /host/var/lib/cni/bin; fi'); then
+        log_error "Gathering var/lib/cni bin listing for node $node" \
+                  "oc exec $pod -n node-gather -- /bin/bash -c 'ls -l /host/var/lib/cni/bin'" \
+                  "$?" \
+                  "$output"
+    else
+        echo "$output" > "${NODE_PATH}/var-lib-cni-bin"
+    fi
+
+    # CNI configuration directories
     config_dirs=(etc/cni/net.d etc/kubernetes/cni/net.d)
     IFS=$' '
     for conf_dir in "${config_dirs[@]}"; do
-        if oc exec "$pod" -n node-gather -- [ -d "/host/$conf_dir" ] 2>/dev/null; then
+        if oc_exec_with_retry oc exec "$pod" -n node-gather -- [ -d "/host/$conf_dir" ]; then
             CNI_COFIG_PATH=${NODE_PATH}/$conf_dir
             mkdir -p "${CNI_COFIG_PATH}"
-            oc cp "$pod:/host/$conf_dir ${CNI_COFIG_PATH}" -n node-gather 2>/dev/null
+            if ! output=$(oc_exec_with_retry oc cp "$pod:/host/$conf_dir" "${CNI_COFIG_PATH}" -n node-gather 2>&1); then
+                log_error "Copying CNI config from $conf_dir for node $node" \
+                          "oc cp $pod:/host/$conf_dir ${CNI_COFIG_PATH} -n node-gather" \
+                          "$?" \
+                          "$output"
+            fi
         fi
     done
     IFS=$'\n'
 
-    oc exec "$pod" -n node-gather -- ls -al /host/dev/vfio/ 2>/dev/null >> "$NODE_PATH/dev_vfio"
-    oc exec "$pod" -n node-gather -- dmesg 2>/dev/null >> "$NODE_PATH/dmesg"
-    oc exec "$pod" -n node-gather -- cat /host/proc/cmdline 2>/dev/null >> "$NODE_PATH/proc_cmdline"
-    oc exec "$pod" -n node-gather -- lspci -vv 2>/dev/null >> "$NODE_PATH/lspci"
-
-    if oc exec "$pod" -n node-gather -- [ -f /host/etc/pcidp/config.json ] 2>/dev/null; then
-        oc cp "$pod:/host/etc/pcidp/config.json" "$NODE_PATH/pcidp_config.json" -n node-gather 2>/dev/null
+    # VFIO device information
+    if ! output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- ls -al /host/dev/vfio/); then
+        log_error "Gathering VFIO device info for node $node" \
+                  "oc exec $pod -n node-gather -- ls -al /host/dev/vfio/" \
+                  "$?" \
+                  "$output"
+    else
+        echo "$output" >> "$NODE_PATH/dev_vfio"
     fi
 
-    if oc exec "$pod" -n node-gather -- [ -d "/host/run/vc" ] 2>/dev/null; then
+    # Kernel messages
+    if ! output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- dmesg); then
+        log_error "Gathering dmesg for node $node" \
+                  "oc exec $pod -n node-gather -- dmesg" \
+                  "$?" \
+                  "$output"
+    else
+        echo "$output" >> "$NODE_PATH/dmesg"
+    fi
+
+    # Kernel command line
+    if ! output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- cat /host/proc/cmdline); then
+        log_error "Gathering kernel cmdline for node $node" \
+                  "oc exec $pod -n node-gather -- cat /host/proc/cmdline" \
+                  "$?" \
+                  "$output"
+    else
+        echo "$output" >> "$NODE_PATH/proc_cmdline"
+    fi
+
+    # PCI device information
+    if ! output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- lspci -vv); then
+        log_error "Gathering lspci info for node $node" \
+                  "oc exec $pod -n node-gather -- lspci -vv" \
+                  "$?" \
+                  "$output"
+    else
+        echo "$output" >> "$NODE_PATH/lspci"
+    fi
+
+    # PCIDP configuration
+    if oc_exec_with_retry oc exec "$pod" -n node-gather -- [ -f /host/etc/pcidp/config.json ]; then
+        if ! output=$(oc_exec_with_retry oc cp "$pod:/host/etc/pcidp/config.json" "$NODE_PATH/pcidp_config.json" -n node-gather 2>&1); then
+            log_error "Copying PCIDP config for node $node" \
+                      "oc cp $pod:/host/etc/pcidp/config.json $NODE_PATH/pcidp_config.json -n node-gather" \
+                      "$?" \
+                      "$output"
+        fi
+    fi
+
+    # Sandboxed containers runtime data
+    if oc_exec_with_retry oc exec "$pod" -n node-gather -- [ -d "/host/run/vc" ]; then
         echo "Collecting sandboxed-containers specific logs"
 
         VC_PATH="$NODE_PATH/run/vc/"
         mkdir -p "${VC_PATH}"
-        oc cp "$pod:/host/run/vc/" "${VC_PATH}" -n node-gather 2>/dev/null
+        if ! output=$(oc_exec_with_retry oc cp "$pod:/host/run/vc/" "${VC_PATH}" -n node-gather 2>&1); then
+            log_error "Copying sandboxed containers runtime data for node $node" \
+                      "oc cp $pod:/host/run/vc/ ${VC_PATH} -n node-gather" \
+                      "$?" \
+                      "$output"
+        fi
+    fi
+
+    # Collect kata-containers configuration
+    if oc_exec_with_retry oc exec "$pod" -n node-gather -- [ -d "/host/etc/kata-containers" ]; then
+        KATA_CONFIG_PATH="$NODE_PATH/etc/kata-containers/"
+        mkdir -p "${KATA_CONFIG_PATH}"
+        if ! output=$(oc_exec_with_retry oc cp "$pod:/host/etc/kata-containers/" "${KATA_CONFIG_PATH}" -n node-gather 2>&1); then
+            log_error "Copying kata-containers config for node $node" \
+                      "oc cp $pod:/host/etc/kata-containers/ ${KATA_CONFIG_PATH} -n node-gather" \
+                      "$?" \
+                      "$output"
+        fi
+    fi
+
+    # Collect CRI-O configuration
+    if oc_exec_with_retry oc exec "$pod" -n node-gather -- [ -d "/host/etc/crio" ]; then
+        CRIO_CONFIG_PATH="$NODE_PATH/etc/crio/"
+        mkdir -p "${CRIO_CONFIG_PATH}"
+        if ! output=$(oc_exec_with_retry oc cp "$pod:/host/etc/crio/" "${CRIO_CONFIG_PATH}" -n node-gather 2>&1); then
+            log_error "Copying CRI-O config for node $node" \
+                      "oc cp $pod:/host/etc/crio/ ${CRIO_CONFIG_PATH} -n node-gather" \
+                      "$?" \
+                      "$output"
+        fi
+    fi
+
+    # Collect OVMF firmware listing
+    if oc_exec_with_retry oc exec "$pod" -n node-gather -- [ -d "/host/usr/share/edk2" ]; then
+        if ! output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- ls -la /host/usr/share/edk2); then
+            log_error "Gathering OVMF firmware listing for node $node" \
+                      "oc exec $pod -n node-gather -- ls -la /host/usr/share/edk2" \
+                      "$?" \
+                      "$output"
+        else
+            echo "$output" >> "$NODE_PATH/usr_share_edk2_listing"
+        fi
     fi
 
     # Collect kata-containers configuration
@@ -136,11 +375,71 @@ for NODE in $(oc get nodes --no-headers -o custom-columns=':metadata.name'); do
     NODE_PATH=${NODES_PATH}/$NODE
     mkdir -p "${NODE_PATH}"
     for UNIT in "${NODE_UNITS[@]}"; do
-        oc adm node-logs "$NODE" -u "$UNIT" > "${NODE_PATH}/${NODE}_logs_$UNIT" &
+        if ! output=$(oc_exec_with_retry oc adm node-logs "$NODE" -u "$UNIT" 2>&1); then
+            log_error "Gathering journal logs for $UNIT on node $NODE" \
+                      "oc adm node-logs $NODE -u $UNIT" \
+                      "$?" \
+                      "$output"
+        else
+            echo "$output" > "${NODE_PATH}/${NODE}_logs_$UNIT"
+        fi &
     done
 
-    oc debug node/${NODE} -- sh -c "(chroot /host rpm -qa | egrep '(kata-containers|qemu)' | sort)" > "${NODE_PATH}/version"
+    if ! output=$(oc_exec_with_retry oc debug node/${NODE} -- sh -c "(chroot /host rpm -qa | egrep '(kata-containers|qemu)' | sort)" 2>&1); then
+        log_error "Gathering package versions for node $NODE" \
+                  "oc debug node/${NODE} -- sh -c '(chroot /host rpm -qa | egrep \"(kata-containers|qemu)\" | sort)'" \
+                  "$?" \
+                  "$output"
+    else
+        echo "$output" > "${NODE_PATH}/version"
+    fi
 done
 
 oc delete -f $DAEMONSET_MANIFEST
 oc delete -f $CRD_MANIFEST
+
+# Print error summary
+echo ""
+echo "========================================"
+echo "Must-gather execution completed"
+echo "========================================"
+echo ""
+
+if [[ $ERROR_COUNT -eq 0 ]]; then
+    echo "✓ No errors encountered during data collection"
+    echo ""
+    exit 0
+else
+    echo "✗ Encountered $ERROR_COUNT error(s) during data collection"
+    echo ""
+    echo "Error log saved to: $ERROR_LOG"
+    echo ""
+    echo "Common issues and administrative actions:"
+    echo ""
+    echo "1. Timeout errors:"
+    echo "   - Check cluster API server responsiveness: oc get --raw /healthz"
+    echo "   - Verify network connectivity to the cluster"
+    echo "   - Check if nodes are under heavy load: oc adm top nodes"
+    echo ""
+    echo "2. Permission errors:"
+    echo "   - Verify the must-gather service account has sufficient privileges"
+    echo "   - Check SCC assignments: oc get scc privileged -o yaml"
+    echo ""
+    echo "3. Pod scheduling failures:"
+    echo "   - Check node status: oc get nodes"
+    echo "   - Review node conditions: oc describe nodes"
+    echo "   - Verify node-gather DaemonSet status: oc get ds -n node-gather"
+    echo ""
+    echo "4. File not found errors:"
+    echo "   - Verify the expected paths exist on target nodes"
+    echo "   - Check if kata-containers or CRI-O are properly installed"
+    echo "   - Review DaemonSet volume mounts in must-gather/node-gather/node-gather-ds.yaml"
+    echo ""
+    echo "5. Resource not available:"
+    echo "   - Check cluster resource availability: oc adm top nodes"
+    echo "   - Review events: oc get events -n node-gather --sort-by='.lastTimestamp'"
+    echo ""
+    echo "For detailed error information, review: $ERROR_LOG"
+    echo ""
+    exit 1
+fi
