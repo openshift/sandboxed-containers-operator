@@ -19,7 +19,7 @@ spec:
       description: >-
         Which prowjobs to run. Options: "sanity" (default, runs only sanity checks),
         "all" (runs all prowjobs), or specific job names like "ocp419 ocp420"
-        (runs only those OCP version jobs, space-separated). Available job names: ocp418, ocp419, ocp420, ocp421
+        (runs only those OCP version jobs, space-separated). Available job names: ocp419, ocp420, ocp421, ocp422
       default: "sanity"
   tasks:
     - name: get-catalog-image
@@ -57,14 +57,14 @@ spec:
         results:
           - name: run_sanity
             description: "Whether to run sanity check prowjobs"
-          - name: run_ocp418
-            description: "Whether to run OCP 4.18 prowjobs"
           - name: run_ocp419
             description: "Whether to run OCP 4.19 prowjobs"
           - name: run_ocp420
             description: "Whether to run OCP 4.20 prowjobs"
           - name: run_ocp421
             description: "Whether to run OCP 4.21 prowjobs"
+          - name: run_ocp422
+            description: "Whether to run OCP 4.22 prowjobs"
         steps:
           - name: determine
             image: registry.redhat.io/ubi9/ubi-minimal:latest
@@ -76,7 +76,7 @@ spec:
               set -e
 
               # Supported OCP versions
-              OCP_VERSIONS="418 419 420 421"
+              OCP_VERSIONS="419 420 421 422"
 
               # Function to check if a value is in the space-separated list
               contains() {
@@ -152,51 +152,14 @@ spec:
         - name: VARIANT
           value: downstream-candidate420
         - name: ENVS
-          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.25.0-7.rhaos4.20.el9"
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-1.rhaos4.19.el9"
       matrix:
         params:
           - name: PROWJOB_NAME
             value:
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-azure-ipi-kata
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-aws-ipi-peerpods
-    - name: prowjob-ocp418
       displayName: "Running prow job $(params.PROWJOB_NAME)"
-      onError: continue
-      timeout: "8h"
-      when:
-        - input: "$(tasks.determine-prowjobs.results.run_ocp418)"
-          operator: in
-          values: ["true"]
-      runAfter:
-        - prowjob-ocp419
-      taskRef:
-        resolver: git
-        params:
-        - name: url
-          value: https://github.com/openshift/konflux-tasks
-        - name: revision
-          value: 4826f365057d22d0189fa0db00d953c151f90c77
-        - name: pathInRepo
-          value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
-      params:
-        - name: SNAPSHOT
-          value: $(params.SNAPSHOT)
-        - name: VARIANT
-          value: downstream-candidate418
-        - name: ENVS
-          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.25.0-6.rhaos4.18.el9"
-        - name: RETRY_DELAY
-          value: "60"
-        - name: MAX_RETRIES
-          value: "5"
-      matrix:
-        params:
-          - name: PROWJOB_NAME
-            value:
-              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate418-azure-ipi-kata
-              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate418-azure-ipi-peerpods
-              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate418-aro-ipi-peerpods
-              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate418-aws-ipi-peerpods
     - name: prowjob-ocp419
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       onError: continue
@@ -206,6 +169,7 @@ spec:
           operator: in
           values: ["true"]
       runAfter:
+        - prowjob-ocp422
         - prowjob-ocp421
         - prowjob-ocp420
       taskRef:
@@ -223,7 +187,7 @@ spec:
         - name: VARIANT
           value: downstream-candidate419
         - name: ENVS
-          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.25.0-7.rhaos4.19.el9"
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-1.rhaos4.19.el9"
         - name: RETRY_DELAY
           value: "60"
         - name: MAX_RETRIES
@@ -260,7 +224,7 @@ spec:
         - name: VARIANT
           value: downstream-candidate420
         - name: ENVS
-          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.25.0-7.rhaos4.20.el9"
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-1.rhaos4.19.el9"
         - name: RETRY_DELAY
           value: "60"
         - name: MAX_RETRIES
@@ -295,7 +259,7 @@ spec:
         - name: VARIANT
           value: downstream-candidate421
         - name: ENVS
-          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.25.0-7.rhaos4.21.el9"
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-1.rhaos4.19.el9"
         - name: RETRY_DELAY
           value: "60"
         - name: MAX_RETRIES
@@ -307,26 +271,63 @@ spec:
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-kata
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-peerpods
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-aws-ipi-peerpods
+    - name: prowjob-ocp422
+      onError: continue
+      timeout: "8h"
+      when:
+        - input: "$(tasks.determine-prowjobs.results.run_ocp422)"
+          operator: in
+          values: ["true"]
+      runAfter:
+        - prowjob-sanity
+      taskRef:
+        resolver: git
+        params:
+        - name: url
+          value: https://github.com/openshift/konflux-tasks
+        - name: revision
+          value: 4826f365057d22d0189fa0db00d953c151f90c77
+        - name: pathInRepo
+          value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: VARIANT
+          value: downstream-candidate422
+        - name: ENVS
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-1.rhaos4.22.el9"
+        - name: RETRY_DELAY
+          value: "60"
+        - name: MAX_RETRIES
+          value: "5"
+      matrix:
+        params:
+          - name: PROWJOB_NAME
+            value:
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-kata
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-peerpods
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-aro-ipi-peerpods
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-aws-ipi-peerpods
   finally:
     - name: aggregate-status
       params:
         - name: SANITY_STATUS
           value: $(tasks.prowjob-sanity.status)
-        - name: OCP418_STATUS
-          value: $(tasks.prowjob-ocp418.status)
         - name: OCP419_STATUS
           value: $(tasks.prowjob-ocp419.status)
         - name: OCP420_STATUS
           value: $(tasks.prowjob-ocp420.status)
         - name: OCP421_STATUS
           value: $(tasks.prowjob-ocp421.status)
+        - name: OCP422_STATUS
+          value: $(tasks.prowjob-ocp422.status)
       taskSpec:
         params:
           - name: SANITY_STATUS
-          - name: OCP418_STATUS
           - name: OCP419_STATUS
           - name: OCP420_STATUS
           - name: OCP421_STATUS
+          - name: OCP422_STATUS
         steps:
           - name: check-tasks-statuses
             image: registry.redhat.io/openshift4/ose-cli:latest
@@ -339,10 +340,6 @@ spec:
                 echo "Some sanity jobs failed"
                 failed_count=$((failed_count+1))
               fi
-              if [ "$(params.OCP418_STATUS)" == "Failed" ]; then
-                echo "Some OCP 4.18 jobs failed"
-                failed_count=$((failed_count+1))
-              fi
               if [ "$(params.OCP419_STATUS)" == "Failed" ]; then
                 echo "Some OCP 4.19 jobs failed"
                 failed_count=$((failed_count+1))
@@ -353,6 +350,10 @@ spec:
               fi
               if [ "$(params.OCP421_STATUS)" == "Failed" ]; then
                 echo "Some OCP 4.21 jobs failed"
+                failed_count=$((failed_count+1))
+              fi
+              if [ "$(params.OCP422_STATUS)" == "Failed" ]; then
+                echo "Some OCP 4.22 jobs failed"
                 failed_count=$((failed_count+1))
               fi
 
