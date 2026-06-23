@@ -1,3 +1,9 @@
+# Note:
+#  The pipeline cannot run many Azure jobs in parallel because it might hit
+#  a limit. This way it has to run the jobs in steps where each should run
+#  at most three azure jobs in parallel. Consider that you need to rebalance
+#  the steps when jobs are added and/or removed from the pipeline.
+#
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
@@ -169,7 +175,6 @@ spec:
           operator: in
           values: ["true"]
       runAfter:
-        - prowjob-ocp422
         - prowjob-ocp421
         - prowjob-ocp420
       taskRef:
@@ -208,7 +213,7 @@ spec:
           operator: in
           values: ["true"]
       runAfter:
-        - prowjob-sanity
+        - prowjob-ocp422
       taskRef:
         resolver: git
         params:
@@ -243,7 +248,7 @@ spec:
           operator: in
           values: ["true"]
       runAfter:
-        - prowjob-sanity
+        - prowjob-ocp422
       taskRef:
         resolver: git
         params:
