@@ -116,6 +116,19 @@ Enterprise-contract checks legitimately return `NEUTRAL` and are excluded from
 `build_checks_passed`. If `pending_checks > 0`, checks are still running — wait for
 the next run.
 
+## label-pr.sh output and error handling
+
+`label-pr.sh` outputs a single JSON object. Do **not** try to parse anything else
+from its output — the underlying `gh` command occasionally prints extra text to
+stdout that is now suppressed, but if a future version leaks text before the JSON,
+a display-layer `jq` parse error does **not** mean the label was not applied.
+
+**When a batch labeling loop produces jq parse errors:**
+1. Do NOT re-run `label-pr.sh` for the same PR — the label may already be set.
+2. Continue to the next phase (e.g. apply `lgtm` after the `ok-to-test` batch).
+3. If verification is needed, use `get-pr-status.sh` to check the current label
+   state — never infer failure from display-layer errors alone.
+
 ## get-pr-components.sh
 Identify components that will be rebuilt (excludes enterprise-contract validation checks).
 ```bash

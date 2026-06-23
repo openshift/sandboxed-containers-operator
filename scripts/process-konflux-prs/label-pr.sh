@@ -58,9 +58,11 @@ if [[ "$LABEL" != "ok-to-test" && "$LABEL" != "lgtm" ]]; then
 fi
 
 # Add label
+# Redirect stdout to /dev/null: gh prints the PR URL on success, which would
+# make the script output non-JSON and break callers that parse our JSON output.
 if gh pr edit "$PR_NUMBER" \
     --repo "$REPO_URL" \
-    --add-label "$LABEL"; then
+    --add-label "$LABEL" >/dev/null; then
 
     COMMENT_POSTED=false
     # When adding ok-to-test, also post the /ok-to-test comment. Some bots
@@ -68,7 +70,7 @@ if gh pr edit "$PR_NUMBER" \
     if [[ "$LABEL" == "ok-to-test" ]]; then
         if gh pr comment "$PR_NUMBER" \
             --repo "$REPO_URL" \
-            --body "/ok-to-test"; then
+            --body "/ok-to-test" >/dev/null; then
             COMMENT_POSTED=true
         fi
     fi
