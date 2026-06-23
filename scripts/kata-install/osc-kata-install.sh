@@ -62,8 +62,8 @@ install_kata() {
 		s=\$(rpm-ostree status --json)
 		n_staged=\$(echo \"\$s\" | jq '[.deployments[] | select(.staged)] | length')
 		[[ \$n_staged -eq 0 ]] && exit 1
-		n_kata_staged=\$(echo \"\$s\" | jq '[.deployments[] | select(.staged) | (.\"requested-packages\" // [])[] | select(startswith(\"kata-containers\"))] | length')
-		n_kata_booted=\$(echo \"\$s\" | jq '[.deployments[] | select(.booted) | (.\"requested-packages\" // [])[] | select(startswith(\"kata-containers\"))] | length')
+		n_kata_staged=\$(echo \"\$s\" | jq '[.deployments[] | select(.staged) | ((.\"requested-packages\" // []) + (.\"requested-local-packages\" // []))[] | select(startswith(\"kata-containers\"))] | length')
+		n_kata_booted=\$(echo \"\$s\" | jq '[.deployments[] | select(.booted) | ((.\"requested-packages\" // []) + (.\"requested-local-packages\" // []))[] | select(startswith(\"kata-containers\"))] | length')
 		[[ \$n_kata_booted -gt 0 && \$n_kata_staged -eq 0 ]]
 	"; then
 		echo "Staged removal of kata-containers detected; cancelling pending deployment"
@@ -156,7 +156,7 @@ install_kata() {
 		# Clean up temp dir
 		rm -rf /host/tmp/extensions/
 
-		# rpm-ostree --apply-live updates /usr immediately but /etc changes from
+		# rpm-ostree install --apply-live updates /usr immediately but /etc changes from
 		# RPMs only land after reboot (OSTree three-way merge). Copy the kata
 		# CRI-O drop-ins from the RPM's factory-defaults location now so CRI-O
 		# can see the runtime handlers without a reboot.
@@ -224,7 +224,7 @@ uninstall_kata() {
 	' || true)
 	local uninstall_args=()
 	for pkg in $PACKAGES; do
-		echo "$ostree_pkg_list" | grep -qF "$pkg" && uninstall_args+=("$pkg")
+		echo "$ostree_pkg_list" | grep -xqF "$pkg" && uninstall_args+=("$pkg")
 	done
 	if [[ ${#uninstall_args[@]} -gt 0 ]]; then
 		chroot /host /bin/bash -c "rpm-ostree uninstall ${uninstall_args[*]}"
