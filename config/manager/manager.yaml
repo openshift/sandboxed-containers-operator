@@ -105,7 +105,7 @@ spec:
             - name: RELATED_IMAGE_TDX_QGS
               value: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:f41183860b0affa3f809ef2fa6a38e1d791fe40ef675c40fca2cf5da679fe4f8
             - name: RELATED_IMAGE_STORAGE_HELPER
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:6cecb783ab290a666fedba2de30d667e16b202b61a309075a4ea94f29ae8810b
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:bd9dfb36dc9444f5cf24372ebfbab8d0328b6423ee99ac75e830a9a4ebaf288d
           imagePullPolicy: Always
           resources:
             limits:
