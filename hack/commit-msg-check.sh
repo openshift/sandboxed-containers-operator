@@ -27,7 +27,7 @@ check_commit() {
     fi
 
     # Check subsystem prefix
-    if ! echo "$subject" | grep -qE '^[a-zA-Z_/-]+:'; then
+    if ! echo "$subject" | grep -qE '^[a-zA-Z0-9_/-]+:'; then
         echo "ERROR: Missing subsystem prefix (e.g., 'feat:', 'fix:'): $sha"
         echo "  $subject"
         FAILED=1
