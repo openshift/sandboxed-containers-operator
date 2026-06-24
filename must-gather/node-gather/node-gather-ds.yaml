@@ -17,6 +17,9 @@ spec:
       serviceaccount: node-gather
       serviceAccountName: node-gather
       terminationGracePeriodSeconds: 0
+      # hostNetwork required: node-gather needs access to the host's network namespace
+      # to collect accurate network diagnostics (ip, bridge, vlan, nftables state).
+      # Container network namespace would show only pod networking, not node-level config.
       hostNetwork: true
       containers:
       - name: node-probe
@@ -55,6 +58,10 @@ spec:
           - name: usr
             mountPath: /host/usr
         securityContext:
+          # privileged required: must-gather collects host-level diagnostics that need
+          # access to host filesystems (/sys, /proc, /dev), kernel interfaces (dmesg),
+          # PCI devices (lspci), and network configuration (nftables, bridge). These
+          # require capabilities beyond what non-privileged containers can access.
           privileged: true
       volumes:
       - name: sys

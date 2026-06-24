@@ -10,6 +10,7 @@ echo "======================================" >> "$ERROR_LOG"
 echo "" >> "$ERROR_LOG"
 
 # Log error helper function
+# Redacts node names, pod names, and IP addresses to avoid exposing internal identifiers
 log_error() {
     local context="$1"
     local command="$2"
@@ -18,14 +19,28 @@ log_error() {
 
     ((ERROR_COUNT++))
 
+    # Redact node and pod names from context and command
+    local redacted_context=$(echo "$context" | sed -E 's/(node|pod) [a-zA-Z0-9._-]+/\1 <redacted>/g')
+    local redacted_command=$(echo "$command" | sed -E 's/(node|pod)-[a-zA-Z0-9._-]+/<\1-name>/g')
+
+    # Redact sensitive data from output: hostnames, IP addresses, pod/node names
+    local redacted_output=""
+    if [[ -n "$output" ]]; then
+        redacted_output=$(echo "$output" | \
+            sed -E 's/[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/<ipv4-address>/g' | \
+            sed -E 's/([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}/<ipv6-address>/g' | \
+            sed -E 's/(node|pod)-[a-zA-Z0-9._-]+/<\1-name>/g' | \
+            sed -E 's/\.cluster\.local/<cluster-domain>/g')
+    fi
+
     {
         echo "ERROR #${ERROR_COUNT} at $(date)"
-        echo "Context: $context"
-        echo "Command: $command"
+        echo "Context: $redacted_context"
+        echo "Command: $redacted_command"
         echo "Exit Code: $exit_code"
-        if [[ -n "$output" ]]; then
-            echo "Output:"
-            echo "$output"
+        if [[ -n "$redacted_output" ]]; then
+            echo "Output (redacted):"
+            echo "$redacted_output"
         fi
         echo "---"
         echo ""
