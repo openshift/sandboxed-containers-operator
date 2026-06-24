@@ -395,6 +395,27 @@ for NODE in $(oc get nodes --no-headers -o custom-columns=':metadata.name'); do
     fi
 done
 
+# Collect KataConfig cluster-scoped resource
+KATACONFIG_PATH=${BASE_COLLECTION_PATH}/cluster-scoped-resources/kataconfig
+mkdir -p "${KATACONFIG_PATH}"
+if ! output=$(oc_exec_with_retry oc get kataconfig -o yaml 2>&1); then
+    log_error "Gathering KataConfig resources" \
+              "oc get kataconfig -o yaml" \
+              "$?" \
+              "$output"
+else
+    echo "$output" > "${KATACONFIG_PATH}/kataconfig.yaml"
+fi
+
+if ! output=$(oc_exec_with_retry oc describe kataconfig 2>&1); then
+    log_error "Describing KataConfig resources" \
+              "oc describe kataconfig" \
+              "$?" \
+              "$output"
+else
+    echo "$output" > "${KATACONFIG_PATH}/kataconfig-describe.txt"
+fi
+
 oc delete -f $DAEMONSET_MANIFEST
 oc delete -f $CRD_MANIFEST
 
