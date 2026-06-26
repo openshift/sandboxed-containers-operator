@@ -55,7 +55,7 @@ spec:
     in the Red Hat Ecosystem Catalog.
 
     # Requirements
-    Your cluster must be installed on bare-metal infrastructure with Red Hat Enterprise Linux CoreOS workers.
+    Your cluster must be installed with Red Hat Enterprise Linux CoreOS workers.
 
     # Features and benefits
     - **Isolated developer environments and privileges scoping**
