@@ -165,7 +165,6 @@ spec:
             value:
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-azure-ipi-kata
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-aws-ipi-peerpods
-      displayName: "Running prow job $(params.PROWJOB_NAME)"
     - name: prowjob-ocp419
       displayName: "Running prow job $(params.PROWJOB_NAME)"
       onError: continue
