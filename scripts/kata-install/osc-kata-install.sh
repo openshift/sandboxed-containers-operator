@@ -153,34 +153,31 @@ install_kata() {
 		echo "Running in chroot: $install_cmd"
 		chroot /host bash -c "$install_cmd"
 
-		# Clean up temp dir
-		rm -rf /host/tmp/extensions/
-
-		# rpm-ostree install --apply-live updates /usr immediately but /etc changes from
-		# RPMs only land after reboot (OSTree three-way merge). Copy the kata
-		# CRI-O drop-ins from the RPM's factory-defaults location now so CRI-O
-		# can see the runtime handlers without a reboot.
-		mkdir -p /host/etc/crio/crio.conf.d
-		for conf in /host/usr/etc/crio/crio.conf.d/50-kata*; do
-			[ -f "$conf" ] && cp "$conf" /host/etc/crio/crio.conf.d/
+		# rpm-ostree install --apply-live updates /usr immediately but
+		# /etc changes from RPMs only land after reboot
+		# (OSTree three-way merge).
+		# Copy the /etc files we find in the rpms.
+		# This is notably necessary for CRI-O drop-ins so that the CRI-O
+		# restart below is effective
+		for rpm_path in "${install_rpms[@]}"; do
+		    tar cf - $(rpm -qpl $rpm_path | grep "^/etc/") |
+			chroot /host tar xf -
 		done
 
-		# rpm-ostree --apply-live does not run RPM scriptlets on the live system.
-		# Run the steps from kata-containers %post manually:
-		#
-		# 1. Build host-kernel-derived kata VM images. The %post script skips
-		#    this on RHCOS (guards on /var/cache/kata-containers being writable)
-		#    and instead installs kata-osbuilder-generate.service to do it after
-		#    boot. Start that service now so the images are ready immediately.
-		chroot /host systemctl start kata-osbuilder-generate.service
+		# rpm-ostree --apply-live does not run RPM scriptlets
+		# Run the scriptlets manually in host context
+		# Normally this includes:
+		# 1. postinstall: Building host-kernel derived kata VM image
+		# 2. posttrans:	  Running the SELinux steps
+		for phase in postinstall posttrans; do
+		    for rpm_path in "${install_rpms[@]}"; do
+			scriptlet="$(rpm -qp --scripts $rpm_path | awk '/^'$phase' scriptlet/{found=1;next} /^[a-z]+ scriptlet/{found=0} found')"
+			chroot /host bash -c "$scriptlet"
+		    done
+		done
 
-		# 2. Run the %posttrans SELinux steps: load the kata SELinux policy
-		#    modules and grant containers access to /dev/sev and similar devices.
-		chroot /host semodule -i \
-			/usr/share/udica/templates/base_container.cil \
-			/usr/share/udica/templates/net_container.cil \
-			/usr/share/kata-containers/defaults/osc_monitor.cil
-		chroot /host setsebool -P container_use_devices 1
+		# Clean up temp dir
+		rm -rf /host/tmp/extensions/
 
 		# Restart CRI-O to pick up the new runtime configuration. A reload
 		# (SIGHUP) only re-reads the config struct; it does not rebuild the
@@ -228,19 +225,24 @@ uninstall_kata() {
 		echo "$ostree_pkg_list" | grep -xqF "$pkg" && uninstall_args+=("$pkg")
 	done
 	if [[ ${#uninstall_args[@]} -gt 0 ]]; then
+
+		# Manually run preuninstall phase
+		# For Kata this is primarily SELinux module removal for osc_monitor
+		for rpm_path in "${uninstall_args[@]}"; do
+		    scriptlet="$(rpm -qp --scripts $rpm_path | awk '/^preuninstall scriptlet/{found=1;next} /^[a-z]+ scriptlet/{found=0} found')"
+		    chroot /host bash -c "$scriptlet"
+		done
+
+		# Run actual uninstall phase
 		chroot /host /bin/bash -c "rpm-ostree uninstall ${uninstall_args[*]}"
+
 	else
 		echo "No kata packages tracked in rpm-ostree deployments; skipping rpm-ostree uninstall (packages will be absent after next reboot)"
 	fi
 
 	# Remove the CRI-O drop-ins we copied during install
+	# This is to make sure that the Kata runtime is no longer available
 	rm -f /host/etc/crio/crio.conf.d/50-kata*
-
-	# Run the steps from kata-containers %preun manually (rpm-ostree uninstall
-	# does not run scriptlets on the live system): remove the kata SELinux policy
-	# module and revoke device access granted during install.
-	chroot /host semodule -r osc_monitor 2>/dev/null || echo "osc_monitor module not loaded; skipping removal"
-	chroot /host setsebool -P container_use_devices 0
 
 	# Restart CRI-O to drop the removed runtime configuration (same reason as
 	# install: reload does not rebuild the internal OCI handler map).
