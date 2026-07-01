@@ -58,12 +58,13 @@ const (
 	UninstallKata KataDaemonSetAction = "uninstall"
 )
 
-// ensureKataInstallRBAC creates the ServiceAccount, ClusterRole, ClusterRoleBinding,
+// ensureKataInstallRBAC creates or updates the ServiceAccount, ClusterRole, ClusterRoleBinding,
 // and SecurityContextConstraints needed for the kata-install DaemonSet to function.
+// Uses CreateOrUpdate to reconcile existing resources and repair drift.
 func (r *KataConfigOpenShiftReconciler) ensureKataInstallRBAC() error {
 	ctx := context.TODO()
 
-	// 1. Create ServiceAccount in the operator namespace
+	// 1. Create or update ServiceAccount in the operator namespace
 	// Note: No controller reference - ServiceAccount is shared infrastructure
 	// and outlives any individual KataConfig
 	sa := &corev1.ServiceAccount{
@@ -72,81 +73,90 @@ func (r *KataConfigOpenShiftReconciler) ensureKataInstallRBAC() error {
 			Namespace: OperatorNamespace,
 		},
 	}
-	if err := r.Client.Create(ctx, sa); err != nil && !k8serrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create ServiceAccount: %w", err)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, func() error {
+		// ServiceAccount has no mutable spec fields that need reconciliation
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to create or update ServiceAccount: %w", err)
 	}
 	r.Log.Info("Ensured ServiceAccount kata-install exists")
 
-	// 2. Create ClusterRole
+	// 2. Create or update ClusterRole
 	cr := &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "kata-install",
 		},
-		Rules: []rbacv1.PolicyRule{
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, cr, func() error {
+		cr.Rules = []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{""},
 				Resources: []string{"nodes"},
 				Verbs:     []string{"get", "list", "patch", "update"},
 			},
-		},
-	}
-	if err := r.Client.Create(ctx, cr); err != nil && !k8serrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create ClusterRole: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to create or update ClusterRole: %w", err)
 	}
 	r.Log.Info("Ensured ClusterRole kata-install exists")
 
-	// 3. Create ClusterRoleBinding
+	// 3. Create or update ClusterRoleBinding
 	crb := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "kata-install",
 		},
-		RoleRef: rbacv1.RoleRef{
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, crb, func() error {
+		crb.RoleRef = rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "ClusterRole",
 			Name:     "kata-install",
-		},
-		Subjects: []rbacv1.Subject{
+		}
+		crb.Subjects = []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
 				Name:      "kata-install",
 				Namespace: OperatorNamespace,
 			},
-		},
-	}
-	if err := r.Client.Create(ctx, crb); err != nil && !k8serrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create ClusterRoleBinding: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to create or update ClusterRoleBinding: %w", err)
 	}
 	r.Log.Info("Ensured ClusterRoleBinding kata-install exists")
 
-	// 4. Create SecurityContextConstraints (OpenShift specific)
+	// 4. Create or update SecurityContextConstraints (OpenShift specific)
 	scc := &securityv1.SecurityContextConstraints{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "kata-install-scc",
 		},
-		AllowPrivilegedContainer: true,
-		AllowHostDirVolumePlugin: true,
-		AllowHostPID:             true,
-		AllowHostNetwork:         false,
-		AllowHostPorts:           false,
-		AllowHostIPC:             false,
-		ReadOnlyRootFilesystem:   false,
-		RunAsUser: securityv1.RunAsUserStrategyOptions{
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, scc, func() error {
+		scc.AllowPrivilegedContainer = true
+		scc.AllowHostDirVolumePlugin = true
+		scc.AllowHostPID = true
+		scc.AllowHostNetwork = false
+		scc.AllowHostPorts = false
+		scc.AllowHostIPC = false
+		scc.ReadOnlyRootFilesystem = false
+		scc.RunAsUser = securityv1.RunAsUserStrategyOptions{
 			Type: securityv1.RunAsUserStrategyRunAsAny,
-		},
-		SELinuxContext: securityv1.SELinuxContextStrategyOptions{
+		}
+		scc.SELinuxContext = securityv1.SELinuxContextStrategyOptions{
 			Type: securityv1.SELinuxStrategyRunAsAny,
-		},
-		Users: []string{
+		}
+		scc.Users = []string{
 			fmt.Sprintf("system:serviceaccount:%s:kata-install", OperatorNamespace),
-		},
-		Volumes: []securityv1.FSType{
+		}
+		scc.Volumes = []securityv1.FSType{
 			securityv1.FSTypeHostPath,
 			securityv1.FSTypeSecret,
 			securityv1.FSTypeConfigMap,
-		},
-	}
-	if err := r.Client.Create(ctx, scc); err != nil && !k8serrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create SecurityContextConstraints: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to create or update SecurityContextConstraints: %w", err)
 	}
 	r.Log.Info("Ensured SecurityContextConstraints kata-install-scc exists")
 
