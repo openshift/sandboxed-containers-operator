@@ -160,6 +160,7 @@ install_kata() {
 		# RPMs only land after reboot (OSTree three-way merge). Copy the kata
 		# CRI-O drop-ins from the RPM's factory-defaults location now so CRI-O
 		# can see the runtime handlers without a reboot.
+		mkdir -p /host/etc/crio/crio.conf.d
 		for conf in /host/usr/etc/crio/crio.conf.d/50-kata*; do
 			[ -f "$conf" ] && cp "$conf" /host/etc/crio/crio.conf.d/
 		done
