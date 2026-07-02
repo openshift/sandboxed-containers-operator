@@ -53,12 +53,11 @@ oc_exec_with_retry() {
     local retry_delay=2
     local timeout=30
     local attempt=1
-    local cmd="$*"
     local output
     local exit_code
 
     while [[ $attempt -le $max_retries ]]; do
-        output=$(timeout "$timeout" $cmd 2>&1)
+        output=$(timeout "$timeout" "$@" 2>&1)
         exit_code=$?
 
         if [[ $exit_code -eq 0 ]]; then
@@ -231,7 +230,7 @@ gather_single_pod() {
         echo "$output" > "${NODE_PATH}/opt-cni-bin"
     fi
 
-    if ! output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- /bin/bash -c 'if [[ -d /host/var/lib/must-gather/cni/bin ]]; then ls -l /host/var/lib/cni/bin; fi'); then
+    if ! output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- /bin/bash -c 'if [[ -d /host/var/lib/cni/bin ]]; then ls -l /host/var/lib/cni/bin; fi'); then
         log_error "Gathering var/lib/cni bin listing for node $node" \
                   "oc exec $pod -n node-gather -- /bin/bash -c 'ls -l /host/var/lib/cni/bin'" \
                   "$?" \
