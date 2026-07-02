@@ -48,6 +48,15 @@ set_status_uninstalled() {
 	label_node "uninstalled"
 }
 
+extract_scriptlet() {
+    # Extract the script from the given phase in the RPM
+    # We substitute '$1' with '1' to pretend we are initial installation
+    local phase=$1
+    local rpm_path="$2"
+    rpm -qp --scripts "$rpm_path" |
+        awk '/^'$phase' scriptlet \(using .*\):/{found=1;next} /^[a-z]+ (scriptlet \(using .*\):|program:)/{found=0} found { gsub("\\$1","1"); print }'
+}
+
 install_kata() {
 	# Compares installed and available package versions. If any packages need
 	# installing or upgrading, runs rpm-ostree install --apply-live so changes
@@ -156,12 +165,14 @@ install_kata() {
 		# rpm-ostree install --apply-live updates /usr immediately but
 		# /etc changes from RPMs only land after reboot
 		# (OSTree three-way merge).
-		# Copy the /etc files we find in the rpms.
+		# Extract the /etc files we find in the rpms.
 		# This is notably necessary for CRI-O drop-ins so that the CRI-O
 		# restart below is effective
 		for rpm_path in "${install_rpms[@]}"; do
-		    tar cf - $(rpm -qpl $rpm_path | grep "^/etc/") |
-			chroot /host tar xf -
+			mapfile -t etc_files < <(rpm -qpl "$rpm_path" | grep "^/etc/")
+			if [[ ${#etc_files[@]} -gt 0 ]]; then
+				tar cf - "${etc_files[@]}" | chroot /host tar xf -
+			fi
 		done
 
 		# rpm-ostree --apply-live does not run RPM scriptlets
@@ -170,10 +181,10 @@ install_kata() {
 		# 1. postinstall: Building host-kernel derived kata VM image
 		# 2. posttrans:	  Running the SELinux steps
 		for phase in postinstall posttrans; do
-		    for rpm_path in "${install_rpms[@]}"; do
-			scriptlet="$(rpm -qp --scripts $rpm_path | awk '/^'$phase' scriptlet/{found=1;next} /^[a-z]+ scriptlet/{found=0} found')"
-			chroot /host bash -c "$scriptlet"
-		    done
+			for rpm_path in "${install_rpms[@]}"; do
+				scriptlet="$(extract_scriptlet "$phase" "$rpm_path")"
+				[[ -n "$scriptlet" ]] && chroot /host /bin/sh -c "$scriptlet"
+			done
 		done
 
 		# Clean up temp dir
@@ -228,21 +239,26 @@ uninstall_kata() {
 
 		# Manually run preuninstall phase
 		# For Kata this is primarily SELinux module removal for osc_monitor
-		for rpm_path in "${uninstall_args[@]}"; do
-		    scriptlet="$(rpm -qp --scripts $rpm_path | awk '/^preuninstall scriptlet/{found=1;next} /^[a-z]+ scriptlet/{found=0} found')"
-		    chroot /host bash -c "$scriptlet"
+		for pkg in "${uninstall_args[@]}"; do
+			# Get the list of /etc files to remove before uninstalling
+			chroot /host rpm -ql "$pkg" 2>/dev/null | grep "^/etc/crio/crio.conf.d" | while read -r file; do
+				rm -f "/host$file"
+			done
+
+			# Extract and run the preuninstall scriptlet
+			rpm_path=$(find /usr/share/rpm-ostree/extensions/ -maxdepth 1 -type f -name "${pkg}-*.rpm" 2>/dev/null | head -n1)
+			if [[ -n "$rpm_path" ]]; then
+				scriptlet="$(extract_scriptlet preuninstall "$rpm_path")"
+				[[ -n "$scriptlet" ]] && chroot /host /bin/sh -c "$scriptlet"
+			fi
 		done
 
 		# Run actual uninstall phase
 		chroot /host /bin/bash -c "rpm-ostree uninstall ${uninstall_args[*]}"
-
 	else
 		echo "No kata packages tracked in rpm-ostree deployments; skipping rpm-ostree uninstall (packages will be absent after next reboot)"
 	fi
 
-	# Remove the CRI-O drop-ins we copied during install
-	# This is to make sure that the Kata runtime is no longer available
-	rm -f /host/etc/crio/crio.conf.d/50-kata*
 
 	# Restart CRI-O to drop the removed runtime configuration (same reason as
 	# install: reload does not rebuild the internal OCI handler map).
