@@ -435,14 +435,14 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 		return nil, err
 	}
 
-	// Check feature gates for custom DaemonSet image override
+	// Check DaemonSet config for custom image override
 	dsImage := daemonSetImage
-	fgStatus, err := r.NewFeatureGateStatus()
+	dsConfig, err := r.GetDaemonSetConfig()
 	if err != nil {
-		r.Log.Error(err, "couldn't get feature gate status, using default DaemonSet image")
-	} else if fgStatus.DaemonSetImage != "" {
-		dsImage = fgStatus.DaemonSetImage
-		r.Log.Info("Using custom DaemonSet image from feature gates", "image", dsImage)
+		r.Log.Error(err, "couldn't get DaemonSet config, using default image")
+	} else if dsConfig.Image != "" {
+		dsImage = dsConfig.Image
+		r.Log.Info("Using custom DaemonSet image from config", "image", dsImage)
 	}
 
 	// Because we use chroot and modify the node we need root priviliges
