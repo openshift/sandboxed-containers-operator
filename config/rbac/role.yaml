@@ -56,8 +56,18 @@ rules:
   resources:
   - serviceaccounts
   verbs:
+  - create
   - get
-  - list
+  - update
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterroles
+  - clusterrolebindings
+  verbs:
+  - create
+  - get
+  - update
 - apiGroups:
   - ""
   - machineconfiguration.openshift.io
