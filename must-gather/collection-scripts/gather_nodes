@@ -179,11 +179,12 @@ gather_single_pod() {
 
     # NFT tables
     if output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- nft list tables); then
-        for i in $output;
+        mapfile -t nft_lines <<< "$output"
+        for line in "${nft_lines[@]}";
         do
-            family=$(echo "$i" | awk -F ' ' '{print $2}' | sed 's/\r//')
-            table=$(echo "$i" | awk -F ' ' '{print $3}' | sed 's/\r//')
-            if ! nft_output=$(oc_exec_with_retry oc exec "$pod" -n node-gather -- nft list table "$family" "$table"); then
+            family=$(echo "$line" | awk -F ' ' '{print $2}' | sed 's/\r//')
+            table=$(echo "$line" | awk -F ' ' '{print $3}' | sed 's/\r//')
+            if ! nft_output=$(exec_with_retry oc exec "$pod" -n node-gather -- nft list table "$family" "$table"); then
                 log_error "Gathering NFT table $family/$table for node $node" \
                           "oc exec $pod -n node-gather -- nft list table $family $table" \
                           "$?" \
