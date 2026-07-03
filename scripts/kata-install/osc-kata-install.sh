@@ -169,9 +169,9 @@ install_kata() {
 		# This is notably necessary for CRI-O drop-ins so that the CRI-O
 		# restart below is effective
 		for rpm_path in "${install_rpms[@]}"; do
-			mapfile -t etc_files < <(rpm -qpl "$rpm_path" | grep "^/etc/")
+			mapfile -t etc_files < <(rpm -qpl "$rpm_path" | sed -n 's|^/etc/|etc/|p')
 			if [[ ${#etc_files[@]} -gt 0 ]]; then
-				tar cf - "${etc_files[@]}" | chroot /host tar xf -
+				(cd /host/usr; tar cf - "${etc_files[@]}") | chroot /host tar xf -
 			fi
 		done
 
