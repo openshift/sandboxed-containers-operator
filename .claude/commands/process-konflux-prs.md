@@ -6,6 +6,7 @@ allowed-tools:
   - Bash(scripts/process-konflux-prs/get-pr-status.sh*)
   - Bash(scripts/process-konflux-prs/get-pr-components.sh*)
   - Bash(scripts/process-konflux-prs/label-pr.sh*)
+  - Bash(scripts/process-konflux-prs/merge-pr.sh*)
   - Bash(scripts/process-konflux-prs/check-pipeline-status.sh*)
   - Bash(scripts/process-konflux-prs/get-nudge-prs.sh*)
   - Bash(scripts/process-konflux-prs/get-component-info.sh*)
@@ -19,8 +20,9 @@ Process the pull requests from Mintmaker and Konflux
 
 - **No parameter**: ONLY list PRs. For each PR, show which images will be rebuilt and the
   suggested action (see [Status output format](#status-output-format)). Do NOT label or merge.
-- **`--mintmaker`**: Process Mintmaker PRs ONLY. Apply labels (ok-to-test, lgtm). Do NOT touch
-  Nudge PRs. Do NOT merge.
+- **`--mintmaker`**: Process Mintmaker PRs ONLY. Apply labels (ok-to-test, lgtm), then merge
+  PRs that are ready (see [Step 1 - Mintmaker PR processing](#step-1---mintmaker-pr-processing)).
+  Do NOT touch Nudge PRs.
 - **`--nudge`**: Process Nudge PRs ONLY, with the Mintmaker safeguard (see
   [Step 2 - Nudge PR processing](#step-2---nudge-pr-processing)). Do NOT touch Mintmaker PRs.
   Do NOT merge.
@@ -29,8 +31,6 @@ Process the pull requests from Mintmaker and Konflux
 
 `--mintmaker` and `--nudge` are mutually exclusive. If neither is given, only list/status output
 is produced.
-
-**This skill is in development and must NEVER merge any PR.**
 
 **CRITICAL**: Always query fresh data. Never use PR numbers from previous runs or earlier in the conversation.
 
@@ -155,6 +155,14 @@ Labels: "ok-to-test" or "lgtm"
 Output: JSON with {success, repo, pr, label, comment}
 Note: when label is "ok-to-test", also posts a `/ok-to-test` comment; `comment` indicates whether it succeeded.
 
+## merge-pr.sh
+Merge a PR using the merge (non-squash) strategy.
+```bash
+./scripts/process-konflux-prs/merge-pr.sh --repo REPO_NAME --pr PR_NUMBER
+```
+Output: JSON with {success, repo, pr, message}
+Note: deletes the source branch after merging.
+
 ## check-pipeline-status.sh
 Check Konflux pipeline status.
 ```bash
@@ -242,9 +250,35 @@ label. Track the merge pipeline when the PR auto-merges to confirm success
 
 **Only executed when `--mintmaker` is passed.**
 
+### Phase A — Labelling
+
 1. Call `list-prs.sh --mintmaker` to discover open Mintmaker PRs.
-2. For each Mintmaker PR, apply labelling rules above.
-3. Report which PRs received labels and which are still waiting for checks.
+2. Fetch status for all PRs with `get-pr-status.sh` and record the **initial snapshot**
+   (this snapshot is fixed; it must not be refreshed during the same run).
+3. For each Mintmaker PR, apply labelling rules above.
+
+### Phase B — Merging
+
+After all labelling is complete, merge PRs that were **already ready before this run**:
+
+- A PR is eligible to merge if, in the **initial snapshot**: `has_lgtm` is `true`
+  AND `build_checks_passed` is `true` AND `pending_checks` is `0`.
+- Do NOT merge a PR that received `lgtm` during this run's Phase A — the same
+  snapshot principle applies: lgtm was just set, so this is its first eligible run,
+  not a confirmed-ready state from a prior run.
+- Merge PRs one at a time using `merge-pr.sh`. After each merge, note which
+  components will be rebuilt (from the snapshot's `components` field).
+- Within a single run, do NOT merge two PRs that rebuild the same component —
+  the second one must wait for the on-push pipeline triggered by the first to complete.
+  Leave it for the next run.
+- Use `merge-pr.sh --repo REPO_NAME --pr PR_NUMBER` to merge.
+
+### Phase C — Report
+
+Report three groups:
+- PRs labelled in this run (ok-to-test or lgtm added).
+- PRs merged in this run.
+- PRs waiting (checks pending, build failed, or blocked by a same-component merge).
 
 Do NOT touch Nudge PRs during Step 1.
 
