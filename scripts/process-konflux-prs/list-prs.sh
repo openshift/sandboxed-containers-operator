@@ -40,15 +40,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Mintmaker title prefixes
-MINTMAKER_PREFIXES=(
-    "chore(deps): update konflux references"
-    "chore(deps): update registry.access.redhat.com/ubi9/ubi"
-    "chore(deps): update registry.access.redhat.com/ubi9/go-toolset"
-    "chore(deps): update registry.access.redhat.com/ubi10/ubi"
-    "chore(deps): update registry.access.redhat.com/ubi10/go-toolset"
-)
-
 # Validate repo filter if provided
 if [[ -n "$REPO_FILTER" ]]; then
     if [[ -z "${REPOS[$REPO_FILTER]:-}" ]]; then
@@ -60,11 +51,13 @@ fi
 
 is_mintmaker_pr() {
     local title="$1"
-    for prefix in "${MINTMAKER_PREFIXES[@]}"; do
-        if [[ "$title" == "$prefix"* ]]; then
-            return 0
-        fi
-    done
+    # Match any Red Hat UBI base image update (ubi9/* or ubi10/*) or Konflux references update
+    [[ "$title" == "chore(deps): update konflux references"* ]] && return 0
+    [[ "$title" == "Update Konflux references"* ]] && return 0
+    [[ "$title" == "chore(deps): update registry.access.redhat.com/ubi9"* ]] && return 0
+    [[ "$title" == "chore(deps): update registry.access.redhat.com/ubi10"* ]] && return 0
+    [[ "$title" == "Update registry.access.redhat.com/ubi9"* ]] && return 0
+    [[ "$title" == "Update registry.access.redhat.com/ubi10"* ]] && return 0
     return 1
 }
 

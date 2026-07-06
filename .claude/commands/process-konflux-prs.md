@@ -218,11 +218,17 @@ Labels used:
 
 Rules:
 
-- If a PR does NOT have `ok-to-test`, set it **and** post a `/ok-to-test` comment.
-  Some bots only react to maintainer comments, not label additions alone.
-- If a PR has `ok-to-test` AND `build_checks_passed` is `true` AND `pending_checks`
-  is `0`, set `lgtm`. (`build_checks_passed` excludes enterprise-contract checks
-  that return `NEUTRAL` — do NOT use `all_checks_passed`.)
+Both rules are evaluated against the **state returned by `get-pr-status.sh` at the
+start of this run** — the snapshot is fixed before any labels are applied. Applying
+`ok-to-test` in this run does NOT qualify the same PR for `lgtm` in the same run,
+because `ok-to-test` triggers new CI pipelines whose results are not yet known.
+
+- If `has_ok_to_test` is `false` in the snapshot, set `ok-to-test` **and** post a
+  `/ok-to-test` comment. Some bots only react to maintainer comments, not label
+  additions alone. Stop here for this PR — do NOT also set `lgtm`.
+- If `has_ok_to_test` is `true` in the snapshot AND `build_checks_passed` is `true`
+  AND `pending_checks` is `0`, set `lgtm`. (`build_checks_passed` excludes
+  enterprise-contract checks that return `NEUTRAL` — do NOT use `all_checks_passed`.)
 
 Labelling can be done in parallel for all PRs from all repositories, as there
 is no conflict between "on-pull-request" pipelines running concurrently.
@@ -327,13 +333,12 @@ Implemented in `list-prs.sh --mintmaker`:
 
 - status is "open"
 - author is the "app/red-hat-konflux" bot
-- title starts with one of the following:
+- title matches one of the following patterns (note: generalised to avoid missing new image types):
 
-  - "chore(deps): update konflux references"
-  - "chore(deps): update registry.access.redhat.com/ubi9/ubi"
-  - "chore(deps): update registry.access.redhat.com/ubi9/go-toolset"
-  - "chore(deps): update registry.access.redhat.com/ubi10/ubi"
-  - "chore(deps): update registry.access.redhat.com/ubi10/go-toolset"
+  - starts with `"chore(deps): update konflux references"` or `"Update Konflux references"`
+  - starts with `"chore(deps): update registry.access.redhat.com/ubi9/"` (any ubi9 image)
+  - starts with `"chore(deps): update registry.access.redhat.com/ubi10/"` (any ubi10 image)
+  - starts with `"Update registry.access.redhat.com/ubi9/"` or `"Update registry.access.redhat.com/ubi10/"`
 
 # Nudge PRs filter
 
