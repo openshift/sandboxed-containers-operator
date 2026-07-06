@@ -7,7 +7,9 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8-1782797275
 # be reflected in the rpms.in.yaml file.
 # Also make sure to re-generate the rpms.lock.yaml file when doing so.
 # See https://konflux.pages.redhat.com/docs/users/building/prefetching-dependencies.html#rpm
-RUN microdnf update -y && microdnf install tar rsync -y && microdnf clean all
+RUN microdnf update -y && \
+    microdnf install tar rsync iproute util-linux pciutils nftables -y && \
+    microdnf clean all
 
 COPY --from=builder /usr/bin/oc /usr/bin/oc
 

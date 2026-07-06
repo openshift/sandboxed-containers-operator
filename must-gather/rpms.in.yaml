@@ -1,4 +1,4 @@
-packages: [tar, rsync] 
+packages: [tar, rsync, iproute, util-linux, pciutils, nftables] 
 contentOrigin:
   repofiles: ["./ubi.repo"] 
 arches:
