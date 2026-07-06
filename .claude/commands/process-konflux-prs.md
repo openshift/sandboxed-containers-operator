@@ -10,6 +10,7 @@ allowed-tools:
   - Bash(scripts/process-konflux-prs/merge-pr.sh*)
   - Bash(scripts/process-konflux-prs/skip-pr.sh*)
   - Bash(scripts/process-konflux-prs/check-pipeline-status.sh*)
+  - Bash(scripts/process-konflux-prs/check-merge-safety.sh*)
   - Bash(scripts/process-konflux-prs/get-nudge-prs.sh*)
   - Bash(scripts/process-konflux-prs/get-component-info.sh*)
 ---
@@ -200,6 +201,18 @@ Check Konflux pipeline status.
 Output: JSON with {component, pipeline_type, latest, all_runs}
 Note: --pr-id is mandatory for on-pull-request to avoid matching runs from different PRs
 
+## check-merge-safety.sh
+Check whether it is safe to merge a PR by verifying no on-push pipeline is running
+for any of its components. Wraps `check-pipeline-status.sh` over a component list.
+```bash
+./scripts/process-konflux-prs/check-merge-safety.sh --components "comp1 comp2 ..."
+```
+Output: JSON `{safe_to_merge: bool, blocking: [{component, pipeline, reason}]}`
+- `safe_to_merge`: true when no component has a running on-push pipeline
+- `blocking`: list of components currently blocked (empty when safe)
+
+**Use this instead of a manual loop over `check-pipeline-status.sh` before each merge.**
+
 ## get-nudge-prs.sh
 Find nudge PRs for a component.
 ```bash
@@ -314,14 +327,13 @@ After all labelling is complete, merge PRs that were **already ready before this
 - Do NOT merge a PR that received `lgtm` during this run's Phase A — the same
   snapshot principle applies: lgtm was just set, so this is its first eligible run,
   not a confirmed-ready state from a prior run.
-- **Pre-merge pipeline check**: Before merging a PR, for each component in the
-  snapshot's `components` array, call:
+- **Pre-merge pipeline check**: Before merging a PR, call:
   ```bash
-  ./scripts/process-konflux-prs/check-pipeline-status.sh --component COMPONENT_NAME
+  ./scripts/process-konflux-prs/check-merge-safety.sh --components "comp1 comp2 ..."
   ```
-  (defaults to `--type on-push`). If `latest` is non-null AND `latest.completionTime`
-  is null, an on-push pipeline for that component is still running. **Skip this PR**
-  and report it as "blocked by running on-push pipeline". Do NOT merge it.
+  using the snapshot's `components` array. If `safe_to_merge` is `false`, **skip this
+  PR** and report it as "blocked by running on-push pipeline" (include the `blocking`
+  list in the report). Do NOT merge it.
 - Merge PRs one at a time using `merge-pr.sh`. After each merge, note which
   components will be rebuilt (from the snapshot's `components` field).
 - Within a single run, do NOT merge two PRs that rebuild the same component —
