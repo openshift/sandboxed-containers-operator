@@ -2,6 +2,7 @@
 name: process-konflux-prs
 description: Look at pull requests created by the Konflux bot and manage them, optimizing their merge to avoid repetitive builds.
 allowed-tools:
+  - Bash(scripts/process-konflux-prs/snapshot-prs.sh*)
   - Bash(scripts/process-konflux-prs/list-prs.sh*)
   - Bash(scripts/process-konflux-prs/get-pr-status.sh*)
   - Bash(scripts/process-konflux-prs/get-pr-components.sh*)
@@ -60,20 +61,15 @@ for pr_num in 2147 2146 2144 2143; do  # ❌ Never do this
 done
 ```
 
-**Efficiency**: fetch status for all PRs in a **single bash loop** rather than one tool
-call per PR. For N PRs, one loop invocation avoids N round-trips:
+**Efficiency**: use `snapshot-prs.sh` to discover PRs and fetch all their statuses in a
+single script invocation:
 
 ```bash
-# Fetch status + components for every PR in one bash call
-mintmaker_prs=$(./scripts/process-konflux-prs/list-prs.sh --mintmaker)
-echo "$mintmaker_prs" | jq -c '.[]' | while read -r pr; do
-  repo=$(echo "$pr" | jq -r '.repo')
-  number=$(echo "$pr" | jq -r '.number')
-  status=$(./scripts/process-konflux-prs/get-pr-status.sh --repo "$repo" --pr "$number" 2>/dev/null)
-  echo "$status" | jq --arg repo "$repo" \
-    '{repo: $repo, pr: .number, components, build_checks_passed, build_checks_failed, pending_checks, has_ok_to_test, has_lgtm}'
-done
+snapshot=$(./scripts/process-konflux-prs/snapshot-prs.sh --mintmaker)
 ```
+
+Do NOT call `list-prs.sh` followed by a `get-pr-status.sh` loop — `snapshot-prs.sh`
+already does both.
 
 **IMPORTANT**: Do not perform active polling/wait loops when executing.
 This skill is intended to be run on a regular basis. Each time it runs, it should
@@ -123,6 +119,26 @@ Output: JSON object — exact shape:
 Enterprise-contract checks legitimately return `NEUTRAL` and are excluded from
 `build_checks_passed`. If `pending_checks > 0`, checks are still running — wait for
 the next run.
+
+## snapshot-prs.sh
+Discover PRs and fetch their status in one pass — replaces a `list-prs.sh` call followed
+by a `get-pr-status.sh` loop.
+```bash
+./scripts/process-konflux-prs/snapshot-prs.sh --mintmaker|--nudge [--repo REPO_NAME]
+```
+Output: JSON array of status objects, one per PR:
+```json
+[{
+  "repo": "osc", "pr": 1234, "title": "…",
+  "components": ["osc-operator"],
+  "build_checks_passed": true,
+  "build_checks_failed": [],
+  "pending_checks": 0,
+  "has_ok_to_test": true,
+  "has_lgtm": false
+}]
+```
+**Use this instead of calling `list-prs.sh` then looping over `get-pr-status.sh`.**
 
 ## label-pr.sh output and error handling
 
@@ -252,10 +268,10 @@ label. Track the merge pipeline when the PR auto-merges to confirm success
 
 ### Phase A — Labelling
 
-1. Call `list-prs.sh --mintmaker` to discover open Mintmaker PRs.
-2. Fetch status for all PRs with `get-pr-status.sh` and record the **initial snapshot**
-   (this snapshot is fixed; it must not be refreshed during the same run).
-3. For each Mintmaker PR, apply labelling rules above.
+1. Call `snapshot-prs.sh --mintmaker` to discover open Mintmaker PRs and fetch their
+   status in one pass. Record the result as the **initial snapshot** (this snapshot is
+   fixed; it must not be refreshed during the same run).
+2. For each entry in the snapshot, apply labelling rules above.
 
 ### Phase B — Merging
 
@@ -303,15 +319,13 @@ the Nudge PR now would be immediately obsoleted by the Mintmaker rebuild.
 
 **Phase A — Build the "Mintmaker-blocked" component set**
 
-1. Call `list-prs.sh --mintmaker` to get all open Mintmaker PRs.
-2. For each Mintmaker PR, call `get-pr-status.sh` and collect its `components`
-   array (the components that will be rebuilt when that PR is merged).
-3. Union all these component arrays into a single set:
+1. Call `snapshot-prs.sh --mintmaker` to get all open Mintmaker PRs with their status.
+2. Union the `components` arrays from all entries into a single set:
    `mintmaker_rebuilding_components`.
 
 **Phase B — Filter and process Nudge PRs**
 
-1. Call `list-prs.sh --nudge` to get all open Nudge PRs.
+1. Call `snapshot-prs.sh --nudge` to get all open Nudge PRs with their status.
 2. For each Nudge PR, identify the **source component** — the component whose
    reference was updated — by matching known component names against the PR title.
    (Nudge PR titles contain the source component name, e.g.
