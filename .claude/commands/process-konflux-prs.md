@@ -282,11 +282,12 @@ them from the processing set.
 
 **Known skip patterns:**
 
-- **go-toolset major-version-only tag**: title contains `ubi9/go-toolset` AND the tag
-  is a bare major version (e.g. `v9`, `v10`) with no Go version number.
-  Detection: title matches `ubi9/go-toolset` AND ends with `tag to v<N>` where `<N>`
-  is a single integer (no dots). Example: `"Update ubi9/go-toolset Docker tag to v9"`.
-  *Why*: we pin `ubi9/go-toolset` to the Go version tag (e.g. `v1.26.4-...`), not the
+- **go-toolset major-version-only tag**: title contains `ubi9/go-toolset` or
+  `ubi10/go-toolset` AND the tag is a bare major version (e.g. `v9`, `v10`) with no
+  Go version number.
+  Detection: title matches `ubi[0-9]+/go-toolset` AND ends with `tag to v<N>` where
+  `<N>` is a single integer (no dots). Example: `"Update ubi9/go-toolset Docker tag to v9"`.
+  *Why*: we pin `go-toolset` to the Go version tag (e.g. `v1.26.4-...`), not the
   image's own major version. A separate PR with the correct Go version tag will arrive.
 
 For each PR matching a skip pattern:
