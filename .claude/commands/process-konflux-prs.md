@@ -8,6 +8,7 @@ allowed-tools:
   - Bash(scripts/process-konflux-prs/get-pr-components.sh*)
   - Bash(scripts/process-konflux-prs/label-pr.sh*)
   - Bash(scripts/process-konflux-prs/merge-pr.sh*)
+  - Bash(scripts/process-konflux-prs/skip-pr.sh*)
   - Bash(scripts/process-konflux-prs/check-pipeline-status.sh*)
   - Bash(scripts/process-konflux-prs/get-nudge-prs.sh*)
   - Bash(scripts/process-konflux-prs/get-component-info.sh*)
@@ -171,6 +172,14 @@ Labels: "ok-to-test" or "lgtm"
 Output: JSON with {success, repo, pr, label, comment}
 Note: when label is "ok-to-test", also posts a `/ok-to-test` comment; `comment` indicates whether it succeeded.
 
+## skip-pr.sh
+Mark a PR as intentionally skipped: adds the `mintmaker-skip` label and posts an
+explanatory comment. The label prevents re-posting on subsequent runs.
+```bash
+./scripts/process-konflux-prs/skip-pr.sh --repo REPO_NAME --pr PR_NUMBER --reason "reason"
+```
+Output: JSON with {success, repo, pr, message}
+
 ## merge-pr.sh
 Merge a PR using the merge (non-squash) strategy.
 ```bash
@@ -266,12 +275,34 @@ label. Track the merge pipeline when the PR auto-merges to confirm success
 
 **Only executed when `--mintmaker` is passed.**
 
+### Phase 0 — Skip filter
+
+Before labelling or merging, identify PRs that match a known skip pattern and remove
+them from the processing set.
+
+**Known skip patterns:**
+
+- **go-toolset major-version-only tag**: title contains `ubi9/go-toolset` AND the tag
+  is a bare major version (e.g. `v9`, `v10`) with no Go version number.
+  Detection: title matches `ubi9/go-toolset` AND ends with `tag to v<N>` where `<N>`
+  is a single integer (no dots). Example: `"Update ubi9/go-toolset Docker tag to v9"`.
+  *Why*: we pin `ubi9/go-toolset` to the Go version tag (e.g. `v1.26.4-...`), not the
+  image's own major version. A separate PR with the correct Go version tag will arrive.
+
+For each PR matching a skip pattern:
+- If `has_mintmaker_skip` is `false` in the snapshot: call `skip-pr.sh` with an
+  appropriate `--reason` explaining the skip. This posts a comment and adds the
+  `mintmaker-skip` label so subsequent runs skip it silently.
+- Remove the PR from the snapshot used in Phase A and Phase B (do not label or merge it,
+  regardless of `has_mintmaker_skip`).
+
 ### Phase A — Labelling
 
 1. Call `snapshot-prs.sh --mintmaker` to discover open Mintmaker PRs and fetch their
    status in one pass. Record the result as the **initial snapshot** (this snapshot is
    fixed; it must not be refreshed during the same run).
-2. For each entry in the snapshot, apply labelling rules above.
+2. Run Phase 0 to remove skip-pattern PRs from the snapshot.
+3. For each remaining entry in the snapshot, apply labelling rules above.
 
 ### Phase B — Merging
 
@@ -299,7 +330,8 @@ After all labelling is complete, merge PRs that were **already ready before this
 
 ### Phase C — Report
 
-Report three groups:
+Report four groups:
+- PRs skipped this run (matched a skip pattern; `skip-pr.sh` called for first-time skips).
 - PRs labelled in this run (ok-to-test or lgtm added).
 - PRs merged in this run.
 - PRs waiting (checks pending, build failed, blocked by a running on-push pipeline, or blocked by a same-component merge in this run).

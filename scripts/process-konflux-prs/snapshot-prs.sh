@@ -6,7 +6,7 @@
 #
 # Output: JSON array of PR status objects:
 #   [{repo, pr, title, components, build_checks_passed, build_checks_failed,
-#     pending_checks, has_ok_to_test, has_lgtm}, ...]
+#     pending_checks, has_ok_to_test, has_lgtm, has_mintmaker_skip}, ...]
 
 set -euo pipefail
 
@@ -51,7 +51,8 @@ while IFS= read -r pr; do
           build_checks_failed: (.build_checks_failed // []),
           pending_checks,
           has_ok_to_test,
-          has_lgtm}')
+          has_lgtm,
+          has_mintmaker_skip: ((.labels // []) | any(. == "mintmaker-skip"))}')
     snapshot=$(echo "$snapshot" | jq --argjson e "$entry" '. + [$e]')
 done < <(echo "$prs" | jq -c '.[]')
 
