@@ -19,15 +19,15 @@ Process the pull requests from Mintmaker and Konflux
 
 - **No parameter**: ONLY list PRs. For each PR, show which images will be rebuilt and the
   suggested action (see [Status output format](#status-output-format)). Do NOT label or merge.
-- **`--step1`**: Process Mintmaker PRs ONLY. Apply labels (ok-to-test, lgtm). Do NOT touch
+- **`--mintmaker`**: Process Mintmaker PRs ONLY. Apply labels (ok-to-test, lgtm). Do NOT touch
   Nudge PRs. Do NOT merge.
-- **`--step2`**: Process Nudge PRs ONLY, with the Mintmaker safeguard (see
+- **`--nudge`**: Process Nudge PRs ONLY, with the Mintmaker safeguard (see
   [Step 2 - Nudge PR processing](#step-2---nudge-pr-processing)). Do NOT touch Mintmaker PRs.
   Do NOT merge.
 - **`--dry-run`**: Show what would be done. Do NOT label or merge. Can be combined with
-  `--step1` or `--step2` to preview that specific step.
+  `--mintmaker` or `--nudge` to preview that specific step.
 
-`--step1` and `--step2` are mutually exclusive. If neither is given, only list/status output
+`--mintmaker` and `--nudge` are mutually exclusive. If neither is given, only list/status output
 is produced.
 
 **This skill is in development and must NEVER merge any PR.**
@@ -196,8 +196,8 @@ See the [list of components](#list-of-components) for nudge relationships.
 
 **The workflow is two separate steps, run independently:**
 
-1. **Step 1 — Mintmaker PRs** (`--step1`): label and advance Mintmaker PRs.
-2. **Step 2 — Nudge PRs** (`--step2`): label and advance Nudge PRs, but ONLY
+1. **Step 1 — Mintmaker PRs** (`--mintmaker`): label and advance Mintmaker PRs.
+2. **Step 2 — Nudge PRs** (`--nudge`): label and advance Nudge PRs, but ONLY
    those that are safe to process (see below).
 
 Merging Mintmaker PRs triggers component rebuilds, which in turn refresh the
@@ -240,7 +240,7 @@ label. Track the merge pipeline when the PR auto-merges to confirm success
 
 ## Step 1 - Mintmaker PR processing
 
-**Only executed when `--step1` is passed.**
+**Only executed when `--mintmaker` is passed.**
 
 1. Call `list-prs.sh --mintmaker` to discover open Mintmaker PRs.
 2. For each Mintmaker PR, apply labelling rules above.
@@ -250,7 +250,7 @@ Do NOT touch Nudge PRs during Step 1.
 
 ## Step 2 - Nudge PR processing
 
-**Only executed when `--step2` is passed.**
+**Only executed when `--nudge` is passed.**
 
 Nudge PRs must only be processed when we are certain that no open Mintmaker PR
 will trigger a rebuild of the same source component. If a Mintmaker PR would
