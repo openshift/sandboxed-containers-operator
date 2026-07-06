@@ -266,6 +266,14 @@ After all labelling is complete, merge PRs that were **already ready before this
 - Do NOT merge a PR that received `lgtm` during this run's Phase A — the same
   snapshot principle applies: lgtm was just set, so this is its first eligible run,
   not a confirmed-ready state from a prior run.
+- **Pre-merge pipeline check**: Before merging a PR, for each component in the
+  snapshot's `components` array, call:
+  ```bash
+  ./scripts/process-konflux-prs/check-pipeline-status.sh --component COMPONENT_NAME
+  ```
+  (defaults to `--type on-push`). If `latest` is non-null AND `latest.completionTime`
+  is null, an on-push pipeline for that component is still running. **Skip this PR**
+  and report it as "blocked by running on-push pipeline". Do NOT merge it.
 - Merge PRs one at a time using `merge-pr.sh`. After each merge, note which
   components will be rebuilt (from the snapshot's `components` field).
 - Within a single run, do NOT merge two PRs that rebuild the same component —
@@ -278,7 +286,7 @@ After all labelling is complete, merge PRs that were **already ready before this
 Report three groups:
 - PRs labelled in this run (ok-to-test or lgtm added).
 - PRs merged in this run.
-- PRs waiting (checks pending, build failed, or blocked by a same-component merge).
+- PRs waiting (checks pending, build failed, blocked by a running on-push pipeline, or blocked by a same-component merge in this run).
 
 Do NOT touch Nudge PRs during Step 1.
 
