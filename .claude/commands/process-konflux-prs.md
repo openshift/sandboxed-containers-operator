@@ -399,14 +399,17 @@ complete image with all component updates.
 5. For each group:
 
    **Group has multiple open PRs:**
+   The **held-back PR** for a multi-PR group is always the **lowest-numbered open PR**,
+   regardless of its label state. It is kept last so that its on-push pipeline runs
+   uncontested after all peers have merged.
    - Identify PRs with `has_ok_to_test: false` (not yet labeled).
    - If **2 or more** PRs have `has_ok_to_test: false`: apply `ok-to-test` to all
-     except the **lowest-numbered** one. The lowest-numbered becomes the **held-back
-     PR** for this group. Do NOT label it this run.
+     except the lowest-numbered (the held-back PR). Do NOT label the held-back PR.
    - If **exactly one** PR has `has_ok_to_test: false` and the rest have
-     `has_ok_to_test: true` (still open, not yet merged): the held-back PR is waiting
-     for its peers to merge first. Do NOT label it — leave it for the next run.
+     `has_ok_to_test: true` (still open, not yet merged): that sole unlabeled PR is
+     the held-back PR waiting for its peers to merge first. Do NOT label it.
    - If **all** PRs have `has_ok_to_test: true`: all are in flight; nothing to label.
+     The lowest-numbered is still implicitly the held-back PR (Phase C will not merge it).
 
    **Group has exactly one open PR** (all peers have merged — they are no longer in
    the snapshot):
@@ -425,15 +428,25 @@ All other PRs require explicit merging:
 - PRs from non-osc repositories (compute-artifacts, podvm-scripts).
 - osc PRs with `base_branch != "devel"` (e.g. targeting `osc-release-v1.12`).
 
-For each such PR where the **initial snapshot** shows `has_ok_to_test: true`
-AND `build_checks_passed: true` AND `pending_checks: 0` AND the PR is **not currently
-designated as held-back** (i.e., it is not the sole unlabeled PR in a multi-PR group):
+For each group that requires explicit merging, process as follows:
 
-- Call `check-merge-safety.sh --components "<components>"`. If `safe_to_merge` is
-  `false`, skip and report as "blocked by running on-push pipeline".
-- Apply `lgtm` label.
-- Merge using `merge-pr.sh`. Within a single run, do NOT merge two PRs that rebuild
-  the same component — the second must wait for the next run.
+**Single-PR group** (solo or held-back PR whose peers have all merged): merge it if
+`has_ok_to_test: true` AND `build_checks_passed: true` AND `pending_checks: 0` AND
+`check-merge-safety` passes.
+
+**Multi-PR group**: the held-back PR is the **lowest-numbered open PR** in the group.
+For all other PRs where the **initial snapshot** shows `has_ok_to_test: true`
+AND `build_checks_passed: true` AND `pending_checks: 0`:
+- Call `check-merge-safety.sh --components "<components>"` **once** before merging
+  any PR in the group. If `safe_to_merge` is `false`, skip the entire group and report
+  as "blocked by running on-push pipeline".
+- Apply `lgtm` and merge **all** eligible PRs in this single run. Merging multiple PRs
+  from the same group in one run is intentional: their on-push pipelines will race, but
+  the held-back PR's final pipeline (merged in a later run once all pipelines complete)
+  produces the definitive image containing all component updates.
+- The held-back PR (lowest-numbered) is NOT merged this run. It is processed in a
+  subsequent run once all peers have merged and check-merge-safety passes (Phase B
+  solo-group path).
 
 **Phase D — Report**
 
