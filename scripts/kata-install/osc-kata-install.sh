@@ -50,11 +50,14 @@ set_status_uninstalled() {
 
 extract_scriptlet() {
     # Extract the script from the given phase in the RPM
-    # We substitute '$1' with '1' to pretend we are initial installation
+    # RPM scriptlet $1 meanings:
+    #   1 = initial installation
+    #   0 = package removal (preuninstall/postuninstall)
     local phase=$1
     local rpm_path="$2"
+    local arg_value=${3:-1}  # Default to 1 (install) if not specified
     rpm -qp --scripts "$rpm_path" |
-        awk '/^'$phase' scriptlet \(using .*\):/{found=1;next} /^[a-z]+ (scriptlet \(using .*\):|program:)/{found=0} found { gsub("\\$1","1"); print }'
+        awk '/^'$phase' scriptlet \(using .*\):/{found=1;next} /^[a-z]+ (scriptlet \(using .*\):|program:)/{found=0} found { gsub("\\$1","'"$arg_value"'"); print }'
 }
 
 install_kata() {
@@ -249,10 +252,10 @@ uninstall_kata() {
 				rm -f "/host$file"
 			done
 
-			# Extract and run the preuninstall scriptlet
+			# Extract and run the preuninstall scriptlet with $1=0 (package removal)
 			rpm_path=$(find /usr/share/rpm-ostree/extensions/ -maxdepth 1 -type f -name "${pkg}-*.rpm" 2>/dev/null | head -n1)
 			if [[ -n "$rpm_path" ]]; then
-				scriptlet="$(extract_scriptlet preuninstall "$rpm_path")"
+				scriptlet="$(extract_scriptlet preuninstall "$rpm_path" 0)"
 				[[ -n "$scriptlet" ]] && chroot /host /bin/sh -c "$scriptlet"
 			fi
 		done
