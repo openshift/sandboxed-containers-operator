@@ -226,11 +226,15 @@ uninstall_kata() {
 	# currently requested". Packages absent from all deployments are already
 	# absent from the staged deployment and need no further action.
 	local ostree_pkg_list
-	ostree_pkg_list=$(chroot /host bash -c '
+	if ! ostree_pkg_list=$(chroot /host bash -c '
+		set -o pipefail
 		rpm-ostree status --json | jq -r "[.deployments[] |
 		  ((.\"requested-packages\" // []) + (.\"requested-local-packages\" // []))[]]
 		| .[]" 2>/dev/null
-	' || true)
+	'); then
+		echo "Failed to inspect rpm-ostree deployments" >&2
+		exit 1
+	fi
 	local uninstall_args=()
 	for pkg in $PACKAGES; do
 		echo "$ostree_pkg_list" | grep -xqF "$pkg" && uninstall_args+=("$pkg")
