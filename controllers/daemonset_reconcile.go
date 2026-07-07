@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"time"
 
@@ -339,9 +340,16 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 	}
 
 	// Ensure RBAC resources exist for kata-install DaemonSet
-	if err := r.ensureKataInstallRBAC(); err != nil {
-		r.Log.Error(err, "Failed to ensure kata-install RBAC resources")
-		return ctrl.Result{}, err
+	// Set SKIP_KATA_INSTALL_RBAC=true to skip RBAC creation in testing environments
+	// where the operator lacks permissions to create cluster-scoped RBAC resources.
+	skipRBAC := os.Getenv("SKIP_KATA_INSTALL_RBAC") == "true"
+	if !skipRBAC {
+		if err := r.ensureKataInstallRBAC(); err != nil {
+			r.Log.Error(err, "Failed to ensure kata-install RBAC resources")
+			return ctrl.Result{}, err
+		}
+	} else {
+		r.Log.Info("SKIP_KATA_INSTALL_RBAC is set, skipping RBAC creation - using default ServiceAccount")
 	}
 
 	// TODO: Logic that checks failed installation
