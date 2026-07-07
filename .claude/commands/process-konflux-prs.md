@@ -28,7 +28,7 @@ Process the pull requests from Mintmaker and Konflux
   Do NOT touch Nudge PRs.
 - **`--nudge`**: Process Nudge PRs ONLY, with the Mintmaker safeguard (see
   [Step 2 - Nudge PR processing](#step-2---nudge-pr-processing)). Do NOT touch Mintmaker PRs.
-  Do NOT merge.
+  Merges non-osc nudge PRs when checks pass (osc nudge PRs auto-merge on their own).
 - **`--dry-run`**: Show what would be done. Do NOT label or merge. Can be combined with
   `--mintmaker` or `--nudge` to preview that specific step.
 
@@ -360,6 +360,20 @@ will trigger a rebuild of the same source component. If a Mintmaker PR would
 rebuild component C, and a Nudge PR carries an updated reference for C, merging
 the Nudge PR now would be immediately obsoleted by the Mintmaker rebuild.
 
+### Why the hold-back strategy is needed
+
+When multiple Nudge PRs all target the same downstream component (e.g.
+`osc-operator-bundle`), merging them triggers one on-push pipeline per merge.
+These pipelines run concurrently on their respective HEADs. Because each pipeline
+builds and publishes independently, the one that **finishes last** wins — regardless
+of merge order. If the last-finishing pipeline was triggered by the first merge, it
+produces an image that is missing all the updates from later merges.
+
+The fix: hold one PR back and only merge it once all other on-push pipelines for
+that component group have completed. Its merge then triggers a single, uncontested
+final pipeline that builds from HEAD containing all previous merges, producing a
+complete image with all component updates.
+
 ### Step 2 algorithm
 
 **Phase A — Build the "Mintmaker-blocked" component set**
@@ -368,26 +382,65 @@ the Nudge PR now would be immediately obsoleted by the Mintmaker rebuild.
 2. Union the `components` arrays from all entries into a single set:
    `mintmaker_rebuilding_components`.
 
-**Phase B — Filter and process Nudge PRs**
+**Phase B — Filter, group, and label Nudge PRs**
 
 1. Call `snapshot-prs.sh --nudge` to get all open Nudge PRs with their status.
+   Record the result as the **initial snapshot** (fixed for this run).
 2. For each Nudge PR, identify the **source component** — the component whose
    reference was updated — by matching known component names against the PR title.
-   (Nudge PR titles contain the source component name, e.g.
-   "chore(deps): update osc-monitor …".)
-   Use `get-component-info.sh` (no args) to get the full list of component names
-   to match against.
-3. If the source component is in `mintmaker_rebuilding_components`: **skip** this
-   Nudge PR and note it as "blocked by open Mintmaker PR". Do NOT label it.
-4. If the source component is NOT in `mintmaker_rebuilding_components`: apply the
-   labelling rules above to this Nudge PR.
+   Use `get-component-info.sh` (no args) to get the full list of component names.
+3. Remove PRs whose source component is in `mintmaker_rebuilding_components` from
+   the working set. Note them as "blocked by open Mintmaker PR". Do NOT label them.
+4. **Group** the remaining PRs by their `components` array (exact match on the set
+   of components they will rebuild — same components = same group).
+5. For each group:
 
-**Phase C — Report**
+   **Group has multiple open PRs:**
+   - Identify PRs with `has_ok_to_test: false` (not yet labeled).
+   - If **2 or more** PRs have `has_ok_to_test: false`: apply `ok-to-test` to all
+     except the **lowest-numbered** one. The lowest-numbered becomes the **held-back
+     PR** for this group. Do NOT label it this run.
+   - If **exactly one** PR has `has_ok_to_test: false` and the rest have
+     `has_ok_to_test: true` (still open, not yet merged): the held-back PR is waiting
+     for its peers to merge first. Do NOT label it — leave it for the next run.
+   - If **all** PRs have `has_ok_to_test: true`: all are in flight; nothing to label.
 
-Show two groups:
-- Nudge PRs processed (with actions taken or their current label/check status).
-- Nudge PRs skipped (with the reason: which open Mintmaker PR blocks them and
-  which component it will rebuild).
+   **Group has exactly one open PR** (all peers have merged — they are no longer in
+   the snapshot):
+   - This is either a standalone PR or the held-back PR whose peers have all merged.
+   - Call `check-merge-safety.sh --components "<components>"`.
+   - If `safe_to_merge: true`: apply standard labelling rules — `ok-to-test` if not
+     set; `lgtm` if `ok-to-test` is already set and checks pass (for non-osc repos;
+     see Phase C).
+   - If `safe_to_merge: false`: **do not label**. Report as "waiting for on-push
+     pipelines to complete" and include the `blocking` list. Revisit next run.
+
+**Phase C — Merge non-osc Nudge PRs**
+
+Nudge PRs in the osc repository auto-merge once checks pass. Nudge PRs in other
+repositories (compute-artifacts, podvm-scripts) do not auto-merge and require
+explicit merging.
+
+For each non-osc Nudge PR where the **initial snapshot** shows `has_ok_to_test: true`
+AND `build_checks_passed: true` AND `pending_checks: 0` AND the PR is **not currently
+designated as held-back** (i.e., it is not the sole unlabeled PR in a multi-PR group):
+
+- Call `check-merge-safety.sh --components "<components>"`. If `safe_to_merge` is
+  `false`, skip and report as "blocked by running on-push pipeline".
+- Apply `lgtm` label.
+- Merge using `merge-pr.sh`. Within a single run, do NOT merge two PRs that rebuild
+  the same component — the second must wait for the next run.
+
+**Phase D — Report**
+
+Report four groups:
+- **Labeled this run**: Nudge PRs that received `ok-to-test` or `lgtm`.
+- **Merged this run**: non-osc Nudge PRs successfully merged.
+- **Held back**: PRs designated as held-back (waiting for group peers to merge or
+  for pipelines to clear). For each, show which peers are still open or which
+  pipelines are blocking.
+- **Skipped**: PRs blocked by an open Mintmaker PR, by still-running on-push
+  pipelines, or with pending/failed checks. Include the reason for each.
 
 ## Merging
 
