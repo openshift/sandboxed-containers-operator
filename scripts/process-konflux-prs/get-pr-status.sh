@@ -58,7 +58,7 @@ fi
 # Get PR details
 pr_data=$(gh pr view "$PR_NUMBER" \
     --repo "$REPO_URL" \
-    --json number,title,state,labels,statusCheckRollup)
+    --json number,title,state,labels,statusCheckRollup,baseRefName)
 
 # All checks, with null entries filtered out
 checks=$(echo "$pr_data" | jq '[(.statusCheckRollup // [])[] |
@@ -88,6 +88,7 @@ echo "$pr_data" | jq \
         number: .number,
         title: .title,
         state: .state,
+        base_branch: .baseRefName,
         labels: $labels,
         has_ok_to_test: ($labels | any(. == "ok-to-test")),
         has_lgtm: ($labels | any(. == "lgtm")),

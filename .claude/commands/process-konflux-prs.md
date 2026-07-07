@@ -28,7 +28,7 @@ Process the pull requests from Mintmaker and Konflux
   Do NOT touch Nudge PRs.
 - **`--nudge`**: Process Nudge PRs ONLY, with the Mintmaker safeguard (see
   [Step 2 - Nudge PR processing](#step-2---nudge-pr-processing)). Do NOT touch Mintmaker PRs.
-  Merges non-osc nudge PRs when checks pass (osc nudge PRs auto-merge on their own).
+  Merges nudge PRs that do not auto-merge (non-osc repos, and osc PRs not targeting `devel`).
 - **`--dry-run`**: Show what would be done. Do NOT label or merge. Can be combined with
   `--mintmaker` or `--nudge` to preview that specific step.
 
@@ -132,6 +132,7 @@ Output: JSON array of status objects, one per PR:
 ```json
 [{
   "repo": "osc", "pr": 1234, "title": "…",
+  "base_branch": "devel",
   "components": ["osc-operator"],
   "build_checks_passed": true,
   "build_checks_failed": [],
@@ -279,10 +280,12 @@ because `ok-to-test` triggers new CI pipelines whose results are not yet known.
 Labelling can be done in parallel for all PRs from all repositories, as there
 is no conflict between "on-pull-request" pipelines running concurrently.
 
-Note that Nudge PRs in the osc repository are configured to auto-merge when
-tests pass. Setting `ok-to-test` on those PRs is therefore the only required
-label. Track the merge pipeline when the PR auto-merges to confirm success
-(see [merging](#merging)).
+Note that Nudge PRs in the osc repository targeting the **`devel` branch** are
+configured to auto-merge when tests pass. Setting `ok-to-test` on those PRs is
+therefore the only required label. Nudge PRs in osc targeting any other branch
+(e.g. `osc-release-v1.12`) do NOT auto-merge and must be treated the same as
+PRs from non-osc repositories (explicit lgtm + merge). Track the merge pipeline
+when a PR auto-merges to confirm success (see [merging](#merging)).
 
 ## Step 1 - Mintmaker PR processing
 
@@ -415,13 +418,14 @@ complete image with all component updates.
    - If `safe_to_merge: false`: **do not label**. Report as "waiting for on-push
      pipelines to complete" and include the `blocking` list. Revisit next run.
 
-**Phase C — Merge non-osc Nudge PRs**
+**Phase C — Merge PRs that do not auto-merge**
 
-Nudge PRs in the osc repository auto-merge once checks pass. Nudge PRs in other
-repositories (compute-artifacts, podvm-scripts) do not auto-merge and require
-explicit merging.
+Only osc Nudge PRs with `base_branch == "devel"` auto-merge when tests pass.
+All other PRs require explicit merging:
+- PRs from non-osc repositories (compute-artifacts, podvm-scripts).
+- osc PRs with `base_branch != "devel"` (e.g. targeting `osc-release-v1.12`).
 
-For each non-osc Nudge PR where the **initial snapshot** shows `has_ok_to_test: true`
+For each such PR where the **initial snapshot** shows `has_ok_to_test: true`
 AND `build_checks_passed: true` AND `pending_checks: 0` AND the PR is **not currently
 designated as held-back** (i.e., it is not the sole unlabeled PR in a multi-PR group):
 

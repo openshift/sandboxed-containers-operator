@@ -46,6 +46,7 @@ while IFS= read -r pr; do
     status=$("$SCRIPT_DIR/get-pr-status.sh" --repo "$repo" --pr "$number" 2>/dev/null)
     entry=$(echo "$status" | jq --arg repo "$repo" \
         '{repo: $repo, pr: .number, title: .title,
+          base_branch: (.base_branch // ""),
           components: (.components // []),
           build_checks_passed,
           build_checks_failed: (.build_checks_failed // []),
