@@ -63,7 +63,7 @@ pipelineruns=$(tkn pipelinerun list \
 
 # Filter for matching pipeline runs
 matching_runs=$(echo "$pipelineruns" | jq --arg pattern "$PATTERN" '
-    [.items[] |
+    [(.items // [])[] |
      select(.metadata.generateName != null) |
      select(.metadata.generateName | type == "string") |
      select(.metadata.generateName | startswith($pattern)) |
