@@ -56,8 +56,10 @@ is_mintmaker_pr() {
     [[ "$title" == "Update Konflux references"* ]] && return 0
     [[ "$title" == "chore(deps): update registry.access.redhat.com/ubi9"* ]] && return 0
     [[ "$title" == "chore(deps): update registry.access.redhat.com/ubi10"* ]] && return 0
+    [[ "$title" == "chore(deps): update registry.redhat.io/rhel9/rhel-bootc"* ]] && return 0
     [[ "$title" == "Update registry.access.redhat.com/ubi9"* ]] && return 0
     [[ "$title" == "Update registry.access.redhat.com/ubi10"* ]] && return 0
+    [[ "$title" == "Update registry.redhat.io/rhel9/rhel-bootc"* ]] && return 0
     return 1
 }
 
