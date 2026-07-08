@@ -511,6 +511,8 @@ Implemented in `list-prs.sh --mintmaker`:
   - starts with `"chore(deps): update registry.access.redhat.com/ubi9/"` (any ubi9 image)
   - starts with `"chore(deps): update registry.access.redhat.com/ubi10/"` (any ubi10 image)
   - starts with `"Update registry.access.redhat.com/ubi9/"` or `"Update registry.access.redhat.com/ubi10/"`
+  - starts with `"chore(deps): update registry.redhat.io/rhel9/rhel-bootc"` (rhel-bootc image)
+  - starts with `"Update registry.redhat.io/rhel9/rhel-bootc"`
 
 # Nudge PRs filter
 
