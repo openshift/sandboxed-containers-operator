@@ -39,7 +39,13 @@ fi
 
 blocking='[]'
 for component in "${COMPONENTS[@]}"; do
-    result=$("$SCRIPT_DIR/check-pipeline-status.sh" --component "$component" $NAMESPACE_ARG)
+    if ! result=$("$SCRIPT_DIR/check-pipeline-status.sh" --component "$component" $NAMESPACE_ARG 2>&1); then
+        echo "Warning: failed to check pipeline status for $component: $result" >&2
+        entry=$(jq -n --arg component "$component" \
+            '{component: $component, pipeline: "unknown", reason: "status check failed"}')
+        blocking=$(echo "$blocking" | jq --argjson e "$entry" '. + [$e]')
+        continue
+    fi
     latest=$(echo "$result" | jq '.latest')
     completion=$(echo "$result" | jq -r '.latest.completionTime // "null"')
 

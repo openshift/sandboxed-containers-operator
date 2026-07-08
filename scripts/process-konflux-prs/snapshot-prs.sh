@@ -43,7 +43,10 @@ snapshot='[]'
 while IFS= read -r pr; do
     repo=$(echo "$pr" | jq -r '.repo')
     number=$(echo "$pr" | jq -r '.number')
-    status=$("$SCRIPT_DIR/get-pr-status.sh" --repo "$repo" --pr "$number" 2>/dev/null)
+    if ! status=$("$SCRIPT_DIR/get-pr-status.sh" --repo "$repo" --pr "$number" 2>&1); then
+        echo "Warning: failed to get status for $repo #$number: $status" >&2
+        continue
+    fi
     entry=$(echo "$status" | jq --arg repo "$repo" \
         '{repo: $repo, pr: .number, title: .title,
           base_branch: (.base_branch // ""),
