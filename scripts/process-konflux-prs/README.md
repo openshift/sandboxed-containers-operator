@@ -49,7 +49,7 @@ Get the status of a specific PR including checks, labels, and merge state.
 - `checks`: Array of status checks with name, status, conclusion, details_url
 - `has_ok_to_test`: Boolean indicating if "ok-to-test" label is present
 - `has_lgtm`: Boolean indicating if "lgtm" label is present
-- `all_checks_passed`: Boolean indicating if all checks have passed
+- `build_checks_passed`: Boolean indicating if all build checks have passed
 - `pending_checks`: Count of checks still in progress
 
 **Example:**
@@ -71,7 +71,7 @@ Identify which components will be rebuilt by a PR based on its Konflux checks.
 
 **Output:** JSON array of component names that will be rebuilt.
 
-**Note:** This script filters out enterprise-contract validation checks, which are not component builds. It only returns actual component builds that match the pattern "{component-name}-on-pull-request".
+**Note:** This script filters out enterprise-contract validation checks, which are not component builds. It only returns actual component builds that match the pattern "Red Hat Konflux / {component-name}-on-pull-request".
 
 **Example:**
 ```bash

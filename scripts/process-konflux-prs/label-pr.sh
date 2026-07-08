@@ -23,6 +23,7 @@ declare -A REPOS=(
 while [[ $# -gt 0 ]]; do
     case $1 in
         --repo)
+            [[ $# -ge 2 ]] || { echo "Usage: $0 --repo REPO_NAME --pr PR_NUMBER --label LABEL_NAME" >&2; exit 1; }
             if [[ -n "${REPOS[$2]:-}" ]]; then
                 REPO_URL="${REPOS[$2]}"
             else
@@ -32,10 +33,12 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --pr)
+            [[ $# -ge 2 ]] || { echo "Usage: $0 --repo REPO_NAME --pr PR_NUMBER --label LABEL_NAME" >&2; exit 1; }
             PR_NUMBER="$2"
             shift 2
             ;;
         --label)
+            [[ $# -ge 2 ]] || { echo "Usage: $0 --repo REPO_NAME --pr PR_NUMBER --label LABEL_NAME" >&2; exit 1; }
             LABEL="$2"
             shift 2
             ;;

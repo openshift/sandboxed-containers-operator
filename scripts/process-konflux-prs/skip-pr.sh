@@ -53,6 +53,13 @@ fi
 
 REPO_NAME=$(basename "$REPO_URL")
 
+# Check whether the PR already has the mintmaker-skip label to avoid re-posting
+existing_labels=$(gh pr view "$PR_NUMBER" --repo "$REPO_URL" --json labels --jq '[.labels[].name]')
+if echo "$existing_labels" | jq -e 'any(. == "mintmaker-skip")' >/dev/null 2>&1; then
+    echo "{\"success\": true, \"repo\": \"$REPO_NAME\", \"pr\": $PR_NUMBER, \"message\": \"already skipped\"}" | jq '.'
+    exit 0
+fi
+
 # Ensure the label exists in the repository (idempotent)
 gh label create mintmaker-skip \
     --repo "$REPO_URL" \

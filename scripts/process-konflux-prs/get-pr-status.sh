@@ -31,6 +31,7 @@ declare -A REPOS=(
 while [[ $# -gt 0 ]]; do
     case $1 in
         --repo)
+            [[ $# -ge 2 ]] || { echo "Usage: $0 --repo REPO_NAME --pr PR_NUMBER" >&2; exit 1; }
             if [[ -n "${REPOS[$2]:-}" ]]; then
                 REPO_URL="${REPOS[$2]}"
             else
@@ -40,6 +41,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --pr)
+            [[ $# -ge 2 ]] || { echo "Usage: $0 --repo REPO_NAME --pr PR_NUMBER" >&2; exit 1; }
             PR_NUMBER="$2"
             shift 2
             ;;
@@ -77,6 +79,7 @@ labels=$(echo "$pr_data" | jq '[(.labels // [])[].name]')
 # Enterprise-contract checks (containing "enterprise-contract") are excluded —
 # they return NEUTRAL when not required, which is not a failure.
 build_checks=$(echo "$checks" | jq '[.[] |
+    select(.name | startswith("Red Hat Konflux / ")) |
     select(.name | test("-on-pull-request")) |
     select(.name | contains("enterprise-contract") | not)]')
 

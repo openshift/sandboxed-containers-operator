@@ -2,17 +2,18 @@
 name: process-konflux-prs
 description: Look at pull requests created by the Konflux bot and manage them, optimizing their merge to avoid repetitive builds.
 allowed-tools:
-  - Bash(scripts/process-konflux-prs/snapshot-prs.sh*)
-  - Bash(scripts/process-konflux-prs/list-prs.sh*)
-  - Bash(scripts/process-konflux-prs/get-pr-status.sh*)
-  - Bash(scripts/process-konflux-prs/get-pr-components.sh*)
-  - Bash(scripts/process-konflux-prs/label-pr.sh*)
-  - Bash(scripts/process-konflux-prs/merge-pr.sh*)
-  - Bash(scripts/process-konflux-prs/skip-pr.sh*)
-  - Bash(scripts/process-konflux-prs/check-pipeline-status.sh*)
-  - Bash(scripts/process-konflux-prs/check-merge-safety.sh*)
-  - Bash(scripts/process-konflux-prs/get-nudge-prs.sh*)
-  - Bash(scripts/process-konflux-prs/get-component-info.sh*)
+  - Bash(scripts/process-konflux-prs/snapshot-prs.sh *)
+  - Bash(scripts/process-konflux-prs/list-prs.sh *)
+  - Bash(scripts/process-konflux-prs/get-pr-status.sh *)
+  - Bash(scripts/process-konflux-prs/get-pr-components.sh *)
+  - Bash(scripts/process-konflux-prs/label-pr.sh *)
+  - Bash(scripts/process-konflux-prs/merge-pr.sh *)
+  - Bash(scripts/process-konflux-prs/skip-pr.sh *)
+  - Bash(scripts/process-konflux-prs/check-pipeline-status.sh *)
+  - Bash(scripts/process-konflux-prs/check-merge-safety.sh *)
+  - Bash(scripts/process-konflux-prs/get-nudge-prs.sh *)
+  - Bash(scripts/process-konflux-prs/get-component-info.sh)
+  - Bash(scripts/process-konflux-prs/get-component-info.sh *)
 ---
 
 Process the pull requests from Mintmaker and Konflux
@@ -584,7 +585,7 @@ When the PR is merged, a similar pipelinerun will start, with pattern:
 
 # Status output format
 
-When run with the "--status" parameter, the result should be displayed on the
+When run with no parameter (list-only mode), the result should be displayed on the
 terminal (if available) and saved under the local folder as a markdown file with
 a timestamp in the filename for easy filtering (like: "YYYYMMDD-Konflux-PR-status.md").
 
