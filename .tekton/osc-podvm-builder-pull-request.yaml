@@ -48,6 +48,10 @@ spec:
         {"type": "pip", "path": "./config/peerpods/podvm/", "requirements_files": ["azure-cli-pip.txt"]},
         {"type": "rpm", "path": "./config/peerpods/podvm/"}
       ]
+  - name: additional-tags
+    value:
+    - pr-{{pull_request_number}}
+    - pullreq-{{pull_request_number}}-{{revision}}
   pipelineRef:
     name: build-pipeline
   taskRunTemplate:

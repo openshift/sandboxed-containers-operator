@@ -94,6 +94,10 @@ spec:
     type: string
     default: .
     description: Target directories to scan with SAST tools. Multiple values should be separated with commas.
+  - name: additional-tags
+    type: array
+    default: []
+    description: Additional tags to apply to the built image (e.g. pr-<number> for PR builds)
   results:
   - description: ''
     name: IMAGE_URL
@@ -521,6 +525,9 @@ spec:
       value: $(tasks.build-image-index.results.IMAGE_URL)
     - name: IMAGE_DIGEST
       value: $(tasks.build-image-index.results.IMAGE_DIGEST)
+    - name: ADDITIONAL_TAGS
+      value:
+      - $(params.additional-tags[*])
     runAfter:
     - build-image-index
     taskRef:

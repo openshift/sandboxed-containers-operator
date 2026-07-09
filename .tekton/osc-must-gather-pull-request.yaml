@@ -41,6 +41,10 @@ spec:
     value: must-gather
   - name: prefetch-input
     value: '{"type": "rpm", "path": "./must-gather/"}'
+  - name: additional-tags
+    value:
+    - pr-{{pull_request_number}}
+    - pullreq-{{pull_request_number}}-{{revision}}
   pipelineRef:
     name: build-pipeline
   taskRunTemplate:
