@@ -417,7 +417,7 @@ spec:
                 - name: RELATED_IMAGE_TDX_QGS
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:9bdd9b640cd608392a00db12f8047856b997714d9d96c9a8b24f45c7b82ac57c
                 - name: RELATED_IMAGE_STORAGE_HELPER
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:e6b1f95b8a1e9f6379a44b1c230950659c958f312d865b3e543b64a6da110eec
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:c88c92b71136f5a27e01ba0d588fb61feb33b044b88ba5e86aa385c10fe95e38
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -591,7 +591,7 @@ spec:
     name: pccs
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs@sha256:9bdd9b640cd608392a00db12f8047856b997714d9d96c9a8b24f45c7b82ac57c
     name: tdx-qgs
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:e6b1f95b8a1e9f6379a44b1c230950659c958f312d865b3e543b64a6da110eec
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:c88c92b71136f5a27e01ba0d588fb61feb33b044b88ba5e86aa385c10fe95e38
     name: storage-helper
   replaces: sandboxed-containers-operator.v1.12.0
   version: 1.12.1
