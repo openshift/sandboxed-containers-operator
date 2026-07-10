@@ -35,7 +35,8 @@ const (
 	rhelCoreOsExtensionsImageName = "rhel-coreos-extensions"
 	cliImageName                  = "cli"
 
-	daemonSetImage = "quay.io/openshift_sandboxed_containers/osc-daemonset:1.13"
+	daemonSetImage                = "quay.io/openshift_sandboxed_containers/osc-daemonset:g1.13.1-apply-live"
+	relatedImageKataDaemonSetName = "RELATED_IMAGE_KATA_DAEMONSET"
 )
 
 // KataInstallationDaemonSetState defines the possible states of the Kata installation DaemonSet.
@@ -453,14 +454,21 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 		return nil, err
 	}
 
-	// Check DaemonSet config for custom image override
+	// Resolve DaemonSet image with 3-tier precedence:
+	// 1. ConfigMap override (osc-daemonset-config)
+	// 2. RELATED_IMAGE_KATA_DAEMONSET environment variable
+	// 3. Default hardcoded image
 	dsImage := daemonSetImage
+	if relatedImage := os.Getenv(relatedImageKataDaemonSetName); relatedImage != "" {
+		dsImage = relatedImage
+		r.Log.Info("Using DaemonSet image from RELATED_IMAGE_KATA_DAEMONSET env var", "image", dsImage)
+	}
 	dsConfig, err := r.GetDaemonSetConfig()
 	if err != nil {
-		r.Log.Error(err, "couldn't get DaemonSet config, using default image")
+		r.Log.Error(err, "couldn't get DaemonSet config, using current image")
 	} else if dsConfig.Image != "" {
 		dsImage = dsConfig.Image
-		r.Log.Info("Using custom DaemonSet image from config", "image", dsImage)
+		r.Log.Info("Using custom DaemonSet image from ConfigMap override", "image", dsImage)
 	}
 
 	// Because we use chroot and modify the node we need root priviliges
