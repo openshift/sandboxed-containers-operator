@@ -19,7 +19,7 @@ const (
 var DefaultFeatureGates = FeatureGateStatus{
 	Confidential:           false,
 	LayeredImageDeployment: false,
-	DeploymentModeOption:   MachineConfigOption,
+	DeploymentModeOption:   DaemonSetFallbackOption,
 }
 
 type FeatureGateStatus struct {
