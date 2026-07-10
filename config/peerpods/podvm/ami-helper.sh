@@ -207,11 +207,34 @@ delete_vmimport_role() {
 
 create_bucket() {
 	echo "Create s3 Bucket named ${BUCKET_NAME} at ${REGION}"
-	if [[ ${REGION} == us-east-1 ]]; then
-		aws s3api create-bucket  --bucket ${BUCKET_NAME} --region ${REGION}
-	else
-		aws s3api create-bucket  --bucket ${BUCKET_NAME} --region ${REGION} --create-bucket-configuration LocationConstraint=${REGION}
+
+	# Check if bucket already exists
+	if aws s3api head-bucket --bucket ${BUCKET_NAME} --region ${REGION} 2>/dev/null; then
+		echo "Bucket ${BUCKET_NAME} already exists and is owned by this account, adopting it"
+		return 0
 	fi
+
+	# Bucket doesn't exist, create it
+	if [[ ${REGION} == us-east-1 ]]; then
+		if ! aws s3api create-bucket --bucket ${BUCKET_NAME} --region ${REGION} 2>&1 | tee /tmp/bucket_create.log; then
+			# Check if error is "BucketAlreadyOwnedByYou"
+			if grep -q "BucketAlreadyOwnedByYou" /tmp/bucket_create.log; then
+				echo "Bucket ${BUCKET_NAME} already exists and is owned by this account"
+				return 0
+			fi
+			return 1
+		fi
+	else
+		if ! aws s3api create-bucket --bucket ${BUCKET_NAME} --region ${REGION} --create-bucket-configuration LocationConstraint=${REGION} 2>&1 | tee /tmp/bucket_create.log; then
+			# Check if error is "BucketAlreadyOwnedByYou"
+			if grep -q "BucketAlreadyOwnedByYou" /tmp/bucket_create.log; then
+				echo "Bucket ${BUCKET_NAME} already exists and is owned by this account"
+				return 0
+			fi
+			return 1
+		fi
+	fi
+	echo "Successfully created bucket ${BUCKET_NAME}"
 }
 
 set_service_role() {
