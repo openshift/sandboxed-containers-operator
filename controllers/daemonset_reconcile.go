@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"time"
 
@@ -33,7 +34,7 @@ const (
 	rhelCoreOsExtensionsImageName = "rhel-coreos-extensions"
 	cliImageName                  = "cli"
 
-	daemonSetImage = "quay.io/openshift_sandboxed_containers/osc-daemonset:1.13"
+	relatedImageKataDaemonSetName = "RELATED_IMAGE_KATA_DAEMONSET"
 )
 
 // KataInstallationDaemonSetState defines the possible states of the Kata installation DaemonSet.
@@ -402,6 +403,11 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 		return nil, err
 	}
 
+	dsImage := os.Getenv(relatedImageKataDaemonSetName)
+	if dsImage == "" {
+		r.Log.Info("RELATED_IMAGE_KATA_DAEMONSET env var is unset or empty, kata install pods will not run")
+	}
+
 	// Because we use chroot and modify the node we need root priviliges
 	var (
 		runPrivileged       = true
@@ -484,7 +490,7 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 					Containers: []corev1.Container{
 						{
 							Name:            "kata-install",
-							Image:           daemonSetImage,
+							Image:           dsImage,
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
@@ -497,7 +503,7 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 						},
 						{
 							Name:            "set-log-level",
-							Image:           daemonSetImage,
+							Image:           dsImage,
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
