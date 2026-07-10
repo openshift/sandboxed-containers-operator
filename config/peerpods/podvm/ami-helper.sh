@@ -215,22 +215,25 @@ create_bucket() {
 	fi
 
 	# Bucket doesn't exist, create it
+	local output
 	if [[ ${REGION} == us-east-1 ]]; then
-		if ! aws s3api create-bucket --bucket ${BUCKET_NAME} --region ${REGION} 2>&1 | tee /tmp/bucket_create.log; then
+		if ! output=$(aws s3api create-bucket --bucket "${BUCKET_NAME}" --region "${REGION}" 2>&1); then
 			# Check if error is "BucketAlreadyOwnedByYou"
-			if grep -q "BucketAlreadyOwnedByYou" /tmp/bucket_create.log; then
+			if echo "$output" | grep -q "BucketAlreadyOwnedByYou"; then
 				echo "Bucket ${BUCKET_NAME} already exists and is owned by this account"
 				return 0
 			fi
+			echo "Failed to create bucket: $output" >&2
 			return 1
 		fi
 	else
-		if ! aws s3api create-bucket --bucket ${BUCKET_NAME} --region ${REGION} --create-bucket-configuration LocationConstraint=${REGION} 2>&1 | tee /tmp/bucket_create.log; then
+		if ! output=$(aws s3api create-bucket --bucket "${BUCKET_NAME}" --region "${REGION}" --create-bucket-configuration LocationConstraint="${REGION}" 2>&1); then
 			# Check if error is "BucketAlreadyOwnedByYou"
-			if grep -q "BucketAlreadyOwnedByYou" /tmp/bucket_create.log; then
+			if echo "$output" | grep -q "BucketAlreadyOwnedByYou"; then
 				echo "Bucket ${BUCKET_NAME} already exists and is owned by this account"
 				return 0
 			fi
+			echo "Failed to create bucket: $output" >&2
 			return 1
 		fi
 	fi
