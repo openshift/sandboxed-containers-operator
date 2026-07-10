@@ -34,11 +34,17 @@ do
     BUILD_IMAGE=$(echo "$RELEASE_IMAGE" | sed "s|$RELEASE_REGISTRY|$BUILD_REGISTRY|")
     BUILD_IMAGE=$(echo "$BUILD_IMAGE" | sed "s|@|${BRANCH_BUILD_SUFFIX}@|")
 
+    # Render from a temporary copy of the template, so the original is never
+    # left dirty if a later step (e.g. `opm`) fails and the script exits.
+    RENDER_TEMPLATE="$PWD/$TEMPLATE_NAME.render.yaml"
+    trap 'rm -f "$RENDER_TEMPLATE"' EXIT
+    cp "$TEMPLATE_NAME" "$RENDER_TEMPLATE"
+
     # Switch to the build registry, so `opm` can pull freely.
-    sed -i "s|$RELEASE_IMAGE|$BUILD_IMAGE|" "$TEMPLATE_NAME"
+    sed -i "s|$RELEASE_IMAGE|$BUILD_IMAGE|" "$RENDER_TEMPLATE"
 
     # Add the icon data.
-    yq -i ".entries[0].icon.base64data = \"$(cat ../$ICON_BASE64)\"" "$TEMPLATE_NAME"
+    yq -i ".entries[0].icon.base64data = \"$(cat ../$ICON_BASE64)\"" "$RENDER_TEMPLATE"
 
     # enable migrate params for OCP 4.17 and onwards
     # skip the check for test-fbc, assuming it is always using the latest version
@@ -51,13 +57,12 @@ do
     fi
 
     # Render that template. It's what we're here for.
-    opm $MIGRATE_PARAM alpha render-template basic "$TEMPLATE_NAME" > catalog/${PACKAGE_NAME}/catalog.json
+    opm $MIGRATE_PARAM alpha render-template basic "$RENDER_TEMPLATE" > catalog/${PACKAGE_NAME}/catalog.json
 
-    # Switch back to the release registry.
-    sed -i "s|$BUILD_IMAGE|$RELEASE_IMAGE|" "$TEMPLATE_NAME"
+    # Switch back to the release registry in the rendered catalog.
     sed -i "s|$BUILD_IMAGE|$RELEASE_IMAGE|" catalog/${PACKAGE_NAME}/catalog.json
-    # Remove the icon base64 data.
-    yq -i ".entries[0].icon.base64data = \"\"" "$TEMPLATE_NAME"
+
+    rm -f "$RENDER_TEMPLATE"
 
     popd
     echo
