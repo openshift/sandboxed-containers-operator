@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/go-toolset:1.26.4-1783628461 as builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.26.5-1783679445 as builder
 
 # Required by the ubi based go-toolset image
 USER root
