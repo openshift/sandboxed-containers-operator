@@ -413,7 +413,7 @@ spec:
                 - name: RELATED_IMAGE_MUST_GATHER
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:6463e9ffad314cff44652b2be8d93aba8bd6cd14b2ae1b312ea2c86137a6da20
                 - name: RELATED_IMAGE_STORAGE_HELPER
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:baef367ca8f7ea4105a9af30bd6a0432c73a60c351a7a684873ff507338dd5dc
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:aaa17f717c5da54eaadc2f4c5a9ba98ee4e7879b963675601d2f78abcd733489
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -583,7 +583,7 @@ spec:
     name: podvm-oci
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:6463e9ffad314cff44652b2be8d93aba8bd6cd14b2ae1b312ea2c86137a6da20
     name: must-gather
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:baef367ca8f7ea4105a9af30bd6a0432c73a60c351a7a684873ff507338dd5dc
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:aaa17f717c5da54eaadc2f4c5a9ba98ee4e7879b963675601d2f78abcd733489
     name: storage-helper
   replaces: sandboxed-containers-operator.v1.12.1
   version: 1.13.0
