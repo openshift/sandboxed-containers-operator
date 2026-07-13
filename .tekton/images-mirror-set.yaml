@@ -48,6 +48,10 @@ spec:
         - quay.io/redhat-user-workloads/ose-osc-tenant/osc-tdx-qgs
         - quay.io/redhat-user-workloads/ose-osc-tenant/osc-tdx-qgs-v1-12
       source: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs
+    - mirrors:
+        - quay.io/redhat-user-workloads/ose-osc-tenant/osc-storage-helper
+        - quay.io/redhat-user-workloads/ose-osc-tenant/osc-storage-helper-v1-12
+      source: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper
 ---
 apiVersion: config.openshift.io/v1
 kind: ImageDigestMirrorSet
@@ -99,3 +103,7 @@ spec:
         - quay.io/redhat-user-workloads/ose-osc-tenant/osc-tdx-qgs
         - quay.io/redhat-user-workloads/ose-osc-tenant/osc-tdx-qgs-v1-12
       source: registry.redhat.io/openshift-sandboxed-containers/osc-tdx-qgs
+    - mirrors:
+        - quay.io/redhat-user-workloads/ose-osc-tenant/osc-storage-helper
+        - quay.io/redhat-user-workloads/ose-osc-tenant/osc-storage-helper-v1-12
+      source: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper
