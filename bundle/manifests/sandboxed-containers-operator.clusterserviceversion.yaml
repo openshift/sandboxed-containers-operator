@@ -195,8 +195,12 @@ spec:
           - serviceaccounts
           verbs:
           - create
+          - delete
           - get
+          - list
+          - patch
           - update
+          - watch
         - apiGroups:
           - rbac.authorization.k8s.io
           resources:
@@ -204,8 +208,12 @@ spec:
           - clusterrolebindings
           verbs:
           - create
+          - delete
           - get
+          - list
+          - patch
           - update
+          - watch
         - apiGroups:
           - ""
           - machineconfiguration.openshift.io
