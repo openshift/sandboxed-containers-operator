@@ -190,6 +190,12 @@ install_kata() {
 			done
 		done
 
+		# The posttrans scriptlet installs SELinux modules (e.g. osc_monitor)
+		# into the module store and compiles the policy binary on disk, but
+		# --apply-live does not reload the kernel's in-memory SELinux policy.
+		# Without this, new SELinux types are invisible until the next reboot.
+		chroot /host /sbin/load_policy
+
 		# Clean up temp dir
 		rm -rf /host/tmp/extensions/
 
