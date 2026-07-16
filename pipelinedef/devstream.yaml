@@ -1,11 +1,11 @@
 apiVersion: projctl.konflux.dev/v1beta1
 kind: ProjectDevelopmentStream
 metadata:
-  name: openshift-sandboxed-containers-1-12
+  name: openshift-sandboxed-containers-1-13
 spec:
   project: sandboxed-containers-project
   template:
     name: sandboxed-containers-template
     values:
     - name: version
-      value: "v1.12"
+      value: "v1.13"
