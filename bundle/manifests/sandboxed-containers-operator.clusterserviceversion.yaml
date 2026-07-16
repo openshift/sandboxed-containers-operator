@@ -167,6 +167,7 @@ spec:
           - ""
           resources:
           - secrets
+          - serviceaccounts
           verbs:
           - create
           - delete
@@ -188,23 +189,6 @@ spec:
           verbs:
           - get
           - patch
-          - update
-        - apiGroups:
-          - ""
-          resources:
-          - serviceaccounts
-          verbs:
-          - create
-          - get
-          - update
-        - apiGroups:
-          - rbac.authorization.k8s.io
-          resources:
-          - clusterroles
-          - clusterrolebindings
-          verbs:
-          - create
-          - get
           - update
         - apiGroups:
           - ""
@@ -346,6 +330,19 @@ spec:
           - node.k8s.io
           resources:
           - runtimeclasses
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - rbac.authorization.k8s.io
+          resources:
+          - clusterrolebindings
+          - clusterroles
           verbs:
           - create
           - delete
