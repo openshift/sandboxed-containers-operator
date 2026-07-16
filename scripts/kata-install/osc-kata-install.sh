@@ -208,6 +208,17 @@ install_kata() {
 
 		set_status_installed
 	fi
+
+	# Ensure the kata VM kernel/initrd exist. The kata-osbuilder.sh script
+	# builds a host-kernel-derived initrd and symlinks the kernel. When
+	# packages were already present (early-exit path above) or the RPM
+	# postinstall scriptlet failed silently inside the DaemonSet chroot,
+	# these files may be missing. Run the builder if needed.
+	if ! chroot /host test -e /var/cache/kata-containers/osbuilder-images/kata.kernel; then
+		echo "kata VM kernel/initrd missing, running kata-osbuilder.sh"
+		chroot /host mkdir -p /var/cache/kata-containers/osbuilder-images
+		chroot /host /usr/libexec/kata-containers/osbuilder/kata-osbuilder.sh
+	fi
 }
 
 uninstall_kata() {
