@@ -35,7 +35,7 @@ const (
 	rhelCoreOsExtensionsImageName = "rhel-coreos-extensions"
 	cliImageName                  = "cli"
 
-	daemonSetImage                = "quay.io/openshift_sandboxed_containers/osc-daemonset:1.13"
+	daemonSetImage                = "quay.io/eesposit/osc-daemonset:pr2410"
 	relatedImageKataDaemonSetName = "RELATED_IMAGE_KATA_DAEMONSET"
 )
 
