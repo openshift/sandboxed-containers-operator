@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+  {{- range .annotations }}
+    {{.}}
+  {{- end }}
+  name: {{.name}}
+spec:
+  replicas: {{or .replicas 3}}
+  selector:
+    matchLabels:
+      app: {{.name}}
+  template:
+    metadata:
+      labels:
+        app: {{.name}}
+    spec:
+      runtimeClassName: {{or .runtimeClassName "kata"}}
+{{- if .initContainers}}
+      initContainers:
+      {{- range .initContainers}}
+        - name: {{.name}}
+          image: {{.image}}
+          {{- if .restartPolicy}}
+          restartPolicy: {{.restartPolicy}}
+          {{- end}}
+          {{- if .command}}
+          command:
+          {{- range .command}}
+            - {{.}}
+          {{- end}}
+          {{- end}}
+          {{- if .volumeMounts}}
+          volumeMounts:
+          {{- range .volumeMounts}}
+            - name: {{.name}}
+              mountPath: {{.mountPath}}
+          {{- end}}
+          {{- end}}
+      {{- end}}
+{{- end}}
+      containers:
+        - name: {{.name}}
+          image: {{or .image "quay.io/openshift/origin-hello-openshift"}}
+          imagePullPolicy: IfNotPresent
+          {{- if .command}}
+          command:
+          {{- range .command}}
+            - {{.}}
+          {{- end}}
+          {{- end}}
+          ports:
+            - containerPort: {{or .port 8888}}
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          {{- if .volumeMounts}}
+          volumeMounts:
+          {{- range .volumeMounts}}
+            - name: {{.name}}
+              mountPath: {{.mountPath}}
+          {{- end}}
+          {{- end}}
+{{- if .volumes}}
+      volumes:
+      {{- range .volumes}}
+        - name: {{.name}}
+          {{.type}}:
+            {{- if .medium}}
+            medium: {{.medium}}
+            {{- end}}
+            {{- if .sizeLimit}}
+            sizeLimit: {{.sizeLimit}}
+            {{- end}}
+      {{- end}}
+{{- end}}
