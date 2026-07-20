@@ -376,22 +376,7 @@ uninstall_kata() {
 }
 
 get_cloud_provider() {
-	local provider
-
-	# Run kubectl: capture rc and stdout
-	if ! provider="$(kubectl get configmap/peer-pods-cm \
-		-n openshift-sandboxed-containers-operator \
-		-o jsonpath='{.data.CLOUD_PROVIDER}')"; then
-		return
-	fi
-
-	# Reject empty/whitespace-only results
-	if [[ -z "${provider//[[:space:]]/}" ]]; then
-		error "get_cloud_provider: CLOUD_PROVIDER not set in configmap/peer-pods-cm"
-		return
-	fi
-
-	echo "${provider}"
+	echo "${CLOUD_PROVIDER:-}"
 }
 
 # Reads worker version label and extracts the OpenShift version (prefix before '_').

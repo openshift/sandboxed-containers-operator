@@ -428,6 +428,11 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 	volumeMounts := r.volumeMountsForRegistries()
 	volumes := r.volumesForRegistries()
 
+	cloudProvider, err := getCloudProviderFromInfra(r.Client)
+	if err != nil {
+		r.Log.Info("Could not determine cloud provider, defaulting to empty", "err", err)
+	}
+
 	kataInstallEnv := []corev1.EnvVar{
 		{
 			Name: "NODE_NAME",
@@ -448,6 +453,10 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 		{
 			Name:  "NODE_LABEL",
 			Value: kataInstallationDaemonSetLabel,
+		},
+		{
+			Name:  "CLOUD_PROVIDER",
+			Value: cloudProvider,
 		},
 	}
 
