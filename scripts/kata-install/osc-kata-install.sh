@@ -97,7 +97,7 @@ install_kata() {
 		[[ \$n_kata_staged -gt 0 && \$n_kata_booted -eq 0 ]]
 	"; then
 		echo "Packages staged for installation but not live; applying staged deployment"
-		chroot /host rpm-ostree apply-live
+		chroot /host rpm-ostree apply-live --allow-replacement
 	fi
 
 	local uninstall_list=()
@@ -169,7 +169,7 @@ install_kata() {
 		done
 
 		# Build install command with --apply-live to avoid a node reboot
-		install_cmd="rpm-ostree install --apply-live"
+		install_cmd="rpm-ostree install --apply-live --allow-replacement"
 		for pkg in "${uninstall_list[@]}"; do
 			install_cmd+=" --uninstall=$pkg"
 		done
