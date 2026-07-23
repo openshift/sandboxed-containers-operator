@@ -95,7 +95,7 @@ install_kata() {
 		[[ \$n_staged -eq 0 ]] && exit 1
 		n_kata_staged=\$(echo \"\$s\" | jq '[.deployments[] | select(.staged) | ((.\"requested-packages\" // []) + (.\"requested-local-packages\" // []))[] | select(startswith(\"kata-containers\"))] | length')
 		n_kata_booted=\$(echo \"\$s\" | jq '[.deployments[] | select(.booted) | ((.\"requested-packages\" // []) + (.\"requested-local-packages\" // []))[] | select(startswith(\"kata-containers\"))] | length')
-		[[ \$n_kata_staged -gt 0 && \$n_kata_booted -eq 0 ]]
+		[[ \$n_kata_staged -gt 0 ]]
 	"; then
 		echo "Packages staged for installation but not live; applying staged deployment"
 		chroot /host rpm-ostree apply-live --allow-replacement
