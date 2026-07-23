@@ -40,8 +40,8 @@ spec:
             WARNINGS=0
 
             dnf -y install jq git make go
-            srcURL=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.url' <<< "${SNAPSHOT}")
-            srcREV=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.revision' <<< "${SNAPSHOT}")
+            srcURL=$(jq -r '.components[] | select(.name=="osc-operator-v1-13") | .source.git.url' <<< "${SNAPSHOT}")
+            srcREV=$(jq -r '.components[] | select(.name=="osc-operator-v1-13") | .source.git.revision' <<< "${SNAPSHOT}")
 
             git clone ${srcURL} sources
             cd sources
