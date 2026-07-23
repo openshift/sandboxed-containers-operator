@@ -62,9 +62,10 @@ extract_scriptlet() {
 
 install_kata() {
 	# Compares installed and available package versions. If any packages need
-	# installing or upgrading, runs rpm-ostree install --apply-live so changes
-	# take effect immediately without a node reboot. rpm-ostree cannot upgrade
-	# local layered packages in-place, so outdated versions are uninstalled first.
+	# installing or upgrading, stages them with rpm-ostree install then applies
+	# live with rpm-ostree apply-live --allow-replacement so changes take effect
+	# immediately without a node reboot. rpm-ostree cannot upgrade local layered
+	# packages in-place, so outdated versions are uninstalled first.
 
 	# If a prior uninstall_kata staged the removal of kata-containers, rpm -q
 	# below still sees kata as installed (the booted deployment still has it)
@@ -94,7 +95,7 @@ install_kata() {
 		[[ \$n_staged -eq 0 ]] && exit 1
 		n_kata_staged=\$(echo \"\$s\" | jq '[.deployments[] | select(.staged) | ((.\"requested-packages\" // []) + (.\"requested-local-packages\" // []))[] | select(startswith(\"kata-containers\"))] | length')
 		n_kata_booted=\$(echo \"\$s\" | jq '[.deployments[] | select(.booted) | ((.\"requested-packages\" // []) + (.\"requested-local-packages\" // []))[] | select(startswith(\"kata-containers\"))] | length')
-		[[ \$n_kata_staged -gt 0 && \$n_kata_booted -eq 0 ]]
+		[[ \$n_kata_staged -gt 0 ]]
 	"; then
 		echo "Packages staged for installation but not live; applying staged deployment"
 		chroot /host rpm-ostree apply-live --allow-replacement
@@ -168,8 +169,10 @@ install_kata() {
 			cp "$rpm_path" /host/tmp/extensions/
 		done
 
-		# Build install command with --apply-live to avoid a node reboot
-		install_cmd="rpm-ostree install --apply-live --allow-replacement"
+		# Stage packages first, then apply live in a separate step.
+		# rpm-ostree install does not accept --allow-replacement (only
+		# the apply-live subcommand does).
+		install_cmd="rpm-ostree install"
 		for pkg in "${uninstall_list[@]}"; do
 			install_cmd+=" --uninstall=$pkg"
 		done
@@ -181,8 +184,9 @@ install_kata() {
 		# Run install inside chroot
 		echo "Running in chroot: $install_cmd"
 		chroot /host bash -c "$install_cmd"
+		chroot /host rpm-ostree apply-live --allow-replacement
 
-		# rpm-ostree install --apply-live updates /usr immediately but
+		# rpm-ostree apply-live updates /usr immediately but
 		# /etc changes from RPMs only land after reboot
 		# (OSTree three-way merge).
 		# Extract the /etc files we find in the rpms.
