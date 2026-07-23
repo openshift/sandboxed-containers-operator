@@ -174,6 +174,21 @@ We also need to pay attention to the nudge PRs:
 Make sure the PRs are all created as expected, for the right component on the
 right branch.
 
+### Problem with nudges
+
+There is an issue that forced us to add the annotation:
+image-controller.appstudio.redhat.com/update-component-image: 'true'
+to every ImageRepository in the template, in order to get the nudges to work.
+This is not enough - recently we had to manually edit the IR again.
+See: https://redhat-internal.slack.com/archives/C04PZ7H0VA8/p1780405477799029
+
+The command to add the right annotation is:
+
+```bash
+$ oc annotate ImageRepository \[name\] image-controller.appstudio.redhat.com/update-component-image=true
+imagerepository.appstudio.redhat.com/\[name\] annotated
+```
+
 ## ReleasePlan / ReleasePlanAdmission
 
 All of the previous steps allows to build and test from the new branch.
