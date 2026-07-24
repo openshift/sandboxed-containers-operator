@@ -34,7 +34,7 @@ const (
 	rhelCoreOsExtensionsImageName = "rhel-coreos-extensions"
 	cliImageName                  = "cli"
 
-	relatedImageKataDaemonSetName = "RELATED_IMAGE_KATA_DAEMONSET"
+	relatedImageKataDaemonSetName = "TP_KATA_DAEMONSET"
 )
 
 // KataInstallationDaemonSetState defines the possible states of the Kata installation DaemonSet.
@@ -405,7 +405,7 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 
 	dsImage := os.Getenv(relatedImageKataDaemonSetName)
 	if dsImage == "" {
-		r.Log.Info("RELATED_IMAGE_KATA_DAEMONSET env var is unset or empty, kata install pods will not run")
+		r.Log.Info("TP_KATA_DAEMONSET env var is unset or empty, kata install pods will not run")
 	}
 
 	// Because we use chroot and modify the node we need root priviliges
