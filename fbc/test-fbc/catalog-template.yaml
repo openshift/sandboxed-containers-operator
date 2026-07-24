@@ -7,12 +7,12 @@ entries:
     name: sandboxed-containers-operator
     schema: olm.package
   - entries:
-      - name: sandboxed-containers-operator.v1.13.0
-        replaces: sandboxed-containers-operator.v1.12.1
-        skipRange: '>=1.1.0 <1.13.0'
+      - name: sandboxed-containers-operator.v1.13.1
+        replaces: sandboxed-containers-operator.v1.13.0
+        skipRange: '>=1.1.0 <1.13.1'
     name: stable
     package: sandboxed-containers-operator
     schema: olm.channel
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:a1d9378d9abaea6954020c1c0925ef2dd10e4ffe8b12837d97f9cecf8205e54a
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:d6d6e5b7696bfe764abfa1ed2d9229597ae1d1c52c19aa015fd325d028684d2e
     schema: olm.bundle
 schema: olm.template.basic
