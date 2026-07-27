@@ -53,6 +53,7 @@ while IFS= read -r pr; do
           components: (.components // []),
           build_checks_passed,
           build_checks_failed: (.build_checks_failed // []),
+          other_checks_failed: (.other_checks_failed // []),
           pending_checks,
           has_ok_to_test,
           has_lgtm,
