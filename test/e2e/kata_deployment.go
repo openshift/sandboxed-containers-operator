@@ -21,8 +21,7 @@ type DeploymentDescription struct {
 	image            string
 	replicas         int
 	port             int
-	template         string
-	timeout          time.Duration
+timeout          time.Duration
 	pollInterval     time.Duration
 	attributes       map[string]interface{}
 	annotations      map[string]string
@@ -193,17 +192,13 @@ func deleteRouteAndService(oc *exutil.CLI, deployName, deployNs string) {
 	}
 }
 
-func deleteDeployment(oc *exutil.CLI, deployNs, deployName string) bool {
-	return deleteKataResource(oc, "deploy", deployNs, deployName)
-}
-
 func getHttpResponse(url string, expStatusCode int) (string, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	res, err := client.Get(url)
 	if err != nil {
 		return "", err
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != expStatusCode {
 		return "", fmt.Errorf("response from url=%v actual status code=%d doesn't match expected %d", url, res.StatusCode, expStatusCode)
 	}

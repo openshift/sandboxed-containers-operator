@@ -1,6 +1,7 @@
 package kata
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -29,7 +30,9 @@ func deleteKataResource(oc *exutil.CLI, res, resNs, resName string) bool {
 	startTime := time.Now()
 	var lastOutput string
 
-	errCheck := wait.PollImmediate(pollInterval, podDeleteTimeout*time.Second, func() (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), podDeleteTimeout*time.Second)
+	defer cancel()
+	errCheck := wait.PollUntilContextTimeout(ctx, pollInterval, podDeleteTimeout*time.Second, true, func(_ context.Context) (bool, error) {
 		output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 			res, resName, "-n", resNs, "--no-headers",
 		).Output()
@@ -89,8 +92,14 @@ func deleteResource(oc *exutil.CLI, res, resName, resNs string, duration, interv
 		Failf("Cannot start deleting %v %v -n %v: %v %v", res, resName, resNs, msg, err)
 	}
 
-	errCheck := wait.PollImmediate(interval, duration, func() (bool, error) {
-		msg, _ = oc.AsAdmin().WithoutNamespace().Run("get").Args(res, resName, "-n", resNs, "--no-headers").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), duration)
+	defer cancel()
+	errCheck := wait.PollUntilContextTimeout(ctx, interval, duration, true, func(_ context.Context) (bool, error) {
+		var getErr error
+		msg, getErr = oc.AsAdmin().WithoutNamespace().Run("get").Args(res, resName, "-n", resNs, "--no-headers").Output()
+		if getErr != nil {
+			Logf("get %v %v returned error: %v", res, resName, getErr)
+		}
 		if strings.Contains(msg, "not found") {
 			return true, nil
 		}
@@ -106,10 +115,14 @@ func deleteResource(oc *exutil.CLI, res, resName, resNs string, duration, interv
 
 func checkResourceJsonpath(oc *exutil.CLI, resType, resName, resNs, jsonpath, expected string, duration, interval time.Duration) (string, error) {
 	var msg string
-	errCheck := wait.PollImmediate(interval, duration, func() (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), duration)
+	defer cancel()
+	errCheck := wait.PollUntilContextTimeout(ctx, interval, duration, true, func(_ context.Context) (bool, error) {
 		var err error
 		msg, err = oc.AsAdmin().WithoutNamespace().Run("get").Args(resType, resName, "-n", resNs, jsonpath).Output()
-		_ = err
+		if err != nil {
+			Logf("get %v %v returned error: %v", resType, resName, err)
+		}
 		if strings.Contains(msg, expected) {
 			return true, nil
 		}
@@ -119,18 +132,6 @@ func checkResourceJsonpath(oc *exutil.CLI, resType, resName, resNs, jsonpath, ex
 	return msg, nil
 }
 
-func checkResourceExists(oc *exutil.CLI, resType, resName, resNs string, duration, interval time.Duration) (string, error) {
-	var msg string
-	errCheck := wait.PollImmediate(interval, duration, func() (bool, error) {
-		msg, _ = oc.AsAdmin().WithoutNamespace().Run("get").Args(resType, resName, "-n", resNs, "--no-headers").Output()
-		if strings.Contains(msg, resName) {
-			return true, nil
-		}
-		return false, nil
-	})
-	compat_otp.AssertWaitPollNoErr(errCheck, fmt.Sprintf("%v %v was not found in ns %v after %v: %v", resType, resName, resNs, duration, msg))
-	return msg, nil
-}
 
 func checkControlPod(oc *exutil.CLI, podName, podNs, expStatus string) (string, error) {
 	return checkResourceJsonpath(oc, "pods", podName, podNs, "-o=jsonpath={.status.phase}", expStatus, podSnooze*time.Second, 10*time.Second)
