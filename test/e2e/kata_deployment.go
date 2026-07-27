@@ -109,9 +109,8 @@ func processDeploymentGoTemplate(deploy *DeploymentDescription) (string, error) 
 
 func waitForDeployment(oc *exutil.CLI, deploy *DeploymentDescription) (int, int, error) {
 	var (
-		intervalSeconds = 15
-		maxSeconds      = 600
-		sleepTime       = time.Duration(intervalSeconds) * time.Second
+		intervalSeconds = int(deploy.pollInterval.Seconds())
+		maxSeconds      = int(deploy.timeout.Seconds())
 		readyReplicas   int
 		elapsedSeconds  int
 	)
@@ -132,7 +131,7 @@ func waitForDeployment(oc *exutil.CLI, deploy *DeploymentDescription) (int, int,
 			}
 		}
 		elapsedSeconds += intervalSeconds
-		time.Sleep(sleepTime)
+		time.Sleep(deploy.pollInterval)
 	}
 
 	if readyReplicas != deploy.replicas {
@@ -145,7 +144,7 @@ func waitForDeployment(oc *exutil.CLI, deploy *DeploymentDescription) (int, int,
 }
 
 func scaleDeployment(oc *exutil.CLI, deploy *DeploymentDescription, scaleNumber int) error {
-	_, err := oc.AsAdmin().Run("scale").Args(
+	_, err := oc.AsAdmin().WithoutNamespace().Run("scale").Args(
 		"deployment", deploy.name, "--replicas="+strconv.Itoa(scaleNumber), "-n", deploy.namespace,
 	).Output()
 	o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Could not scale deployment %v", err))
@@ -167,7 +166,7 @@ func createServiceAndRoute(oc *exutil.CLI, deployName, podNs string) (string, er
 		return "", err
 	}
 
-	msg, err = oc.Run("expose").Args("service", deployName, "-n", podNs).Output()
+	msg, err = oc.WithoutNamespace().Run("expose").Args("service", deployName, "-n", podNs).Output()
 	if err != nil {
 		Logf("Expose service failed with: %v %v", msg, err)
 		return "", err
@@ -198,7 +197,11 @@ func getHttpResponse(url string, expStatusCode int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = res.Body.Close() }()
+	defer func() {
+		if cerr := res.Body.Close(); cerr != nil {
+			Logf("failed to close response body: %v", cerr)
+		}
+	}()
 	if res.StatusCode != expStatusCode {
 		return "", fmt.Errorf("response from url=%v actual status code=%d doesn't match expected %d", url, res.StatusCode, expStatusCode)
 	}

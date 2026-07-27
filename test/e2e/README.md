@@ -14,7 +14,7 @@ export KUBECONFIG=~/path/to/kubeconfig
 go test -v -timeout 120m ./...
 
 # Run a specific test by ID
-go test -v -timeout 30m -run "66108" ./...
+go test -v -timeout 30m -ginkgo.focus="66108" ./...
 ```
 
 ## Configuration
@@ -23,9 +23,10 @@ Tests read the `osc-config` configmap in the `default` namespace:
 
 | Field | Values | Default |
 |-------|--------|---------|
-| `RUNTIMECLASSNAME` | `kata`, `kata-remote` | `kata` |
-| `ENABLEPEERPODS` | `true`, `false` | `false` |
-| `WORKLOADTOTEST` | `kata`, `peer-pods`, `coco` | `kata` |
+| `runtimeClassName` | `kata`, `kata-remote` | `kata` |
+| `enablePeerPods` | `true`, `false` | `false` |
+| `workloadToTest` | `kata`, `peer-pods`, `coco` | `kata` |
+| `workloadImage` | container image URL | `quay.io/openshift/origin-hello-openshift` |
 
 ## Roadmap
 
@@ -37,7 +38,7 @@ and estimated complexity (story points: 1=trivial, 2=small, 3=medium,
 
 | # | Severity | File | Issue | SP |
 |---|----------|------|-------|----|
-| 1 | Major | `kata_test.go` | Sidecar test (00089) only checks both containers are running, does not verify log content flows through the shared volume. `tail -F` retries silently even if the path is wrong. | 2 |
+| 1 | Major | `kata_test.go` | Sidecar test (C00192) only checks both containers are running, does not verify log content flows through the shared volume. `tail -F` retries silently even if the path is wrong. | 2 |
 
 ### Environment compatibility
 
