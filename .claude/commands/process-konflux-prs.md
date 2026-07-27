@@ -113,8 +113,11 @@ Output: JSON object — exact shape:
   "build_checks_passed": true,       // true only when all build pipeline checks are SUCCESS
                                      // enterprise-contract checks (conclusion=NEUTRAL) excluded
   "build_checks_failed": [],         // names of build checks with FAILURE conclusion
+  "other_checks_failed": [],         // names of non-build checks with FAILURE conclusion
+                                     // (e.g. renovate/artifacts, commit-msg-check)
+                                     // these block merging and require developer attention
   "pending_checks": 0,               // integer count of IN_PROGRESS/QUEUED checks
-  "checks": [...]                    // raw checks array, null entries filtered
+  "checks": [...]                    // raw checks array (CheckRun + StatusContext normalized)
 }
 ```
 
@@ -122,6 +125,11 @@ Output: JSON object — exact shape:
 Enterprise-contract checks legitimately return `NEUTRAL` and are excluded from
 `build_checks_passed`. If `pending_checks > 0`, checks are still running — wait for
 the next run.
+
+**Always check `other_checks_failed` before merging.** GitHub StatusContext checks
+(e.g. `renovate/artifacts`) are not Konflux build pipelines but still block merges.
+A PR with any entry in `other_checks_failed` must NOT be auto-merged — report it
+for developer verification instead.
 
 ## snapshot-prs.sh
 Discover PRs and fetch their status in one pass — replaces a `list-prs.sh` call followed
@@ -137,6 +145,7 @@ Output: JSON array of status objects, one per PR:
   "components": ["osc-operator"],
   "build_checks_passed": true,
   "build_checks_failed": [],
+  "other_checks_failed": [],
   "pending_checks": 0,
   "has_ok_to_test": true,
   "has_lgtm": false
@@ -275,8 +284,11 @@ because `ok-to-test` triggers new CI pipelines whose results are not yet known.
   `/ok-to-test` comment. Some bots only react to maintainer comments, not label
   additions alone. Stop here for this PR — do NOT also set `lgtm`.
 - If `has_ok_to_test` is `true` in the snapshot AND `build_checks_passed` is `true`
-  AND `pending_checks` is `0`, set `lgtm`. (`build_checks_passed` excludes
-  enterprise-contract checks that return `NEUTRAL` — do NOT use `all_checks_passed`.)
+  AND `pending_checks` is `0` AND `other_checks_failed` is empty, set `lgtm`.
+  (`build_checks_passed` excludes enterprise-contract checks that return `NEUTRAL` —
+  do NOT use `all_checks_passed`.)
+  If `other_checks_failed` is non-empty, do NOT set `lgtm` — report it as "waiting
+  for developer verification" and list the failing checks.
 
 Labelling can be done in parallel for all PRs from all repositories, as there
 is no conflict between "on-pull-request" pipelines running concurrently.
@@ -327,7 +339,9 @@ For each PR matching a skip pattern:
 After all labelling is complete, merge PRs that were **already ready before this run**:
 
 - A PR is eligible to merge if, in the **initial snapshot**: `has_lgtm` is `true`
-  AND `build_checks_passed` is `true` AND `pending_checks` is `0`.
+  AND `build_checks_passed` is `true` AND `pending_checks` is `0`
+  AND `other_checks_failed` is empty. If `other_checks_failed` is non-empty, do NOT
+  merge — report as "requires developer verification" and list the failing checks.
 - Do NOT merge a PR that received `lgtm` during this run's Phase A — the same
   snapshot principle applies: lgtm was just set, so this is its first eligible run,
   not a confirmed-ready state from a prior run.
@@ -432,12 +446,14 @@ All other PRs require explicit merging:
 For each group that requires explicit merging, process as follows:
 
 **Single-PR group** (solo or held-back PR whose peers have all merged): merge it if
-`has_ok_to_test: true` AND `build_checks_passed: true` AND `pending_checks: 0` AND
-`check-merge-safety` passes.
+`has_ok_to_test: true` AND `build_checks_passed: true` AND `pending_checks: 0`
+AND `other_checks_failed` is empty AND `check-merge-safety` passes.
+If `other_checks_failed` is non-empty, do NOT merge — report as "requires developer
+verification" and list the failing checks.
 
 **Multi-PR group**: the held-back PR is the **lowest-numbered open PR** in the group.
 For all other PRs where the **initial snapshot** shows `has_ok_to_test: true`
-AND `build_checks_passed: true` AND `pending_checks: 0`:
+AND `build_checks_passed: true` AND `pending_checks: 0` AND `other_checks_failed` is empty:
 - Call `check-merge-safety.sh --components "<components>"` **once** before merging
   any PR in the group. If `safe_to_merge` is `false`, skip the entire group and report
   as "blocked by running on-push pipeline".
