@@ -1,6 +1,7 @@
 package kata
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -12,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-var _ = ginkgo.Describe("[sig-kata] Kata", func() {
+var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 	defer ginkgo.GinkgoRecover()
 
 	var (
@@ -98,7 +99,9 @@ var _ = ginkgo.Describe("[sig-kata] Kata", func() {
 		defer deleteKataResource(oc, "pod", pod.namespace, pod.name)
 
 		ginkgo.By("Verify initContainer completed successfully")
-		err = wait.Poll(2*time.Second, 2*time.Minute, func() (bool, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		err = wait.PollUntilContextTimeout(ctx, 2*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
 			initConStatus, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"pod", pod.name, "-n", pod.namespace,
 				"-o=jsonpath={.status.initContainerStatuses[0].state.terminated.reason}",
@@ -212,7 +215,9 @@ var _ = ginkgo.Describe("[sig-kata] Kata", func() {
 
 		podCmd := []string{"-n", oc.Namespace(), pod.name, "--", "nproc", "--all"}
 
-		err = wait.Poll(10*time.Second, 3*time.Minute, func() (bool, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 3*time.Minute, true, func(_ context.Context) (bool, error) {
 			actualCPU, err = oc.WithoutNamespace().AsAdmin().Run("exec").Args(podCmd...).Output()
 			if err != nil {
 				return false, nil
@@ -405,7 +410,9 @@ var _ = ginkgo.Describe("[sig-kata] Kata", func() {
 		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("getting pod status.phase failed with: %v", msg))
 
 		ginkgo.By("Verifying both containers are running")
-		err = wait.Poll(5*time.Second, 3*time.Minute, func() (bool, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 3*time.Minute, true, func(_ context.Context) (bool, error) {
 			mainStatus, mainErr := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"pod", podName, "-n", deploy.namespace,
 				"-o=jsonpath={.status.containerStatuses[0].state.running}",

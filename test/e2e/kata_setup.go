@@ -1,6 +1,7 @@
 package kata
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strconv"
@@ -32,7 +33,9 @@ type KataconfigDescription struct {
 
 func getCloudProvider(oc *exutil.CLI) string {
 	var cloudprovider string
-	err := wait.PollImmediate(5*time.Second, 30*time.Second, func() (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Second, true, func(_ context.Context) (bool, error) {
 		output, errMsg := oc.WithoutNamespace().AsAdmin().Run("get").Args(
 			"infrastructure", "cluster", "-o=jsonpath={.status.platformStatus.type}",
 		).Output()
@@ -55,12 +58,21 @@ func getClusterVersion(oc *exutil.CLI) (clusterVersion, ocpMajorVer, ocpMinorVer
 	jsonVersion, err := oc.AsAdmin().WithoutNamespace().Run("version").Args("-o", "json").Output()
 	if err != nil || jsonVersion == "" || !gjson.Get(jsonVersion, "openshiftVersion").Exists() {
 		Logf("Error: could not get oc version: %v %v", jsonVersion, err)
+		return "", "", "", 0
 	}
 	clusterVersion = gjson.Get(jsonVersion, "openshiftVersion").String()
 	sa := strings.Split(clusterVersion, ".")
+	if len(sa) < 2 {
+		Logf("Error: invalid openshiftVersion format: %v", clusterVersion)
+		return clusterVersion, "", "", 0
+	}
 	ocpMajorVer = sa[0]
 	ocpMinorVer = sa[1]
-	minorVer, _ = strconv.Atoi(ocpMinorVer)
+	var errParse error
+	minorVer, errParse = strconv.Atoi(ocpMinorVer)
+	if errParse != nil {
+		Logf("Error parsing minor version %q: %v", ocpMinorVer, errParse)
+	}
 	return clusterVersion, ocpMajorVer, ocpMinorVer, minorVer
 }
 
@@ -140,7 +152,7 @@ func getInstancesOnNode(oc *exutil.CLI, opNamespace, node string) (int, error) {
 	}
 	instances, err := strconv.Atoi(strings.TrimSpace(msg))
 	if err != nil {
-		return 0, nil
+		return 0, fmt.Errorf("failed to parse instance count %q: %v", strings.TrimSpace(msg), err)
 	}
 	return instances, nil
 }

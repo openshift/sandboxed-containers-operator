@@ -32,7 +32,7 @@ var (
 
 // Logf writes a timestamped message to the ginkgo test output.
 func Logf(format string, args ...interface{}) {
-	fmt.Fprintf(ginkgo.GinkgoWriter, time.Now().Format(time.RFC3339)+" "+format+"\n", args...)
+	_, _ = fmt.Fprintf(ginkgo.GinkgoWriter, time.Now().Format(time.RFC3339)+" "+format+"\n", args...)
 }
 
 // Failf fails the current test with a formatted message.
@@ -67,7 +67,7 @@ func createConfigFileFromTemplate(attributesConfig map[string]interface{}, templ
 	if err != nil {
 		return fmt.Errorf("could not create config file %v: %v", configFile, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	err = tmpl.Execute(file, attributesConfig)
 	if err != nil {
 		return fmt.Errorf("could not execute template file %v: %v", templateFile, err)
