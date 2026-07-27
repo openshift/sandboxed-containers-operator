@@ -207,6 +207,13 @@ delete_vmimport_role() {
 
 create_bucket() {
 	echo "Create s3 Bucket named ${BUCKET_NAME} at ${REGION}"
+
+	# Check if bucket already exists
+	if aws s3api head-bucket --bucket ${BUCKET_NAME} --region ${REGION} 2>/dev/null; then
+		echo "Bucket ${BUCKET_NAME} already exists, skipping creation"
+		return 0
+	fi
+
 	if [[ ${REGION} == us-east-1 ]]; then
 		aws s3api create-bucket  --bucket ${BUCKET_NAME} --region ${REGION}
 	else

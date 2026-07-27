@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2026-06-19T12:35:42Z"
+    createdAt: "2026-07-24T11:52:20Z"
     features.operators.openshift.io/cnf: "false"
     features.operators.openshift.io/cni: "false"
     features.operators.openshift.io/csi: "false"
@@ -24,7 +24,7 @@ metadata:
     features.operators.openshift.io/token-auth-aws: "true"
     features.operators.openshift.io/token-auth-azure: "true"
     features.operators.openshift.io/token-auth-gcp: "true"
-    olm.skipRange: '>=1.1.0 <1.13.0'
+    olm.skipRange: '>=1.1.0 <1.13.1'
     operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
     operators.openshift.io/valid-subscription: '["OpenShift Container Platform", "OpenShift
       Platform Plus"]'
@@ -36,7 +36,7 @@ metadata:
     operatorframework.io/arch.amd64: supported
     operatorframework.io/arch.s390x: supported
     operatorframework.io/os.linux: supported
-  name: sandboxed-containers-operator.v1.13.0
+  name: sandboxed-containers-operator.v1.13.1
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
@@ -398,6 +398,8 @@ spec:
                 env:
                 - name: PEERPODS_NAMESPACE
                   value: openshift-sandboxed-containers-operator
+                - name: TP_KATA_DAEMONSET
+                  value: quay.io/openshift_sandboxed_containers/osc-daemonset:1.13
                 - name: RELATED_IMAGE_KATA_MONITOR
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:2a69854ef50aec3cb1e7ee1e7de9bc698c6c2f52fd87c57e57c5a4c3198904a5
                 - name: RELATED_IMAGE_CAA
@@ -585,8 +587,8 @@ spec:
     name: must-gather
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:aaa17f717c5da54eaadc2f4c5a9ba98ee4e7879b963675601d2f78abcd733489
     name: storage-helper
-  replaces: sandboxed-containers-operator.v1.12.1
-  version: 1.13.0
+  replaces: sandboxed-containers-operator.v1.13.0
+  version: 1.13.1
   webhookdefinitions:
   - admissionReviewVersions:
     - v1

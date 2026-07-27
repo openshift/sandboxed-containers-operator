@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"sort"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	securityv1 "github.com/openshift/api/security/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,7 +34,7 @@ const (
 	rhelCoreOsExtensionsImageName = "rhel-coreos-extensions"
 	cliImageName                  = "cli"
 
-	daemonSetImage = "quay.io/openshift_sandboxed_containers/osc-daemonset:1.13"
+	relatedImageKataDaemonSetName = "TP_KATA_DAEMONSET"
 )
 
 // KataInstallationDaemonSetState defines the possible states of the Kata installation DaemonSet.
@@ -42,7 +45,6 @@ const (
 	KataWaitingToInstall   KataInstallationDaemonSetState = "waiting_to_install"
 	KataInstalled          KataInstallationDaemonSetState = "installed"
 	KataInstalling         KataInstallationDaemonSetState = "installing"
-	KataWaitingForReboot   KataInstallationDaemonSetState = "waiting_for_reboot" // rpm-ostree changes applied after reboot
 	KataWaitingToUninstall KataInstallationDaemonSetState = "waiting_to_uninstall"
 	KataUninstalling       KataInstallationDaemonSetState = "uninstalling"
 	KataUninstalled        KataInstallationDaemonSetState = "uninstalled"
@@ -55,6 +57,65 @@ const (
 	InstallKata   KataDaemonSetAction = "install"
 	UninstallKata KataDaemonSetAction = "uninstall"
 )
+
+// ensureKataInstallSCC creates or updates the SecurityContextConstraints
+// needed for the kata-install DaemonSet. SA and RBAC are bundled statically.
+func (r *KataConfigOpenShiftReconciler) ensureKataInstallSCC() error {
+	ctx := context.TODO()
+
+	scc := &securityv1.SecurityContextConstraints{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kata-install-scc",
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, scc, func() error {
+		scc.AllowPrivilegedContainer = true
+		scc.AllowHostDirVolumePlugin = true
+		scc.AllowHostPID = true
+		scc.AllowHostNetwork = false
+		scc.AllowHostPorts = false
+		scc.AllowHostIPC = false
+		scc.ReadOnlyRootFilesystem = false
+		scc.RunAsUser = securityv1.RunAsUserStrategyOptions{
+			Type: securityv1.RunAsUserStrategyRunAsAny,
+		}
+		scc.SELinuxContext = securityv1.SELinuxContextStrategyOptions{
+			Type: securityv1.SELinuxStrategyRunAsAny,
+		}
+		scc.Users = []string{
+			fmt.Sprintf("system:serviceaccount:%s:kata-install", OperatorNamespace),
+		}
+		scc.Volumes = []securityv1.FSType{
+			securityv1.FSTypeHostPath,
+			securityv1.FSTypeSecret,
+			securityv1.FSTypeConfigMap,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to create or update SecurityContextConstraints: %w", err)
+	}
+	r.Log.Info("Ensured SecurityContextConstraints kata-install-scc exists")
+
+	return nil
+}
+
+func (r *KataConfigOpenShiftReconciler) deleteKataInstallScc() error {
+	scc := &securityv1.SecurityContextConstraints{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kata-install-scc",
+		},
+	}
+	err := r.Client.Delete(context.TODO(), scc)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.Log.Info("kata-install SCC was already deleted")
+		} else {
+			r.Log.Error(err, "error when deleting kata-install SCC, retrying")
+			return err
+		}
+	}
+	return nil
+}
 
 func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet() (ctrl.Result, error) {
 	r.Log.Info("KataConfig deletion in progress: ")
@@ -70,7 +131,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 	kataInstallDaemonSet, err := r.daemonSetForKataInstall(InstallKata)
 	if err != nil {
 		r.Log.Error(err, "Failed getting DaemonSet for Kata installation")
-		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		return ctrl.Result{}, err
 	}
 	err = r.Client.Delete(context.TODO(), kataInstallDaemonSet)
 	if err != nil {
@@ -78,7 +139,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 			r.Log.Info("kata install daemonset was already deleted")
 		} else {
 			r.Log.Error(err, "error when deleting kata install Daemonset, try again")
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -89,11 +150,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 	kataUninstallDaemonSet, err := r.daemonSetForKataInstall(UninstallKata)
 	if err != nil {
 		r.Log.Error(err, "Failed getting DaemonSet for Kata uninstallation")
-		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		return ctrl.Result{}, err
 	}
 	if err := controllerutil.SetControllerReference(r.kataConfig, kataUninstallDaemonSet, r.Scheme); err != nil {
 		r.Log.Error(err, "Failed setting ControllerReference for kata uninstallation DaemonSet")
-		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		return ctrl.Result{}, err
 	}
 
 	foundKataDaemonSet := &appsv1.DaemonSet{}
@@ -104,7 +165,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 			err = r.Client.Create(context.TODO(), kataUninstallDaemonSet)
 			if err != nil {
 				r.Log.Error(err, "Error when creating kata uninstallation daemonset")
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+				return ctrl.Result{}, err
 			}
 			isUninstallDaemonSetJustCreated = true
 
@@ -119,7 +180,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 			}
 		} else {
 			r.Log.Error(err, "Could not get kata uninstallation daemonset, try again")
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -131,17 +192,13 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 	uninstallInProgress, err := r.isKataUninstallDaemonSetUninstalling()
 	if err != nil {
 		r.Log.Error(err, "Error getting uninstallation status")
-		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		return ctrl.Result{}, err
 	}
 
 	// Wait for the Kata uninstall DaemonSet to uninstall the kata-containers rpm package and its dependencies
-	// The daemonset will change the node label when the uninstallation is completed or reboot is required and will trigger reconciliation
+	// The daemonset will change the node label when the uninstallation is completed and will trigger reconciliation
 	if isUninstallDaemonSetJustCreated || uninstallInProgress {
 		r.Log.Info("Waiting for KataUninstall DaemonSet to finish")
-		nodes, _ := r.isNodeRebootRequired()
-		for _, node := range nodes {
-			r.Log.Info("node must be rebooted", "node", node.Name)
-		}
 		return ctrl.Result{}, nil
 	}
 
@@ -149,14 +206,14 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 
 	err = r.deleteDaemonsetForMonitor()
 	if err != nil {
-		return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
+		return ctrl.Result{}, err
 	}
 
 	if r.kataConfig.Spec.EnablePeerPods {
 		// We will try again in case of an error
 		err = r.disablePeerPodsMiscConfigs()
 		if err != nil {
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, err
+			return ctrl.Result{}, err
 		}
 
 		// Handle podvm image deletion
@@ -165,13 +222,18 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 			return *res, err
 		}
 		if err != nil {
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			return ctrl.Result{}, err
 		}
 	}
 
 	err = r.deleteScc()
 	if err != nil {
-		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		return ctrl.Result{}, err
+	}
+
+	err = r.deleteKataInstallScc()
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	kataNodeSelector, err := r.getKataConfigNodeSelectorAsSelector()
@@ -205,7 +267,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 		if err != nil {
 			// If no nodes are found, requeue to check again for eligible nodes
 			r.Log.Error(err, "Failed to check Node eligibility for running Kata containers")
-			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 20}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -235,17 +297,22 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 		}
 	}
 
+	if err := r.ensureKataInstallSCC(); err != nil {
+		r.Log.Error(err, "Failed to ensure kata-install SCC")
+		return ctrl.Result{}, err
+	}
+
 	// TODO: Logic that checks failed installation
 	// TODO: Check the return value and restart daemonset if a new ConfigMap is created
 
 	kataInstallDaemonSet, err := r.daemonSetForKataInstall(InstallKata)
 	if err != nil {
 		r.Log.Error(err, "Failed getting DaemonSet for Kata installation")
-		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		return ctrl.Result{}, err
 	}
 	if err := controllerutil.SetControllerReference(r.kataConfig, kataInstallDaemonSet, r.Scheme); err != nil {
 		r.Log.Error(err, "Failed setting ControllerReference for kata installation DaemonSet")
-		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		return ctrl.Result{}, err
 	}
 
 	foundKataDaemonSet := &appsv1.DaemonSet{}
@@ -256,7 +323,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 			err = r.Client.Create(context.TODO(), kataInstallDaemonSet)
 			if err != nil {
 				r.Log.Error(err, "Error when creating kata installation daemonset")
-				return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+				return ctrl.Result{}, err
 			}
 			// If the daemonset just got created we change the progress condition and label the nodes with the initial value
 			r.setInProgressConditionToInstalling()
@@ -272,14 +339,14 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 			}
 		} else {
 			r.Log.Error(err, "Could not get kata installation daemonset, try again")
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			return ctrl.Result{}, err
 		}
 	} else {
 		r.Log.Info("Updating kata installation daemonset", "kataInstallDaemonSet.Namespace", kataInstallDaemonSet.Namespace, "kataInstallDaemonSet.Name", kataInstallDaemonSet.Name)
 		err = r.Client.Update(context.TODO(), kataInstallDaemonSet)
 		if err != nil {
 			r.Log.Error(err, "error when updating kata installation daemonset")
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -287,7 +354,7 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 	installInProgress, err := r.isKataInstallDaemonSetInstalling()
 	if err != nil {
 		r.Log.Error(err, "Error getting installation status")
-		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+		return ctrl.Result{}, err
 	}
 
 	if installInProgress && r.getInProgressConditionValue() == corev1.ConditionFalse {
@@ -307,16 +374,12 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 		}
 		if err != nil {
 			// Give sometime for the error to go away before reconciling again
-			return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+			return ctrl.Result{}, err
 		}
 	} else {
 		// NodeEventHandler should trigger reconciliation on label changes
 		// so no need for that.
 		r.Log.Info("Waiting for kata installation DaemonSet to finish", "daemonSet", kataInstallDaemonSet.Name)
-		nodes, _ := r.isNodeRebootRequired()
-		for _, node := range nodes {
-			r.Log.Info("node must be rebooted", "node", node.Name)
-		}
 	}
 
 	return ctrl.Result{}, nil
@@ -340,6 +403,11 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 		return nil, err
 	}
 
+	dsImage := os.Getenv(relatedImageKataDaemonSetName)
+	if dsImage == "" {
+		r.Log.Info("TP_KATA_DAEMONSET env var is unset or empty, kata install pods will not run")
+	}
+
 	// Because we use chroot and modify the node we need root priviliges
 	var (
 		runPrivileged       = true
@@ -359,6 +427,11 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 
 	volumeMounts := r.volumeMountsForRegistries()
 	volumes := r.volumesForRegistries()
+
+	cloudProvider, err := getCloudProviderFromInfra(r.Client)
+	if err != nil {
+		r.Log.Info("Could not determine cloud provider, defaulting to empty", "err", err)
+	}
 
 	kataInstallEnv := []corev1.EnvVar{
 		{
@@ -380,6 +453,10 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 		{
 			Name:  "NODE_LABEL",
 			Value: kataInstallationDaemonSetLabel,
+		},
+		{
+			Name:  "CLOUD_PROVIDER",
+			Value: cloudProvider,
 		},
 	}
 
@@ -416,13 +493,13 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 					Labels: daemonsetLabelSelectors,
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName: "default",
+					ServiceAccountName: "kata-install",
 					NodeSelector:       nodeSelector,
 					HostPID:            true,
 					Containers: []corev1.Container{
 						{
 							Name:            "kata-install",
-							Image:           daemonSetImage,
+							Image:           dsImage,
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
@@ -435,7 +512,7 @@ func (r *KataConfigOpenShiftReconciler) daemonSetForKataInstall(action KataDaemo
 						},
 						{
 							Name:            "set-log-level",
-							Image:           daemonSetImage,
+							Image:           dsImage,
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: &runPrivileged,
@@ -640,29 +717,6 @@ func (r *KataConfigOpenShiftReconciler) isKataInstallDaemonSetInstalling() (bool
 	return !allNodeInstalled, nil
 }
 
-// isNodeRebootRequired checks if any nodes require a reboot based on their labels.
-// It returns a list of nodes that need a reboot and an error if any occurs.
-func (r *KataConfigOpenShiftReconciler) isNodeRebootRequired() ([]corev1.Node, error) {
-	nodes, err := r.getNodesWithLabels(r.getNodeSelectorAsMap())
-	if err != nil {
-		r.Log.Error(err, "Getting Node List failed")
-		return nil, err
-	}
-
-	result := make([]corev1.Node, 0)
-
-	for _, node := range nodes.Items {
-		currentState, ok := node.Labels[kataInstallationDaemonSetLabel]
-		if ok {
-			if currentState == string(KataWaitingForReboot) {
-				result = append(result, node)
-			}
-		}
-	}
-
-	return result, nil
-}
-
 // updateStatusDaemonSet updates the status of DaemonSet based on the given action.
 // It fetches nodes with appropriate labels, clears existing node status lists,
 // updates node count, and move nodes in the status list based on the action.
@@ -714,9 +768,6 @@ func (r *KataConfigOpenShiftReconciler) putNodeOnStatusListDaemonSetInstall(node
 		r.kataConfig.Status.KataNodes.WaitingToInstall = append(r.kataConfig.Status.KataNodes.WaitingToInstall, node.GetName())
 	case string(KataInstalling):
 		r.kataConfig.Status.KataNodes.Installing = append(r.kataConfig.Status.KataNodes.Installing, node.GetName())
-		// rpm-ostree changes applied after reboot
-	case string(KataWaitingForReboot):
-		r.kataConfig.Status.KataNodes.Installing = append(r.kataConfig.Status.KataNodes.Installing, node.GetName())
 	case string(KataInstalled):
 		r.kataConfig.Status.KataNodes.Installed = append(r.kataConfig.Status.KataNodes.Installed, node.GetName())
 	default:
@@ -733,9 +784,6 @@ func (r *KataConfigOpenShiftReconciler) putNodeOnStatusListDaemonSetUninstall(no
 	case string(KataWaitingToUninstall):
 		r.kataConfig.Status.KataNodes.WaitingToUninstall = append(r.kataConfig.Status.KataNodes.WaitingToUninstall, node.GetName())
 	case string(KataUninstalling):
-		r.kataConfig.Status.KataNodes.Uninstalling = append(r.kataConfig.Status.KataNodes.Uninstalling, node.GetName())
-		// rpm-ostree changes applied after reboot
-	case string(KataWaitingForReboot):
 		r.kataConfig.Status.KataNodes.Uninstalling = append(r.kataConfig.Status.KataNodes.Uninstalling, node.GetName())
 	case string(KataUninstalled):
 	default:
