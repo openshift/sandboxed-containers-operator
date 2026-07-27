@@ -155,7 +155,7 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		defer deleteKataResource(oc, "pod", pod.namespace, pod.name)
 		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create pod with cpu/memory annotations")
 
-		podAnnotations, annErr := oc.Run("get").Args("pods", pod.name, "-o=jsonpath={.metadata.annotations}", "-n", pod.namespace).Output()
+		podAnnotations, annErr := oc.WithoutNamespace().Run("get").Args("pods", pod.name, "-o=jsonpath={.metadata.annotations}", "-n", pod.namespace).Output()
 		if annErr != nil {
 			Logf("failed to get pod annotations: %v", annErr)
 		}
