@@ -144,13 +144,20 @@ arches:
     name: nftables
     evr: 1:1.0.9-7.el9_8
     sourcerpm: nftables-1.0.9-7.el9_8.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/o/openssl-3.5.5-5.el9_8.s390x.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/o/openssl-3.5.5-6.el9_8.s390x.rpm
     repoid: ubi-9-for-s390x-baseos-rpms
-    size: 1549036
-    checksum: sha256:e7b83a5f90c195583dc6cf2dec685db505a6297f319ed44e3490685ac34091b4
+    size: 1549454
+    checksum: sha256:55ace1358d336a4bc54659df2c4f1317d6638e70dbabc95b83a70d29cf6e113d
     name: openssl
-    evr: 1:3.5.5-5.el9_8
-    sourcerpm: openssl-3.5.5-5.el9_8.src.rpm
+    evr: 1:3.5.5-6.el9_8
+    sourcerpm: openssl-3.5.5-6.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/o/openssl-libs-3.5.5-6.el9_8.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 2028396
+    checksum: sha256:5f2f1608c0ea78bcbc58c5bd5d4b0c6c5c4acbbc1a1bcde569d2d30e3846d04d
+    name: openssl-libs
+    evr: 1:3.5.5-6.el9_8
+    sourcerpm: openssl-3.5.5-6.el9_8.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/p/pam-1.5.1-28.el9.s390x.rpm
     repoid: ubi-9-for-s390x-baseos-rpms
     size: 630422
@@ -316,12 +323,12 @@ arches:
     checksum: sha256:5075e2792f601af95ad1847d185b438479d16be60ed099a6a163a7306b55d7cd
     name: nftables
     evr: 1:1.0.9-7.el9_8
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/o/openssl-3.5.5-5.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/o/openssl-3.5.5-6.el9_8.src.rpm
     repoid: ubi-9-for-s390x-baseos-source-rpms
-    size: 53365016
-    checksum: sha256:906f5aa6c4147ce7f82eda6835e1fe7c1d45ac5f6dcc62a84d63794b877d9903
+    size: 53369050
+    checksum: sha256:b79f08d2d04536fdb6801b6ba7da7174942d174dd2b7969316402c737689d735
     name: openssl
-    evr: 1:3.5.5-5.el9_8
+    evr: 1:3.5.5-6.el9_8
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/p/pam-1.5.1-28.el9.src.rpm
     repoid: ubi-9-for-s390x-baseos-source-rpms
     size: 1133226
@@ -501,13 +508,20 @@ arches:
     name: nftables
     evr: 1:1.0.9-7.el9_8
     sourcerpm: nftables-1.0.9-7.el9_8.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/o/openssl-3.5.5-5.el9_8.x86_64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/o/openssl-3.5.5-6.el9_8.x86_64.rpm
     repoid: ubi-9-for-x86_64-baseos-rpms
-    size: 1563716
-    checksum: sha256:7d6537b3a4e4e5a1fe0dc17b0d7794e466b3dd20f9dc34356dbbfe12b4ac2d44
+    size: 1564334
+    checksum: sha256:1c502507f42674119318b66b111448f618efe2767a55edde5fadddcecb47ac64
     name: openssl
-    evr: 1:3.5.5-5.el9_8
-    sourcerpm: openssl-3.5.5-5.el9_8.src.rpm
+    evr: 1:3.5.5-6.el9_8
+    sourcerpm: openssl-3.5.5-6.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/o/openssl-libs-3.5.5-6.el9_8.x86_64.rpm
+    repoid: ubi-9-for-x86_64-baseos-rpms
+    size: 2427181
+    checksum: sha256:a289cdf4da547031cd39a4f31decd0bb22649bbcb5fe4f88b939d341a83708be
+    name: openssl-libs
+    evr: 1:3.5.5-6.el9_8
+    sourcerpm: openssl-3.5.5-6.el9_8.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/p/pam-1.5.1-28.el9.x86_64.rpm
     repoid: ubi-9-for-x86_64-baseos-rpms
     size: 637912
@@ -673,12 +687,12 @@ arches:
     checksum: sha256:5075e2792f601af95ad1847d185b438479d16be60ed099a6a163a7306b55d7cd
     name: nftables
     evr: 1:1.0.9-7.el9_8
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/source/SRPMS/Packages/o/openssl-3.5.5-5.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/source/SRPMS/Packages/o/openssl-3.5.5-6.el9_8.src.rpm
     repoid: ubi-9-for-x86_64-baseos-source-rpms
-    size: 53365016
-    checksum: sha256:906f5aa6c4147ce7f82eda6835e1fe7c1d45ac5f6dcc62a84d63794b877d9903
+    size: 53369050
+    checksum: sha256:b79f08d2d04536fdb6801b6ba7da7174942d174dd2b7969316402c737689d735
     name: openssl
-    evr: 1:3.5.5-5.el9_8
+    evr: 1:3.5.5-6.el9_8
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/source/SRPMS/Packages/p/pam-1.5.1-28.el9.src.rpm
     repoid: ubi-9-for-x86_64-baseos-source-rpms
     size: 1133226
