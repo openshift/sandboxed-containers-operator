@@ -1,6 +1,6 @@
 FROM registry.redhat.io/openshift4/ose-must-gather-rhel9:v4.22 as builder
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8-1782797275
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8-1785339117
 
 # For gathering data from nodes
 # NOTE for hermetic build: any change to the packages installed here must
