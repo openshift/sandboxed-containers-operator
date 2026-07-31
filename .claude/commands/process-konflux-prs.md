@@ -213,14 +213,29 @@ Output: JSON with {component, pipeline_type, latest, all_runs}
 Note: --pr-id is mandatory for on-pull-request to avoid matching runs from different PRs
 
 ## check-merge-safety.sh
-Check whether it is safe to merge a PR by verifying no on-push pipeline is running
-for any of its components. Wraps `check-pipeline-status.sh` over a component list.
+Check whether it is safe to merge a PR. Wraps `check-pipeline-status.sh` over a component
+list and enforces **two independent checks**:
+
+1. **No running pipeline**: the latest on-push pipeline for the component must have a
+   `completionTime` (i.e., it is not currently in progress).
+2. **Last on-push pipeline succeeded**: walks the last 20 commits on the target branch via
+   the GitHub API, finds the most recent `Red Hat Konflux / {component}-on-push` check-run,
+   and blocks if its conclusion is `failure`. Requires `--repo` and `--branch`. If no
+   check-run is found in the last 20 commits, the check is skipped (benefit of the doubt).
+
 ```bash
-./scripts/process-konflux-prs/check-merge-safety.sh --components "comp1 comp2 ..."
+./scripts/process-konflux-prs/check-merge-safety.sh \
+  --components "comp1 comp2 ..." \
+  --repo GITHUB_REPO \
+  --branch BRANCH
 ```
 Output: JSON `{safe_to_merge: bool, blocking: [{component, pipeline, reason}]}`
-- `safe_to_merge`: true when no component has a running on-push pipeline
-- `blocking`: list of components currently blocked (empty when safe)
+- `safe_to_merge`: true only when both checks pass for every component
+- `blocking`: list of blocking conditions with human-readable `reason` (empty when safe)
+
+**Always pass `--repo` and `--branch`** (from the snapshot's `repo` and `base_branch` fields,
+using the full GitHub path, e.g. `openshift/sandboxed-containers-operator`). Without them,
+only check 1 runs and recently-failed on-push pipelines will not be detected.
 
 **Use this instead of a manual loop over `check-pipeline-status.sh` before each merge.**
 
@@ -347,11 +362,15 @@ After all labelling is complete, merge PRs that were **already ready before this
   not a confirmed-ready state from a prior run.
 - **Pre-merge pipeline check**: Before merging a PR, call:
   ```bash
-  ./scripts/process-konflux-prs/check-merge-safety.sh --components "comp1 comp2 ..."
+  ./scripts/process-konflux-prs/check-merge-safety.sh \
+    --components "comp1 comp2 ..." \
+    --repo GITHUB_REPO \
+    --branch BASE_BRANCH
   ```
-  using the snapshot's `components` array. If `safe_to_merge` is `false`, **skip this
-  PR** and report it as "blocked by running on-push pipeline" (include the `blocking`
-  list in the report). Do NOT merge it.
+  using the snapshot's `components`, the full GitHub repo path (e.g.
+  `openshift/sandboxed-containers-operator` for `repo: osc`), and the snapshot's
+  `base_branch`. If `safe_to_merge` is `false`, **skip this PR** and report it as
+  "blocked by on-push pipeline" (include the `blocking` list in the report). Do NOT merge it.
 - Merge PRs one at a time using `merge-pr.sh`. After each merge, note which
   components will be rebuilt (from the snapshot's `components` field).
 - Within a single run, do NOT merge two PRs that rebuild the same component —
