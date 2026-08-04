@@ -85,9 +85,12 @@ func getTestRunConfigmap(oc *exutil.CLI, testrun *TestRunDescription, ns, name s
 		"configmap", "-n", ns, name, "-o", "jsonpath={.data}",
 	).Output()
 	if err != nil {
-		Logf("osc-config configmap not found: %v", err)
-		testrun.checked = true
-		return false, nil
+		if strings.Contains(err.Error(), "NotFound") {
+			Logf("osc-config configmap not found in %s/%s, using defaults", ns, name)
+			testrun.checked = true
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get osc-config configmap %s/%s: %w", ns, name, err)
 	}
 	Logf("osc-config configmap found, parsing fields")
 
