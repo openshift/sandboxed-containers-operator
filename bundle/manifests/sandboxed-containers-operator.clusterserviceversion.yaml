@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2026-07-24T11:52:20Z"
+    createdAt: "2026-06-24T11:19:36Z"
     features.operators.openshift.io/cnf: "false"
     features.operators.openshift.io/cni: "false"
     features.operators.openshift.io/csi: "false"
@@ -305,6 +305,7 @@ spec:
         - apiGroups:
           - config.openshift.io
           resources:
+          - apiservers
           - clusterversions
           - infrastructures
           verbs:
@@ -391,7 +392,7 @@ spec:
             spec:
               containers:
               - args:
-                - --metrics-bind-address=127.0.0.1:8080
+                - --metrics-bind-address=:8443
                 - --leader-elect
                 command:
                 - /manager
@@ -429,6 +430,9 @@ spec:
                 ports:
                 - containerPort: 9443
                   name: webhook-server
+                  protocol: TCP
+                - containerPort: 8443
+                  name: https
                   protocol: TCP
                 resources:
                   limits:
