@@ -262,7 +262,7 @@ spec:
             spec:
               containers:
               - args:
-                - --metrics-bind-address=127.0.0.1:8080
+                - --metrics-bind-address=:8443
                 - --leader-elect
                 command:
                 - /manager
@@ -270,6 +270,9 @@ spec:
                 imagePullPolicy: Always
                 name: manager
                 ports:
+                - containerPort: 8443
+                  name: https
+                  protocol: TCP
                 - containerPort: 9443
                   name: webhook-server
                   protocol: TCP

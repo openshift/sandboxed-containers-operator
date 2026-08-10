@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"os"
 
@@ -26,6 +27,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgapi "github.com/openshift/api/machineconfiguration/v1"
 	secv1 "github.com/openshift/api/security/v1"
+	openshifttls "github.com/openshift/controller-runtime-common/pkg/tls"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	nodeapi "k8s.io/api/node/v1"
@@ -40,6 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -88,7 +91,7 @@ func SetTimeEncoderToRfc3339() zap.Opts {
 func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
+	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8443", "The address the metric endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -96,14 +99,57 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), SetTimeEncoderToRfc3339()))
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:  scheme,
-		Metrics: metricsserver.Options{BindAddress: metricsAddr},
-		WebhookServer: &webhook.DefaultServer{
-			Options: webhook.Options{
-				Port: 9443,
-			},
+	// Cancellable context: SecurityProfileWatcher cancels it when the TLS profile changes,
+	// triggering a graceful shutdown so the operator restarts with the new profile.
+	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
+	defer cancel()
+
+	cfg := ctrl.GetConfigOrDie()
+
+	isOpenshift, err := controllers.IsOpenShift()
+	if err != nil {
+		setupLog.Error(err, "unable to use discovery client")
+		os.Exit(1)
+	}
+
+	// Temporary client used only to fetch the initial TLS profile before the manager starts.
+	tempClient, err := client.New(cfg, client.Options{Scheme: scheme})
+	if err != nil {
+		setupLog.Error(err, "unable to create temporary client")
+		os.Exit(1)
+	}
+
+	// On non-OpenShift clusters the config.openshift.io/APIServer CRD is absent, so skip
+	// the fetch and leave tlsOptsList empty to use controller-runtime's TLS defaults.
+	var (
+		tlsProfileSpec configv1.TLSProfileSpec
+		tlsOptsList    []func(*tls.Config)
+	)
+	if isOpenshift {
+		tlsProfileSpec, err = openshifttls.FetchAPIServerTLSProfile(ctx, tempClient)
+		if err != nil {
+			setupLog.Error(err, "unable to fetch TLS profile from APIServer CR")
+			os.Exit(1)
+		}
+		tlsOpt, unsupportedCiphers := openshifttls.NewTLSConfigFromProfile(tlsProfileSpec)
+		if len(unsupportedCiphers) > 0 {
+			setupLog.Info("TLS profile contains ciphers not supported by Go crypto/tls, ignoring them", "ciphers", unsupportedCiphers)
+		}
+		tlsOptsList = []func(*tls.Config){tlsOpt}
+	}
+
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress:    metricsAddr,
+			SecureServing:  true,
+			FilterProvider: filters.WithAuthenticationAndAuthorization,
+			TLSOpts:        tlsOptsList,
 		},
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port:    9443,
+			TLSOpts: tlsOptsList,
+		}),
 		LeaderElection:   enableLeaderElection,
 		LeaderElectionID: "290f4947.kataconfiguration.openshift.io",
 		// The controller runtime can end up caching all objects in the cluster and cause OOM.
@@ -131,21 +177,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	isOpenshift, err := controllers.IsOpenShift()
-	if err != nil {
-		setupLog.Error(err, "unable to use discovery client")
-		os.Exit(1)
-	}
-
 	if isOpenshift {
+		// Watch APIServer CR for TLS profile changes; graceful shutdown triggers a restart
+		// so the new profile is applied to all connections.
+		watcher := &openshifttls.SecurityProfileWatcher{
+			Client:                mgr.GetClient(),
+			InitialTLSProfileSpec: tlsProfileSpec,
+			OnProfileChange: func(_ context.Context, _, _ configv1.TLSProfileSpec) {
+				setupLog.Info("TLS profile changed, triggering graceful restart")
+				cancel()
+			},
+		}
+		if err := watcher.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to set up TLS profile watcher")
+			os.Exit(1)
+		}
 
-		err = fixScc(context.TODO(), mgr)
+		err = fixScc(ctx, mgr)
 		if err != nil {
 			setupLog.Error(err, "unable to create SCC")
 			os.Exit(1)
 		}
 
-		err = labelNamespace(context.TODO(), mgr)
+		err = labelNamespace(ctx, mgr)
 		if err != nil {
 			setupLog.Error(err, "unable to add labels to namespace")
 			os.Exit(1)
@@ -200,7 +254,7 @@ func main() {
 	// +kubebuilder:scaffold:builder
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}

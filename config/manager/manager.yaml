@@ -65,7 +65,7 @@ spec:
         - command:
             - /manager
           args:
-            - --metrics-bind-address=127.0.0.1:8080
+            - --metrics-bind-address=:8443
             - --leader-elect
           volumeMounts:
             - mountPath: /root/.ssh/
@@ -83,6 +83,10 @@ spec:
                 optional: true
           image: controller:latest
           name: manager
+          ports:
+            - containerPort: 8443
+              name: https
+              protocol: TCP
           env:
             - name: PEERPODS_NAMESPACE
               value: "openshift-sandboxed-containers-operator"
