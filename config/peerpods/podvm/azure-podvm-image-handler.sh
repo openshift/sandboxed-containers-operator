@@ -72,7 +72,6 @@ function verify_vars() {
     # Ensure booleans are set
     [[ -z "${INSTALL_PACKAGES}" ]] && error_exit "INSTALL_PACKAGES is empty"
     [[ -z "${DOWNLOAD_SOURCES}" ]] && error_exit "DOWNLOAD_SOURCES is empty"
-    [[ -z "${CONFIDENTIAL_COMPUTE_ENABLED}" ]] && error_exit "CONFIDENTIAL_COMPUTE_ENABLED is empty"
     [[ -z "${DISABLE_CLOUD_CONFIG}" ]] && error_exit "DISABLE_CLOUD_CONFIG is empty"
     [[ -z "${ENABLE_NVIDIA_GPU}" ]] && error_exit "ENABLE_NVIDIA_GPU is empty"
     [[ -z "${BOOT_FIPS}" ]] && error_exit "BOOT_FIPS is empty"
@@ -207,7 +206,7 @@ function create_image_gallery() {
 # Function to create Azure image definition
 # The image definition name is available in the variable IMAGE_DEFINITION_NAME
 # The VM generation is available in the variable IMAGE_DEFINITION_VM_GENERATION
-# Create gallery to support confidential images if CONFIDENTIAL_COMPUTE_ENABLED is set to yes
+# Create gallery to support normal (trusted) and confidential images
 
 function create_image_definition() {
     echo "Creating Azure image definition"
@@ -226,36 +225,20 @@ function create_image_definition() {
         return
     fi
 
-    if [[ "${CONFIDENTIAL_COMPUTE_ENABLED}" == "yes" ]]; then
-        # Create the image definition. Add ConfidentialVmSupported feature
-        az sig image-definition create --resource-group "${AZURE_RESOURCE_GROUP}" \
-            --gallery-name "${IMAGE_GALLERY_NAME}" \
-            --gallery-image-definition "${IMAGE_DEFINITION_NAME}" \
-            --publisher "${IMAGE_DEFINITION_PUBLISHER}" \
-            --offer "${IMAGE_DEFINITION_OFFER}" \
-            --sku "${IMAGE_DEFINITION_SKU}" \
-            --os-type "${IMAGE_DEFINITION_OS_TYPE}" \
-            --os-state "${IMAGE_DEFINITION_OS_STATE}" \
-            --hyper-v-generation "${IMAGE_DEFINITION_VM_GENERATION}" \
-            --location "${AZURE_REGION}" \
-            --architecture "${IMAGE_DEFINITION_ARCHITECTURE}" \
-            --features SecurityType=ConfidentialVmSupported ||
-            error_exit "Failed to create Azure image definition"
-
-    else
-        az sig image-definition create --resource-group "${AZURE_RESOURCE_GROUP}" \
-            --gallery-name "${IMAGE_GALLERY_NAME}" \
-            --gallery-image-definition "${IMAGE_DEFINITION_NAME}" \
-            --publisher "${IMAGE_DEFINITION_PUBLISHER}" \
-            --offer "${IMAGE_DEFINITION_OFFER}" \
-            --sku "${IMAGE_DEFINITION_SKU}" \
-            --os-type "${IMAGE_DEFINITION_OS_TYPE}" \
-            --os-state "${IMAGE_DEFINITION_OS_STATE}" \
-            --hyper-v-generation "${IMAGE_DEFINITION_VM_GENERATION}" \
-            --location "${AZURE_REGION}" \
-            --architecture "${IMAGE_DEFINITION_ARCHITECTURE}" ||
-            error_exit "Failed to create Azure image definition"
-    fi
+    # Create the image definition. Add ConfidentialVmSupported feature
+    az sig image-definition create --resource-group "${AZURE_RESOURCE_GROUP}" \
+        --gallery-name "${IMAGE_GALLERY_NAME}" \
+        --gallery-image-definition "${IMAGE_DEFINITION_NAME}" \
+        --publisher "${IMAGE_DEFINITION_PUBLISHER}" \
+        --offer "${IMAGE_DEFINITION_OFFER}" \
+        --sku "${IMAGE_DEFINITION_SKU}" \
+        --os-type "${IMAGE_DEFINITION_OS_TYPE}" \
+        --os-state "${IMAGE_DEFINITION_OS_STATE}" \
+        --hyper-v-generation "${IMAGE_DEFINITION_VM_GENERATION}" \
+        --location "${AZURE_REGION}" \
+        --architecture "${IMAGE_DEFINITION_ARCHITECTURE}" \
+        --features SecurityType=TrustedLaunchAndConfidentialVmSupported ||
+        error_exit "Failed to create Azure image definition"
 
     echo "Azure image definition created successfully"
 }
