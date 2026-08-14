@@ -158,7 +158,7 @@ spec:
         - name: VARIANT
           value: downstream-candidate420
         - name: ENVS
-          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-2.rhaos4.19.el9"
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-5.rhaos4.19.el9"
       matrix:
         params:
           - name: PROWJOB_NAME
@@ -191,7 +191,7 @@ spec:
         - name: VARIANT
           value: downstream-candidate419
         - name: ENVS
-          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-2.rhaos4.19.el9"
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-5.rhaos4.19.el9"
         - name: RETRY_DELAY
           value: "60"
         - name: MAX_RETRIES
@@ -228,7 +228,7 @@ spec:
         - name: VARIANT
           value: downstream-candidate420
         - name: ENVS
-          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-2.rhaos4.19.el9"
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-5.rhaos4.19.el9"
         - name: RETRY_DELAY
           value: "60"
         - name: MAX_RETRIES
@@ -263,7 +263,7 @@ spec:
         - name: VARIANT
           value: downstream-candidate421
         - name: ENVS
-          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-2.rhaos4.19.el9"
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-5.rhaos4.19.el9"
         - name: RETRY_DELAY
           value: "60"
         - name: MAX_RETRIES
@@ -299,7 +299,7 @@ spec:
         - name: VARIANT
           value: downstream-candidate422
         - name: ENVS
-          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-2.rhaos4.22.el9"
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.get-catalog-image.results.CATALOG_IMAGE),FORCE_SUCCESS_EXIT=no,INSTALL_KATA_RPM=true,KATA_RPM_VERSION=3.31.0-5.rhaos4.22.el9"
         - name: RETRY_DELAY
           value: "60"
         - name: MAX_RETRIES
