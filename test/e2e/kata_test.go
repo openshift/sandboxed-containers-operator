@@ -72,8 +72,7 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		}
 
 		ginkgo.By("Deploying pod with initContainer using kata runtime")
-		pod := NewPodDescription(&testrun)
-		pod.baseName = "-initcontainer"
+		pod := NewPodDescription(&testrun, "initcontainer")
 
 		pod.attributes["initContainers"] = []map[string]interface{}{
 			{
@@ -131,7 +130,6 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		}
 
 		var (
-			basePodName        = "-example-91"
 			memory             = "1234"
 			cpu                = "2"
 			supportedProviders = []string{"azure", "gcp", "none"}
@@ -144,8 +142,7 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 
 		ginkgo.By("Deploying pod with kata runtime and verify it")
 
-		pod := NewPodDescription(&testrun)
-		pod.baseName = basePodName
+		pod := NewPodDescription(&testrun, "example-91")
 		pod.annotations = map[string]string{
 			"default_memory": memory,
 			"default_vcpus":  cpu,
@@ -159,7 +156,7 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		if annErr != nil {
 			Logf("failed to get pod annotations: %v", annErr)
 		}
-		podCmd := []string{"-n", oc.Namespace(), pod.name, "--", "nproc"}
+		podCmd := []string{"-n", pod.namespace, pod.name, "--", "nproc"}
 		actualCPU, err := oc.WithoutNamespace().AsAdmin().Run("exec").Args(podCmd...).Output()
 		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("'oc exec %v' Failed", podCmd))
 		o.Expect(actualCPU).To(o.Equal(cpu),
@@ -194,8 +191,7 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 
 		ginkgo.By("Deploying pod with kata runtime and verify it")
 
-		pod := NewPodDescription(&testrun)
-		pod.baseName = "-example-00350"
+		pod := NewPodDescription(&testrun, "example-00350")
 		pod.attributes = map[string]interface{}{
 			"resources": map[string]interface{}{
 				"requests": map[string]string{
@@ -213,7 +209,7 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		defer deleteKataResource(oc, "pod", pod.namespace, pod.name)
 		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create pod for cpu hot-plug test")
 
-		podCmd := []string{"-n", oc.Namespace(), pod.name, "--", "nproc", "--all"}
+		podCmd := []string{"-n", pod.namespace, pod.name, "--", "nproc", "--all"}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
@@ -247,15 +243,14 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		)
 
 		ginkgo.By("Create deployment with kata runtime")
-		deploy := NewDeploymentDescription(&testrun)
-		deploy.name = "dep-100-" + getRandomString()
+		deploy := NewDeploymentDescription(&testrun, "dep-100-"+getRandomString(), 3)
 		err := createKataDeploymentFromDescription(oc, deploy)
 		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create expose-service deployment")
 		defer deleteKataResource(oc, "deploy", deploy.namespace, deploy.name)
 
 		ginkgo.By("Expose deployment and its service")
-		defer deleteRouteAndService(oc, deploy.name, oc.Namespace())
-		host, err := createServiceAndRoute(oc, deploy.name, oc.Namespace())
+		defer deleteRouteAndService(oc, deploy.name, deploy.namespace)
+		host, err := createServiceAndRoute(oc, deploy.name, deploy.namespace)
 		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create service and route")
 		Logf("route host=%v", host)
 
@@ -290,9 +285,7 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		}
 
 		ginkgo.By("Create deployment with kata runtime")
-		deploy := NewDeploymentDescription(&testrun)
-		deploy.name = "dep-122-" + getRandomString()
-		deploy.replicas = initReplicas
+		deploy := NewDeploymentDescription(&testrun, "dep-122-"+getRandomString(), initReplicas)
 		err := createKataDeploymentFromDescription(oc, deploy)
 		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create scale-up deployment")
 		defer deleteKataResource(oc, "deploy", deploy.namespace, deploy.name)
@@ -336,9 +329,7 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		}
 
 		ginkgo.By("Create deployment with kata runtime")
-		deploy := NewDeploymentDescription(&testrun)
-		deploy.name = "dep-123-" + getRandomString()
-		deploy.replicas = initReplicas
+		deploy := NewDeploymentDescription(&testrun, "dep-123-"+getRandomString(), initReplicas)
 		err := createKataDeploymentFromDescription(oc, deploy)
 		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create scale-down deployment")
 		defer deleteKataResource(oc, "deploy", deploy.namespace, deploy.name)
@@ -366,9 +357,7 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		}
 
 		ginkgo.By("Creating deployment with main container and sidecar")
-		deploy := NewDeploymentDescription(&testrun)
-		deploy.name = "sidecar-test-" + getRandomString()
-		deploy.replicas = 1
+		deploy := NewDeploymentDescription(&testrun, "sidecar-test-"+getRandomString(), 1)
 
 		deploy.attributes["volumes"] = []map[string]interface{}{
 			{"name": "shared-logs", "type": "emptyDir"},

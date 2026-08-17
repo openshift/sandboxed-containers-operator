@@ -28,12 +28,13 @@ timeout          time.Duration
 }
 
 // NewDeploymentDescription returns a DeploymentDescription with defaults from the test run config.
-func NewDeploymentDescription(testrun *TestRunDescription) *DeploymentDescription {
+func NewDeploymentDescription(testrun *TestRunDescription, name string, replicas int) *DeploymentDescription {
 	return &DeploymentDescription{
+		name:             name,
 		namespace:        "",
 		runtimeClassName: testrun.runtimeClassName,
 		image:            testrun.workloadImage,
-		replicas:         3,
+		replicas:         replicas,
 		port:             8888,
 		timeout:          600 * time.Second,
 		pollInterval:     10 * time.Second,
