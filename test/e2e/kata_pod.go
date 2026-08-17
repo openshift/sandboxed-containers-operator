@@ -34,9 +34,9 @@ type VolumeConfig struct {
 }
 
 // NewPodDescription returns a PodDescription with defaults from the test run config.
-func NewPodDescription(testrun *TestRunDescription) *PodDescription {
+func NewPodDescription(testrun *TestRunDescription, baseName string) *PodDescription {
 	return &PodDescription{
-		baseName:         "example",
+		baseName:         baseName,
 		runtimeClassName: testrun.runtimeClassName,
 		image:            testrun.workloadImage,
 		phase:            podRunState,
@@ -53,7 +53,7 @@ func createKataPodFromDescription(oc *exutil.CLI, pod *PodDescription) error {
 		pod.namespace = oc.Namespace()
 	}
 	if pod.name == "" {
-		pod.name = getRandomString() + pod.baseName
+		pod.name = getRandomString() + "-" + pod.baseName
 	}
 
 	configFile, err := processGoTemplate(pod)
