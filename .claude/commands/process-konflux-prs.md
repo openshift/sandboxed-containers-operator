@@ -122,9 +122,11 @@ Output: JSON object — exact shape:
 ```
 
 **Use `build_checks_passed` (not `all_checks_passed`) to determine if a PR is ready.**
-Enterprise-contract checks legitimately return `NEUTRAL` and are excluded from
-`build_checks_passed`. If `pending_checks > 0`, checks are still running — wait for
-the next run.
+Enterprise-contract checks return `NEUTRAL` when not enforced on a branch — those are
+excluded from `build_checks_passed`. However, if an enterprise-contract check returns
+`FAILURE` (enforced and failing), it is treated as a blocking failure and will make
+`build_checks_passed` false. Never merge a PR where `build_checks_passed` is `false`.
+If `pending_checks > 0`, checks are still running — wait for the next run.
 
 **Always check `other_checks_failed` before merging.** GitHub StatusContext checks
 (e.g. `renovate/artifacts`) are not Konflux build pipelines but still block merges.
