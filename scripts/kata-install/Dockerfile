@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/skopeo:9.8-1785444819
+FROM registry.access.redhat.com/ubi9/skopeo:9.8-1787020054
 
 RUN mkdir -p /scripts
 
