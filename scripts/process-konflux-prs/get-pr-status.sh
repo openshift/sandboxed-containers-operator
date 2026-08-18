@@ -89,12 +89,13 @@ checks=$(echo "$pr_data" | jq '[(.statusCheckRollup // [])[] |
 labels=$(echo "$pr_data" | jq '[(.labels // [])[].name]')
 
 # Build pipeline checks only: "Red Hat Konflux / {component}-on-pull-request[…]"
-# Enterprise-contract checks (containing "enterprise-contract") are excluded —
-# they return NEUTRAL when not required, which is not a failure.
+# Enterprise-contract checks are excluded ONLY when their conclusion is NEUTRAL
+# (not enforced on this branch). A FAILURE conclusion from an enterprise-contract
+# check is a real failure and must block the PR.
 build_checks=$(echo "$checks" | jq '[.[] |
     select(.name | startswith("Red Hat Konflux / ")) |
     select(.name | test("-on-pull-request")) |
-    select(.name | contains("enterprise-contract") | not)]')
+    select((.name | contains("enterprise-contract")) and (.conclusion == "NEUTRAL") | not)]')
 
 # Non-build checks that failed: anything with FAILURE conclusion that is not a
 # Konflux build pipeline check. These block merging and require developer attention.
