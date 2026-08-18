@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+  {{- range .annotations }}
+    {{.}}
+  {{- end }}
+  name: {{.name}}
+spec:
+  runtimeClassName: {{or .runtimeClassName "kata"}}
+{{- if .initContainers}}
+  initContainers:
+  {{- range .initContainers}}
+    - name: {{.name}}
+      image: {{.image}}
+      {{- if .command}}
+      command:
+      {{- range .command}}
+        - {{.}}
+      {{- end}}
+      {{- end}}
+      {{- if .volumeMounts}}
+      volumeMounts:
+      {{- range .volumeMounts}}
+        - name: {{.name}}
+          mountPath: {{.mountPath}}
+      {{- end}}
+      {{- end}}
+  {{- end}}
+{{- end}}
+  containers:
+    - name: hello-openshift
+      image: {{or .image "quay.io/openshift/origin-hello-openshift"}}
+      imagePullPolicy: IfNotPresent
+      ports:
+        - containerPort: {{or .port 8080}}
+{{- if .resources}}
+      resources:
+{{- if .resources.requests}}
+        requests:
+{{- if .resources.requests.cpu}}
+          cpu: {{.resources.requests.cpu}}
+{{- end}}
+{{- if .resources.requests.memory}}
+          memory: {{.resources.requests.memory}}
+{{- end}}
+{{- end}}
+{{- if .resources.limits}}
+        limits:
+{{- if .resources.limits.cpu}}
+          cpu: {{.resources.limits.cpu}}
+{{- end}}
+{{- if .resources.limits.memory}}
+          memory: {{.resources.limits.memory}}
+{{- end}}
+{{- end}}
+{{- end}}
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+{{- if .volume}}
+      volumeMounts:
+      {{- range  .volume }}
+        - name: {{or .name "container-storage"}}
+          mountPath: {{or .mountPath "/var/lib/containers"}}
+      {{- end }}
+  volumes:
+  {{- range .volume }}
+    - name: {{or .name "container-storage"}}
+      {{.type}}:
+        {{- if .medium }}
+        medium: {{.medium}}
+        {{- end }}
+        {{- if .sizeLimit }}
+        sizeLimit: {{.sizeLimit}}
+        {{- end }}
+  {{- end }}
+{{- end }}
