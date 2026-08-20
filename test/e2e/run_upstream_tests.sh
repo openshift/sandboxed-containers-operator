@@ -1,10 +1,10 @@
 #!/bin/bash
 # Run upstream kata-containers BATS tests on OpenShift.
-# Requires: bats, yq, jq, kubectl, envsubst
+# Requires: bats, yq, jq, kubectl, envsubst, oc
 # Usage: KUBECONFIG=/path/to/kubeconfig bash run_upstream_tests.sh [sanity|pods|workloads|resources|volumes|networking|full]
 set -o pipefail
 
-KATA_TESTS_DIR="${KATA_TESTS_DIR:-/home/vvoronko/dev/kata-containers/tests/integration/kubernetes}"
+KATA_TESTS_DIR="${KATA_TESTS_DIR:?KATA_TESTS_DIR must be set to kata-containers/tests/integration/kubernetes}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RESULTS_DIR="${RESULTS_DIR:-${SCRIPT_DIR}/results}"
 
@@ -111,7 +111,7 @@ case "$PROFILE" in
 esac
 
 # --- Prereq checks ---
-for cmd in bats yq jq kubectl envsubst; do
+for cmd in bats yq jq kubectl envsubst oc; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: $cmd is required but not found in PATH"
         exit 1
@@ -136,7 +136,7 @@ fi
 # --- Setup upstream working directory ---
 echo "Running upstream setup.sh..."
 cd "$KATA_TESTS_DIR" || exit 1
-bash setup.sh
+bash setup.sh || exit 1
 
 # Create test namespace if needed
 kubectl apply -f runtimeclass_workloads/tests-namespace.yaml 2>/dev/null || true
@@ -171,7 +171,7 @@ for test_file in "${TESTS[@]}"; do
     echo "--- Running: $test_file ---"
     junit_file="${RESULTS_DIR}/${test_file%.bats}.xml"
 
-    if bats --formatter junit "$filepath" > "$junit_file" 2>&1; then
+    if bats --formatter junit "$filepath" > "$junit_file"; then
         echo "PASS: $test_file"
         ((passed++))
     else
