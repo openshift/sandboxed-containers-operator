@@ -551,6 +551,8 @@ Implemented in `list-prs.sh --mintmaker`:
   - starts with `"chore(deps): update registry.redhat.io/rhel9/rhel-bootc"` (rhel-bootc image)
   - starts with `"Update registry.redhat.io/rhel9/rhel-bootc"`
   - starts with `"chore(deps): refresh rpm lockfiles"`
+  - starts with `"Update podvm-payload/kata-containers digest"` or `"chore(deps): update podvm-payload/kata-containers"` (submodule update)
+  - starts with `"Update config/peerpods/podvm/cloud-api-adaptor digest"` or `"chore(deps): update config/peerpods/podvm/cloud-api-adaptor"` (submodule update)
 
 # Nudge PRs filter
 

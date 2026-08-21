@@ -61,6 +61,12 @@ is_mintmaker_pr() {
     [[ "$title" == "Update registry.access.redhat.com/ubi10"* ]] && return 0
     [[ "$title" == "Update registry.redhat.io/rhel9/rhel-bootc"* ]] && return 0
     [[ "$title" == "chore(deps): refresh rpm lockfiles"* ]] && return 0
+    [[ "$title" == "Update podvm-payload/kata-containers digest"* ]] && return 0
+    [[ "$title" == "chore(deps): update podvm-payload/kata-containers"* ]] && return 0
+    [[ "$title" == "Update podvm-payload/guest-components digest"* ]] && return 0
+    [[ "$title" == "chore(deps): update podvm-payload/guest-components"* ]] && return 0
+    [[ "$title" == "Update config/peerpods/podvm/cloud-api-adaptor digest"* ]] && return 0
+    [[ "$title" == "chore(deps): update config/peerpods/podvm/cloud-api-adaptor"* ]] && return 0
     return 1
 }
 
