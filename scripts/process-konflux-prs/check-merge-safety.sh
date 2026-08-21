@@ -28,18 +28,22 @@ GH_BRANCH=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --components)
+            [[ $# -ge 2 ]] || { echo "Usage: $0 --components 'comp1 comp2 ...' [--repo GITHUB_REPO] [--branch BRANCH] [--namespace NAMESPACE]" >&2; exit 1; }
             IFS=' ' read -ra COMPONENTS <<< "$2"
             shift 2
             ;;
         --namespace)
+            [[ $# -ge 2 ]] || { echo "Usage: $0 --components 'comp1 comp2 ...' [--repo GITHUB_REPO] [--branch BRANCH] [--namespace NAMESPACE]" >&2; exit 1; }
             NAMESPACE_ARG="--namespace $2"
             shift 2
             ;;
         --repo)
+            [[ $# -ge 2 ]] || { echo "Usage: $0 --components 'comp1 comp2 ...' [--repo GITHUB_REPO] [--branch BRANCH] [--namespace NAMESPACE]" >&2; exit 1; }
             GH_REPO="$2"
             shift 2
             ;;
         --branch)
+            [[ $# -ge 2 ]] || { echo "Usage: $0 --components 'comp1 comp2 ...' [--repo GITHUB_REPO] [--branch BRANCH] [--namespace NAMESPACE]" >&2; exit 1; }
             GH_BRANCH="$2"
             shift 2
             ;;
