@@ -1,0 +1,9 @@
+# Snyk (https://snyk.io) policy file
+#
+# Exclude submodule code embedded under config/peerpods/podvm/cloud-api-adaptor.
+# This subtree contains sources from cloud-api-adaptor, guest-components and
+# kata-containers — all maintained in separate repositories.
+# Findings there are addressed in our corresponding forks, not here.
+exclude:
+  global:
+    - config/peerpods/podvm/cloud-api-adaptor
