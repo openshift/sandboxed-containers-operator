@@ -59,6 +59,11 @@ if [[ ${#COMPONENTS[@]} -eq 0 ]]; then
     exit 1
 fi
 
+if [[ ( -n "$GH_REPO" && -z "$GH_BRANCH" ) || ( -z "$GH_REPO" && -n "$GH_BRANCH" ) ]]; then
+    echo "Error: --repo and --branch must be supplied together" >&2
+    exit 1
+fi
+
 # Query GitHub for the most recent on-push check-run conclusion for a component.
 # Walks back through the last 20 commits on the branch, stopping at the first
 # commit that has the component's on-push check-run.
