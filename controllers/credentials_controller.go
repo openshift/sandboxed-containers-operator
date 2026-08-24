@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-logr/logr"
 	v1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
@@ -167,6 +168,26 @@ func (r *SecretReconciler) ccoDataMapping(ccoSecretData map[string][]byte) map[s
 			peerPodsSecretData[ccoToPp[ccoKey]] = ppKey
 		}
 	}
+
+	// Handle ccoctl STS format: the "credentials" key contains an INI-style AWS config file
+	// produced by `ccoctl aws create-iam-roles`. Extract role_arn and web_identity_token_file
+	// and map them to the env-var names expected by the image creation job and CAA.
+	if credFile, ok := ccoSecretData["credentials"]; ok {
+		r.Log.Info("ccoDataMapping: ccoctl manual secret identified, converting credentials file format to env vars")
+		stsFieldMap := map[string]string{
+			"role_arn":                "AWS_ROLE_ARN",
+			"web_identity_token_file": "AWS_WEB_IDENTITY_TOKEN_FILE",
+		}
+		for _, line := range strings.Split(string(credFile), "\n") {
+			parts := strings.SplitN(strings.TrimSpace(line), " = ", 2)
+			if len(parts) == 2 {
+				if ppKey, ok := stsFieldMap[strings.TrimSpace(parts[0])]; ok {
+					peerPodsSecretData[ppKey] = []byte(strings.TrimSpace(parts[1]))
+				}
+			}
+		}
+	}
+
 	return peerPodsSecretData
 }
 
