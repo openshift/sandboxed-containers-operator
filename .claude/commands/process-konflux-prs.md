@@ -22,19 +22,20 @@ Process the pull requests from Mintmaker and Konflux
 
 **CRITICAL: Parameter-gated behavior**: The command behavior is strictly controlled by parameters:
 
-- **No parameter**: ONLY list PRs. For each PR, show which images will be rebuilt and the
-  suggested action (see [Status output format](#status-output-format)). Do NOT label or merge.
+- **No parameter**: Run the `--mintmaker` process. If the Mintmaker queue is empty (no open
+  Mintmaker PRs found in the snapshot), also run the `--nudge` process afterward.
 - **`--mintmaker`**: Process Mintmaker PRs ONLY. Apply labels (ok-to-test, lgtm), then merge
   PRs that are ready (see [Step 1 - Mintmaker PR processing](#step-1---mintmaker-pr-processing)).
   Do NOT touch Nudge PRs.
 - **`--nudge`**: Process Nudge PRs ONLY, with the Mintmaker safeguard (see
   [Step 2 - Nudge PR processing](#step-2---nudge-pr-processing)). Do NOT touch Mintmaker PRs.
   Merges nudge PRs that do not auto-merge (non-osc repos, and osc PRs not targeting `devel`).
-- **`--dry-run`**: Show what would be done. Do NOT label or merge. Can be combined with
-  `--mintmaker` or `--nudge` to preview that specific step.
+- **`--dry-run`**: List all open Mintmaker and Nudge PRs with status and recommended action.
+  Do NOT label or merge (see [Status output format](#status-output-format)).
 
-`--mintmaker` and `--nudge` are mutually exclusive. If neither is given, only list/status output
-is produced.
+`--mintmaker`, `--nudge`, and `--dry-run` are mutually exclusive. With no argument,
+both mintmaker and nudge may run sequentially: mintmaker first, then nudge only if the
+Mintmaker queue was empty.
 
 **CRITICAL**: Always query fresh data. Never use PR numbers from previous runs or earlier in the conversation.
 
@@ -319,7 +320,7 @@ when a PR auto-merges to confirm success (see [merging](#merging)).
 
 ## Step 1 - Mintmaker PR processing
 
-**Only executed when `--mintmaker` is passed.**
+**Executed when `--mintmaker` is passed, or when called with no argument.**
 
 ### Phase 0 — Skip filter
 
@@ -392,7 +393,7 @@ Do NOT touch Nudge PRs during Step 1.
 
 ## Step 2 - Nudge PR processing
 
-**Only executed when `--nudge` is passed.**
+**Executed when `--nudge` is passed, or when called with no argument and the Mintmaker queue was empty.**
 
 Nudge PRs must only be processed when we are certain that no open Mintmaker PR
 will trigger a rebuild of the same source component. If a Mintmaker PR would
@@ -627,9 +628,9 @@ When the PR is merged, a similar pipelinerun will start, with pattern:
 
 # Status output format
 
-When run with no parameter (list-only mode), the result should be displayed on the
-terminal (if available) and saved under the local folder as a markdown file with
-a timestamp in the filename for easy filtering (like: "YYYYMMDD-Konflux-PR-status.md").
+When run with `--dry-run`, list all open Mintmaker and Nudge PRs. Display the result on
+the terminal and save it as a markdown file with a timestamp in the filename for easy
+filtering (like: "YYYYMMDD-Konflux-PR-status.md").
 
 The output for each PR should include:
 
