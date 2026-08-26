@@ -1,9 +1,8 @@
 #!/bin/bash
 # Run upstream kata-containers BATS tests on OpenShift.
-# Requires: bats, yq, jq, kubectl, envsubst, oc
+# Requires: bats, yq, jq, kubectl, envsubst, oc, git
 set -o pipefail
 
-KATA_TESTS_DIR="${KATA_TESTS_DIR:?KATA_TESTS_DIR must be set to kata-containers/tests/integration/kubernetes}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RESULTS_DIR="${RESULTS_DIR:-${SCRIPT_DIR}/results}"
 
@@ -20,19 +19,29 @@ Run upstream kata-containers BATS tests on an OpenShift cluster.
 Requires: bats, yq, jq, kubectl, envsubst, oc
 
 Options:
-  -t, --test PROFILE     Test profile or .bats file to run (default: full)
-                         Profiles: sanity, pods, workloads, resources, volumes, networking, full
-                         Or a single .bats file, e.g. k8s-env.bats
-  -h, --help             Show this help
+  -t, --test PROFILE        Test profile or .bats file to run (default: full)
+                            Profiles: sanity, pods, workloads, resources, volumes, networking, full
+                            Or a single .bats file, e.g. k8s-env.bats
+  --tests-repo URL|DIR      Kata tests repo URL or local directory
+                            (default: https://github.com/openshift/kata-containers)
+  --tests-repo-ref REF      Git ref to checkout — branch or tag (default: main)
+  --preserve-tests-repo     Do not delete the cloned test repo after execution
+  -h, --help                Show this help
 EOF
     exit "${1:-1}"
 }
 
 PROFILE="full"
+TESTS_REPO="https://github.com/openshift/kata-containers"
+TESTS_REPO_REF="main"
+PRESERVE_TESTS_REPO=false
 
 while [ $# -gt 0 ]; do
     case "$1" in
         -t|--test) PROFILE="$2"; shift 2;;
+        --tests-repo) TESTS_REPO="$2"; shift 2;;
+        --tests-repo-ref) TESTS_REPO_REF="$2"; shift 2;;
+        --preserve-tests-repo) PRESERVE_TESTS_REPO=true; shift;;
         -h|--help) usage 0;;
         *) echo "Unknown argument: $1"; usage;;
     esac
@@ -124,29 +133,54 @@ case "$PROFILE" in
 esac
 
 # --- Prereq checks ---
-for cmd in bats yq jq kubectl envsubst oc; do
+for cmd in bats yq jq kubectl envsubst oc git; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: $cmd is required but not found in PATH"
         exit 1
     fi
 done
 
-if [[ ! -d "$KATA_TESTS_DIR" ]]; then
-    echo "ERROR: kata-containers test dir not found: $KATA_TESTS_DIR"
-    exit 1
-fi
-
 # --- Cleanup ---
 ORIG_NAMESPACE="$(kubectl config view --minify -o jsonpath='{.contexts[0].context.namespace}' 2>/dev/null)"
 ORIG_NAMESPACE="${ORIG_NAMESPACE:-default}"
+CLONE_DIR=""
 SCC_ADDED=false
 cleanup() {
     kubectl config set-context --current --namespace="$ORIG_NAMESPACE" 2>/dev/null || true
     if [[ "$SCC_ADDED" == "true" ]]; then
         oc adm policy remove-scc-from-user privileged -z default -n kata-containers-k8s-tests 2>/dev/null || true
     fi
+    if [[ -n "$CLONE_DIR" && -d "$CLONE_DIR" ]]; then
+        if [[ "$PRESERVE_TESTS_REPO" == "true" ]]; then
+            echo "Test repo preserved at: $CLONE_DIR"
+        else
+            rm -rf "$CLONE_DIR"
+        fi
+    fi
 }
 trap cleanup EXIT
+
+# --- Resolve test repo ---
+# Strip credentials from URL for logging
+safe_url="${TESTS_REPO/\/\/*@/\/\/}"
+if [[ -d "$TESTS_REPO" ]]; then
+    TESTS_REPO="$(realpath "$TESTS_REPO")"
+    KATA_TESTS_DIR="${TESTS_REPO}/tests/integration/kubernetes"
+    echo "Using local test repo: $TESTS_REPO"
+else
+    CLONE_DIR=$(mktemp -d /tmp/kata-tests-XXXXXX)
+    echo "Cloning $safe_url (ref: $TESTS_REPO_REF) to $CLONE_DIR..."
+    git clone --depth 1 --branch "$TESTS_REPO_REF" "$TESTS_REPO" "$CLONE_DIR" || {
+        echo "ERROR: failed to clone $safe_url at ref $TESTS_REPO_REF" >&2
+        exit 1
+    }
+    KATA_TESTS_DIR="${CLONE_DIR}/tests/integration/kubernetes"
+fi
+
+if [[ ! -d "$KATA_TESTS_DIR" ]]; then
+    echo "ERROR: test directory not found: $KATA_TESTS_DIR"
+    exit 1
+fi
 
 # --- Ensure kata node label ---
 # Upstream tests look for katacontainers.io/kata-runtime=true
