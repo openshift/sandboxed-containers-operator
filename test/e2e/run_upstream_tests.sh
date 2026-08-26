@@ -26,6 +26,7 @@ Options:
                             (default: https://github.com/openshift/kata-containers)
   --tests-repo-ref REF      Git ref to checkout — branch or tag (default: main)
   --preserve-tests-repo     Do not delete the cloned test repo after execution
+  --skip-setup              Skip cluster setup (node labeling, setup.sh, namespace, SCC)
   -h, --help                Show this help
 EOF
     exit "${1:-1}"
@@ -35,6 +36,7 @@ PROFILE="full"
 TESTS_REPO="https://github.com/openshift/kata-containers"
 TESTS_REPO_REF="main"
 PRESERVE_TESTS_REPO=false
+SKIP_SETUP=false
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -42,6 +44,7 @@ while [ $# -gt 0 ]; do
         --tests-repo) TESTS_REPO="$2"; shift 2;;
         --tests-repo-ref) TESTS_REPO_REF="$2"; shift 2;;
         --preserve-tests-repo) PRESERVE_TESTS_REPO=true; shift;;
+        --skip-setup) SKIP_SETUP=true; shift;;
         -h|--help) usage 0;;
         *) echo "Unknown argument: $1"; usage;;
     esac
@@ -182,35 +185,38 @@ if [[ ! -d "$KATA_TESTS_DIR" ]]; then
     exit 1
 fi
 
-# --- Ensure kata node label ---
-# Upstream tests look for katacontainers.io/kata-runtime=true
-# OSC uses node-role.kubernetes.io/kata-oc
-if ! kubectl get nodes -l katacontainers.io/kata-runtime=true -o name 2>/dev/null | grep -q .; then
-    echo "Adding upstream kata node label to OSC worker nodes..."
-    for node in $(kubectl get nodes -l node-role.kubernetes.io/kata-oc -o name); do
-        kubectl label "$node" katacontainers.io/kata-runtime=true --overwrite >/dev/null || {
-            echo "ERROR: failed to label node $node" >&2; exit 1
-        }
-    done
-fi
-
-# --- Setup upstream working directory ---
-echo "Running upstream setup.sh..."
 cd "$KATA_TESTS_DIR" || exit 1
-bash setup.sh || exit 1
 
-# Create test namespace
-kubectl apply -f runtimeclass_workloads/tests-namespace.yaml || {
-    echo "ERROR: failed to create test namespace" >&2; exit 1
-}
+if [[ "$SKIP_SETUP" != "true" ]]; then
+    # --- Ensure kata node label ---
+    # Upstream tests look for katacontainers.io/kata-runtime=true
+    # OSC uses node-role.kubernetes.io/kata-oc
+    if ! kubectl get nodes -l katacontainers.io/kata-runtime=true -o name 2>/dev/null | grep -q .; then
+        echo "Adding upstream kata node label to OSC worker nodes..."
+        for node in $(kubectl get nodes -l node-role.kubernetes.io/kata-oc -o name); do
+            kubectl label "$node" katacontainers.io/kata-runtime=true --overwrite >/dev/null || {
+                echo "ERROR: failed to label node $node" >&2; exit 1
+            }
+        done
+    fi
 
-# Upstream tests need root (nginx image) and hostPath volumes.
-# Grant privileged SCC to the test namespace service account.
-if ! oc adm policy who-can use scc/privileged -n kata-containers-k8s-tests 2>/dev/null | grep -q "system:serviceaccount:kata-containers-k8s-tests:default"; then
-    oc adm policy add-scc-to-user privileged -z default -n kata-containers-k8s-tests || {
-        echo "ERROR: failed to grant privileged SCC" >&2; exit 1
+    # --- Setup upstream working directory ---
+    echo "Running upstream setup.sh..."
+    bash setup.sh || exit 1
+
+    # Create test namespace
+    kubectl apply -f runtimeclass_workloads/tests-namespace.yaml || {
+        echo "ERROR: failed to create test namespace" >&2; exit 1
     }
-    SCC_ADDED=true
+
+    # Upstream tests need root (nginx image) and hostPath volumes.
+    # Grant privileged SCC to the test namespace service account.
+    if ! oc adm policy who-can use scc/privileged -n kata-containers-k8s-tests 2>/dev/null | grep -q "system:serviceaccount:kata-containers-k8s-tests:default"; then
+        oc adm policy add-scc-to-user privileged -z default -n kata-containers-k8s-tests || {
+            echo "ERROR: failed to grant privileged SCC" >&2; exit 1
+        }
+        SCC_ADDED=true
+    fi
 fi
 
 kubectl config set-context --current --namespace=kata-containers-k8s-tests
