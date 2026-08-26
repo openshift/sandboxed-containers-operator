@@ -1,7 +1,6 @@
 #!/bin/bash
 # Run upstream kata-containers BATS tests on OpenShift.
 # Requires: bats, yq, jq, kubectl, envsubst, oc
-# Usage: KUBECONFIG=/path/to/kubeconfig bash run_upstream_tests.sh [sanity|pods|workloads|resources|volumes|networking|full]
 set -o pipefail
 
 KATA_TESTS_DIR="${KATA_TESTS_DIR:?KATA_TESTS_DIR must be set to kata-containers/tests/integration/kubernetes}"
@@ -12,9 +11,34 @@ export KATA_HYPERVISOR="${KATA_HYPERVISOR:-qemu}"
 export AUTO_GENERATE_POLICY="no"
 export CONTAINER_RUNTIME="crio"
 export K8S_TEST_DEBUG="false"
-export KUBECONFIG="${KUBECONFIG:?KUBECONFIG must be set}"
 
-PROFILE="${1:-full}"
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [options]
+
+Run upstream kata-containers BATS tests on an OpenShift cluster.
+Requires: bats, yq, jq, kubectl, envsubst, oc
+
+Options:
+  -t, --test PROFILE     Test profile or .bats file to run (default: full)
+                         Profiles: sanity, pods, workloads, resources, volumes, networking, full
+                         Or a single .bats file, e.g. k8s-env.bats
+  -h, --help             Show this help
+EOF
+    exit "${1:-1}"
+}
+
+PROFILE="full"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -t|--test) PROFILE="$2"; shift 2;;
+        -h|--help) usage 0;;
+        *) echo "Unknown argument: $1"; usage;;
+    esac
+done
+
+export KUBECONFIG="${KUBECONFIG:?KUBECONFIG must be set}"
 
 # --- Test sections ---
 PODS=(
@@ -96,18 +120,7 @@ case "$PROFILE" in
     networking) TESTS=("${NETWORKING[@]}") ;;
     full)       TESTS=("${PODS[@]}" "${WORKLOADS[@]}" "${RESOURCES[@]}" "${VOLUMES[@]}" "${NETWORKING[@]}") ;;
     *.bats)     TESTS=("${PROFILE}") ;;
-    *)
-        echo "Usage: $0 [sanity|pods|workloads|resources|volumes|networking|full|<test>.bats]"
-        echo "  sanity       - 5 tests, one per section"
-        echo "  pods         - ${#PODS[@]} tests: exec, caps, security context, etc."
-        echo "  workloads    - ${#WORKLOADS[@]} tests: jobs, cron, replication, scaling"
-        echo "  resources    - ${#RESOURCES[@]} tests: limits, memory, oom, quotas"
-        echo "  volumes      - ${#VOLUMES[@]} tests: configmaps, secrets, volumes"
-        echo "  networking   - ${#NETWORKING[@]} tests: connectivity, port-forward, dns"
-        echo "  full         - all $(( ${#PODS[@]} + ${#WORKLOADS[@]} + ${#RESOURCES[@]} + ${#VOLUMES[@]} + ${#NETWORKING[@]} )) tests (default)"
-        echo "  <test>.bats  - run a single test file, e.g. k8s-file-volume.bats"
-        exit 1
-        ;;
+    *)  echo "Unknown profile: $PROFILE"; usage;;
 esac
 
 # --- Prereq checks ---
