@@ -29,12 +29,16 @@ while [[ $# -gt 0 ]]; do
             PR_TYPE="nudge"
             shift
             ;;
+        --test-fbc)
+            PR_TYPE="test-fbc"
+            shift
+            ;;
         --repo)
             REPO_FILTER="$2"
             shift 2
             ;;
         *)
-            echo "Usage: $0 [--mintmaker|--nudge] [--repo REPO_NAME]" >&2
+            echo "Usage: $0 [--mintmaker|--nudge|--test-fbc] [--repo REPO_NAME]" >&2
             exit 1
             ;;
     esac
@@ -102,10 +106,11 @@ for repo_name in "${!REPOS[@]}"; do
         # Determine PR type
         pr_type=""
 
-        # Check if it's a Nudge PR
+        # Check if it's a Nudge PR (or the test-fbc subset of nudge PRs)
         if echo "$labels" | grep -q "konflux-nudge"; then
-            # Skip bundle update PRs
-            if [[ "$title" != "chore(deps): update osc-operator-bundle"* ]]; then
+            if [[ "$title" == "chore(deps): update osc-operator-bundle"* ]]; then
+                pr_type="test-fbc"
+            else
                 pr_type="nudge"
             fi
         # Check if it's a Mintmaker PR

@@ -14,6 +14,7 @@ allowed-tools:
   - Bash(scripts/process-konflux-prs/check-pipeline-status.sh *)
   - Bash(scripts/process-konflux-prs/check-merge-safety.sh *)
   - Bash(scripts/process-konflux-prs/get-nudge-prs.sh *)
+  - Bash(scripts/process-konflux-prs/process-test-fbc.sh)
   - Bash(scripts/process-konflux-prs/get-component-info.sh)
   - Bash(scripts/process-konflux-prs/get-component-info.sh *)
 ---
@@ -23,13 +24,19 @@ Process the pull requests from Mintmaker and Konflux
 # Modes
 
 - **No argument**: run `--mintmaker`; if its output has `"empty": true`, also run `--nudge`.
+  After nudge, if **all four** nudge arrays (`labelled`, `merged`, `held_back`, `skipped`)
+  are empty (i.e. the nudge queue is fully drained and nothing was merged this run), also
+  run `--test-fbc`. The `merged` check is important: a nudge merge triggers on-push
+  pipelines that will produce new `osc-operator-bundle` nudge PRs, so test-fbc must not
+  run until those have been processed in a future invocation.
 - **`--mintmaker`**: call `process-mintmaker.sh`, format the result as the Mintmaker report.
 - **`--nudge`**: call `process-nudge.sh`, format the result as the Nudge report.
+- **`--test-fbc`**: call `process-test-fbc.sh`, format the result as the Test-FBC report.
 - **`--dry-run`**: call `snapshot-prs.sh --mintmaker` and `snapshot-prs.sh --nudge` in
   parallel, format all PRs as a status table, and save to a timestamped markdown file
   (see [Status output format](#status-output-format)).
 
-`--mintmaker`, `--nudge`, and `--dry-run` are mutually exclusive.
+`--mintmaker`, `--nudge`, `--test-fbc`, and `--dry-run` are mutually exclusive.
 
 # Orchestration scripts
 
@@ -83,6 +90,32 @@ Runs the full Nudge workflow and exits. Output JSON:
 
 `_blocking` is present only on safety-blocked skipped entries.
 
+## process-test-fbc.sh
+
+```bash
+./scripts/process-konflux-prs/process-test-fbc.sh
+```
+
+Runs the test-FBC workflow and exits. Processes `chore(deps): update osc-operator-bundle`
+PRs from the `osc` repo using the same label→lgtm→merge flow as nudge, without
+grouping/hold-back logic (each PR is on a distinct base branch).
+
+Output JSON:
+
+```json
+{
+  "empty":    false,
+  "labelled": [{ "repo":"…", "pr":123, "title":"…", "base_branch":"…",
+                 "components":[…], "_label":"ok-to-test|lgtm" }],
+  "merged":   [{ "repo":"…", "pr":123, "title":"…", "base_branch":"…",
+                 "components":[…] }],
+  "skipped":  [{ "repo":"…", "pr":123, "title":"…", "_skip_reason":"…",
+                 "_blocking":[{"component":"…","reason":"…"}] }]
+}
+```
+
+`_blocking` is present only on safety-blocked skipped entries.
+
 # Report format
 
 Format the JSON output as four grouped tables. Use the PR `repo` and `pr` number to
@@ -91,6 +124,8 @@ build the GitHub URL (see [List of repositories](#list-of-repositories)).
 **Mintmaker report sections:** Skipped | Labelled | Merged | Waiting
 
 **Nudge report sections:** Labelled | Merged | Held back | Skipped
+
+**Test-FBC report sections:** Labelled | Merged | Skipped
 
 For each PR include: PR link, repo, branch, components, and the relevant reason/label field.
 Append a one-line summary (counts of each group) at the end.
@@ -143,7 +178,15 @@ Implemented in `list-prs.sh --mintmaker`. PRs must be open, authored by
 
 Implemented in `list-prs.sh --nudge`. PRs must be open, authored by
 `app/red-hat-konflux`, have label `konflux-nudge`, and title must NOT start with
-`chore(deps): update osc-operator-bundle` (those are test-fbc PRs, merged manually).
+`chore(deps): update osc-operator-bundle` (those are routed to the test-fbc queue
+instead, via `list-prs.sh --test-fbc`).
+
+# Test-FBC PRs filter
+
+Implemented in `list-prs.sh --test-fbc`. PRs must be open, authored by
+`app/red-hat-konflux`, have label `konflux-nudge`, and title must start with
+`chore(deps): update osc-operator-bundle`. Found only in the `osc` repo; they rebuild
+the `osc-test-fbc` component.
 
 # Status output format
 
