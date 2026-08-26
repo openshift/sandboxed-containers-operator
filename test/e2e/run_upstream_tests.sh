@@ -98,13 +98,13 @@ case "$PROFILE" in
     *.bats)     TESTS=("${PROFILE}") ;;
     *)
         echo "Usage: $0 [sanity|pods|workloads|resources|volumes|networking|full|<test>.bats]"
-        echo "  sanity       - 5 tests, one per section (default)"
+        echo "  sanity       - 5 tests, one per section"
         echo "  pods         - ${#PODS[@]} tests: exec, caps, security context, etc."
         echo "  workloads    - ${#WORKLOADS[@]} tests: jobs, cron, replication, scaling"
         echo "  resources    - ${#RESOURCES[@]} tests: limits, memory, oom, quotas"
         echo "  volumes      - ${#VOLUMES[@]} tests: configmaps, secrets, volumes"
         echo "  networking   - ${#NETWORKING[@]} tests: connectivity, port-forward, dns"
-        echo "  full         - all $(( ${#PODS[@]} + ${#WORKLOADS[@]} + ${#RESOURCES[@]} + ${#VOLUMES[@]} + ${#NETWORKING[@]} )) tests"
+        echo "  full         - all $(( ${#PODS[@]} + ${#WORKLOADS[@]} + ${#RESOURCES[@]} + ${#VOLUMES[@]} + ${#NETWORKING[@]} )) tests (default)"
         echo "  <test>.bats  - run a single test file, e.g. k8s-file-volume.bats"
         exit 1
         ;;
@@ -123,13 +123,27 @@ if [[ ! -d "$KATA_TESTS_DIR" ]]; then
     exit 1
 fi
 
+# --- Cleanup ---
+ORIG_NAMESPACE="$(kubectl config view --minify -o jsonpath='{.contexts[0].context.namespace}' 2>/dev/null)"
+ORIG_NAMESPACE="${ORIG_NAMESPACE:-default}"
+SCC_ADDED=false
+cleanup() {
+    kubectl config set-context --current --namespace="$ORIG_NAMESPACE" 2>/dev/null || true
+    if [[ "$SCC_ADDED" == "true" ]]; then
+        oc adm policy remove-scc-from-user privileged -z default -n kata-containers-k8s-tests 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
 # --- Ensure kata node label ---
 # Upstream tests look for katacontainers.io/kata-runtime=true
 # OSC uses node-role.kubernetes.io/kata-oc
 if ! kubectl get nodes -l katacontainers.io/kata-runtime=true -o name 2>/dev/null | grep -q .; then
     echo "Adding upstream kata node label to OSC worker nodes..."
     for node in $(kubectl get nodes -l node-role.kubernetes.io/kata-oc -o name); do
-        kubectl label "$node" katacontainers.io/kata-runtime=true --overwrite
+        kubectl label "$node" katacontainers.io/kata-runtime=true --overwrite >/dev/null || {
+            echo "ERROR: failed to label node $node" >&2; exit 1
+        }
     done
 fi
 
@@ -138,12 +152,19 @@ echo "Running upstream setup.sh..."
 cd "$KATA_TESTS_DIR" || exit 1
 bash setup.sh || exit 1
 
-# Create test namespace if needed
-kubectl apply -f runtimeclass_workloads/tests-namespace.yaml 2>/dev/null || true
+# Create test namespace
+kubectl apply -f runtimeclass_workloads/tests-namespace.yaml || {
+    echo "ERROR: failed to create test namespace" >&2; exit 1
+}
 
 # Upstream tests need root (nginx image) and hostPath volumes.
 # Grant privileged SCC to the test namespace service account.
-oc adm policy add-scc-to-user privileged -z default -n kata-containers-k8s-tests 2>/dev/null || true
+if ! oc adm policy who-can use scc/privileged -n kata-containers-k8s-tests 2>/dev/null | grep -q "system:serviceaccount:kata-containers-k8s-tests:default"; then
+    oc adm policy add-scc-to-user privileged -z default -n kata-containers-k8s-tests || {
+        echo "ERROR: failed to grant privileged SCC" >&2; exit 1
+    }
+    SCC_ADDED=true
+fi
 
 kubectl config set-context --current --namespace=kata-containers-k8s-tests
 
@@ -151,7 +172,6 @@ kubectl config set-context --current --namespace=kata-containers-k8s-tests
 mkdir -p "$RESULTS_DIR"
 passed=0
 failed=0
-skipped=0
 errors=""
 
 echo ""
@@ -163,8 +183,9 @@ echo ""
 for test_file in "${TESTS[@]}"; do
     filepath="${KATA_TESTS_DIR}/${test_file}"
     if [[ ! -f "$filepath" ]]; then
-        echo "SKIP: $test_file (not found)"
-        ((skipped++))
+        echo "ERROR: $test_file (not found in $KATA_TESTS_DIR)"
+        ((failed++))
+        errors="${errors}\n  - ${test_file} (not found)"
         continue
     fi
 
@@ -182,16 +203,13 @@ for test_file in "${TESTS[@]}"; do
     echo ""
 done
 
-# --- Restore namespace ---
-kubectl config set-context --current --namespace=default 2>/dev/null || true
-
 # --- Summary ---
 echo "=============================="
-echo "Results: ${passed} passed, ${failed} failed, ${skipped} skipped (of ${#TESTS[@]} files)"
+echo "Results: ${passed} passed, ${failed} failed (of ${#TESTS[@]} files)"
 echo "JUnit XML: ${RESULTS_DIR}/"
 if [[ -n "$errors" ]]; then
     echo -e "Failed tests:${errors}"
 fi
 echo "=============================="
 
-exit $failed
+exit $(( failed > 0 ? 1 : 0 ))
