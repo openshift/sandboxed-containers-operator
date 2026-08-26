@@ -17,7 +17,7 @@ REPO_FILTER=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --mintmaker|--nudge)
+        --mintmaker|--nudge|--test-fbc)
             PR_TYPE="$1"
             shift
             ;;
@@ -33,7 +33,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$PR_TYPE" ]]; then
-    echo "Usage: $0 --mintmaker|--nudge [--repo REPO_NAME]" >&2
+    echo "Usage: $0 --mintmaker|--nudge|--test-fbc [--repo REPO_NAME]" >&2
     exit 1
 fi
 
