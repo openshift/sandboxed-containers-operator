@@ -5,6 +5,7 @@ set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RESULTS_DIR="${RESULTS_DIR:-${SCRIPT_DIR}/results}"
+RESULTS_DIR="${RESULTS_DIR}/$(date +"%Y-%m-%d_%H%M%S")"
 
 export KATA_HYPERVISOR="${KATA_HYPERVISOR:-qemu}"
 export AUTO_GENERATE_POLICY="no"
