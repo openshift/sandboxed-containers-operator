@@ -45,6 +45,8 @@ spec:
         {"type": "pip", "path": "./config/peerpods/podvm/", "requirements_files": ["azure-cli-pip.txt"]},
         {"type": "rpm", "path": "./config/peerpods/podvm/"}
       ]
+  - name: sast-target-dirs
+    value: config/peerpods/podvm
   pipelineRef:
     name: build-pipeline
   taskRunTemplate:
