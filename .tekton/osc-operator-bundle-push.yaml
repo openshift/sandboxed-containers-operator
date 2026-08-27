@@ -92,7 +92,7 @@ spec:
       type: string
     - name: sast-target-dirs
       type: string
-      default: .
+      default: bundle
       description: Target directories to scan with SAST tools. Multiple values should be separated with commas.
     - name: source-date-epoch
       type: string

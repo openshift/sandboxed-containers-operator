@@ -52,6 +52,8 @@ spec:
     value:
     - pr-{{pull_request_number}}
     - pullreq-{{pull_request_number}}-{{revision}}
+  - name: sast-target-dirs
+    value: config/peerpods/podvm
   pipelineRef:
     name: build-pipeline
   taskRunTemplate:

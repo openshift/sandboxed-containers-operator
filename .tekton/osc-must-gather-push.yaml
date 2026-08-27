@@ -38,6 +38,8 @@ spec:
     value: must-gather
   - name: prefetch-input
     value: '{"type": "rpm", "path": "./must-gather/"}'
+  - name: sast-target-dirs
+    value: must-gather
   pipelineRef:
     name: build-pipeline
   taskRunTemplate:
