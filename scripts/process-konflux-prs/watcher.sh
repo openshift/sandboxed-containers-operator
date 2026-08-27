@@ -9,6 +9,7 @@ jq -rs 'add' \
     (if .has_ok_to_test then "X" else "-" end),
     (if .has_lgtm then "X" else "-" end),
     (if (.pending_checks > 0) then "pending(\(.pending_checks))"
+     elif (.other_checks_failed | length) > 0 then "other_fail(\(.other_checks_failed | length))"
      elif .build_checks_passed then "pass"
      else "FAIL" end),
     .title
