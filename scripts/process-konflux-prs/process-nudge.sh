@@ -68,7 +68,7 @@ while IFS= read -r pr; do
     source_comp=""
     while IFS= read -r comp; do
         [ -z "$comp" ] && continue
-        if echo "$title" | grep -qiF "$comp"; then
+        if echo "$title" | grep -qiE "${comp}($|[^[:alnum:]-])"; then
             source_comp="$comp"
             break
         fi
