@@ -55,9 +55,9 @@ MCP_PATH=${OSC_PATH}/mcps
 mkdir -p ${MCP_PATH}
 
 for mcp in "${mcps[@]}"; do
-    if $(oc get mcp $mcp &>/dev/null); then
-        oc describe mcp $mcp > "${MCP_PATH}/${mcp}_description"
-    fi	    
+    if oc get mcp "${mcp}" &>/dev/null; then
+        oc describe mcp "${mcp}" > "${MCP_PATH}/${mcp}_description"
+    fi
 done
 
 # installplans
