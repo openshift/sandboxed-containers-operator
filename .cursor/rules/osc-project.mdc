@@ -1,0 +1,6 @@
+---
+description: OpenShift Sandboxed Containers Operator project guidelines
+alwaysApply: true
+---
+
+Read and follow the project guide in `AGENTS.md` at the repository root.
