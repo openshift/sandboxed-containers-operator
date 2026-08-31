@@ -19,8 +19,10 @@ type TestRunDescription struct {
 	checked          bool
 	runtimeClassName string
 	enablePeerPods   bool
+	enableGPU        bool
 	workloadToTest   string
 	workloadImage    string
+	operatorVer      string
 	ocpMinorVerInt   int
 }
 
@@ -124,6 +126,14 @@ func getTestRunConfigmap(oc *exutil.CLI, testrun *TestRunDescription, ns, name s
 		}
 	} else {
 		errorMessage += "workloadToTest is missing from data\n"
+	}
+
+	if gjson.Get(configmapData, "operatorVer").Exists() {
+		testrun.operatorVer = gjson.Get(configmapData, "operatorVer").String()
+	}
+
+	if gjson.Get(configmapData, "enableGPU").Exists() {
+		testrun.enableGPU = gjson.Get(configmapData, "enableGPU").Bool()
 	}
 
 	if errorMessage != "" {

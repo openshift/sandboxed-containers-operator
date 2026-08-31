@@ -59,6 +59,11 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		err = checkKataconfigIsCreated(oc, kataconfig.name)
 		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Precondition failed: %v", err))
 
+		if testrun.enablePeerPods {
+			err = validatePeerPodsSetup(oc, kataconfig.name, cloudPlatform)
+			o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Peer-pods setup validation failed: %v", err))
+		}
+
 		testrun.checked = true
 		Logf("Suite setup complete: runtime=%v, peerpods=%v, workload=%v",
 			testrun.runtimeClassName, testrun.enablePeerPods, testrun.workloadToTest)
@@ -427,5 +432,175 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("failed to verify both containers running: %v", err))
 
 		ginkgo.By("SUCCESS - deployment with sidecar container works correctly")
+	})
+
+	// --- Peer-Pod Tests ---
+
+	ginkgo.It("C00099-deploy peerpod with type annotation [Serial]", func() {
+		if testrun.workloadToTest != "peer-pods" {
+			ginkgo.Skip("Test supported only with peer-pods")
+		}
+
+		instanceSize := map[string]string{
+			"aws":   "t3.xlarge",
+			"azure": "Standard_D4as_v5",
+			// TODO: GCP metadata returns full resource path, needs parsing
+		}
+
+		expected, ok := instanceSize[cloudPlatform]
+		if !ok {
+			ginkgo.Skip(fmt.Sprintf("C00099 not supported on platform %s", cloudPlatform))
+		}
+
+		ginkgo.By("Deploying peerpod with machine_type annotation")
+		pod := NewPodDescription(&testrun, "example-99")
+		pod.annotations = map[string]string{
+			"machine_type": expected,
+		}
+
+		err := createKataPodFromDescription(oc, pod)
+		defer deleteKataResource(oc, "pod", pod.namespace, pod.name)
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("failed to create pod with machine_type annotation %s", expected))
+
+		actual, err := getPeerPodMetadataInstanceType(oc, pod.namespace, pod.name, cloudPlatform)
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("failed to query instance type metadata from pod %v", pod.name))
+		o.Expect(actual).To(o.Equal(expected),
+			fmt.Sprintf("instance type %v doesn't match annotation %v", actual, expected))
+
+		ginkgo.By("SUCCESS - peerpod with required instance type was launched")
+	})
+
+	ginkgo.It("C00131-deploy peerpod with vcpu and memory annotation [Serial]", func() {
+		if testrun.workloadToTest != "peer-pods" {
+			ginkgo.Skip("Test supported only with peer-pods")
+		}
+
+		instanceSize := map[string]string{
+			"aws":   "t3.xlarge",
+			"azure": "Standard_D4as_v5",
+			// TODO: GCP metadata returns full resource path, needs parsing
+		}
+
+		expected, ok := instanceSize[cloudPlatform]
+		if !ok {
+			ginkgo.Skip(fmt.Sprintf("C00131 not supported on platform %s", cloudPlatform))
+		}
+
+		ginkgo.By("Deploying peerpod with vcpu and memory annotations")
+		pod := NewPodDescription(&testrun, "example-131")
+		pod.annotations = map[string]string{
+			"default_memory": "16000",
+			"default_vcpus":  "4",
+		}
+
+		err := createKataPodFromDescription(oc, pod)
+		defer deleteKataResource(oc, "pod", pod.namespace, pod.name)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create pod with vcpu/memory annotations")
+
+		actual, err := getPeerPodMetadataInstanceType(oc, pod.namespace, pod.name, cloudPlatform)
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("failed to query instance type metadata from pod %v", pod.name))
+		o.Expect(actual).To(o.Equal(expected),
+			fmt.Sprintf("instance type %v doesn't match expected %v for vcpu/memory annotations", actual, expected))
+
+		ginkgo.By("SUCCESS - peerpod with required vcpu/memory was launched")
+	})
+
+	ginkgo.It("C00320-deploy peerpod with custom tags [Serial]", func() {
+		if testrun.workloadToTest != "peer-pods" {
+			ginkgo.Skip("Test supported only with peer-pods")
+		}
+
+		if cloudPlatform != "azure" {
+			ginkgo.Skip("C00320 custom tags supported only on Azure")
+		}
+
+		configuredTags, err := getConfigmapParamValue(oc, "TAGS")
+		if err != nil || configuredTags == "" {
+			ginkgo.Skip("TAGS not configured in peer-pods-cm, skipping custom tags test")
+		}
+		Logf("TAGS configured in peer-pods-cm: %v", configuredTags)
+
+		ginkgo.By("Deploying peerpod and verifying custom tags from metadata")
+		pod := NewPodDescription(&testrun, "example-320")
+
+		err = createKataPodFromDescription(oc, pod)
+		defer deleteKataResource(oc, "pod", pod.namespace, pod.name)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create pod for custom tags test")
+
+		actual, err := getPeerPodMetadataTags(oc, pod.namespace, pod.name, cloudPlatform)
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("failed to query tags metadata from pod %v", pod.name))
+		o.Expect(actual).NotTo(o.BeEmpty(), "tags metadata is empty")
+
+		ginkgo.By("SUCCESS - peerpod with custom tags verified")
+	})
+
+	ginkgo.It("C00347-deploy peerpod with existing image annotation [Serial]", func() {
+		if testrun.workloadToTest != "peer-pods" {
+			ginkgo.Skip("Test supported only with peer-pods")
+		}
+
+		if cloudPlatform != "aws" && cloudPlatform != "azure" {
+			ginkgo.Skip(fmt.Sprintf("C00347 image metadata verification not supported on %s", cloudPlatform))
+		}
+
+		imageID, err := checkPodVMImageID(oc, cloudPlatform)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get image ID from peer-pods-cm")
+		Logf("Image ID from configmap: %v", imageID)
+
+		ginkgo.By("Deploying peerpod with image annotation")
+		pod := NewPodDescription(&testrun, "example-347")
+		pod.annotations = map[string]string{
+			"image": imageID,
+		}
+
+		err = createKataPodFromDescription(oc, pod)
+		defer deleteKataResource(oc, "pod", pod.namespace, pod.name)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create pod with image annotation")
+
+		actual, err := getPeerPodMetadataImageID(oc, pod.namespace, pod.name, cloudPlatform)
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("failed to query image ID metadata from pod %v", pod.name))
+		o.Expect(actual).To(o.Equal(imageID),
+			fmt.Sprintf("image ID %v doesn't match annotation %v", actual, imageID))
+
+		ginkgo.By("SUCCESS - peerpod with specified image was launched")
+	})
+
+	ginkgo.It("C00366-run [peerpodGPU] cuda-vectoradd GPUS annotated [Serial]", func() {
+		if !(testrun.workloadToTest == "peer-pods" && testrun.enableGPU && cloudPlatform == "aws") {
+			ginkgo.Skip("C00366 supported only on AWS with peer-pods and GPU enabled")
+		}
+
+		var (
+			cudaImage            = "nvcr.io/nvidia/k8s/cuda-sample:vectoradd-cuda12.5.0"
+			expectedInstanceType = "g5.2xlarge"
+			logPassed            = "Test PASSED"
+		)
+
+		instancesParam, err := getConfigmapParamValue(oc, "PODVM_INSTANCE_TYPES")
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get PODVM_INSTANCE_TYPES from peer-pods-cm")
+		o.Expect(instancesParam).To(o.ContainSubstring(expectedInstanceType),
+			"expected GPU instance type missing in peer-pods-cm")
+
+		ginkgo.By("Deploying peerpod with GPU annotation")
+		pod := NewPodDescription(&testrun, "example-366")
+		pod.image = cudaImage
+		pod.phase = "Succeeded"
+		pod.annotations = map[string]string{
+			"default_gpus": "1",
+		}
+
+		err = createKataPodFromDescription(oc, pod)
+		defer deleteKataResource(oc, "pod", pod.namespace, pod.name)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create pod with GPU annotation")
+
+		ginkgo.By("Verifying cuda-vectoradd output")
+		log, err := oc.AsAdmin().WithoutNamespace().Run("logs").Args(
+			pod.name, "-n", pod.namespace,
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("failed to get logs from pod %v", pod.name))
+		o.Expect(log).To(o.ContainSubstring(logPassed),
+			fmt.Sprintf("cuda-vectoradd did not pass, log: %v", log))
+
+		ginkgo.By("SUCCESS - peerpod with GPU annotation translated to instance type")
 	})
 })
