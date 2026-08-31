@@ -215,7 +215,7 @@ function applyCM() {
     [[ -n $YES ]] || (read -r -p "Apply the Changes to the peer-pods-cm ConfigMap? [y/N] " && [[ "$REPLY" =~ ^[Yy]$ ]]) || exit 0
     ${CLI} delete cm peer-pods-cm -n openshift-sandboxed-containers-operator > /dev/null 2>&1
     ${CLI} create cm peer-pods-cm --from-env-file=${ENV_FILE} -n openshift-sandboxed-containers-operator
-    until ${CLI} get cm peer-pods-cm -n openshift-sandboxed-containers-operator >/dev/null 2>&1 >/dev/null ; do
+    until ${CLI} get cm peer-pods-cm -n openshift-sandboxed-containers-operator >/dev/null 2>&1 ; do
        echo "Waiting for ConfigMap to be created..."
        sleep 1
     done
