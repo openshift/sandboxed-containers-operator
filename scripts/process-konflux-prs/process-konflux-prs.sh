@@ -17,10 +17,28 @@
 # The script captures JSON output from each stage and formats it into a markdown report
 # that is saved as Konflux-PR-report-YYYYMMDD-HHMMSS.md
 #
+# Options:
+#   --dry-run    Snapshot all PRs without processing (no labels or merges)
+#
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Parse command-line arguments
+DRY_RUN=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+  esac
+done
 
 # Temporary files to hold JSON results
 MINTMAKER_RESULT=$(mktemp)
@@ -38,9 +56,15 @@ declare -A REPO_URLS=(
   ["osc"]="https://github.com/openshift/sandboxed-containers-operator"
 )
 
+# Build script arguments
+SCRIPT_ARGS=""
+if [ "$DRY_RUN" = true ]; then
+  SCRIPT_ARGS="--dry-run"
+fi
+
 # Step 1: Run mintmaker
 echo "Running mintmaker..." >&2
-"$SCRIPT_DIR/process-mintmaker.sh" > "$MINTMAKER_RESULT"
+"$SCRIPT_DIR/process-mintmaker.sh" $SCRIPT_ARGS > "$MINTMAKER_RESULT"
 
 MINTMAKER_EMPTY=$(jq -r '.empty' "$MINTMAKER_RESULT")
 
@@ -48,7 +72,7 @@ MINTMAKER_EMPTY=$(jq -r '.empty' "$MINTMAKER_RESULT")
 NUDGE_EMPTY=true
 if [ "$MINTMAKER_EMPTY" = "true" ]; then
   echo "Mintmaker queue is empty, running nudge..." >&2
-  "$SCRIPT_DIR/process-nudge.sh" > "$NUDGE_RESULT"
+  "$SCRIPT_DIR/process-nudge.sh" $SCRIPT_ARGS > "$NUDGE_RESULT"
 
   # Check if nudge queues are fully drained
   NUDGE_LABELLED=$(jq '.labelled | length' "$NUDGE_RESULT")
@@ -62,19 +86,23 @@ if [ "$MINTMAKER_EMPTY" = "true" ]; then
     NUDGE_EMPTY=false
   fi
 
-  # Step 3: If nudge queue is empty and nothing was merged, run test-fbc
-  if [ $NUDGE_TOTAL -eq 0 ] && [ "$NUDGE_MERGED" -eq 0 ]; then
-    echo "Nudge queue is empty and nothing was merged, running test-fbc..." >&2
-    "$SCRIPT_DIR/process-test-fbc.sh" > "$TESTFBC_RESULT"
+  # Step 3: If nudge queue is empty, run test-fbc
+  # In normal mode: only run if nothing was merged (to avoid pending on-push pipelines)
+  # In dry-run: always run if queue would be empty
+  if [ $NUDGE_TOTAL -eq 0 ]; then
+    if [ "$DRY_RUN" = true ] || [ "$NUDGE_MERGED" -eq 0 ]; then
+      echo "Nudge queue is empty, running test-fbc..." >&2
+      "$SCRIPT_DIR/process-test-fbc.sh" $SCRIPT_ARGS > "$TESTFBC_RESULT"
+    fi
   fi
 fi
 
 format_pr_row() {
-  local repo="$1"
-  local pr="$2"
-  local branch="$3"
-  local components="$4"
-  local reason="$5"
+  local repo="${1:-}"
+  local pr="${2:-}"
+  local branch="${3:-}"
+  local components="${4:-}"
+  local reason="${5:-}"
 
   local url="${REPO_URLS[$repo]:-}"
   local link
@@ -176,5 +204,13 @@ print_section() {
     tfbc_skipped=$(jq '.skipped | length' "$TESTFBC_RESULT")
     echo ""
     echo "**Test-FBC Summary:** $tfbc_labelled labelled, $tfbc_merged merged, $tfbc_skipped skipped"
+  fi
+
+  # Dry-run notice
+  if [ "$DRY_RUN" = true ]; then
+    echo ""
+    echo "---"
+    echo ""
+    echo "⚠️  **DRY RUN** — No PRs were modified. The operations shown above would be performed in normal mode."
   fi
 } | tee "Konflux-PR-report-$(date +%Y%m%d-%H%M%S).md"

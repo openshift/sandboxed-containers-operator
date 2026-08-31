@@ -4,7 +4,9 @@
 # excluded from the regular nudge flow and should only run when the Mintmaker
 # and Nudge queues are fully drained.
 #
-# Usage: ./process-test-fbc.sh
+# Usage: ./process-test-fbc.sh [--dry-run]
+#
+# With --dry-run: analyzes what would be done without performing labels or merges
 #
 # Output: JSON
 #   {
@@ -17,6 +19,21 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Parse options
+DRY_RUN=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+  esac
+done
 
 repo_to_github() {
     case "$1" in
@@ -68,8 +85,10 @@ while IFS= read -r pr; do
     fi
 
     if [ "$has_ok" = "false" ]; then
-        "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
-            --label ok-to-test >/dev/null 2>&1 || true
+        if [ "$DRY_RUN" = false ]; then
+            "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
+                --label ok-to-test >/dev/null 2>&1 || true
+        fi
         labelled=$(echo "$labelled" | jq --argjson p "$pr" \
             '. + [$p + {"_label":"ok-to-test"}]')
         continue
@@ -91,21 +110,28 @@ while IFS= read -r pr; do
     fi
 
     if [ "$has_lgtm" = "false" ]; then
-        "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
-            --label lgtm >/dev/null 2>&1 || true
+        if [ "$DRY_RUN" = false ]; then
+            "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
+                --label lgtm >/dev/null 2>&1 || true
+        fi
         labelled=$(echo "$labelled" | jq --argjson p "$pr" \
             '. + [$p + {"_label":"lgtm"}]')
         continue
     fi
 
-    result=$("$SCRIPT_DIR/merge-pr.sh" --repo "$repo" --pr "$num" \
-        2>/dev/null) || result='{"success":false,"message":"merge command failed"}'
-    if [ "$(echo "$result" | jq -r '.success')" = "true" ]; then
-        merged=$(echo "$merged" | jq --argjson p "$pr" '. + [$p]')
+    if [ "$DRY_RUN" = false ]; then
+        result=$("$SCRIPT_DIR/merge-pr.sh" --repo "$repo" --pr "$num" \
+            2>/dev/null) || result='{"success":false,"message":"merge command failed"}'
+        if [ "$(echo "$result" | jq -r '.success')" = "true" ]; then
+            merged=$(echo "$merged" | jq --argjson p "$pr" '. + [$p]')
+        else
+            msg=$(echo "$result" | jq -r '.message // "unknown error"')
+            skipped=$(echo "$skipped" | jq --argjson p "$pr" --arg m "$msg" \
+                '. + [$p + {"_skip_reason":"merge failed: \($m)"}]')
+        fi
     else
-        msg=$(echo "$result" | jq -r '.message // "unknown error"')
-        skipped=$(echo "$skipped" | jq --argjson p "$pr" --arg m "$msg" \
-            '. + [$p + {"_skip_reason":"merge failed: \($m)"}]')
+        # In dry-run, assume merge would succeed
+        merged=$(echo "$merged" | jq --argjson p "$pr" '. + [$p]')
     fi
 done < <(echo "$snapshot" | jq -c 'sort_by(.pr) | .[]')
 
