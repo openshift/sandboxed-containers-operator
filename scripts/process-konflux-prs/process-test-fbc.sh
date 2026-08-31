@@ -85,12 +85,17 @@ while IFS= read -r pr; do
     fi
 
     if [ "$has_ok" = "false" ]; then
-        if [ "$DRY_RUN" = false ]; then
-            "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
-                --label ok-to-test >/dev/null 2>&1 || true
+        label_success=false
+        if [ "$DRY_RUN" = true ]; then
+            label_success=true
+        elif "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
+                --label ok-to-test >/dev/null 2>&1; then
+            label_success=true
         fi
-        labelled=$(echo "$labelled" | jq --argjson p "$pr" \
-            '. + [$p + {"_label":"ok-to-test"}]')
+        if [ "$label_success" = true ]; then
+            labelled=$(echo "$labelled" | jq --argjson p "$pr" \
+                '. + [$p + {"_label":"ok-to-test"}]')
+        fi
         continue
     fi
 
@@ -110,12 +115,17 @@ while IFS= read -r pr; do
     fi
 
     if [ "$has_lgtm" = "false" ]; then
-        if [ "$DRY_RUN" = false ]; then
-            "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
-                --label lgtm >/dev/null 2>&1 || true
+        label_success=false
+        if [ "$DRY_RUN" = true ]; then
+            label_success=true
+        elif "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
+                --label lgtm >/dev/null 2>&1; then
+            label_success=true
         fi
-        labelled=$(echo "$labelled" | jq --argjson p "$pr" \
-            '. + [$p + {"_label":"lgtm"}]')
+        if [ "$label_success" = true ]; then
+            labelled=$(echo "$labelled" | jq --argjson p "$pr" \
+                '. + [$p + {"_label":"lgtm"}]')
+        fi
         continue
     fi
 
