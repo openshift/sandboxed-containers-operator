@@ -2,7 +2,9 @@
 # Full Mintmaker PR processing workflow: skip filter, labelling, merge.
 # Replaces the manual Phase 0 / Phase A / Phase B loop that Claude used to run.
 #
-# Usage: ./process-mintmaker.sh
+# Usage: ./process-mintmaker.sh [--dry-run]
+#
+# With --dry-run: analyzes what would be done without performing labels or merges
 #
 # Output: JSON
 #   {
@@ -16,6 +18,21 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Parse options
+DRY_RUN=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+  esac
+done
 
 repo_to_github() {
     case "$1" in
@@ -95,8 +112,15 @@ while IFS= read -r pr; do
     fi
 
     (
-        if "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
+        success=false
+        if [ "$DRY_RUN" = true ]; then
+            success=true
+        elif "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
                --label "$label" >/dev/null 2>&1; then
+            success=true
+        fi
+
+        if [ "$success" = true ]; then
             echo "$pr" | jq --arg l "$label" '. + {"_label":$l}' \
                 > "$tmpdir/label-${repo}-${num}.json"
         fi
@@ -181,14 +205,25 @@ while IFS= read -r pr; do
         continue
     fi
 
-    result=$("$SCRIPT_DIR/merge-pr.sh" --repo "$repo" --pr "$num" 2>/dev/null) || \
-        result='{"success":false,"message":"merge command failed"}'
-    if [ "$(echo "$result" | jq -r '.success')" = "true" ]; then
+    merge_success=false
+    merge_msg=""
+    if [ "$DRY_RUN" = true ]; then
+        merge_success=true
+    else
+        result=$("$SCRIPT_DIR/merge-pr.sh" --repo "$repo" --pr "$num" 2>/dev/null) || \
+            result='{"success":false,"message":"merge command failed"}'
+        if [ "$(echo "$result" | jq -r '.success')" = "true" ]; then
+            merge_success=true
+        else
+            merge_msg=$(echo "$result" | jq -r '.message // "unknown error"')
+        fi
+    fi
+
+    if [ "$merge_success" = true ]; then
         merged=$(echo "$merged" | jq --argjson p "$pr" '. + [$p]')
         rebuilt="$rebuilt $comps"
     else
-        msg=$(echo "$result" | jq -r '.message // "unknown error"')
-        waiting=$(echo "$waiting" | jq --argjson p "$pr" --arg m "$msg" \
+        waiting=$(echo "$waiting" | jq --argjson p "$pr" --arg m "$merge_msg" \
             '. + [$p + {"_wait_reason":"merge failed: \($m)"}]')
     fi
 done < <(echo "$eligible" | jq -c '.[]')
