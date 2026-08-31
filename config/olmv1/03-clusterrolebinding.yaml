@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sandboxed-containers-installer-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sandboxed-containers-installer-role
+subjects:
+  - kind: ServiceAccount
+    name: sandboxed-containers-installer
+    namespace: openshift-sandboxed-containers-operator

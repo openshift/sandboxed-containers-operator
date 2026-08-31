@@ -1,0 +1,160 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sandboxed-containers-installer-role
+rules:
+  # OLM v1: manage this ClusterExtension
+  - apiGroups: [olm.operatorframework.io]
+    resources: [clusterextensions/finalizers]
+    verbs: [update]
+    resourceNames: [sandboxed-containers]
+
+  # OLM v1: manage ClusterObjectSets created for this extension (names are generated)
+  - apiGroups: [olm.operatorframework.io]
+    resources: [clusterobjectsets/finalizers]
+    verbs: [update]
+
+  # OLM v1: metrics endpoint
+  - nonResourceURLs: [/metrics]
+    verbs: [get]
+
+  # CRDs owned by the operator
+  - apiGroups: [apiextensions.k8s.io]
+    resources: [customresourcedefinitions]
+    verbs: [create, list, watch]
+  - apiGroups: [apiextensions.k8s.io]
+    resources: [customresourcedefinitions]
+    verbs: [get, update, patch, delete]
+    resourceNames:
+      - kataconfigs.kataconfiguration.openshift.io
+      - peerpods.confidentialcontainers.org
+
+  # RBAC resources the operator creates for its own controllers
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterroles, clusterrolebindings, roles, rolebindings]
+    verbs: [create, list, watch]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterroles, clusterrolebindings, roles, rolebindings]
+    verbs: [get, update, patch, delete]
+
+  # Core resources (from CSV clusterPermissions)
+  - apiGroups: [""]
+    resources: [pods, pods/finalizers]
+    verbs: [get, create, patch, update, list, watch]
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get, update, list, watch]
+  - apiGroups: [""]
+    resources: [nodes/status]
+    verbs: [patch]
+  - apiGroups: [""]
+    resources: [secrets, secrets/finalizers, secrets/status]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [""]
+    resources: [serviceaccounts]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: ["", machineconfiguration.openshift.io]
+    resources:
+      - configmaps
+      - containerruntimeconfigs
+      - endpoints
+      - events
+      - machineconfigpools
+      - machineconfigs
+      - nodes
+      - persistentvolumeclaims
+      - pods
+      - secrets
+      - services
+      - services/finalizers
+    verbs: [create, delete, get, list, patch, update, watch]
+
+  # Leader election
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [create, delete, get, list, patch, update, watch]
+
+  # Webhook configurations (both validating and mutating)
+  - apiGroups: [admissionregistration.k8s.io]
+    resources: [validatingwebhookconfigurations, mutatingwebhookconfigurations]
+    verbs: [create, delete, get, list, update, watch, patch]
+
+  # Network policies
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [create, delete, update]
+
+  # Workload resources
+  - apiGroups: [apps]
+    resources: [daemonsets, deployments, replicasets, statefulsets]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [apps]
+    resources: [daemonsets/finalizers]
+    verbs: [update]
+    resourceNames: [manager-role]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [create, delete, get, list, watch]
+
+  # Monitoring resources
+  - apiGroups: [monitoring.coreos.com]
+    resources: [prometheusrules, servicemonitors]
+    verbs: [create, delete, get, list, patch, update, watch]
+
+  # Cloud credential requests (peer-pods)
+  - apiGroups: [cloudcredential.openshift.io]
+    resources: [credentialsrequests]
+    verbs: [create, delete, get, list]
+
+  # Confidential containers / peer-pods CRs
+  - apiGroups: [confidentialcontainers.org]
+    resources:
+      - peerpodconfigs
+      - peerpods
+      - pods
+      - peerpodconfigs/finalizers
+      - peerpods/finalizers
+      - peerpodconfigs/status
+      - peerpods/status
+    verbs: [create, delete, get, list, patch, update, watch]
+
+  # Cluster info
+  - apiGroups: [config.openshift.io]
+    resources: [apiservers, clusterversions, infrastructures]
+    verbs: [get, list, watch]
+
+  # Kata CRs
+  - apiGroups: [kataconfiguration.openshift.io]
+    resources: [kataconfigs, kataconfigs/finalizers, kataconfigs/status]
+    verbs: [create, delete, get, list, patch, update, watch]
+
+  # RuntimeClass — created by operator after KataConfig install
+  - apiGroups: [node.k8s.io]
+    resources: [runtimeclasses]
+    verbs: [create, delete, get, list, patch, update, watch]
+
+  # SCCs — installer creates the operator-managed SCCs during bundle deployment
+  - apiGroups: [security.openshift.io]
+    resources: [securitycontextconstraints]
+    verbs: [create]
+
+  # SCCs — installer manages only the operator-owned SCCs
+  - apiGroups: [security.openshift.io]
+    resources: [securitycontextconstraints]
+    resourceNames:
+      - sandboxed-containers-operator-scc
+      - kata-install-scc
+    verbs: [delete, patch, update, use, watch]
+
+  # SCCs — installer can read all SCCs to validate cluster state
+  - apiGroups: [security.openshift.io]
+    resources: [securitycontextconstraints]
+    verbs: [get, list]
+
+  # Token and access reviews for metrics auth
+  - apiGroups: [authentication.k8s.io]
+    resources: [tokenreviews]
+    verbs: [create]
+  - apiGroups: [authorization.k8s.io]
+    resources: [subjectaccessreviews]
+    verbs: [create]
