@@ -130,6 +130,9 @@ while IFS= read -r pr; do
         if [ "$success" = true ]; then
             echo "$pr" | jq --arg l "$label" '. + {"_label":$l}' \
                 > "$tmpdir/label-${repo}-${num}.json"
+        else
+            echo "$pr" | jq --arg l "$label" '. + {"_skip_reason":"failed to apply \($l) label"}' \
+                > "$tmpdir/skip-${repo}-${num}.json"
         fi
     ) &
 done < <(echo "$working" | jq -c '.[]')
@@ -139,6 +142,16 @@ wait 2>/dev/null || true
 for f in "$tmpdir"/label-*.json; do
     [ -f "$f" ] || continue
     labelled=$(echo "$labelled" | jq --argjson p "$(cat "$f")" '. + [$p]')
+done
+
+for f in "$tmpdir"/skip-*.json; do
+    [ -f "$f" ] || continue
+    p=$(cat "$f")
+    skipped=$(echo "$skipped" | jq --argjson p "$p" '. + [$p]')
+    skip_repo=$(echo "$p" | jq -r '.repo')
+    skip_num=$(echo "$p" | jq -r '.pr')
+    working=$(echo "$working" | jq --arg r "$skip_repo" --argjson n "$skip_num" \
+        '[.[] | select(.repo != $r or .pr != $n)]')
 done
 
 # ─── phase b: merging ────────────────────────────────────────────────────────

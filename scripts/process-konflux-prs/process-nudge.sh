@@ -161,12 +161,20 @@ while IFS= read -r group_key; do
         fi
 
         if [ "$has_ok" = "false" ]; then
-            if [ "$DRY_RUN" = false ]; then
-                "$SCRIPT_DIR/label-pr.sh" --repo "$hb_repo" --pr "$hb_num" \
-                    --label ok-to-test >/dev/null 2>&1 || true
+            label_success=false
+            if [ "$DRY_RUN" = true ]; then
+                label_success=true
+            elif "$SCRIPT_DIR/label-pr.sh" --repo "$hb_repo" --pr "$hb_num" \
+                    --label ok-to-test >/dev/null 2>&1; then
+                label_success=true
             fi
-            labelled=$(echo "$labelled" | jq --argjson p "$pr" \
-                '. + [$p + {"_label":"ok-to-test"}]')
+            if [ "$label_success" = true ]; then
+                labelled=$(echo "$labelled" | jq --argjson p "$pr" \
+                    '. + [$p + {"_label":"ok-to-test"}]')
+            else
+                skipped=$(echo "$skipped" | jq --argjson p "$pr" \
+                    '. + [$p + {"_skip_reason":"failed to apply ok-to-test label"}]')
+            fi
             continue
         fi
 
@@ -191,12 +199,20 @@ while IFS= read -r group_key; do
             skipped=$(echo "$skipped" | jq --argjson p "$pr" \
                 '. + [$p + {"_skip_reason":"waiting for auto-merge"}]')
         elif [ "$has_lgtm" = "false" ]; then
-            if [ "$DRY_RUN" = false ]; then
-                "$SCRIPT_DIR/label-pr.sh" --repo "$hb_repo" --pr "$hb_num" \
-                    --label lgtm >/dev/null 2>&1 || true
+            label_success=false
+            if [ "$DRY_RUN" = true ]; then
+                label_success=true
+            elif "$SCRIPT_DIR/label-pr.sh" --repo "$hb_repo" --pr "$hb_num" \
+                    --label lgtm >/dev/null 2>&1; then
+                label_success=true
             fi
-            labelled=$(echo "$labelled" | jq --argjson p "$pr" \
-                '. + [$p + {"_label":"lgtm"}]')
+            if [ "$label_success" = true ]; then
+                labelled=$(echo "$labelled" | jq --argjson p "$pr" \
+                    '. + [$p + {"_label":"lgtm"}]')
+            else
+                skipped=$(echo "$skipped" | jq --argjson p "$pr" \
+                    '. + [$p + {"_skip_reason":"failed to apply lgtm label"}]')
+            fi
         else
             if [ "$DRY_RUN" = false ]; then
                 result=$("$SCRIPT_DIR/merge-pr.sh" --repo "$hb_repo" --pr "$hb_num" \
@@ -224,12 +240,20 @@ while IFS= read -r group_key; do
             num=$(echo "$pr"  | jq -r '.pr')
             [ "$repo" = "$hb_repo" ] && [ "$num" = "$hb_num" ] && continue
             if [ "$(echo "$pr" | jq -r '.has_ok_to_test')" = "false" ]; then
-                if [ "$DRY_RUN" = false ]; then
-                    "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
-                        --label ok-to-test >/dev/null 2>&1 || true
+                label_success=false
+                if [ "$DRY_RUN" = true ]; then
+                    label_success=true
+                elif "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
+                        --label ok-to-test >/dev/null 2>&1; then
+                    label_success=true
                 fi
-                labelled=$(echo "$labelled" | jq --argjson p "$pr" \
-                    '. + [$p + {"_label":"ok-to-test"}]')
+                if [ "$label_success" = true ]; then
+                    labelled=$(echo "$labelled" | jq --argjson p "$pr" \
+                        '. + [$p + {"_label":"ok-to-test"}]')
+                else
+                    skipped=$(echo "$skipped" | jq --argjson p "$pr" \
+                        '. + [$p + {"_skip_reason":"failed to apply ok-to-test label"}]')
+                fi
             fi
         done < <(echo "$group" | jq -c '.[]')
 
@@ -298,12 +322,21 @@ while IFS= read -r group_key; do
 
             # Apply lgtm + merge in same run (intentional for multi-PR groups)
             if [ "$has_lgtm" = "false" ]; then
-                if [ "$DRY_RUN" = false ]; then
-                    "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
-                        --label lgtm >/dev/null 2>&1 || true
+                label_success=false
+                if [ "$DRY_RUN" = true ]; then
+                    label_success=true
+                elif "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
+                        --label lgtm >/dev/null 2>&1; then
+                    label_success=true
                 fi
-                labelled=$(echo "$labelled" | jq --argjson p "$pr" \
-                    '. + [$p + {"_label":"lgtm"}]')
+                if [ "$label_success" = true ]; then
+                    labelled=$(echo "$labelled" | jq --argjson p "$pr" \
+                        '. + [$p + {"_label":"lgtm"}]')
+                else
+                    skipped=$(echo "$skipped" | jq --argjson p "$pr" \
+                        '. + [$p + {"_skip_reason":"failed to apply lgtm label"}]')
+                    continue
+                fi
             fi
             if [ "$DRY_RUN" = false ]; then
                 result=$("$SCRIPT_DIR/merge-pr.sh" --repo "$repo" --pr "$num" \
@@ -318,7 +351,6 @@ while IFS= read -r group_key; do
             else
                 # In dry-run, assume merge would succeed
                 merged=$(echo "$merged" | jq --argjson p "$pr" '. + [$p]')
-            fi
             fi
         done < <(echo "$group" | jq -c '.[]')
     fi
