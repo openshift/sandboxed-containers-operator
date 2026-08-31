@@ -1,233 +1,203 @@
-# Process Konflux PRs - Helper Scripts
+# Konflux PRs Processing
 
-This directory contains independent scripts that provide base functionalities for managing Konflux PRs. These scripts are designed to be called by the `process-konflux-prs` skill, but can also be used standalone.
+## The problem
 
-## Scripts Overview
+We're getting automated PRs across several of our repositories, to keep
+dependencies and component images up to date. Two families of PRs are involved:
 
-### 1. list-prs.sh
-List Konflux PRs from all repositories.
+**Mintmaker PRs** update source-level dependencies. We're using it for base image
+digests, Konflux bundle references, RPM lockfiles, and cross-repository image
+digests. These PRs must be approved and merged. Each merge triggers an on-push
+pipeline that rebuilds and publishes the component image, generating Nudge PRs.
 
-**Usage:**
-```bash
-./list-prs.sh [--mintmaker|--nudge] [--repo REPO_NAME]
+**Nudge PRs** updates our own image references, whenever one of them is rebuilt.
+They also need approval before being merged.
+To avoid multiple unneeded rebuilds, it is generally better to merge the Nudge
+PRs only when Mintmaker PRs are fully processed.
+Also, it is important to be careful when merging multiple nudge PRs in parallel,
+as the build time and schedule can be unpredictable, leading to the latest bundle
+image not carrying the latest images references.
+
+**Test-FBC PRs** are a special subset of nudge PRs that update `osc-operator-bundle` for
+our test catalog. We use this as a way to control when a test catalog, containing
+all expected updates, should be created. It should be merged only when all 
+Mintmaker and Nudge PRs are processed.
+Building the test catalog triggers an automated test on the full image set.
+
+Processing this volume of PRs correctly by hand is time-consuming. The queue spans
+five repositories, PRs arrive continuously, pipelines can fail, and merging in
+the wrong order wastes rebuild capacity.
+
+## The process
+
+Each run executes three stages in order:
+
+```
+Stage 1 — Mintmaker
+  For each open Mintmaker PR:
+    • label ok-to-test (if missing)
+    • label lgtm (if ok-to-test set, all build checks passed, none pending)
+    • merge  (if lgtm already set before this run and merge is safe)
+
+Stage 2 — Nudge
+  For each open Nudge PR:
+    • skip: if the component being refreshed still has a Mintmaker PR opened
+    • Group processing: hold back the oldest, process the rest
+      We can trigger merges for all Nudges at once, as long as we keep one open.
+      This last PR will be merged separately, when no other is oppen, effectively
+      prevenging race conditions and controlling the content of the bundle image
+      that results from the merge.
+    • label ok-to-test / lgtm, merge — same rules as Mintmaker
+
+Stage 3 — Test-FBC   (only when Stage 2 queue is fully drained)
+  Same labelling/merge flow as a solo nudge PR.
 ```
 
-**Options:**
-- `--mintmaker`: Filter for Mintmaker PRs only
-- `--nudge`: Filter for Nudge PRs only
-- `--repo REPO_NAME`: Filter for a specific repository
+Merge safety is enforced before every merge. The merge is deferred if:
+- an on-push pipeline is currently running for any of the components impacted by
+  the PR
+- the last on-push pipeline for this component on the target branch did not succeed
 
-**Output:** JSON array of PRs with number, title, url, repo, and type.
+A markdown report is written at the end of each run.
 
-**Example:**
+## Interacting with the process
+
+This set of script is meant to be run in automation, in a stateless manner.
+It takes all required information from the PRs it is managing
+(labels and test/pipeline status).
+It is also looking at pipelines running on our Konflux instance at the time it
+is executing, to avoid multiple parallel rebuilds of the same components.
+
+In order to control its execution for select PRs, we can also use the labels:
+
+- **ok-to-test**: this label triggers the build/test automations on the CI
+  We can add this label manually to start the tests earlier, and make the script
+  catch from there.
+  We can remove the label to interupt new tests and delay the time where the PR
+  will be merged.
+- **lgtm**: this label marks the PR as ready to merge, assuming the builds/tests
+  are passing. We can manually add or remove this label to control the PR readiness.
+- **do-not-merge/hold**: this label can be used to make the script ignore this PR.
+  It will still be reported (and maked "on hold"), but the script will not block
+  the processing of all other PRs because of it.
+- **mintmaker-skip**: this is applied by these scripts, and used to mark some PRs
+  as non-needed. The one case where these scripts will mark a PR like that
+  is for go-toolset image updates, where we can be suggested an update to the
+  "ubi version tag", while we want to keep using the "go version tag", for clarity
+  on the toolchain used.
+  When the script marks it with this label, it makes us aware that this PR should
+  probably be closed, but it doesn't close it itself. It will then ignore this
+  PR from all processing, leaving it to us to do what's needed on the PR.
+  We can manually add this label to a PR we want to remove from the script's view
+  entirely, but somehow want to keep open still (?). "hold" seems more appropriate
+  though.
+
+## Script breakdown
+
+### Entry point
+
+| Script | Purpose |
+|--------|---------|
+| `process-konflux-prs.sh` | Top-level orchestrator. Runs the three stages in order, captures JSON from each, generates the markdown report. Accepts `--dry-run` to generate a status report with no actual changes. |
+
+### Stage scripts
+
+| Script | Purpose |
+|--------|---------|
+| `process-mintmaker.sh` | Full Mintmaker workflow. Returns a JSON array with the processed PRs status. |
+| `process-nudge.sh` | Full Nudge workflow. Returns a JSON array with the processed PRs status. |
+| `process-test-fbc.sh` | Test-FBC workflow: Performs the validation and merge of our Test-fbc nudge PR, which will trigger a new catalog build, and automated CI run on it. |
+
+### Data collection
+
+| Script | Purpose |
+|--------|---------|
+| `snapshot-prs.sh` | Combines `list-prs.sh` + `get-pr-status.sh` into a single JSON array snapshot. Used by all three stage scripts. |
+| `list-prs.sh` | Lists open Konflux PRs from all repositories, classified as `mintmaker`, `nudge`, or `test-fbc`. |
+| `get-pr-status.sh` | Fetches full status for one PR: labels, build check results, pending count, components. |
+| `get-component-info.sh` | Static registry of all known components: name, repository, build time, and which components each one nudges. |
+| `get-pr-components.sh` | Identifies which components a PR will rebuild by parsing its Konflux check-run names. |
+| `get-nudge-prs.sh` | Finds open nudge PRs for a given component (ad-hoc helper, not used by the main pipeline). |
+| `check-pipeline-status.sh` | Queries Tekton (`tkn`) for the latest on-push or on-pull-request pipeline run for a component. |
+| `check-merge-safety.sh` | Combines pipeline status (no running on-push) and GitHub check history (last on-push succeeded) to produce a `safe_to_merge` verdict. |
+
+### Actions
+
+| Script | Purpose |
+|--------|---------|
+| `label-pr.sh` | Adds `ok-to-test` or `lgtm` to a PR; also posts `/ok-to-test` comment when adding `ok-to-test`, so that other automations can be triggered. |
+| `merge-pr.sh` | Merges a PR (merge strategy, branch deleted). |
+| `skip-pr.sh` | Marks a PR as permanently skipped: adds `mintmaker-skip` label and posts an explanatory comment. |
+
+### Monitoring
+
+| Script | Purpose |
+|--------|---------|
+| `watcher.sh` | Prints a compact status table of all open Mintmaker and Nudge PRs (repo, PR number, type, branch, OK2TEST, LGTM, HOLD, checks, title). Can be used to monitor and troubleshoot the execution of the main scripts |
+
+## Repositories in scope
+
+| Short name | GitHub repository |
+|------------|------------------|
+| `osc` | openshift/sandboxed-containers-operator |
+| `kata-containers` | openshift/kata-containers |
+| `cloud-api-adaptor` | openshift/cloud-api-adaptor |
+| `compute-artifacts` | openshift/confidential-compute-artifacts |
+| `podvm-scripts` | confidential-devhub/coco-podvm-scripts |
+
+## Usage
+
+### Prerequisites
+
+- `gh` (GitHub CLI) authenticated with write access to all repositories above
+- `jq`
+- `tkn` (Tekton CLI) with access to the `ose-osc-tenant` namespace on the build cluster
+
+> **TODO**: at this time, both `gh` and `tkn` rely on the user's credentials.
+> We need to modify the scripts to use a separate GitHub and Konflux service account.
+
+### Run a full processing pass
+
 ```bash
-# List all Konflux PRs
-./list-prs.sh
+cd scripts/process-konflux-prs
+./process-konflux-prs.sh
+```
 
-# List only Mintmaker PRs
+This will run the full workflow. A report `Konflux-PR-report-YYYYMMDD-HHMMSS.md`
+is written in the current directory.
+
+### Dry run (analyse without modifying anything)
+
+```bash
+./process-konflux-prs.sh --dry-run
+```
+
+Performs a fake run, reporting what would be labelled, merged, or skipped, without
+actually doing anything.
+
+### Monitor the queue continuously
+
+```bash
+watch -n 300 ./watcher.sh
+```
+
+### Running individual scripts
+
+Each script is self-contained and can be called directly:
+
+```bash
+# Run the nudge workflow separately (with or without "--dry-run")
+./process-nudge.sh [--dry-run]
+
+# Full status of one PR
+./get-pr-status.sh --repo osc --pr 2801
+
+# All open Mintmaker PRs (raw JSON)
 ./list-prs.sh --mintmaker
 
-# List Nudge PRs from the osc repository
-./list-prs.sh --nudge --repo osc
-```
+# Snapshot of all Nudge PRs with status
+./snapshot-prs.sh --nudge
 
-### 2. get-pr-status.sh
-Get the status of a specific PR including checks, labels, and merge state.
-
-**Usage:**
-```bash
-./get-pr-status.sh --repo REPO_NAME --pr PR_NUMBER
-```
-
-**Options:**
-- `--repo REPO_NAME`: Repository name (kata-containers, cloud-api-adaptor, compute-artifacts, podvm-scripts, osc)
-- `--pr PR_NUMBER`: Pull request number
-
-**Output:** JSON with PR details including:
-- `number`, `title`, `state`
-- `labels`: Array of label names
-- `checks`: Array of status checks with name, status, conclusion, details_url
-- `has_ok_to_test`: Boolean indicating if "ok-to-test" label is present
-- `has_lgtm`: Boolean indicating if "lgtm" label is present
-- `build_checks_passed`: Boolean indicating if all build checks have passed
-- `pending_checks`: Count of checks still in progress
-
-**Example:**
-```bash
-./get-pr-status.sh --repo osc --pr 2147
-```
-
-### 3. get-pr-components.sh
-Identify which components will be rebuilt by a PR based on its Konflux checks.
-
-**Usage:**
-```bash
-./get-pr-components.sh --repo REPO_NAME --pr PR_NUMBER
-```
-
-**Options:**
-- `--repo REPO_NAME`: Repository name
-- `--pr PR_NUMBER`: Pull request number
-
-**Output:** JSON array of component names that will be rebuilt.
-
-**Note:** This script filters out enterprise-contract validation checks, which are not component builds. It only returns actual component builds that match the pattern "Red Hat Konflux / {component-name}-on-pull-request".
-
-**Example:**
-```bash
-./get-pr-components.sh --repo cloud-api-adaptor --pr 1234
-# Output: ["osc-caa", "osc-caa-webhook"]
-```
-
-### 4. label-pr.sh
-Add a label to a PR.
-
-**Usage:**
-```bash
-./label-pr.sh --repo REPO_NAME --pr PR_NUMBER --label LABEL_NAME
-```
-
-**Options:**
-- `--repo REPO_NAME`: Repository name
-- `--pr PR_NUMBER`: Pull request number
-- `--label LABEL_NAME`: Label to add (must be "ok-to-test" or "lgtm")
-
-**Output:** JSON with success status.
-
-**Example:**
-```bash
-./label-pr.sh --repo osc --pr 2147 --label ok-to-test
-```
-
-### 5. check-pipeline-status.sh
-Check the status of Konflux pipelines for a component.
-
-**Usage:**
-```bash
-# For on-push pipelines (default)
-./check-pipeline-status.sh --component COMPONENT_NAME [--namespace NAMESPACE]
-
-# For on-pull-request pipelines (--pr-id is REQUIRED)
-./check-pipeline-status.sh --component COMPONENT_NAME --type on-pull-request --pr-id PR_ID [--namespace NAMESPACE]
-```
-
-**Options:**
-- `--component COMPONENT_NAME`: Component name (e.g., osc-operator, osc-caa)
-- `--type TYPE`: Pipeline type (on-pull-request or on-push, default: on-push)
-- `--pr-id PR_ID`: PR identifier (REQUIRED for on-pull-request, must match the suffix in the pipelinerun name)
-- `--namespace NAMESPACE`: Konflux namespace (default: ose-osc-tenant)
-
-**Output:** JSON with pipeline status including latest run and all matching runs.
-
-**Example:**
-```bash
-# Check on-push pipeline for osc-operator
-./check-pipeline-status.sh --component osc-operator
-
-# Check on-pull-request pipeline (--pr-id is mandatory to avoid matching runs from different PRs)
-./check-pipeline-status.sh --component osc-caa --type on-pull-request --pr-id abc123
-```
-
-### 6. get-nudge-prs.sh
-Find nudge PRs for a given component.
-
-**Usage:**
-```bash
-./get-nudge-prs.sh --component COMPONENT_NAME
-```
-
-**Options:**
-- `--component COMPONENT_NAME`: Component name (e.g., osc-operator-bundle, osc-dm-verity-image)
-
-**Output:** JSON array of nudge PRs that update the specified component.
-
-**Important:** Nudge PR titles mention the **source** component (what was rebuilt), not the **target** component (what is being updated). This script handles that automatically by:
-1. Finding all components that nudge the target component
-2. Searching for nudge PRs with titles mentioning those source components
-
-**Example:**
-```bash
-./get-nudge-prs.sh --component osc-operator-bundle
-# Finds PRs with titles like "chore(deps): update osc-operator" (source component)
-# which update osc-operator-bundle (target component)
-```
-
-### 7. get-component-info.sh
-Get metadata about components (build time, dependencies).
-
-**Usage:**
-```bash
-./get-component-info.sh [--component COMPONENT_NAME]
-```
-
-**Options:**
-- `--component COMPONENT_NAME`: Get info for a specific component (optional)
-
-**Output:** JSON with component metadata including repository, build time, and nudged components.
-
-**Example:**
-```bash
-# Get all components info
-./get-component-info.sh
-
-# Get specific component info
-./get-component-info.sh --component osc-operator
-```
-
-## Repository Mapping
-
-The scripts recognize these repository names:
-- `kata-containers` → `https://github.com/openshift/kata-containers`
-- `cloud-api-adaptor` → `https://github.com/openshift/cloud-api-adaptor`
-- `compute-artifacts` → `https://github.com/openshift/confidential-compute-artifacts`
-- `podvm-scripts` → `https://github.com/confidential-devhub/coco-podvm-scripts`
-- `osc` → `https://github.com/openshift/sandboxed-containers-operator`
-
-## Implementation Notes
-
-- The Konflux bot appears as `app/red-hat-konflux` in GitHub (not just `red-hat-konflux`)
-- All PR queries filter by `--author "app/red-hat-konflux"`
-- Enterprise contract checks are excluded from component detection as they are validation checks, not component builds
-- Only checks matching the pattern "Red Hat Konflux / {component-name}-on-pull-request" are considered component builds
-
-## Prerequisites
-
-All scripts require:
-- `gh` (GitHub CLI) - authenticated and configured
-- `jq` - for JSON processing
-
-Scripts that interact with Konflux also require:
-- `oc` (OpenShift CLI) - logged into Konflux cluster
-- `tkn` (Tekton CLI) - for pipeline operations
-
-## Environment Variables
-
-- `GITHUB_TOKEN`: GitHub personal access token (can be set via `gh auth login`)
-- Konflux access: Configure via `oc login` with appropriate service account token
-
-## Integration with process-konflux-prs Skill
-
-These scripts are designed to be called by the `process-konflux-prs` skill.
-The skill's allowed-tools section should be updated to reference these scripts
-instead of individual `gh`, `oc`, and `tkn` commands.
-
-This provides:
-1. **Better isolation**: The skill can only execute these specific scripts
-2. **Easier testing**: Each script can be tested independently
-3. **Better maintainability**: Script logic is separated from skill orchestration
-4. **Consistent output**: All scripts output JSON for easy parsing
-
-## Testing
-
-Test each script individually before using them in the skill:
-
-```bash
-# Test listing PRs
-./list-prs.sh --mintmaker
-
-# Test getting PR status (replace with actual PR number)
-./get-pr-status.sh --repo osc --pr 2147
-
-# Test component info
-./get-component-info.sh
+# Check whether merging a component is safe right now
+./check-merge-safety.sh --components osc-operator --repo openshift/sandboxed-containers-operator --branch devel
 ```
