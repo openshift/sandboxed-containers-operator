@@ -12,3 +12,11 @@ spec:
       name: openshift-sandboxed-containers-monitor
   endpoints:
   - port: metrics
+    scheme: https
+    tlsConfig:
+      ca:
+        configMap:
+          name: openshift-service-ca.crt
+          key: service-ca.crt
+      serverName: metrics.openshift-sandboxed-containers-operator.svc
+      insecureSkipVerify: false
