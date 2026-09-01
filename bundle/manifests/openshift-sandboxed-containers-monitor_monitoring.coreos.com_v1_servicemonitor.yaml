@@ -5,6 +5,14 @@ metadata:
 spec:
   endpoints:
   - port: metrics
+    scheme: https
+    tlsConfig:
+      ca:
+        configMap:
+          key: service-ca.crt
+          name: openshift-service-ca.crt
+      insecureSkipVerify: false
+      serverName: metrics.openshift-sandboxed-containers-operator.svc
   namespaceSelector:
     matchNames:
     - openshift-sandboxed-containers-operator
