@@ -5,6 +5,9 @@ metadata:
 spec:
   endpoints:
   - port: metrics
+    scheme: https
+    tlsConfig:
+      insecureSkipVerify: true
   namespaceSelector:
     matchNames:
     - openshift-sandboxed-containers-operator
