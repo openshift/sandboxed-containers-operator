@@ -5,10 +5,13 @@ metadata:
   namespace: openshift-sandboxed-containers-operator
   labels:
     name: openshift-sandboxed-containers-monitor
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: kata-monitor-certs
 spec:
   selector:
     name: openshift-sandboxed-containers-monitor
   ports:
     - name: metrics
-      port: 8090
+      port: 8443
       protocol: TCP
+      targetPort: 8443
