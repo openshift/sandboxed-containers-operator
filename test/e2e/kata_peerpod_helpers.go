@@ -27,26 +27,20 @@ func checkPodVMImageID(oc *exutil.CLI, cloudPlatform string) (string, error) {
 		return "", fmt.Errorf("unsupported cloud platform %q for image ID check", cloudPlatform)
 	}
 
-	cmData, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"configmap", ppConfigMapName, "-n", opNamespace, "-o=jsonpath={.data}",
-	).Output()
+	imageID, err := getConfigmapParamValue(oc, param)
 	if err != nil {
-		return "", fmt.Errorf("failed to get %s: %w", ppConfigMapName, err)
+		return "", err
 	}
-
-	if !gjson.Get(cmData, param).Exists() {
-		return "", fmt.Errorf("%s does not have %s", ppConfigMapName, param)
-	}
-
-	imageID := gjson.Get(cmData, param).String()
 	if imageID == "" {
 		return "", fmt.Errorf("%s has empty value for %s", ppConfigMapName, param)
 	}
-
 	return imageID, nil
 }
 
 // getConfigmapParamValue reads a single field from the peer-pods-cm configmap.
+// Note: jsonpath={.data} works with gjson because oc outputs JSON-encoded data
+// for configmaps with simple key=value pairs. If a future configmap value
+// contains special characters, switch to -o=json and query data.<param>.
 func getConfigmapParamValue(oc *exutil.CLI, param string) (string, error) {
 	cmData, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"configmap", ppConfigMapName, "-n", opNamespace, "-o=jsonpath={.data}",
@@ -66,9 +60,9 @@ func getConfigmapParamValue(oc *exutil.CLI, param string) (string, error) {
 // required cloud-specific fields for the given provider.
 func checkPeerPodConfigMap(oc *exutil.CLI, cloudPlatform string) error {
 	requiredFields := map[string][]string{
-		"aws":    {"CLOUD_PROVIDER", "AWS_REGION", "AWS_SG_IDS", "AWS_SUBNET_ID", "AWS_VPC_ID", "VXLAN_PORT"},
-		"azure":  {"CLOUD_PROVIDER", "AZURE_REGION", "AZURE_NSG_ID", "AZURE_SUBNET_ID", "AZURE_RESOURCE_GROUP", "VXLAN_PORT"},
-		"gcp":    {"CLOUD_PROVIDER", "GCP_ZONE", "GCP_PROJECT_ID", "GCP_NETWORK", "VXLAN_PORT"},
+		"aws":     {"CLOUD_PROVIDER", "AWS_REGION", "AWS_SG_IDS", "AWS_SUBNET_ID", "AWS_VPC_ID", "VXLAN_PORT"},
+		"azure":   {"CLOUD_PROVIDER", "AZURE_REGION", "AZURE_NSG_ID", "AZURE_SUBNET_ID", "AZURE_RESOURCE_GROUP", "VXLAN_PORT"},
+		"gcp":     {"CLOUD_PROVIDER", "GCP_ZONE", "GCP_PROJECT_ID", "GCP_NETWORK", "VXLAN_PORT"},
 		"libvirt": {"CLOUD_PROVIDER"},
 	}
 
@@ -153,11 +147,14 @@ func validatePeerPodsSetup(oc *exutil.CLI, kcName, cloudPlatform string) error {
 }
 
 // getPeerPodMetadataInstanceType queries the cloud metadata service from inside
-// the pod to retrieve the instance type.
+// the pod to retrieve the instance type. Requires the pod to have network
+// access to the cloud metadata endpoint (169.254.169.254). Peer-pod VMs always
+// have this access — it is how cloud-api-adaptor itself discovers instance
+// identity.
 func getPeerPodMetadataInstanceType(oc *exutil.CLI, namespace, podName, cloudPlatform string) (string, error) {
 	metadataCurl := map[string][]string{
 		"aws":   {"http://169.254.169.254/latest/meta-data/instance-type"},
-		"azure": {"-H", "Metadata:true", "\\*", "http://169.254.169.254/metadata/instance/compute/vmSize?api-version=2023-07-01&format=text"},
+		"azure": {"-H", "Metadata:true", "http://169.254.169.254/metadata/instance/compute/vmSize?api-version=2023-07-01&format=text"},
 		// TODO: GCP metadata returns full resource path, needs parsing before comparison
 		// "gcp":   {"-H", "Metadata-Flavor: Google", "http://metadata.google.internal/computeMetadata/v1/instance/machine-type"},
 	}
@@ -167,7 +164,7 @@ func getPeerPodMetadataInstanceType(oc *exutil.CLI, namespace, podName, cloudPla
 		return "", fmt.Errorf("unsupported cloud platform %q for metadata query", cloudPlatform)
 	}
 
-	podCmd := []string{"-n", namespace, podName, "--", "curl", "-s"}
+	podCmd := []string{"-n", namespace, podName, "--", "curl", "-s", "--max-time", "30"}
 	msg, err := oc.WithoutNamespace().AsAdmin().Run("exec").Args(append(podCmd, args...)...).Output()
 	return msg, err
 }
@@ -177,7 +174,7 @@ func getPeerPodMetadataInstanceType(oc *exutil.CLI, namespace, podName, cloudPla
 func getPeerPodMetadataImageID(oc *exutil.CLI, namespace, podName, cloudPlatform string) (string, error) {
 	metadataCurl := map[string][]string{
 		"aws":   {"http://169.254.169.254/latest/meta-data/ami-id"},
-		"azure": {"-H", "Metadata:true", "\\*", "http://169.254.169.254/metadata/instance/compute/storageProfile/imageReference/id?api-version=2023-07-01&format=text"},
+		"azure": {"-H", "Metadata:true", "http://169.254.169.254/metadata/instance/compute/storageProfile/imageReference/id?api-version=2023-07-01&format=text"},
 	}
 
 	args, ok := metadataCurl[cloudPlatform]
@@ -185,7 +182,7 @@ func getPeerPodMetadataImageID(oc *exutil.CLI, namespace, podName, cloudPlatform
 		return "", fmt.Errorf("unsupported cloud platform %q for image ID metadata query", cloudPlatform)
 	}
 
-	podCmd := []string{"-n", namespace, podName, "--", "curl", "-s"}
+	podCmd := []string{"-n", namespace, podName, "--", "curl", "-s", "--max-time", "30"}
 	msg, err := oc.WithoutNamespace().AsAdmin().Run("exec").Args(append(podCmd, args...)...).Output()
 	return msg, err
 }
@@ -195,7 +192,7 @@ func getPeerPodMetadataImageID(oc *exutil.CLI, namespace, podName, cloudPlatform
 func getPeerPodMetadataTags(oc *exutil.CLI, namespace, podName, cloudPlatform string) (string, error) {
 	metadataCurl := map[string][]string{
 		"aws":   {"http://169.254.169.254/latest/meta-data/tags/instance/key1"},
-		"azure": {"-H", "Metadata:true", "\\*", "http://169.254.169.254/metadata/instance/compute/tags?api-version=2023-07-01&format=text"},
+		"azure": {"-H", "Metadata:true", "http://169.254.169.254/metadata/instance/compute/tags?api-version=2023-07-01&format=text"},
 	}
 
 	args, ok := metadataCurl[cloudPlatform]
@@ -203,7 +200,7 @@ func getPeerPodMetadataTags(oc *exutil.CLI, namespace, podName, cloudPlatform st
 		return "", fmt.Errorf("unsupported cloud platform %q for tags metadata query", cloudPlatform)
 	}
 
-	podCmd := []string{"-n", namespace, podName, "--", "curl", "-s"}
+	podCmd := []string{"-n", namespace, podName, "--", "curl", "-s", "--max-time", "30"}
 	msg, err := oc.WithoutNamespace().AsAdmin().Run("exec").Args(append(podCmd, args...)...).Output()
 	return msg, err
 }
