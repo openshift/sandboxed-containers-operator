@@ -143,13 +143,14 @@ func secretsFilterPredicate() predicate.Predicate {
 // map ccoSecret fields to peer-pods compatible fields
 func (r *SecretReconciler) ccoDataMapping(ccoSecretData map[string][]byte) map[string][]byte {
 	ccoToPp := map[string]string{
-		"aws_access_key_id":     "AWS_ACCESS_KEY_ID",
-		"aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
-		"azure_subscription_id": "AZURE_SUBSCRIPTION_ID",
-		"azure_client_id":       "AZURE_CLIENT_ID",
-		"azure_client_secret":   "AZURE_CLIENT_SECRET",
-		"azure_tenant_id":       "AZURE_TENANT_ID",
-		"service_account.json":  "GCP_CREDENTIALS",
+		"aws_access_key_id":          "AWS_ACCESS_KEY_ID",
+		"aws_secret_access_key":      "AWS_SECRET_ACCESS_KEY",
+		"azure_subscription_id":      "AZURE_SUBSCRIPTION_ID",
+		"azure_client_id":            "AZURE_CLIENT_ID",
+		"azure_client_secret":        "AZURE_CLIENT_SECRET",
+		"azure_tenant_id":            "AZURE_TENANT_ID",
+		"azure_federated_token_file": "AZURE_FEDERATED_TOKEN_FILE",
+		"service_account.json":       "GCP_CREDENTIALS",
 		// the following are usually set in them CM, ignore them for now
 		//"azure_region":          "AZURE_REGION",
 		//"azure_resourcegroup":   "AZURE_RESOURCE_GROUP",
@@ -183,21 +184,6 @@ func (r *SecretReconciler) ccoDataMapping(ccoSecretData map[string][]byte) map[s
 			if len(parts) == 2 {
 				if ppKey, ok := stsFieldMap[strings.TrimSpace(parts[0])]; ok {
 					peerPodsSecretData[ppKey] = []byte(strings.TrimSpace(parts[1]))
-				}
-			}
-		}
-	}
-
-	// Handle ccoctl Azure Workload Identity format: ccoctl generates azure_client_id, azure_tenant_id,
-	// and azure_subscription_id. We need to add AZURE_FEDERATED_TOKEN_FILE pointing to the projected
-	// service account token that will be mounted by the operator.
-	if _, hasClientID := peerPodsSecretData["AZURE_CLIENT_ID"]; hasClientID {
-		if _, hasTenantID := peerPodsSecretData["AZURE_TENANT_ID"]; hasTenantID {
-			if _, hasSubID := peerPodsSecretData["AZURE_SUBSCRIPTION_ID"]; hasSubID {
-				// Only set the federated token file if we don't already have a client secret (workload identity only)
-				if _, hasSecret := peerPodsSecretData["AZURE_CLIENT_SECRET"]; !hasSecret {
-					r.Log.Info("ccoDataMapping: ccoctl Azure Workload Identity secret identified, adding AZURE_FEDERATED_TOKEN_FILE")
-					peerPodsSecretData["AZURE_FEDERATED_TOKEN_FILE"] = []byte("/var/run/secrets/openshift/serviceaccount/token")
 				}
 			}
 		}
