@@ -54,10 +54,9 @@ const (
 	peerpodsCredentialsRequestsPathLocation = "/config/peerpods/credentials-requests"
 	peerpodsCredentialsRequestFileFormat    = "credentials_request_%s.yaml"
 
-	// labelCredentialsRequest is to mark Secrets as created using cloud-credentials-operator
-	labelSTS                     = "kataconfiguration.openshift.io/sts"
-	labelCredentialsRequest      = "kataconfiguration.openshift.io/credentials-request-based"
-	labelCredentialsRequestValue = "true"
+	// Labels for peer-pods-secret to mark explicit deletion and creation method
+	labelExplicitDeletion   = "kataconfiguration.openshift.io/explicit-deletion"         // peer-pods secret requires explicit deletion
+	labelCredentialsRequest = "kataconfiguration.openshift.io/credentials-request-based" // owned by cco-secret (CCO created or user created)
 )
 
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
@@ -71,7 +70,7 @@ const (
 //+kubebuilder:rbac:groups=cloudcredential.openshift.io,resources=credentialsrequests,verbs=create;delete;get;list
 
 // Reconcile watches the cco-secret only (filtered by secretsFilterPredicate), its only role is to map
-// CCO provisioned credentials to the peer-pods-secret format.
+// cco-secret (created by CCO or by the user applying secrets created by ccoctl) to the peer-pods-secret format.
 func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 	r.Log.Info("reconciling Secret for OpenShift Sandboxed Containers", "secret", req.Name)
@@ -93,13 +92,15 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	} else if err != nil {
 		r.Log.Info("error in getting peer-pods secret", "err", err)
 		return ctrl.Result{Requeue: true}, nil
-	} else if !isCCOFlowSecret(peerPodsSecret) { // not a CCO created secret, shouldn't reach here
-		r.Log.Info("unexpected unowned peer-pods-secret exist, skipping CCO secret mapping flow...")
+	} else if !isOwnedByCCOSecret(peerPodsSecret) {
+		// peer-pods-secret exists but is not owned by a cco-secret (shouldn't reach here)
+		r.Log.Info("peer-pods-secret exists but is not owned by a cco-secret, skipping mapping flow")
 		return ctrl.Result{}, nil
 	}
 
 	peerpodsData := r.ccoDataMapping(ccoSecret.Data)
-	labels := map[string]string{labelCredentialsRequest: labelCredentialsRequestValue}
+	labels := map[string]string{labelCredentialsRequest: "true"} // label secret is cco-secret owned
+
 	if err := r.createOrUpdateSecret(context.TODO(), peerPodsSecretName, OperatorNamespace, peerpodsData, ccoSecret, labels); err != nil {
 		r.Log.Info("error in creating or updating peer-pods secret", "err", err)
 		return ctrl.Result{Requeue: true}, nil
@@ -195,10 +196,33 @@ func (r *SecretReconciler) ccoDataMapping(ccoSecretData map[string][]byte) map[s
 	return peerPodsSecretData
 }
 
-func isSTSFlowSecret(secret *corev1.Secret) bool {
-	return secret != nil && secret.Labels != nil && len(secret.Labels[labelSTS]) > 0
+// needsExplicitDeletion checks if the secret requires manual deletion.
+// Currently this are peer-pods-secrets created from enviroment variables WIF/STS credentials
+func needsExplicitDeletion(secret *corev1.Secret) bool {
+	return secret != nil && secret.Labels != nil && len(secret.Labels[labelExplicitDeletion]) > 0
 }
 
+// isOwnedByCCOSecret checks if the secret has cco-secret as an owner
+// - CCO workflow: cco-secret created by CCO (controller=true) TODO: check if controller thing is true
+// - ccoctl workflow: cco-secret created by ccoctl (controller=false or true depending on version)
+func isOwnedByCCOSecret(secret *corev1.Secret) bool {
+	if secret == nil {
+		return false
+	}
+
+	for _, owner := range secret.GetOwnerReferences() {
+		if owner.Kind == "Secret" &&
+			owner.Name == credentialsRequestSecretRefName {
+			return true
+		}
+	}
+
+	return false
+}
+
+// TODO: check if this can be removed and if controller=true thing is true
+// isCCOFlowSecret checks if the secret is owned by cco-secret with controller=true,
+// indicating it was created by the Cloud Credential Operator (CCO) workflow.
 func isCCOFlowSecret(secret *corev1.Secret) bool {
 	if secret == nil {
 		return false
@@ -297,8 +321,12 @@ func (kh *KataConfigHandler) Delete(ctx context.Context, event event.DeleteEvent
 	}
 }
 
+
 // setupPeerPodsCredentials handles the complete credential setup flow for peer-pods.
 // Priority order: User-created -> STS workflow -> CCO workflow
+// 1. existing peer-pods-secret (created manually by user or during previous interaction)
+// 2. if cluster is in token auth mode, if WIF/STS params are provided in enviroment create the peer-pods-secret
+// 3. CCO flow: create the CredentialsRequest for the CCO to create the cco-secret
 // Returns:
 //   - (true, nil) if credentials are set up successfully
 //   - (false, nil) if credentials already exist or no setup is needed
@@ -317,13 +345,13 @@ func (kh *KataConfigHandler) setupPeerPodsCredentials(ctx context.Context) (bool
 		return false, nil
 	}
 
-	// 3. Try STS workflow first (check environment variables)
+	// 3. Check if STS/WIF credentials are available and if yes create the peer-pods-secret
 	stsConfigured, err := kh.trySetupCredentialsFromEnv(ctx)
 	if err != nil {
 		return false, err
 	}
 	if stsConfigured {
-		kh.reconciler.Log.Info("STS workflow configured successfully")
+		kh.reconciler.Log.Info("peer-pods-secret based on provided WIF/STS credentials created successfully")
 		return true, nil
 	}
 
@@ -348,11 +376,13 @@ func (kh *KataConfigHandler) teardownPeerPodsCredentials(ctx context.Context) (b
 	peerPodsSecret, err := getPeerPodsSecret(kh.reconciler.Client)
 	if err != nil && !k8serrors.IsNotFound(err) && !k8serrors.IsGone(err) {
 		kh.reconciler.Log.Info("error checking for peer-pods-secret", "err", err)
+	} else if err != nil && k8serrors.IsNotFound(err) {
+		kh.reconciler.Log.Info("peer-pods-secret does not exist ", "err", err)
 	}
 
 	// 2. Handle STS flow secrets (they don't have owner references and need manual cleanup)
-	if peerPodsSecret != nil && isSTSFlowSecret(peerPodsSecret) {
-		kh.reconciler.Log.Info("Deleting STS flow peer-pods-secret")
+	if peerPodsSecret != nil && needsExplicitDeletion(peerPodsSecret) {
+		kh.reconciler.Log.Info("Deleting peer-pods-secret marked for explicit deletion")
 		if err := kh.reconciler.Client.Delete(ctx, peerPodsSecret); err != nil {
 			if !k8serrors.IsNotFound(err) && !k8serrors.IsGone(err) {
 				kh.reconciler.Log.Error(err, "Failed to delete STS flow peer-pods-secret")
@@ -362,7 +392,7 @@ func (kh *KataConfigHandler) teardownPeerPodsCredentials(ctx context.Context) (b
 		kh.reconciler.Log.Info("STS flow peer-pods-secret deleted successfully")
 	}
 
-	// 3. Delete CredentialsRequest (for CCO workflow)
+	// 3. Delete CredentialsRequest (for CCO workflow, idempotent)
 	kh.reconciler.Log.Info("Attempting to delete CredentialsRequest if exist")
 	if err := kh.deleteCredentialsRequests(); err != nil {
 		kh.reconciler.Log.Error(err, "error deleting CredentialsRequest")
@@ -397,10 +427,6 @@ func (kh *KataConfigHandler) trySetupCredentialsFromEnv(ctx context.Context) (bo
 	// Check if AWS STS credentials are provided
 	hasAWSSTSCreds := len(roleARN) > 0
 
-	// Label to mark this as an STS-based secret
-	labels := map[string]string{
-		labelSTS: "",
-	}
 	secretData := map[string][]byte{}
 	if hasAzureSTSCreds {
 		kh.reconciler.Log.Info("Azure STS workflow detected, creating peer-pods-secret")
@@ -408,15 +434,18 @@ func (kh *KataConfigHandler) trySetupCredentialsFromEnv(ctx context.Context) (bo
 		secretData["AZURE_TENANT_ID"] = []byte(tenantID)
 		secretData["AZURE_SUBSCRIPTION_ID"] = []byte(subscriptionID)
 		secretData["AZURE_FEDERATED_TOKEN_FILE"] = []byte(tokenPath)
-		labels[labelSTS] = "azure"
 	} else if hasAWSSTSCreds {
 		kh.reconciler.Log.Info("AWS STS workflow detected, creating peer-pods-secret")
 		secretData["AWS_ROLE_ARN"] = []byte(roleARN)
 		secretData["AWS_WEB_IDENTITY_TOKEN_FILE"] = []byte(tokenPath)
-		labels[labelSTS] = "aws"
 	} else {
 		// No STS credentials found
 		return false, nil
+	}
+
+	// Label to mark this for explicit deletion
+	labels := map[string]string{
+		labelExplicitDeletion: "true",
 	}
 
 	// Create or update the peer-pods-secret with STS credentials
