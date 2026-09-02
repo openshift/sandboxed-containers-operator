@@ -318,7 +318,7 @@ func (kh *KataConfigHandler) setupPeerPodsCredentials(ctx context.Context) (bool
 	}
 
 	// 3. Try STS workflow first (check environment variables)
-	stsConfigured, err := kh.checkAndSetupSTSWorkflow(ctx)
+	stsConfigured, err := kh.trySetupCredentialsFromEnv(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -372,13 +372,14 @@ func (kh *KataConfigHandler) teardownPeerPodsCredentials(ctx context.Context) (b
 	return true, nil
 }
 
-// checkAndSetupSTSWorkflow checks if STS (Security Token Service) workflow environment variables
-// are set and creates/updates the peer-pods-secret accordingly.
+// trySetupCredentialsFromEnv checks if token based authentication workflow environment variables
+// are provided (propagated from provisioning at Subscription creation) and creates/updates
+// the peer-pods-secret accordingly.
 // Currently supports Azure and AWS.
-// Returns true if STS workflow is detected and secret was created/updated successfully.
-// Returns false if no STS environment variables are found or if there's an error.
-func (kh *KataConfigHandler) checkAndSetupSTSWorkflow(ctx context.Context) (bool, error) {
-	// STS environment variables (from OLM/web console installation)
+// Returns true if WIF/STS parameters are detected and secret was created/updated successfully.
+// Returns false if no WIF/STS environment variables are found or if there's an error.
+func (kh *KataConfigHandler) trySetupCredentialsFromEnv(ctx context.Context) (bool, error) {
+	// STS/WIF environment variables (from OLM/web console installation)
 	// Reference: https://github.com/openshift/enhancements/pull/1800
 
 	// Azure
@@ -391,8 +392,8 @@ func (kh *KataConfigHandler) checkAndSetupSTSWorkflow(ctx context.Context) (bool
 
 	tokenPath := "/var/run/secrets/openshift/serviceaccount/token"
 
-	// Check if Azure STS credentials are provided
-	hasAzureSTSCreds := len(clientID) > 0 && len(tenantID) > 0 && len(subscriptionID) > 0
+	// Check if Azure WIF credentials are provided
+	hasAzureWIFCreds := len(clientID) > 0 && len(tenantID) > 0 && len(subscriptionID) > 0
 	// Check if AWS STS credentials are provided
 	hasAWSSTSCreds := len(roleARN) > 0
 
@@ -401,15 +402,15 @@ func (kh *KataConfigHandler) checkAndSetupSTSWorkflow(ctx context.Context) (bool
 		labelSTS: "",
 	}
 	secretData := map[string][]byte{}
-	if hasAzureSTSCreds {
-		kh.reconciler.Log.Info("Azure STS workflow detected, creating peer-pods-secret")
+	if hasAzureWIFCreds {
+		kh.reconciler.Log.Info("Azure token-based workflow (WIF) detected, creating peer-pods-secret")
 		secretData["AZURE_CLIENT_ID"] = []byte(clientID)
 		secretData["AZURE_TENANT_ID"] = []byte(tenantID)
 		secretData["AZURE_SUBSCRIPTION_ID"] = []byte(subscriptionID)
 		secretData["AZURE_FEDERATED_TOKEN_FILE"] = []byte(tokenPath)
 		labels[labelSTS] = "azure"
 	} else if hasAWSSTSCreds {
-		kh.reconciler.Log.Info("AWS STS workflow detected, creating peer-pods-secret")
+		kh.reconciler.Log.Info("AWS token-based workflow (STS) detected, creating peer-pods-secret")
 		secretData["AWS_ROLE_ARN"] = []byte(roleARN)
 		secretData["AWS_WEB_IDENTITY_TOKEN_FILE"] = []byte(tokenPath)
 		labels[labelSTS] = "aws"
