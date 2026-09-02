@@ -514,6 +514,9 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 			ginkgo.Skip("C00320 custom tags supported only on Azure")
 		}
 
+		// Only verify tags are applied, not their values — tag content may include
+		// sensitive data (project IDs, cost centers) that should not appear in CI logs.
+		// TODO: inject known test tags into configmap, then compare values safely.
 		configuredTags, err := getConfigmapParamValue(oc, "TAGS")
 		if err != nil || configuredTags == "" {
 			ginkgo.Skip("TAGS not configured in peer-pods-cm, skipping custom tags test")
@@ -570,6 +573,9 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 			ginkgo.Skip("C00366 supported only on AWS with peer-pods and GPU enabled")
 		}
 
+		// NOTE: CUDA sample pulled from nvcr.io — requires external registry access.
+		// GPU peer-pod tests run only on dedicated GPU lanes with internet connectivity.
+		// TODO: mirror to internal registry when disconnected GPU testing is needed.
 		var (
 			cudaImage            = "nvcr.io/nvidia/k8s/cuda-sample:vectoradd-cuda12.5.0"
 			expectedInstanceType = "g5.2xlarge"

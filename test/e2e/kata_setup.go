@@ -158,7 +158,7 @@ func checkKataconfigIsCreated(oc *exutil.CLI, kcName string) error {
 }
 
 func getInstancesOnNode(oc *exutil.CLI, opNamespace, node string) (int, error) {
-	cmd := "ps -ef | grep uuid | grep -v grep | wc -l"
+	cmd := "ps -ef | grep qemu-kvm | grep -v grep | wc -l"
 	msg, err := compat_otp.DebugNodeWithOptionsAndChroot(oc, node, []string{"-q"}, "bin/sh", "-c", cmd)
 	if err != nil {
 		return 0, err
