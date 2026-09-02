@@ -143,13 +143,14 @@ func secretsFilterPredicate() predicate.Predicate {
 // map ccoSecret fields to peer-pods compatible fields
 func (r *SecretReconciler) ccoDataMapping(ccoSecretData map[string][]byte) map[string][]byte {
 	ccoToPp := map[string]string{
-		"aws_access_key_id":     "AWS_ACCESS_KEY_ID",
-		"aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
-		"azure_subscription_id": "AZURE_SUBSCRIPTION_ID",
-		"azure_client_id":       "AZURE_CLIENT_ID",
-		"azure_client_secret":   "AZURE_CLIENT_SECRET",
-		"azure_tenant_id":       "AZURE_TENANT_ID",
-		"service_account.json":  "GCP_CREDENTIALS",
+		"aws_access_key_id":          "AWS_ACCESS_KEY_ID",
+		"aws_secret_access_key":      "AWS_SECRET_ACCESS_KEY",
+		"azure_subscription_id":      "AZURE_SUBSCRIPTION_ID",
+		"azure_client_id":            "AZURE_CLIENT_ID",
+		"azure_client_secret":        "AZURE_CLIENT_SECRET",
+		"azure_tenant_id":            "AZURE_TENANT_ID",
+		"azure_federated_token_file": "AZURE_FEDERATED_TOKEN_FILE",
+		"service_account.json":       "GCP_CREDENTIALS",
 		// the following are usually set in them CM, ignore them for now
 		//"azure_region":          "AZURE_REGION",
 		//"azure_resourcegroup":   "AZURE_RESOURCE_GROUP",
