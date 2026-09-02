@@ -169,11 +169,11 @@ func (r *SecretReconciler) ccoDataMapping(ccoSecretData map[string][]byte) map[s
 		}
 	}
 
-	// Handle ccoctl STS format: the "credentials" key contains an INI-style AWS config file
+	// Handle ccoctl AWS STS format: the "credentials" key contains an INI-style AWS config file
 	// produced by `ccoctl aws create-iam-roles`. Extract role_arn and web_identity_token_file
 	// and map them to the env-var names expected by the image creation job and CAA.
 	if credFile, ok := ccoSecretData["credentials"]; ok {
-		r.Log.Info("ccoDataMapping: ccoctl manual secret identified, converting credentials file format to env vars")
+		r.Log.Info("ccoDataMapping: ccoctl AWS STS secret identified, converting credentials file format to env vars")
 		stsFieldMap := map[string]string{
 			"role_arn":                "AWS_ROLE_ARN",
 			"web_identity_token_file": "AWS_WEB_IDENTITY_TOKEN_FILE",
@@ -183,6 +183,21 @@ func (r *SecretReconciler) ccoDataMapping(ccoSecretData map[string][]byte) map[s
 			if len(parts) == 2 {
 				if ppKey, ok := stsFieldMap[strings.TrimSpace(parts[0])]; ok {
 					peerPodsSecretData[ppKey] = []byte(strings.TrimSpace(parts[1]))
+				}
+			}
+		}
+	}
+
+	// Handle ccoctl Azure Workload Identity format: ccoctl generates azure_client_id, azure_tenant_id,
+	// and azure_subscription_id. We need to add AZURE_FEDERATED_TOKEN_FILE pointing to the projected
+	// service account token that will be mounted by the operator.
+	if _, hasClientID := peerPodsSecretData["AZURE_CLIENT_ID"]; hasClientID {
+		if _, hasTenantID := peerPodsSecretData["AZURE_TENANT_ID"]; hasTenantID {
+			if _, hasSubID := peerPodsSecretData["AZURE_SUBSCRIPTION_ID"]; hasSubID {
+				// Only set the federated token file if we don't already have a client secret (workload identity only)
+				if _, hasSecret := peerPodsSecretData["AZURE_CLIENT_SECRET"]; !hasSecret {
+					r.Log.Info("ccoDataMapping: ccoctl Azure Workload Identity secret identified, adding AZURE_FEDERATED_TOKEN_FILE")
+					peerPodsSecretData["AZURE_FEDERATED_TOKEN_FILE"] = []byte("/var/run/secrets/openshift/serviceaccount/token")
 				}
 			}
 		}
