@@ -174,7 +174,7 @@ func (r *SecretReconciler) ccoDataMapping(ccoSecretData map[string][]byte) map[s
 	// produced by `ccoctl aws create-iam-roles`. Extract role_arn and web_identity_token_file
 	// and map them to the env-var names expected by the image creation job and CAA.
 	if credFile, ok := ccoSecretData["credentials"]; ok {
-		r.Log.Info("ccoDataMapping: ccoctl AWS STS secret identified, converting credentials file format to env vars")
+		r.Log.Info("ccoDataMapping: ccoctl AWS STS INI-style config file identified, converting to the expected credentials variables format")
 		stsFieldMap := map[string]string{
 			"role_arn":                "AWS_ROLE_ARN",
 			"web_identity_token_file": "AWS_WEB_IDENTITY_TOKEN_FILE",
