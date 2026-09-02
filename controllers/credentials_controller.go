@@ -315,7 +315,7 @@ func (kh *KataConfigHandler) setupPeerPodsCredentials(ctx context.Context) (bool
 	}
 
 	// 3. Try STS workflow first (check environment variables)
-	stsConfigured, err := kh.checkAndSetupSTSWorkflow(ctx)
+	stsConfigured, err := kh.trySetupSTSCredentials(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -369,12 +369,13 @@ func (kh *KataConfigHandler) teardownPeerPodsCredentials(ctx context.Context) (b
 	return true, nil
 }
 
-// checkAndSetupSTSWorkflow checks if STS (Security Token Service) workflow environment variables
-// are set and creates/updates the peer-pods-secret accordingly.
+// trySetupSTSCredentials checks if STS (Security Token Service) workflow environment variables
+// are provided (propagated from provisioning at Subscription creation) and creates/updates
+// the peer-pods-secret accordingly.
 // Currently supports Azure and AWS.
 // Returns true if STS workflow is detected and secret was created/updated successfully.
 // Returns false if no STS environment variables are found or if there's an error.
-func (kh *KataConfigHandler) checkAndSetupSTSWorkflow(ctx context.Context) (bool, error) {
+func (kh *KataConfigHandler) trySetupSTSCredentials(ctx context.Context) (bool, error) {
 	// STS environment variables (from OLM/web console installation)
 	// Reference: https://github.com/openshift/enhancements/pull/1800
 
