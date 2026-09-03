@@ -55,7 +55,8 @@ const (
 	peerpodsCredentialsRequestFileFormat    = "credentials_request_%s.yaml"
 
 	// Labels for peer-pods-secret to track its creation method
-	labelExplicitDeletion   = "kataconfiguration.openshift.io/explicit-deletion" // secret is created by this controller and requires an explicit deletion
+	labelExplicitDeletion   = "kataconfiguration.openshift.io/explicit-deletion"        // STS workflow secrets need manual deletion
+	labelCredentialsRequest = "kataconfiguration.openshift.io/credentials-request-based" // Created from cco-secret (CCO or ccoctl workflow)
 )
 
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
@@ -69,8 +70,8 @@ const (
 //+kubebuilder:rbac:groups=cloudcredential.openshift.io,resources=credentialsrequests,verbs=create;delete;get;list
 
 // Reconcile watches the cco-secret only (filtered by secretsFilterPredicate), its only role is to map
-// CCO (by operator or by the user applying secrets create by ccoctl) provisioned credentials to the
-// peer-pods-secret format.
+// CCO (created by operator or by the user applying secrets created by ccoctl) provisioned credentials
+// to the peer-pods-secret format.
 func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 	r.Log.Info("reconciling Secret for OpenShift Sandboxed Containers", "secret", req.Name)
@@ -93,15 +94,15 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		r.Log.Info("error in getting peer-pods secret", "err", err)
 		return ctrl.Result{Requeue: true}, nil
 	} else if !isOwnedByCCOSecret(peerPodsSecret) {
-		// peer-pods-secret exists but is not owned by cco-secret, skip the cco-secret mapping flow
-		// should not reach here
+		// peer-pods-secret exists but is not owned by cco-secret (shouldn't reach here)
 		r.Log.Info("peer-pods-secret exists but is not owned by cco-secret, skipping mapping flow")
 		return ctrl.Result{}, nil
 	}
 
 	peerpodsData := r.ccoDataMapping(ccoSecret.Data)
+	labels := map[string]string{labelCredentialsRequest: "true"} // currently this will label also secrets created by user (ccoctl flow)
 
-	if err := r.createOrUpdateSecret(context.TODO(), peerPodsSecretName, OperatorNamespace, peerpodsData, ccoSecret, nil); err != nil {
+	if err := r.createOrUpdateSecret(context.TODO(), peerPodsSecretName, OperatorNamespace, peerpodsData, ccoSecret, labels); err != nil {
 		r.Log.Info("error in creating or updating peer-pods secret", "err", err)
 		return ctrl.Result{Requeue: true}, nil
 	}
@@ -175,7 +176,7 @@ func (r *SecretReconciler) ccoDataMapping(ccoSecretData map[string][]byte) map[s
 	// produced by `ccoctl aws create-iam-roles`. Extract role_arn and web_identity_token_file
 	// and map them to the env-var names expected by the image creation job and CAA.
 	if credFile, ok := ccoSecretData["credentials"]; ok {
-		r.Log.Info("ccoDataMapping: ccoctl AWS STS INI-style config file identified, converting to the expected credentials variables format")
+		r.Log.Info("ccoDataMapping: ccoctl AWS STS secret identified, converting credentials file format")
 		stsFieldMap := map[string]string{
 			"role_arn":                "AWS_ROLE_ARN",
 			"web_identity_token_file": "AWS_WEB_IDENTITY_TOKEN_FILE",
@@ -320,19 +321,13 @@ func (kh *KataConfigHandler) Delete(ctx context.Context, event event.DeleteEvent
 	}
 }
 
-// 1. manually created secret
-// 2. sts credentials
-//    a. provided through subsciption (enviroment variables)
-//    b. provided using cco-secret by applying ccoctl
-// 3. create a credentials request automatically asking for the cco-secret creation
-//
-// triggered by kataConfig events
-// 1. check for existing pp-secret (regardless to source)
-// 2. check for cluster tokinezed mode
-// 	a. check for env vars
-// 	b. return & expct to cco-secret to be created by the user
-// 3. create a cr and expect cco sercert to be create by cco
 
+// Credential workflow priority:
+// 1. User-created secret (manually created peer-pods-secret)
+// 2. STS credentials (provided through Subscription env vars)
+// 3. CCO workflow (create CredentialsRequest, CCO creates cco-secret)
+// 4. ccoctl workflow (user applies cco-secret created by ccoctl, controller maps it)
+//
 // setupPeerPodsCredentials handles the complete credential setup flow for peer-pods.
 // Priority order: User-created -> STS workflow -> CCO workflow
 // Returns:
@@ -373,12 +368,6 @@ func (kh *KataConfigHandler) setupPeerPodsCredentials(ctx context.Context) (bool
 	return true, nil
 }
 
-// triggered by kataConfig events
-// 1. check for already deletion of pp-secret (regardless to source)
-// 2. check if existing secret requires explicit deletion (means it was created by operator manually)
-// 3. if cco created the cr delete it and let it propgate the cleaning
-// 4. manual cleaning is needed
-
 // teardownPeerPodsCredentials handles the cleanup of credentials when peer-pods is disabled.
 // Priority order: Delete STS secrets -> Delete CCO CredentialsRequest (CCO secrets auto-deleted via owner reference)
 // Returns:
@@ -406,7 +395,7 @@ func (kh *KataConfigHandler) teardownPeerPodsCredentials(ctx context.Context) (b
 		kh.reconciler.Log.Info("STS flow peer-pods-secret deleted successfully")
 	}
 
-	// 3. Delete CredentialsRequest (CCO workflow, idomponent)
+	// 3. Delete CredentialsRequest (for CCO workflow, idempotent)
 	kh.reconciler.Log.Info("Attempting to delete CredentialsRequest if exist")
 	if err := kh.deleteCredentialsRequests(); err != nil {
 		kh.reconciler.Log.Error(err, "error deleting CredentialsRequest")
