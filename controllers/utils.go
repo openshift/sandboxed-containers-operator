@@ -12,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	ccov1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 	"github.com/openshift/oc/pkg/cli/admin/release"
 	batchv1 "k8s.io/api/batch/v1"
@@ -375,4 +376,59 @@ func (r *KataConfigOpenShiftReconciler) getConfigMapVersion(name, namespace stri
 	}
 
 	return cm.GetResourceVersion(), true, nil
+}
+
+//+kubebuilder:rbac:groups=operator.openshift.io,resources=cloudcredentials,verbs=get;list;watch
+//+kubebuilder:rbac:groups=config.openshift.io,resources=authentications,verbs=get;list;watch
+
+// isClusterInTokenBasedAuthMode detects whether the OpenShift cluster is running in
+// token-based authentication mode (STS/WIF), regardless of cloud provider.
+//
+// A cluster is in token-based auth mode when BOTH conditions are met:
+// 1. CloudCredential (operator.openshift.io/v1, name: cluster) has spec.credentialsMode == "Manual"
+// 2. Authentication (config.openshift.io/v1, name: cluster) has spec.serviceAccountIssuer != "" (non-empty OIDC issuer URL)
+//
+// Error handling philosophy:
+// - NotFound errors → definitely not token-based (resources don't exist)
+// - Other errors (API failures, RBAC) → default to true (assume token-based)
+//
+// Returns:
+//   - (true, nil) if the cluster is in token-based auth mode
+//   - (false, nil) if not in token-based auth mode (based on actual credential mode and issuer values)
+//   - (true, error) if resources cannot be fetched (API errors, RBAC issues, etc.) - defaults to true for safety
+func isClusterInTokenBasedAuthMode(c client.Client) (bool, error) {
+	ctx := context.Background()
+
+	// 1. Check CloudCredential for Manual credentials mode
+	cloudCred := &operatorv1.CloudCredential{}
+	if err := c.Get(ctx, client.ObjectKey{Name: "cluster"}, cloudCred); err != nil {
+		// Only treat NotFound as "definitely not token-based"
+		// For other errors (RBAC, API failures), default to true for safety
+		if k8serrors.IsNotFound(err) {
+			return false, nil
+		}
+		return true, fmt.Errorf("failed to get CloudCredential, defaulting to token-based mode: %w", err)
+	}
+
+	if cloudCred.Spec.CredentialsMode != operatorv1.CloudCredentialsModeManual {
+		return false, nil
+	}
+
+	// 2. Check Authentication for non-empty OIDC issuer
+	auth := &configv1.Authentication{}
+	if err := c.Get(ctx, client.ObjectKey{Name: "cluster"}, auth); err != nil {
+		// Only treat NotFound as "definitely not token-based"
+		// For other errors (RBAC, API failures), default to true for safety
+		if k8serrors.IsNotFound(err) {
+			return false, nil
+		}
+		return true, fmt.Errorf("failed to get Authentication, defaulting to token-based mode: %w", err)
+	}
+
+	if auth.Spec.ServiceAccountIssuer == "" {
+		return false, nil
+	}
+
+	// Both conditions met - cluster is in token-based auth mode
+	return true, nil
 }

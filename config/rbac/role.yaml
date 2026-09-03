@@ -168,6 +168,7 @@ rules:
   - config.openshift.io
   resources:
   - apiservers
+  - authentications
   - clusterversions
   - infrastructures
   verbs:
@@ -214,6 +215,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - operator.openshift.io
+  resources:
+  - cloudcredentials
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - security.openshift.io

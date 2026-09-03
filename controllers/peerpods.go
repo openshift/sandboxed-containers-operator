@@ -249,19 +249,25 @@ func (r *KataConfigOpenShiftReconciler) configureCAAProvider(ds *appsv1.DaemonSe
 
 		return ds, nil
 	case AzureProvider:
-		// Only add bound-sa-token volume for Azure federated identity if using STS flow
-		// Check for all STS environment variables (set during OLM installation)
-		hasAzureSTSCreds := os.Getenv("CLIENTID") != "" && os.Getenv("TENANTID") != "" && os.Getenv("SUBSCRIPTIONID") != ""
-		if hasAzureSTSCreds {
+		// Only add bound-sa-token volume if cluster is in token-based auth mode (Azure WIF)
+		isTokenBased, err := isClusterInTokenBasedAuthMode(r.Client)
+		if err != nil {
+			r.Log.Error(err, "Failed to determine token-based auth mode for Azure")
+			// Don't fail the whole operation, but log the issue
+		}
+		if isTokenBased {
 			r.addBoundSATokenVolume(ds)
 		}
 
 		return ds, nil
 	case AWSProvider:
-		// Only add bound-sa-token volume for AWS IRSA if using STS flow
-		// Check for STS environment variable (set during OLM installation)
-		hasAWSSTSCreds := os.Getenv("ROLEARN") != ""
-		if hasAWSSTSCreds {
+		// Only add bound-sa-token volume if cluster is in token-based auth mode (AWS STS/IRSA)
+		isTokenBased, err := isClusterInTokenBasedAuthMode(r.Client)
+		if err != nil {
+			r.Log.Error(err, "Failed to determine token-based auth mode for AWS")
+			// Don't fail the whole operation, but log the issue
+		}
+		if isTokenBased {
 			r.addBoundSATokenVolume(ds)
 		}
 
