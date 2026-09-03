@@ -45,13 +45,14 @@ repo_to_github() {
     esac
 }
 
-empty_result='{"labelled":[],"merged":[],"held_back":[],"skipped":[]}'
+empty_result='{"labelled":[],"merged":[],"held_back":[],"skipped":[],"held":[]}'
 
 # ─── phase a: mintmaker-blocked component set ─────────────────────────────────
 
 mm_snapshot=$("$SCRIPT_DIR/snapshot-prs.sh" --mintmaker)
-# Union of all components that open Mintmaker PRs will rebuild
-mintmaker_components=$(echo "$mm_snapshot" | jq -r '[.[].components[]] | unique | .[]')
+# Union of components that open Mintmaker PRs will rebuild.
+# Hold PRs are excluded: they are not being processed and should not block nudge PRs.
+mintmaker_components=$(echo "$mm_snapshot" | jq -r '[.[] | select(.has_hold == false) | .components[]] | unique | .[]')
 
 # ─── nudge snapshot ───────────────────────────────────────────────────────────
 
@@ -74,6 +75,26 @@ labelled='[]'
 merged='[]'
 held_back='[]'
 skipped='[]'
+held='[]'
+working='[]'
+
+# ─── filter hold PRs ─────────────────────────────────────────────────────────
+
+while IFS= read -r pr; do
+    if [ "$(echo "$pr" | jq -r '.has_hold')" = "true" ]; then
+        held=$(echo "$held" | jq --argjson p "$pr" '. + [$p]')
+    else
+        working=$(echo "$working" | jq --argjson p "$pr" '. + [$p]')
+    fi
+done < <(echo "$nudge_snapshot" | jq -c '.[]')
+
+if [ "$(echo "$working" | jq 'length')" -eq 0 ]; then
+    echo "$empty_result" | jq --argjson h "$held" '. + {"held":$h}'
+    exit 0
+fi
+
+# Re-assign nudge_snapshot to only non-hold PRs for the rest of the pipeline
+nudge_snapshot="$working"
 working='[]'
 
 # ─── filter mintmaker-blocked PRs ─────────────────────────────────────────────
@@ -103,7 +124,7 @@ while IFS= read -r pr; do
 done < <(echo "$nudge_snapshot" | jq -c '.[]')
 
 if [ "$(echo "$working" | jq 'length')" -eq 0 ]; then
-    echo "$empty_result" | jq --argjson sk "$skipped" '. + {"skipped":$sk}'
+    echo "$empty_result" | jq --argjson sk "$skipped" --argjson h "$held" '. + {"skipped":$sk,"held":$h}'
     exit 0
 fi
 
@@ -325,4 +346,5 @@ jq -n \
     --argjson merged    "$merged"    \
     --argjson held_back "$held_back" \
     --argjson skipped   "$skipped"   \
-    '{"labelled":$labelled,"merged":$merged,"held_back":$held_back,"skipped":$skipped}'
+    --argjson held      "$held"      \
+    '{"labelled":$labelled,"merged":$merged,"held_back":$held_back,"skipped":$skipped,"held":$held}'

@@ -49,19 +49,25 @@ repo_to_github() {
 snapshot=$("$SCRIPT_DIR/snapshot-prs.sh" --test-fbc)
 
 if [ "$(echo "$snapshot" | jq 'length')" -eq 0 ]; then
-    echo '{"empty":true,"labelled":[],"merged":[],"skipped":[]}'
+    echo '{"empty":true,"labelled":[],"merged":[],"skipped":[],"held":[]}'
     exit 0
 fi
 
 labelled='[]'
 merged='[]'
 skipped='[]'
+held='[]'
 
 # Process each PR sorted by number (oldest first)
 while IFS= read -r pr; do
     repo=$(echo "$pr"    | jq -r '.repo')
     num=$(echo "$pr"     | jq -r '.pr')
     branch=$(echo "$pr"  | jq -r '.base_branch')
+
+    if [ "$(echo "$pr" | jq -r '.has_hold')" = "true" ]; then
+        held=$(echo "$held" | jq --argjson p "$pr" '. + [$p]')
+        continue
+    fi
     has_ok=$(echo "$pr"  | jq -r '.has_ok_to_test')
     has_lgtm=$(echo "$pr" | jq -r '.has_lgtm')
     build_ok=$(echo "$pr" | jq -r '.build_checks_passed')
@@ -149,4 +155,5 @@ jq -n \
     --argjson labelled "$labelled" \
     --argjson merged   "$merged"   \
     --argjson skipped  "$skipped"  \
-    '{"empty":false,"labelled":$labelled,"merged":$merged,"skipped":$skipped}'
+    --argjson held     "$held"     \
+    '{"empty":false,"labelled":$labelled,"merged":$merged,"skipped":$skipped,"held":$held}'

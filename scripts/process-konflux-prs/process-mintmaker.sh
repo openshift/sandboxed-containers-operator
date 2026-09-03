@@ -61,7 +61,7 @@ is_skip_pattern() {
 snapshot=$("$SCRIPT_DIR/snapshot-prs.sh" --mintmaker)
 
 if [ "$(echo "$snapshot" | jq 'length')" -eq 0 ]; then
-    echo '{"empty":true,"skipped":[],"labelled":[],"merged":[],"waiting":[]}'
+    echo '{"empty":true,"skipped":[],"labelled":[],"merged":[],"waiting":[],"held":[]}'
     exit 0
 fi
 
@@ -86,6 +86,25 @@ while IFS= read -r pr; do
         working=$(echo "$working" | jq --argjson p "$pr" '. + [$p]')
     fi
 done < <(echo "$snapshot" | jq -c '.[]')
+
+# ─── hold filter ─────────────────────────────────────────────────────────────
+
+held='[]'
+non_held='[]'
+while IFS= read -r pr; do
+    if [ "$(echo "$pr" | jq -r '.has_hold')" = "true" ]; then
+        held=$(echo "$held" | jq --argjson p "$pr" '. + [$p]')
+    else
+        non_held=$(echo "$non_held" | jq --argjson p "$pr" '. + [$p]')
+    fi
+done < <(echo "$working" | jq -c '.[]')
+working="$non_held"
+
+if [ "$(echo "$working" | jq 'length')" -eq 0 ]; then
+    jq -n --argjson sk "$skipped" --argjson h "$held" \
+        '{"empty":true,"skipped":$sk,"labelled":[],"merged":[],"waiting":[],"held":$h}'
+    exit 0
+fi
 
 # ─── phase a: labelling (parallel) ───────────────────────────────────────────
 
@@ -267,4 +286,5 @@ jq -n \
     --argjson labelled "$labelled" \
     --argjson merged   "$merged"   \
     --argjson waiting  "$waiting"  \
-    '{"empty":false,"skipped":$skipped,"labelled":$labelled,"merged":$merged,"waiting":$waiting}'
+    --argjson held     "$held"     \
+    '{"empty":false,"skipped":$skipped,"labelled":$labelled,"merged":$merged,"waiting":$waiting,"held":$held}'
