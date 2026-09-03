@@ -55,8 +55,8 @@ const (
 	peerpodsCredentialsRequestFileFormat    = "credentials_request_%s.yaml"
 
 	// Labels for peer-pods-secret to track its creation method
-	labelExplicitDeletion   = "kataconfiguration.openshift.io/explicit-deletion" // STS workflow secrets need manual deletion
-	labelCredentialsRequest = "kataconfiguration.openshift.io/credentials-request-based" // Created from cco-secret (CCO or ccoctl workflow)
+	labelExplicitDeletion   = "kataconfiguration.openshift.io/explicit-deletion" // secret is created by this controller and requires an explicit deletion
+	labelCredentialsRequest = "kataconfiguration.openshift.io/credentials-request-based" // created by cco processing a credentials-request
 )
 
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
@@ -320,6 +320,19 @@ func (kh *KataConfigHandler) Delete(ctx context.Context, event event.DeleteEvent
 	}
 }
 
+// 1. manually created secret
+// 2. sts credentials
+//    a. provided through subsciption (enviroment variables)
+//    b. provided using cco-secret by applying ccoctl
+// 3. create a credentials request automatically asking for the cco-secret creation
+//
+// triggered by kataConfig events
+// 1. check for existing pp-secret (regardless to source)
+// 2. check for cluster tokinezed mode
+// 	a. check for env vars
+// 	b. return & expct to cco-secret to be created by the user
+// 3. create a cr and expect cco sercert to be create by cco
+
 // setupPeerPodsCredentials handles the complete credential setup flow for peer-pods.
 // Priority order: User-created -> STS workflow -> CCO workflow
 // Returns:
@@ -360,6 +373,12 @@ func (kh *KataConfigHandler) setupPeerPodsCredentials(ctx context.Context) (bool
 	return true, nil
 }
 
+// triggered by kataConfig events
+// 1. check for already deletion of pp-secret (regardless to source)
+// 2. check if existing secret requires explicit deletion (means it was created by operator manually)
+// 3. if cco created the cr delete it and let it propgate the cleaning
+// 4. manual cleaning is needed
+
 // teardownPeerPodsCredentials handles the cleanup of credentials when peer-pods is disabled.
 // Priority order: Delete STS secrets -> Delete CCO CredentialsRequest (CCO secrets auto-deleted via owner reference)
 // Returns:
@@ -371,6 +390,8 @@ func (kh *KataConfigHandler) teardownPeerPodsCredentials(ctx context.Context) (b
 	peerPodsSecret, err := getPeerPodsSecret(kh.reconciler.Client)
 	if err != nil && !k8serrors.IsNotFound(err) && !k8serrors.IsGone(err) {
 		kh.reconciler.Log.Info("error checking for peer-pods-secret", "err", err)
+	} else if err != nil && k8serrors.IsNotFound(err) {
+		kh.reconciler.Log.Info("peer-pods-secret does not exist ", "err", err)
 	}
 
 	// 2. Handle STS flow secrets (they don't have owner references and need manual cleanup)
