@@ -7,9 +7,9 @@
 # 1. Run process-mintmaker.sh to handle dependency update PRs (UBI images, Konflux
 #    references, etc.). These are typically safe and can be labelled/merged quickly.
 #
-# 2. If the mintmaker queue is empty (the json output has the "empty" flag set to true),
-#    run process-nudge.sh to handle component nudge PRs that depend on mintmaker PRs being
-#    merged first.
+# 2. Run process-nudge.sh to handle component nudge PRs. The nudge script itself
+#    skips PRs whose source component is still being rebuilt by an open Mintmaker PR,
+#    so both stages run every pass and nudge applies its own per-component blocking.
 #
 # 3. If the nudge queue is fully drained (all arrays empty) AND no nudges were merged
 #    this run, run process-test-fbc.sh to process osc-operator-bundle test PRs.
@@ -66,34 +66,25 @@ fi
 echo "Running mintmaker..." >&2
 "$SCRIPT_DIR/process-mintmaker.sh" $SCRIPT_ARGS > "$MINTMAKER_RESULT"
 
-MINTMAKER_EMPTY=$(jq -r '.empty' "$MINTMAKER_RESULT")
+# Step 2: Run nudge
+echo "Running nudge..." >&2
+"$SCRIPT_DIR/process-nudge.sh" $SCRIPT_ARGS > "$NUDGE_RESULT"
 
-# Step 2: If mintmaker is empty, run nudge
-NUDGE_EMPTY=true
-if [ "$MINTMAKER_EMPTY" = "true" ]; then
-  echo "Mintmaker queue is empty, running nudge..." >&2
-  "$SCRIPT_DIR/process-nudge.sh" $SCRIPT_ARGS > "$NUDGE_RESULT"
+# Check if nudge queues are fully drained (held PRs excluded — they don't block)
+NUDGE_LABELLED=$(jq '.labelled | length' "$NUDGE_RESULT")
+NUDGE_MERGED=$(jq '.merged | length' "$NUDGE_RESULT")
+NUDGE_HELD_BACK=$(jq '.held_back | length' "$NUDGE_RESULT")
+NUDGE_SKIPPED=$(jq '.skipped | length' "$NUDGE_RESULT")
 
-  # Check if nudge queues are fully drained
-  NUDGE_LABELLED=$(jq '.labelled | length' "$NUDGE_RESULT")
-  NUDGE_MERGED=$(jq '.merged | length' "$NUDGE_RESULT")
-  NUDGE_HELD_BACK=$(jq '.held_back | length' "$NUDGE_RESULT")
-  NUDGE_SKIPPED=$(jq '.skipped | length' "$NUDGE_RESULT")
+NUDGE_TOTAL=$((NUDGE_LABELLED + NUDGE_MERGED + NUDGE_HELD_BACK + NUDGE_SKIPPED))
 
-  NUDGE_TOTAL=$((NUDGE_LABELLED + NUDGE_MERGED + NUDGE_HELD_BACK + NUDGE_SKIPPED))
-
-  if [ $NUDGE_TOTAL -gt 0 ]; then
-    NUDGE_EMPTY=false
-  fi
-
-  # Step 3: If nudge queue is empty, run test-fbc
-  # In normal mode: only run if nothing was merged (to avoid pending on-push pipelines)
-  # In dry-run: always run if queue would be empty
-  if [ $NUDGE_TOTAL -eq 0 ]; then
-    if [ "$DRY_RUN" = true ] || [ "$NUDGE_MERGED" -eq 0 ]; then
-      echo "Nudge queue is empty, running test-fbc..." >&2
-      "$SCRIPT_DIR/process-test-fbc.sh" $SCRIPT_ARGS > "$TESTFBC_RESULT"
-    fi
+# Step 3: If nudge queue is empty, run test-fbc
+# In normal mode: only run if nothing was merged (to avoid pending on-push pipelines)
+# In dry-run: always run if queue would be empty
+if [ $NUDGE_TOTAL -eq 0 ]; then
+  if [ "$DRY_RUN" = true ] || [ "$NUDGE_MERGED" -eq 0 ]; then
+    echo "Nudge queue is empty, running test-fbc..." >&2
+    "$SCRIPT_DIR/process-test-fbc.sh" $SCRIPT_ARGS > "$TESTFBC_RESULT"
   fi
 fi
 
@@ -176,24 +167,21 @@ print_section() {
   echo ""
   echo "**Mintmaker Summary:** $mm_labelled labelled, $mm_merged merged, $mm_waiting waiting, $mm_skipped skipped, $mm_held on hold"
 
-  # Nudge section (if it ran)
-  if [ "$MINTMAKER_EMPTY" = "true" ]; then
-    echo ""
-    echo "## Nudge"
-    print_section "Labelled" "$NUDGE_RESULT" "labelled" "_label"
-    print_section "Merged" "$NUDGE_RESULT" "merged"
-    print_section "Held back" "$NUDGE_RESULT" "held_back" "_held_reason"
-    print_section "Skipped" "$NUDGE_RESULT" "skipped" "_skip_reason"
-    print_section "On hold (do-not-merge/hold)" "$NUDGE_RESULT" "held"
+  echo ""
+  echo "## Nudge"
+  print_section "Labelled" "$NUDGE_RESULT" "labelled" "_label"
+  print_section "Merged" "$NUDGE_RESULT" "merged"
+  print_section "Held back" "$NUDGE_RESULT" "held_back" "_held_reason"
+  print_section "Skipped" "$NUDGE_RESULT" "skipped" "_skip_reason"
+  print_section "On hold (do-not-merge/hold)" "$NUDGE_RESULT" "held"
 
-    nd_labelled=$(jq '.labelled | length' "$NUDGE_RESULT")
-    nd_merged=$(jq '.merged | length' "$NUDGE_RESULT")
-    nd_held=$(jq '.held_back | length' "$NUDGE_RESULT")
-    nd_skipped=$(jq '.skipped | length' "$NUDGE_RESULT")
-    nd_on_hold=$(jq '.held | length' "$NUDGE_RESULT")
-    echo ""
-    echo "**Nudge Summary:** $nd_labelled labelled, $nd_merged merged, $nd_held held back, $nd_skipped skipped, $nd_on_hold on hold"
-  fi
+  nd_labelled=$(jq '.labelled | length' "$NUDGE_RESULT")
+  nd_merged=$(jq '.merged | length' "$NUDGE_RESULT")
+  nd_held=$(jq '.held_back | length' "$NUDGE_RESULT")
+  nd_skipped=$(jq '.skipped | length' "$NUDGE_RESULT")
+  nd_on_hold=$(jq '.held | length' "$NUDGE_RESULT")
+  echo ""
+  echo "**Nudge Summary:** $nd_labelled labelled, $nd_merged merged, $nd_held held back, $nd_skipped skipped, $nd_on_hold on hold"
 
   # Test-FBC section (if it ran)
   if [ -f "$TESTFBC_RESULT" ] && [ -s "$TESTFBC_RESULT" ]; then
