@@ -260,7 +260,7 @@ func (r *KataConfigOpenShiftReconciler) configureCAAProvider(ds *appsv1.DaemonSe
 	case AWSProvider:
 		// Only add bound-sa-token volume for AWS IRSA if using STS flow
 		// Check for STS environment variable (set during OLM installation)
-		hasAWSSTSCreds := os.Getenv("ROLEARN") != ""
+		hasAWSSTSCreds := os.Getenv("ROLEARN") != "" || os.Getenv("AWS_ROLE_ARN") != ""
 		if hasAWSSTSCreds {
 			r.addBoundSATokenVolume(ds)
 		}
