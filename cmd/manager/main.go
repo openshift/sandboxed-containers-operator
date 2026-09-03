@@ -236,6 +236,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = controllers.SetupInitdataWebhook(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "PeerPodInitdata")
+		os.Exit(1)
+	}
+
 	if err = (&controllers.SecretReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
