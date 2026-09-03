@@ -166,13 +166,15 @@ print_section() {
   print_section "Merged" "$MINTMAKER_RESULT" "merged"
   print_section "Waiting" "$MINTMAKER_RESULT" "waiting" "_wait_reason"
   print_section "Skipped" "$MINTMAKER_RESULT" "skipped" "_skip_reason"
+  print_section "On hold (do-not-merge/hold)" "$MINTMAKER_RESULT" "held"
 
   mm_labelled=$(jq '.labelled | length' "$MINTMAKER_RESULT")
   mm_merged=$(jq '.merged | length' "$MINTMAKER_RESULT")
   mm_waiting=$(jq '.waiting | length' "$MINTMAKER_RESULT")
   mm_skipped=$(jq '.skipped | length' "$MINTMAKER_RESULT")
+  mm_held=$(jq '.held | length' "$MINTMAKER_RESULT")
   echo ""
-  echo "**Mintmaker Summary:** $mm_labelled labelled, $mm_merged merged, $mm_waiting waiting, $mm_skipped skipped"
+  echo "**Mintmaker Summary:** $mm_labelled labelled, $mm_merged merged, $mm_waiting waiting, $mm_skipped skipped, $mm_held on hold"
 
   # Nudge section (if it ran)
   if [ "$MINTMAKER_EMPTY" = "true" ]; then
@@ -182,13 +184,15 @@ print_section() {
     print_section "Merged" "$NUDGE_RESULT" "merged"
     print_section "Held back" "$NUDGE_RESULT" "held_back" "_held_reason"
     print_section "Skipped" "$NUDGE_RESULT" "skipped" "_skip_reason"
+    print_section "On hold (do-not-merge/hold)" "$NUDGE_RESULT" "held"
 
     nd_labelled=$(jq '.labelled | length' "$NUDGE_RESULT")
     nd_merged=$(jq '.merged | length' "$NUDGE_RESULT")
     nd_held=$(jq '.held_back | length' "$NUDGE_RESULT")
     nd_skipped=$(jq '.skipped | length' "$NUDGE_RESULT")
+    nd_on_hold=$(jq '.held | length' "$NUDGE_RESULT")
     echo ""
-    echo "**Nudge Summary:** $nd_labelled labelled, $nd_merged merged, $nd_held held back, $nd_skipped skipped"
+    echo "**Nudge Summary:** $nd_labelled labelled, $nd_merged merged, $nd_held held back, $nd_skipped skipped, $nd_on_hold on hold"
   fi
 
   # Test-FBC section (if it ran)
@@ -198,12 +202,14 @@ print_section() {
     print_section "Labelled" "$TESTFBC_RESULT" "labelled" "_label"
     print_section "Merged" "$TESTFBC_RESULT" "merged"
     print_section "Skipped" "$TESTFBC_RESULT" "skipped" "_skip_reason"
+    print_section "On hold (do-not-merge/hold)" "$TESTFBC_RESULT" "held"
 
     tfbc_labelled=$(jq '.labelled | length' "$TESTFBC_RESULT")
     tfbc_merged=$(jq '.merged | length' "$TESTFBC_RESULT")
     tfbc_skipped=$(jq '.skipped | length' "$TESTFBC_RESULT")
+    tfbc_held=$(jq '.held | length' "$TESTFBC_RESULT")
     echo ""
-    echo "**Test-FBC Summary:** $tfbc_labelled labelled, $tfbc_merged merged, $tfbc_skipped skipped"
+    echo "**Test-FBC Summary:** $tfbc_labelled labelled, $tfbc_merged merged, $tfbc_skipped skipped, $tfbc_held on hold"
   fi
 
   # Dry-run notice

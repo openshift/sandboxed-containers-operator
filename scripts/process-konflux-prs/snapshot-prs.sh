@@ -57,7 +57,8 @@ while IFS= read -r pr; do
           pending_checks,
           has_ok_to_test,
           has_lgtm,
-          has_mintmaker_skip: ((.labels // []) | any(. == "mintmaker-skip"))}')
+          has_mintmaker_skip: ((.labels // []) | any(. == "mintmaker-skip")),
+          has_hold: ((.labels // []) | any(. == "do-not-merge/hold"))}')
     snapshot=$(echo "$snapshot" | jq --argjson e "$entry" '. + [$e]')
 done < <(echo "$prs" | jq -c '.[]')
 
