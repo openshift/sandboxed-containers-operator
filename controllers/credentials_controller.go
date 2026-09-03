@@ -55,8 +55,8 @@ const (
 	peerpodsCredentialsRequestFileFormat    = "credentials_request_%s.yaml"
 
 	// Labels for peer-pods-secret to track its creation method
-	labelExplicitDeletion   = "kataconfiguration.openshift.io/explicit-deletion"        // STS workflow secrets need manual deletion
-	labelCredentialsRequest = "kataconfiguration.openshift.io/credentials-request-based" // Created from cco-secret (CCO or ccoctl workflow)
+	labelExplicitDeletion   = "kataconfiguration.openshift.io/explicit-deletion"         // STS workflow secrets need manual deletion
+	labelCredentialsRequest = "kataconfiguration.openshift.io/credentials-request-based" // Created from cco-secret TODO: depercate?
 )
 
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
@@ -321,12 +321,11 @@ func (kh *KataConfigHandler) Delete(ctx context.Context, event event.DeleteEvent
 	}
 }
 
-
 // Credential workflow priority:
 // 1. User-created secret (manually created peer-pods-secret)
 // 2. STS credentials (provided through Subscription env vars)
+// 3. STS credentials using ccoctl workflow (user applies cco-secret created by ccoctl, controller maps it)
 // 3. CCO workflow (create CredentialsRequest, CCO creates cco-secret)
-// 4. ccoctl workflow (user applies cco-secret created by ccoctl, controller maps it)
 //
 // setupPeerPodsCredentials handles the complete credential setup flow for peer-pods.
 // Priority order: User-created -> STS workflow -> CCO workflow
@@ -348,17 +347,27 @@ func (kh *KataConfigHandler) setupPeerPodsCredentials(ctx context.Context) (bool
 		return false, nil
 	}
 
-	// 3. Try STS workflow first (check environment variables)
-	stsConfigured, err := kh.trySetupSTSCredentials(ctx)
-	if err != nil {
-		return false, err
-	}
-	if stsConfigured {
-		kh.reconciler.Log.Info("STS workflow configured successfully")
+	// 3. Check if cluster is in token-based auth mode (STS/WIF)
+	isTokenBased := isClusterInTokenBasedAuthMode(kh.reconciler.Client)
+
+	// 4. Try STS workflow if cluster is in token-based mode
+	if isTokenBased {
+		// if Credentials are available as enviroment variables create the peer-pods-secret
+		stsConfigured, err := kh.trySetupSTSCredentials(ctx)
+		if err != nil {
+			return false, err
+		}
+		if stsConfigured {
+			kh.reconciler.Log.Info("STS configured successfully based on provided enviroment variables")
+			return true, nil
+		}
+		// If no WIF/STS credentials were provided using env vars, it's expected user to provide the credenitials
+		// using the cco-secret directly by generating it using ccoctl
+		kh.reconciler.Log.Info("Cluster is in token-based auth mode but no STS env vars found, expecting cco-secret from user (ccoctl workflow)")
 		return true, nil
 	}
 
-	// 4. Fall back to CCO workflow (CredentialsRequest)
+	// 5. Fall back to CCO workflow (CredentialsRequest)
 	kh.reconciler.Log.Info("Attempting CCO workflow for credential setup")
 	if err := kh.createCredentialsRequests(); err != nil {
 		kh.reconciler.Log.Error(err, "error creating CredentialsRequest")
@@ -383,7 +392,7 @@ func (kh *KataConfigHandler) teardownPeerPodsCredentials(ctx context.Context) (b
 		kh.reconciler.Log.Info("peer-pods-secret does not exist ", "err", err)
 	}
 
-	// 2. Handle STS flow secrets (they don't have owner references and need manual cleanup)
+	// 2. Handle STS flow secrets that created by the operater and require explicit cleanup
 	if peerPodsSecret != nil && needsExplicitDeletion(peerPodsSecret) {
 		kh.reconciler.Log.Info("Deleting peer-pods-secret marked for explicit deletion")
 		if err := kh.reconciler.Client.Delete(ctx, peerPodsSecret); err != nil {
@@ -442,7 +451,7 @@ func (kh *KataConfigHandler) trySetupSTSCredentials(ctx context.Context) (bool, 
 		secretData["AWS_ROLE_ARN"] = []byte(roleARN)
 		secretData["AWS_WEB_IDENTITY_TOKEN_FILE"] = []byte(tokenPath)
 	} else {
-		// No STS credentials found
+		kh.reconciler.Log.Info("No STS/WIF credentials found in enviroment variables")
 		return false, nil
 	}
 

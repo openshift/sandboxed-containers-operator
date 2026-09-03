@@ -12,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	ccov1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 	"github.com/openshift/oc/pkg/cli/admin/release"
 	batchv1 "k8s.io/api/batch/v1"
@@ -375,4 +376,46 @@ func (r *KataConfigOpenShiftReconciler) getConfigMapVersion(name, namespace stri
 	}
 
 	return cm.GetResourceVersion(), true, nil
+}
+
+//+kubebuilder:rbac:groups=operator.openshift.io,resources=cloudcredentials,verbs=get
+//+kubebuilder:rbac:groups=config.openshift.io,resources=authentications,verbs=get
+
+// isClusterInTokenBasedAuthMode detects whether the OpenShift cluster is running in
+// token-based authentication mode (STS/WIF), regardless of cloud provider.
+//
+// A cluster is in token-based auth mode when BOTH conditions are met:
+// 1. CloudCredential (operator.openshift.io/v1, name: cluster) has spec.credentialsMode == "Manual"
+// 2. Authentication (config.openshift.io/v1, name: cluster) has spec.serviceAccountIssuer != "" (non-empty OIDC issuer URL)
+//
+// Returns:
+//   - true if the cluster is in token-based auth mode
+//   - false if not in token-based auth mode or if resources don't exist/can't be fetched
+func isClusterInTokenBasedAuthMode(c client.Client) bool {
+	ctx := context.Background()
+
+	// 1. Check CloudCredential for Manual credentials mode
+	cloudCred := &operatorv1.CloudCredential{}
+	if err := c.Get(ctx, client.ObjectKey{Name: "cluster"}, cloudCred); err != nil {
+		// If CloudCredential doesn't exist or can't be fetched, assume not in token-based mode
+		return false
+	}
+
+	if cloudCred.Spec.CredentialsMode != operatorv1.CloudCredentialsModeManual {
+		return false
+	}
+
+	// 2. Check Authentication for non-empty OIDC issuer
+	auth := &configv1.Authentication{}
+	if err := c.Get(ctx, client.ObjectKey{Name: "cluster"}, auth); err != nil {
+		// If Authentication doesn't exist or can't be fetched, assume not in token-based mode
+		return false
+	}
+
+	if auth.Spec.ServiceAccountIssuer == "" {
+		return false
+	}
+
+	// Both conditions met - cluster is in token-based auth mode
+	return true
 }
