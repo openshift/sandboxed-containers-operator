@@ -406,6 +406,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 		runPrivileged = false
 		runUserID     = int64(1001)
 		runGroupID    = int64(1001)
+		defaultMode   = int32(420)
 	)
 
 	kataMonitorImage := os.Getenv("RELATED_IMAGE_KATA_MONITOR")
@@ -465,7 +466,7 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 									Type: "osc_monitor.process",
 								},
 							},
-							Command: []string{"/usr/bin/kata-monitor", "--listen-address=:8090", "--log-level=debug", "--runtime-endpoint=/run/crio/crio.sock"},
+							Command: []string{"/usr/bin/kata-monitor", "--listen-address=:8443", "--log-level=debug", "--runtime-endpoint=/run/crio/crio.sock", "--tls-cert-file=/etc/kata-monitor/certs/tls.crt", "--tls-key-file=/etc/kata-monitor/certs/tls.key"},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "crio-sock",
@@ -474,6 +475,11 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 								{
 									Name:      "sbs",
 									MountPath: "/run/vc/sbs/",
+								},
+								{
+									Name:      "kata-monitor-certs",
+									MountPath: "/etc/kata-monitor/certs/",
+									ReadOnly:  true,
 								}},
 						},
 					},
@@ -491,6 +497,29 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 							VolumeSource: corev1.VolumeSource{
 								HostPath: &corev1.HostPathVolumeSource{
 									Path: "/run/vc/sbs/",
+								},
+							},
+						},
+						// kata-monitor-certs secret is created asynchronously by OpenShift's service-ca controller.
+						// The Service annotation 'service.beta.openshift.io/serving-cert-secret-name' triggers cert generation.
+						// If the DaemonSet is created before the secret exists, pods will remain Pending until the secret
+						// is mounted. This self-heals once service-ca populates the secret.
+						{
+							Name: "kata-monitor-certs",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName:  "kata-monitor-certs",
+									DefaultMode: &defaultMode,
+									Items: []corev1.KeyToPath{
+										{
+											Key:  "tls.crt",
+											Path: "tls.crt",
+										},
+										{
+											Key:  "tls.key",
+											Path: "tls.key",
+										},
+									},
 								},
 							},
 						},
