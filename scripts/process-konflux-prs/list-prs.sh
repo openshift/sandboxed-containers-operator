@@ -29,12 +29,16 @@ while [[ $# -gt 0 ]]; do
             PR_TYPE="nudge"
             shift
             ;;
+        --test-fbc)
+            PR_TYPE="test-fbc"
+            shift
+            ;;
         --repo)
             REPO_FILTER="$2"
             shift 2
             ;;
         *)
-            echo "Usage: $0 [--mintmaker|--nudge] [--repo REPO_NAME]" >&2
+            echo "Usage: $0 [--mintmaker|--nudge|--test-fbc] [--repo REPO_NAME]" >&2
             exit 1
             ;;
     esac
@@ -60,6 +64,13 @@ is_mintmaker_pr() {
     [[ "$title" == "Update registry.access.redhat.com/ubi9"* ]] && return 0
     [[ "$title" == "Update registry.access.redhat.com/ubi10"* ]] && return 0
     [[ "$title" == "Update registry.redhat.io/rhel9/rhel-bootc"* ]] && return 0
+    [[ "$title" == "chore(deps): refresh rpm lockfiles"* ]] && return 0
+    [[ "$title" == "Update podvm-payload/kata-containers digest"* ]] && return 0
+    [[ "$title" == "chore(deps): update podvm-payload/kata-containers"* ]] && return 0
+    [[ "$title" == "Update podvm-payload/guest-components digest"* ]] && return 0
+    [[ "$title" == "chore(deps): update podvm-payload/guest-components"* ]] && return 0
+    [[ "$title" == "Update config/peerpods/podvm/cloud-api-adaptor digest"* ]] && return 0
+    [[ "$title" == "chore(deps): update config/peerpods/podvm/cloud-api-adaptor"* ]] && return 0
     return 1
 }
 
@@ -95,10 +106,11 @@ for repo_name in "${!REPOS[@]}"; do
         # Determine PR type
         pr_type=""
 
-        # Check if it's a Nudge PR
+        # Check if it's a Nudge PR (or the test-fbc subset of nudge PRs)
         if echo "$labels" | grep -q "konflux-nudge"; then
-            # Skip bundle update PRs
-            if [[ "$title" != "chore(deps): update osc-operator-bundle"* ]]; then
+            if [[ "$title" == "chore(deps): update osc-operator-bundle"* ]]; then
+                pr_type="test-fbc"
+            else
                 pr_type="nudge"
             fi
         # Check if it's a Mintmaker PR
