@@ -1,0 +1,21 @@
+apiVersion: olm.operatorframework.io/v1
+kind: ClusterExtension
+metadata:
+  name: sandboxed-containers
+spec:
+  namespace: openshift-sandboxed-containers-operator
+  # config.inline.watchNamespace is required for OSC versions before AllNamespaces support
+  # (i.e., OSC < 1.14.x). Uncomment only if targeting an older OSC version on a TechPreview cluster.
+  # config:
+  #   configType: Inline
+  #   inline:
+  #     watchNamespace: openshift-sandboxed-containers-operator
+  serviceAccount:
+    name: sandboxed-containers-installer
+  source:
+    sourceType: Catalog
+    catalog:
+      packageName: sandboxed-containers-operator
+      channels:
+        - stable
+      upgradeConstraintPolicy: CatalogProvided
