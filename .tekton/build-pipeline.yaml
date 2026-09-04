@@ -58,6 +58,10 @@ spec:
     description: Path to a file with build arguments for buildah, see https://www.mankier.com/1/buildah-build#--build-arg-file
     name: build-args-file
     type: string
+  - default: "1.13" # OSC_VERSION
+    description: Version string passed as VERSION build-arg to all image builds
+    name: version
+    type: string
   - default: 'false'
     description: Whether to enable privileged mode, should be used only with remote VMs
     name: privileged-nested
@@ -198,6 +202,7 @@ spec:
     - name: BUILD_ARGS
       value:
       - $(params.build-args[*])
+      - VERSION=$(params.version)
     - name: BUILD_ARGS_FILE
       value: $(params.build-args-file)
     - name: PRIVILEGED_NESTED
@@ -422,6 +427,7 @@ spec:
     - name: BUILD_ARGS
       value:
       - $(params.build-args[*])
+      - VERSION=$(params.version)
     - name: BUILD_ARGS_FILE
       value: $(params.build-args-file)
     - name: SOURCE_ARTIFACT
