@@ -28,7 +28,7 @@ spec:
     value: bundle.Dockerfile
   - name: build-args
     value:
-    - VERSION=1.13 # OSC_VERSION
+    - VERSION=1.14 # OSC_VERSION
   pipelineSpec:
     description: |
       This pipeline is ideal for building container images from a Containerfile while reducing network traffic.

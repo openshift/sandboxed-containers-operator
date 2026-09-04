@@ -58,7 +58,7 @@ spec:
     description: Path to a file with build arguments for buildah, see https://www.mankier.com/1/buildah-build#--build-arg-file
     name: build-args-file
     type: string
-  - default: "1.13" # OSC_VERSION
+  - default: "1.14" # OSC_VERSION
     description: Version string passed as VERSION build-arg to all image builds
     name: version
     type: string
