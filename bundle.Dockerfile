@@ -1,4 +1,5 @@
 FROM scratch
+ARG VERSION
 
 # Core bundle labels.
 LABEL operators.operatorframework.io.bundle.mediatype.v1=registry+v1
@@ -30,7 +31,7 @@ LABEL cpe="cpe:/a:redhat:confidential_compute_attestation:1.130::el9"
 LABEL com.redhat.component="osc-operator-bundle-container"
 LABEL io.openshift.maintainer.product='OpenShift Container Platform'
 LABEL io.openshift.maintainer.component='Sandboxed Containers'
-LABEL version="1.13"
+LABEL version="$VERSION"
 LABEL com.redhat.delivery.operator.bundle=true
 LABEL com.redhat.openshift.versions=v4.15
 LABEL summary="This operator manages the sandboxed-containers runtime"
