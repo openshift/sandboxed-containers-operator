@@ -1,0 +1,95 @@
+kind: Pipelinerun
+apiVersion: tekton.dev/v1beta1
+metadata:
+  name: show-snapshot
+  annotations:
+  build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
+spec:
+  params:
+    - description: 'Snapshot of the application'
+      name: SNAPSHOT
+      default: '{"components": [{"name":"test-app", "containerImage": "quay.io/example/repo:latest"}]}'
+      type: string
+    - name: PULL_NUMBER
+      value: '{{pull_request_number}}'
+  tasks:
+    - name: build-and-push
+      description: Builds a bundle and catalog that references the modified images from the SNAPSHOT
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: PULL_NUMBER
+          value: $(params.PULL_NUMBER)
+      taskSpec:
+        params:
+        - name: SNAPSHOT
+        results:
+        - name: TEST_OUTPUT
+          description: Test output
+        steps:
+        - image: registry.redhat.io/openshift4/ose-cli:latest
+          env:
+          - name: SNAPSHOT
+            value: $(params.SNAPSHOT)
+          script: |
+            #!/bin/bash
+            set -e
+            SUCCESSES=0
+            FAILURES=0
+
+            dnf -y install jq git make skopeo
+            snapshotComponents=$(jq -c '.components[]' <<< "${SNAPSHOT}")
+
+            # Look at all images listed in the SNAPSHOT, and verify the tags
+            # that are associated to them.
+            # All tags that contain "on-push" should be ignored, as they reference
+            # already merged code.
+            # All tags containing "on-pull-request-" should be listed, as they
+            # reference newly built images that we want to test.
+            MODIFIED_IMAGES=""
+            while read componentEntry
+            do
+              IMAGE=$(echo "${componentEntry}" | jq -r '.containerImage')
+              TAGS=$(skopeo inspect "docker://${IMAGE}" | jq '.RepoTags')
+
+              # Verify that the image has at least one "on-pull-request-" tag
+              IMAGE_PR_TAG="$(echo "${TAGS}" | grep -q 'on-pull-request-')
+              if [ $? -ne 0 ]; then
+                continue
+              fi
+
+              MODIFIED_IMAGES="${MODIFIED_IMAGES}\n${IMAGE_PR_TAG}"
+              
+            done < <(echo "$snapshotComponents")
+
+            echo -e "Found the following pr- tags in the Snapshot images:"
+            echo "${MODIFIED_IMAGES}"
+
+            # Checkout the sources for the operator to get the build-bundle.sh script
+            # We need to get the same revision that was built in the SNAPSHOT,
+            # in case this script was changed in the PR.
+            srcURL=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.url' <<< "${SNAPSHOT}")
+            srcREV=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.revision' <<< "${SNAPSHOT}")
+
+            git clone ${srcURL} sources
+            cd sources
+            git checkout ${srcREV}
+
+            # Call the build-bundle.sh script with the list of modified images
+            export MODIFIED_IMAGES
+            export VERSION=on-pull-request-$PULL_NUMBER
+            ./tests/build-bundle.sh
+            
+            if [ $? -eq 0 ]; then
+              RESULT="SUCCESS"
+              SUCCESSES=1
+            else
+              RESULT="FAILURE"
+              FAILURES=1
+            fi
+
+            # Output the standardized TEST_OUTPUT result in JSON form
+            TEST_OUTPUT=$(jq -rc --arg date $(date -u --iso-8601=seconds) --arg RESULT "${RESULT}" \
+                --argjson FAILURES ${FAILURES} --argjson SUCCESSES ${SUCCESSES} --null-input \
+                '{result: $RESULT, timestamp: $date, failures: $FAILURES, successes: $SUCCESSES, warnings: 0}')
+            echo -n "${TEST_OUTPUT}" | tee $(results.TEST_OUTPUT.path)
