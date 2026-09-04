@@ -161,6 +161,7 @@ spec:
         params:
           - name: PROWJOB_NAME
             value:
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-azure-ipi-coco
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-azure-ipi-kata
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-aws-ipi-peerpods
     - name: prowjob-ocp420
@@ -172,7 +173,7 @@ spec:
           operator: in
           values: ["true"]
       runAfter:
-        - prowjob-ocp422
+        - prowjob-ocp421
       taskRef:
         resolver: git
         params:
@@ -232,6 +233,7 @@ spec:
         params:
           - name: PROWJOB_NAME
             value:
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-coco
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-kata
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-peerpods
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-aws-ipi-peerpods
@@ -268,6 +270,7 @@ spec:
         params:
           - name: PROWJOB_NAME
             value:
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-coco
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-kata
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-peerpods
               - periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-aro-ipi-peerpods
