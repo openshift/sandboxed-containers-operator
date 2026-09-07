@@ -1,0 +1,9 @@
+---
+title: "cloud-api-adaptor — NO NPs"
+---
+graph TB
+    CAA["<b>caa pod</b><br/>label: name=osc-caa-ds<br/>DaemonSet · hostNetwork=true"]
+
+    CAA -- "hostNetwork=true<br/>NetworkPolicy does not apply" --> CLOUD["Cloud APIs / API server"]
+
+    style CAA fill:#ffffcc,stroke:#cccc00,stroke-width:2px

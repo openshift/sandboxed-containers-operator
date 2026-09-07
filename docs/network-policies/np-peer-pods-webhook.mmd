@@ -1,0 +1,20 @@
+---
+title: "peer-pods-webhook (5 NPs)"
+---
+graph TB
+    APISERVER_IN["kube-apiserver (host-network)"]
+    PROM["Prometheus (host-network)"]
+
+    APISERVER_IN -- "C2: peer-pods-webhook-allow-webhook-ingress<br/>TCP 9443 · annotation: host-network" --> WH
+    PROM -- "C3: peer-pods-webhook-allow-metrics-ingress<br/>TCP 8443 · annotation: host-network" --> WH
+
+    WH["<b>peer-pods-webhook pod</b><br/>label: app=peer-pods-webhook<br/>Deployment (2 replicas) · ports 9443, 8443/TCP"]
+
+    WH -- "C4: peer-pods-webhook-allow-dns-egress<br/>TCP+UDP 5353" --> DNS["CoreDNS (openshift-dns)"]
+    WH -- "C5: peer-pods-webhook-allow-apiserver-egress<br/>all egress" --> APISERVER_OUT["kube-apiserver"]
+
+    DENY["C1: peer-pods-webhook-deny-all<br/>❌ all other ingress + egress blocked"]
+
+    DENY -.- WH
+
+    style DENY fill:#ffcccc,stroke:#cc0000

@@ -1,0 +1,13 @@
+---
+title: "kata-install (2 NPs)"
+---
+graph TB
+    DENY["D1: kata-install-deny-all<br/>❌ all ingress blocked"]
+
+    DENY -.- INST
+
+    INST["<b>kata-install pod</b><br/>label: name=osc-rpm-install<br/>DaemonSet (transient) · no ports"]
+
+    INST -- "D2: kata-install-allow-egress<br/>all egress" --> EXTERNAL["All external (registries, API server, DNS)"]
+
+    style DENY fill:#ffcccc,stroke:#cc0000
