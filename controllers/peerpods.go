@@ -353,6 +353,15 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 	}
 	r.Log.Info("Reconciled CAA daemonset", "result", result)
 
+	// TODO: propagate reconcile ctx through the call chain instead of context.TODO()
+	ctx := context.TODO()
+
+	// Create network policies before workloads so pods are isolated from the start
+	if err := r.createPeerPodsWebhookNetworkPolicies(ctx); err != nil {
+		r.Log.Error(err, "error creating peer-pods-webhook network policies")
+		return err
+	}
+
 	// Create the mutating webhook deployment
 	err = r.createMutatingWebhookDeployment()
 	if err != nil {
@@ -380,6 +389,7 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 		r.Log.Info("Error in creating kata remote runtimeclass", "err", err)
 		return err
 	}
+
 	return nil
 }
 
@@ -418,6 +428,21 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPodsMiscConfigs() error {
 	err = r.deleteMutatingWebhookConfig()
 	if err != nil {
 		r.Log.Info("Error in deleting mutating webhook for peerpods", "err", err)
+		return err
+	}
+
+	// TODO: propagate reconcile ctx through the call chain instead of context.TODO()
+	// Delete network policies for peer-pods operands
+	if err := r.deletePeerPodsWebhookNetworkPolicies(context.TODO()); err != nil {
+		r.Log.Error(err, "error deleting peer-pods-webhook network policies")
+		return err
+	}
+	if err := r.deletePodVMImageCreationNetworkPolicies(context.TODO()); err != nil {
+		r.Log.Error(err, "error deleting podvm-image-creation network policies")
+		return err
+	}
+	if err := r.deletePodVMImageDeletionNetworkPolicies(context.TODO()); err != nil {
+		r.Log.Error(err, "error deleting podvm-image-deletion network policies")
 		return err
 	}
 
@@ -477,6 +502,16 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPods() (*ctrl.Result, error) {
 	err := r.createAuthJsonSecret()
 	if err != nil {
 		r.Log.Info("Error in creating auth-json-secret", "err", err)
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+	}
+
+	// TODO: propagate reconcile ctx through the call chain instead of context.TODO()
+	if err := r.createPodVMImageCreationNetworkPolicies(context.TODO()); err != nil {
+		r.Log.Error(err, "error creating podvm-image-creation network policies")
+		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
+	}
+	if err := r.createPodVMImageDeletionNetworkPolicies(context.TODO()); err != nil {
+		r.Log.Error(err, "error creating podvm-image-deletion network policies")
 		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
 
