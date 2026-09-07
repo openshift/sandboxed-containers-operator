@@ -1,0 +1,13 @@
+---
+title: "kata-uninstall (2 NPs)"
+---
+graph TB
+    DENY["D3: kata-uninstall-deny-all<br/>❌ all ingress blocked"]
+
+    DENY -.- UNINST
+
+    UNINST["<b>kata-uninstall pod</b><br/>label: name=osc-rpm-uninstall<br/>DaemonSet (transient) · no ports"]
+
+    UNINST -- "D4: kata-uninstall-allow-egress<br/>all egress" --> EXTERNAL["All external (API server, DNS)"]
+
+    style DENY fill:#ffcccc,stroke:#cc0000
