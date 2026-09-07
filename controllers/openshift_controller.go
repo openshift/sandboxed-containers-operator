@@ -28,6 +28,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 
 	"k8s.io/apimachinery/pkg/labels"
 
@@ -893,6 +894,12 @@ func (r *KataConfigOpenShiftReconciler) createDaemonsetForMonitor() error {
 			return err
 		}
 	}
+
+	if err := r.createKataMonitorNetworkPolicies(); err != nil {
+		r.Log.Error(err, "error creating kata-monitor network policies")
+		return err
+	}
+
 	return nil
 }
 
@@ -1755,6 +1762,7 @@ func (eh *NodeEventHandler) Generic(ctx context.Context, event event.GenericEven
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
+		Owns(&networkingv1.NetworkPolicy{}).
 		Watches(
 			&corev1.Node{},
 			&NodeEventHandler{r}).
@@ -2338,6 +2346,12 @@ func (r *KataConfigOpenShiftReconciler) deleteDaemonsetForMonitor() error {
 			return err
 		}
 	}
+
+	if err := r.deleteKataMonitorNetworkPolicies(); err != nil {
+		r.Log.Error(err, "error deleting kata-monitor network policies")
+		return err
+	}
+
 	return nil
 }
 

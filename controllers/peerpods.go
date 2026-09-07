@@ -380,6 +380,21 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 		r.Log.Info("Error in creating kata remote runtimeclass", "err", err)
 		return err
 	}
+
+	// Create network policies for peer-pods operands
+	if err := r.createPeerPodsWebhookNetworkPolicies(); err != nil {
+		r.Log.Error(err, "error creating peer-pods-webhook network policies")
+		return err
+	}
+	if err := r.createPodVMImageCreationNetworkPolicies(); err != nil {
+		r.Log.Error(err, "error creating podvm-image-creation network policies")
+		return err
+	}
+	if err := r.createPodVMImageDeletionNetworkPolicies(); err != nil {
+		r.Log.Error(err, "error creating podvm-image-deletion network policies")
+		return err
+	}
+
 	return nil
 }
 
@@ -418,6 +433,20 @@ func (r *KataConfigOpenShiftReconciler) disablePeerPodsMiscConfigs() error {
 	err = r.deleteMutatingWebhookConfig()
 	if err != nil {
 		r.Log.Info("Error in deleting mutating webhook for peerpods", "err", err)
+		return err
+	}
+
+	// Delete network policies for peer-pods operands
+	if err := r.deletePeerPodsWebhookNetworkPolicies(); err != nil {
+		r.Log.Error(err, "error deleting peer-pods-webhook network policies")
+		return err
+	}
+	if err := r.deletePodVMImageCreationNetworkPolicies(); err != nil {
+		r.Log.Error(err, "error deleting podvm-image-creation network policies")
+		return err
+	}
+	if err := r.deletePodVMImageDeletionNetworkPolicies(); err != nil {
+		r.Log.Error(err, "error deleting podvm-image-deletion network policies")
 		return err
 	}
 

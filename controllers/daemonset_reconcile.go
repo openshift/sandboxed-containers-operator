@@ -143,6 +143,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 		}
 	}
 
+	if err := r.deleteKataInstallNetworkPolicies(); err != nil {
+		r.Log.Error(err, "error deleting kata-install network policies")
+		return ctrl.Result{}, err
+	}
+
 	isUninstallDaemonSetJustCreated := false
 
 	// Create kata uninstall daemonset if it doesn't exist
@@ -184,6 +189,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 		}
 	}
 
+	if err := r.createKataUninstallNetworkPolicies(); err != nil {
+		r.Log.Error(err, "error creating kata-uninstall network policies")
+		return ctrl.Result{}, err
+	}
+
 	err = r.updateStatusDaemonSet(UninstallKata)
 	if err != nil {
 		r.Log.Error(err, "Error updating KataConfig.status")
@@ -206,6 +216,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 
 	err = r.deleteDaemonsetForMonitor()
 	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.deleteKataUninstallNetworkPolicies(); err != nil {
+		r.Log.Error(err, "error deleting kata-uninstall network policies")
 		return ctrl.Result{}, err
 	}
 
@@ -348,6 +363,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 			r.Log.Error(err, "error when updating kata installation daemonset")
 			return ctrl.Result{}, err
 		}
+	}
+
+	if err := r.createKataInstallNetworkPolicies(); err != nil {
+		r.Log.Error(err, "error creating kata-install network policies")
+		return ctrl.Result{}, err
 	}
 
 	// Check whether the installation is still in progress or finished
