@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2026-08-18T07:36:02Z"
+    createdAt: "2026-08-31T09:40:10Z"
     features.operators.openshift.io/cnf: "false"
     features.operators.openshift.io/cni: "false"
     features.operators.openshift.io/csi: "false"
@@ -539,7 +539,7 @@ spec:
     type: SingleNamespace
   - supported: false
     type: MultiNamespace
-  - supported: false
+  - supported: true
     type: AllNamespaces
   keywords:
   - sandboxed-containers
