@@ -376,3 +376,32 @@ func (r *KataConfigOpenShiftReconciler) getConfigMapVersion(name, namespace stri
 
 	return cm.GetResourceVersion(), true, nil
 }
+
+// Method to get proxy environment variables if they are set
+// Returns a slice of corev1.EnvVar
+func getProxyEnvVars() []corev1.EnvVar {
+	proxyEnvVars := []corev1.EnvVar{}
+
+	if os.Getenv("HTTP_PROXY") != "" {
+		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
+			Name:  "HTTP_PROXY",
+			Value: os.Getenv("HTTP_PROXY"),
+		})
+	}
+
+	if os.Getenv("HTTPS_PROXY") != "" {
+		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
+			Name:  "HTTPS_PROXY",
+			Value: os.Getenv("HTTPS_PROXY"),
+		})
+	}
+
+	if os.Getenv("NO_PROXY") != "" {
+		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
+			Name:  "NO_PROXY",
+			Value: os.Getenv("NO_PROXY"),
+		})
+	}
+
+	return proxyEnvVars
+}
