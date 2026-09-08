@@ -352,7 +352,7 @@ func (kh *KataConfigHandler) setupPeerPodsCredentials(ctx context.Context) (bool
 		kh.reconciler.Log.Info("Cluster is in token-based mode")
 
 		// if Credentials are available as enviroment variables create the peer-pods-secret
-		stsConfigured, err := kh.trySetupSTSCredentials(ctx)
+		stsConfigured, err := kh.trySetupCredentialsFromEnv(ctx)
 		if err != nil {
 			kh.reconciler.Log.Info("Failed to use STS/WIF credentials from enviroment variables, try different method", "err", err)
 			return false, err
