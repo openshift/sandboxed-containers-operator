@@ -103,7 +103,8 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVer
 							RunAsUser:  &runAsUser,
 						},
 						Command: []string{"/usr/local/bin/entrypoint.sh"},
-						Env: []corev1.EnvVar{
+						// Add proxy environment variables to the CAA container if they are set
+						Env: append(getProxyEnvVars(), []corev1.EnvVar{
 							{
 								Name: "NODE_NAME",
 								ValueFrom: &corev1.EnvVarSource{
@@ -120,7 +121,7 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVer
 								Name:  "TLS_CIPHER_SUITES",
 								Value: r.tlsCipherSuitesEnvValue(r.TLSProfileSpec),
 							},
-						},
+						}...),
 						EnvFrom: []corev1.EnvFromSource{
 							{
 								SecretRef: &corev1.SecretEnvSource{
