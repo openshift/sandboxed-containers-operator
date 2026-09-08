@@ -37,7 +37,7 @@ spec:
   - name: dockerfile
     value: Dockerfile
   - name: prefetch-input
-    value: '{"type": "gomod", "path": "."}'
+    value: '[{"type": "gomod", "path": "."}, {"type": "rpm", "path": "."}]'
   - name: sast-target-dirs
     value: fbc,hack,scripts,testbin,.claude/skills
   pipelineRef:

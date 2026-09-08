@@ -36,6 +36,7 @@ COPY --from=builder /workspace/config/peerpods /config/peerpods
 
 RUN useradd  -r -u 499 nonroot
 RUN getent group nonroot || groupadd -o -g 499 nonroot
+RUN microdnf install -y tar && microdnf clean all
 
 # Red Hat labels
 LABEL name="openshift-sandboxed-containers/osc-rhel9-operator" \
