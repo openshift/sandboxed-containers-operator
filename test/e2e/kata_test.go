@@ -546,9 +546,12 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 			ginkgo.Skip(fmt.Sprintf("C00347 image metadata verification not supported on %s", cloudPlatform))
 		}
 
-		imageID, err := checkPodVMImageID(oc, cloudPlatform)
-		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get image ID from peer-pods-cm")
-		Logf("Image ID from configmap: %v", imageID)
+		field, ok := imageIDField[cloudPlatform]
+		if !ok {
+			ginkgo.Skip(fmt.Sprintf("C00347 no image ID field mapping for platform %s", cloudPlatform))
+		}
+		imageID, err := getConfigmapParamValue(oc, field)
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("failed to get %s from peer-pods-cm", field))
 
 		ginkgo.By("Deploying peerpod with image annotation")
 		pod := NewPodDescription(&testrun, "example-347")
