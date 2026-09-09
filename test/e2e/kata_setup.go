@@ -19,8 +19,10 @@ type TestRunDescription struct {
 	checked          bool
 	runtimeClassName string
 	enablePeerPods   bool
+	enableGPU        bool
 	workloadToTest   string
 	workloadImage    string
+	operatorVer      string
 	ocpMinorVerInt   int
 }
 
@@ -126,6 +128,14 @@ func getTestRunConfigmap(oc *exutil.CLI, testrun *TestRunDescription, ns, name s
 		errorMessage += "workloadToTest is missing from data\n"
 	}
 
+	if gjson.Get(configmapData, "operatorVer").Exists() {
+		testrun.operatorVer = gjson.Get(configmapData, "operatorVer").String()
+	}
+
+	if gjson.Get(configmapData, "enableGPU").Exists() {
+		testrun.enableGPU = gjson.Get(configmapData, "enableGPU").Bool()
+	}
+
 	if errorMessage != "" {
 		return true, fmt.Errorf("%v", errorMessage)
 	}
@@ -148,7 +158,7 @@ func checkKataconfigIsCreated(oc *exutil.CLI, kcName string) error {
 }
 
 func getInstancesOnNode(oc *exutil.CLI, opNamespace, node string) (int, error) {
-	cmd := "ps -ef | grep uuid | grep -v grep | wc -l"
+	cmd := "ps -ef | grep qemu-kvm | grep -v grep | wc -l"
 	msg, err := compat_otp.DebugNodeWithOptionsAndChroot(oc, node, []string{"-q"}, "bin/sh", "-c", cmd)
 	if err != nil {
 		return 0, err
