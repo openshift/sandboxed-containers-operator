@@ -12,6 +12,12 @@ export AUTO_GENERATE_POLICY="no"
 export CONTAINER_RUNTIME="crio"
 export K8S_TEST_DEBUG="false"
 
+# RuntimeClass the workloads should run on. Upstream kata-containers uses a
+# kata-${KATA_HYPERVISOR} naming schema (e.g. kata-qemu), whereas OSC uses a
+# different one (kata, kata-remote, kata-cc, ...) and always defines "kata" as
+# the default. See the normalization step below.
+OSC_RUNTIMECLASS="${OSC_RUNTIMECLASS:-kata}"
+
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [options]
@@ -204,6 +210,19 @@ if [[ "$SKIP_SETUP" != "true" ]]; then
     # --- Setup upstream working directory ---
     echo "Running upstream setup.sh..."
     bash setup.sh || exit 1
+
+    # --- Point workloads at the OSC RuntimeClass ---
+    # The upstream kata-containers's setup.sh rewrites the fixtures'
+    # `runtimeClassName: kata` to kata-${KATA_HYPERVISOR} (e.g. kata-qemu). We do
+    # not control that file, so we undo it here: OSC uses a different naming
+    # schema (kata, kata-remote, kata-cc, ...) but always defines "kata" as the
+    # default RuntimeClass. Without this, every pod is rejected with
+    # `RuntimeClass "kata-qemu" not found`.
+    echo "Pointing test workloads at the '${OSC_RUNTIMECLASS}' RuntimeClass..."
+    find runtimeclass_workloads_work -type f \
+        \( -name '*.yaml' -o -name '*.yaml.in' \) -print0 |
+        xargs -0 --no-run-if-empty sed -i -E \
+            "s/^([[:space:]]*runtimeClassName:[[:space:]]+)kata(-[^[:space:]]*)?[[:space:]]*\$/\1${OSC_RUNTIMECLASS}/"
 
     # Create test namespace
     kubectl apply -f runtimeclass_workloads/tests-namespace.yaml || {
