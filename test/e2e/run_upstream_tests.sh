@@ -25,7 +25,7 @@ Options:
                             Or a single .bats file, e.g. k8s-env.bats
   --tests-repo URL|DIR      Kata tests repo URL or local directory
                             (default: https://github.com/openshift/kata-containers)
-  --tests-repo-ref REF      Git ref to checkout — branch or tag (default: main)
+  --tests-repo-ref REF      Git ref to checkout — branch or tag (default: osc-release)
   --preserve-tests-repo     Do not delete the cloned test repo after execution
   --skip-setup              Skip cluster setup (node labeling, setup.sh, namespace, SCC)
   -h, --help                Show this help
@@ -35,7 +35,7 @@ EOF
 
 PROFILE="full"
 TESTS_REPO="https://github.com/openshift/kata-containers"
-TESTS_REPO_REF="main"
+TESTS_REPO_REF="osc-release"
 PRESERVE_TESTS_REPO=false
 SKIP_SETUP=false
 
