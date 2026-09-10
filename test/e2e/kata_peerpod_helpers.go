@@ -1,15 +1,12 @@
 package kata
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	exutil "github.com/openshift/origin/test/extended/util"
 	"github.com/tidwall/gjson"
-	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -152,35 +149,25 @@ func mergeCommaSeparated(current, required string) string {
 	return result
 }
 
-// rebootCaaDaemonset triggers a rolling restart of the CAA daemonset by
-// injecting a REBOOT env var, then waits for all pods to become ready.
+// rebootCaaDaemonset triggers a rolling restart of the CAA daemonset
+// and waits for the new generation to roll out.
 func rebootCaaDaemonset(oc *exutil.CLI) error {
 	Logf("Restarting %s daemonset", caaDaemonsetName)
-	_, err := oc.AsAdmin().WithoutNamespace().Run("set").Args(
-		"env", "-n", opNamespace, "ds", caaDaemonsetName,
-		"REBOOT="+getRandomString(),
+	_, err := oc.AsAdmin().WithoutNamespace().Run("rollout").Args(
+		"restart", "ds/"+caaDaemonsetName, "-n", opNamespace,
 	).Output()
 	if err != nil {
 		return fmt.Errorf("failed to trigger restart of %s: %w", caaDaemonsetName, err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	return wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
-		status, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-			"ds", caaDaemonsetName, "-n", opNamespace,
-			"-o=jsonpath={.status.desiredNumberScheduled},{.status.numberReady}",
-		).Output()
-		if err != nil {
-			return false, nil
-		}
-		parts := strings.SplitN(status, ",", 2)
-		if len(parts) == 2 && parts[0] != "" && parts[0] == parts[1] {
-			Logf("%s ready: %s/%s pods", caaDaemonsetName, parts[1], parts[0])
-			return true, nil
-		}
-		return false, nil
-	})
+	output, err := oc.AsAdmin().WithoutNamespace().Run("rollout").Args(
+		"status", "ds/"+caaDaemonsetName, "-n", opNamespace, "--timeout=2m",
+	).Output()
+	if err != nil {
+		return fmt.Errorf("%s did not become ready after restart: %w (output: %s)", caaDaemonsetName, err, output)
+	}
+	Logf("%s rollout complete", caaDaemonsetName)
+	return nil
 }
 
 // getConfigmapParamValue reads a single field from the peer-pods-cm configmap.
