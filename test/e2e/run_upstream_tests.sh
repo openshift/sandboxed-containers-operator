@@ -77,6 +77,7 @@ PODS=(
     # k8s-privileged.bats — not present in openshift/kata-containers tree
     # k8s-footloose.bats — setup fails: requires sudo on host to create SSH keys
     # k8s-ip6tables.bats — OSC guest kernel lacks iptables module (upstream has it)
+    # k8s-qemu-rootless-sandbox.bats — dies: can't install kata config drop-in on OSC nodes
 )
 
 WORKLOADS=(
@@ -95,9 +96,10 @@ RESOURCES=(
     # k8s-pod-quota.bats — flaky: intermittent failures
     k8s-qos-pods.bats
     # k8s-sandbox-cgroup.bats — not present in openshift/kata-containers tree
+    # k8s-sandbox-cgroup-placement.bats — skips: OSC runs with sandbox_cgroup_only=false
     # k8s-sandbox-vcpus-allocation.bats — flaky: intermittent failures
-    k8s-number-cpus.bats
-    k8s-cpu-ns.bats
+    # k8s-number-cpus.bats — flaky (1/5): CPU hotplug count mismatch, guest vCPUs != requested
+    # k8s-cpu-ns.bats — flaky (2/5): CPU hotplug count mismatch, guest vCPUs != requested
 )
 
 VOLUMES=(
@@ -105,8 +107,10 @@ VOLUMES=(
     k8s-optional-empty-configmap.bats
     k8s-credentials-secrets.bats
     k8s-optional-empty-secret.bats
-    k8s-empty-dirs.bats
+    # k8s-empty-dirs.bats — "sizeLimit evicts pod" subtest always fails: kata emptyDir lives in the guest VM, host kubelet can't observe size to evict (~12 min/run wasted)
     k8s-shared-volume.bats
+    k8s-uds-shared-volume.bats
+    k8s-hostpath-volume.bats
     # k8s-volume.bats — hostPath blocked by SELinux on RHCOS: virtiofsd can't access host-created files
     # k8s-file-volume.bats — hostPath blocked by SELinux on RHCOS: virtiofsd can't access host-created files
     # k8s-block-volume.bats — setup precondition fails, 0 tests executed
@@ -114,12 +118,15 @@ VOLUMES=(
     k8s-nested-configmap-secret.bats
     k8s-inotify.bats
     # k8s-smb-volume.bats — CIFS mount fails (exit 32): OSC guest kernel lacks cifs module (upstream has it)
+    # k8s-plain-ephemeral-data-storage.bats — skips: node kata config not reachable ("No Kata runtime config found for qemu")
 )
 
 NETWORKING=(
     k8s-nginx-connectivity.bats
     k8s-port-forward.bats
     k8s-custom-dns.bats
+    # k8s-openvpn.bats — openvpn server never binds UDP/1194: OSC guest kernel lacks the tun module
+    # k8s-l3forwarding-connectivity.bats — skips: l3forwarding only implemented in runtime-rs (OSC uses go runtime)
 )
 
 SANITY=(
