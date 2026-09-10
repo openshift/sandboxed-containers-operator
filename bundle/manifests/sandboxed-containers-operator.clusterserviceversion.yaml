@@ -429,7 +429,7 @@ spec:
                 - configMapRef:
                     name: peer-pods-cm
                     optional: true
-                image: registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:0a62b0fda38ffd97db1543ecf3dca81c34815aabdc4dca5fe65c89fbc7038baa
+                image: registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:c37566454a113aa85246f48ce8e67e073fb5464abf87c399a4dd9097763d44f9
                 imagePullPolicy: Always
                 name: manager
                 ports:
