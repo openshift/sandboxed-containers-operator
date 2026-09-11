@@ -1,0 +1,13 @@
+---
+title: "podvm-image-creation (2 NPs)"
+---
+graph TB
+    DENY["E1: podvm-image-creation-deny-all<br/>❌ all ingress blocked"]
+
+    DENY -.- IMGC
+
+    IMGC["<b>podvm-create pod</b><br/>label: job-name=osc-podvm-image-creation<br/>Job (transient) · no ports"]
+
+    IMGC -- "E2: podvm-image-creation-allow-egress<br/>all egress" --> EXTERNAL["All external (cloud APIs, registries, DNS)"]
+
+    style DENY fill:#ffcccc,stroke:#cc0000

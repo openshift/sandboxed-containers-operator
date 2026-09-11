@@ -1,0 +1,13 @@
+---
+title: "podvm-image-deletion (2 NPs)"
+---
+graph TB
+    DENY["E3: podvm-image-deletion-deny-all<br/>❌ all ingress blocked"]
+
+    DENY -.- IMGD
+
+    IMGD["<b>podvm-delete pod</b><br/>label: job-name=osc-podvm-image-deletion<br/>Job (transient) · no ports"]
+
+    IMGD -- "E4: podvm-image-deletion-allow-egress<br/>all egress" --> EXTERNAL["All external (cloud APIs, DNS)"]
+
+    style DENY fill:#ffcccc,stroke:#cc0000
