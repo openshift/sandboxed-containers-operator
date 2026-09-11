@@ -72,7 +72,7 @@ spec:
             git checkout ${srcREV}
 
             # Derive the PR tag from the image tags already in MODIFIED_IMAGES (e.g. "pr-1823")
-            PR_TAG=$(echo "$MODIFIED_IMAGES" | grep -oP '(?<=:)(pr-\d+)' | head -1)
+            PR_TAG=$(echo "$MODIFIED_IMAGES" | grep -oP '(?<=osc-operator:)(pr-\d+)' | head -1)
             export VERSION="${PR_TAG:-on-pr-$(date +%Y%m%d%H%M%S)}"
 
             # Call the build-bundle.sh script with the list of modified images

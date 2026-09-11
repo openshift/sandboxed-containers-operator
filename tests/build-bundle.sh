@@ -73,8 +73,8 @@ done
 TAG=${VERSION:-on-pr-$(date +%Y%m%d%H%M%S)}
 BUNDLE_IMG="quay.io/redhat-user-workloads/ose-osc-tenant/osc-operator-bundle:${TAG}"
 
-buildah bud --storage-driver=vfs -f bundle.Dockerfile -t "${BUNDLE_IMG}" .
-buildah push --storage-driver=vfs "${BUNDLE_IMG}"
+buildah bud --isolation=chroot -f bundle.Dockerfile -t "${BUNDLE_IMG}" .
+buildah push "${BUNDLE_IMG}"
 
 # Build and push a catalog image referencing the new bundle
 CATALOG_IMAGE="quay.io/redhat-user-workloads/ose-osc-tenant/osc-test-fbc:${TAG}"
@@ -83,6 +83,6 @@ echo "Building catalog for bundle image: ${BUNDLE_IMG}"
 cd fbc
 CATALOG_TEMPLATE="test-fbc/catalog-template.yaml"
 sed -i "s|\(image: \).*|\1${BUNDLE_IMG}|g" "$CATALOG_TEMPLATE"
-buildah bud --storage-driver=vfs -f test-fbc/Dockerfile -t "${CATALOG_IMAGE}" .
-buildah push --storage-driver=vfs "${CATALOG_IMAGE}"
+buildah bud --isolation=chroot -f test-fbc/Dockerfile -t "${CATALOG_IMAGE}" .
+buildah push "${CATALOG_IMAGE}"
 echo "Catalog image pushed: ${CATALOG_IMAGE}"
