@@ -2,32 +2,21 @@ kind: PipelineRun
 apiVersion: tekton.dev/v1
 metadata:
   name: build-test-artifacts
-  annotations:
-    build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
 spec:
-  params:
-    - name: PULL_NUMBER
-      value: '{{pull_request_number}}'
   pipelineSpec:
     params:
       - name: SNAPSHOT
         type: string
         description: 'Snapshot of the application'
-      - name: PULL_NUMBER
-        type: string
     tasks:
     - name: build-and-push
       description: Builds a bundle and catalog that references the modified images from the SNAPSHOT
       params:
         - name: SNAPSHOT
           value: $(params.SNAPSHOT)
-        - name: PULL_NUMBER
-          value: $(params.PULL_NUMBER)
       taskSpec:
         params:
         - name: SNAPSHOT
-          type: string
-        - name: PULL_NUMBER
           type: string
         results:
         - name: TEST_OUTPUT
@@ -37,8 +26,6 @@ spec:
           env:
           - name: SNAPSHOT
             value: $(params.SNAPSHOT)
-          - name: PULL_NUMBER
-            value: $(params.PULL_NUMBER)
           script: |
             #!/bin/bash
             set -e
@@ -84,9 +71,12 @@ spec:
             cd sources
             git checkout ${srcREV}
 
+            # Derive the PR tag from the image tags already in MODIFIED_IMAGES (e.g. "pr-1823")
+            PR_TAG=$(echo "$MODIFIED_IMAGES" | grep -oP '(?<=:)(pr-\d+)' | head -1)
+            export VERSION="${PR_TAG:-on-pr-$(date +%Y%m%d%H%M%S)}"
+
             # Call the build-bundle.sh script with the list of modified images
             export MODIFIED_IMAGES
-            export VERSION=on-pull-request-$PULL_NUMBER
             if ./tests/build-bundle.sh; then
               RESULT="SUCCESS"
               SUCCESSES=1
