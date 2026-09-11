@@ -337,6 +337,8 @@ func (r *ImageGenerator) createJobFromFile(jobFileName string) (*batchv1.Job, er
 		}
 
 	}
+	// Add proxy environment variables to the job if they are set
+	job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, getProxyEnvVars()...)
 
 	// If RELATED_PODVM_BUILDER_IMAGE environment variable is set, use it
 	// Otherwise, use the default podvm image
