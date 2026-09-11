@@ -21,18 +21,24 @@ spec:
         results:
         - name: TEST_OUTPUT
           description: Test output
+        volumes:
+        - name: workdir
+          emptyDir: {}
         steps:
-        - image: registry.redhat.io/openshift4/ose-cli:latest
+        - name: prepare
+          image: registry.redhat.io/openshift4/ose-cli:latest
+          volumeMounts:
+          - name: workdir
+            mountPath: /workdir
           env:
           - name: SNAPSHOT
             value: $(params.SNAPSHOT)
           script: |
             #!/bin/bash
             set -e
-            SUCCESSES=0
-            FAILURES=0
 
-            dnf -y install jq git skopeo buildah
+            dnf -y install jq git skopeo
+
             snapshotComponents=$(jq -c '.components[]' <<< "${SNAPSHOT}")
 
             # Look at all images listed in the SNAPSHOT, and verify the tags
@@ -55,28 +61,46 @@ spec:
 
               IMAGE_REPO=$(echo "${IMAGE}" | cut -d'@' -f1)
               MODIFIED_IMAGES="${MODIFIED_IMAGES} ${IMAGE_REPO}:${IMAGE_PR_TAG}"
-              
+
             done < <(echo "$snapshotComponents")
 
-            echo -e "Found the following pr- tags in the Snapshot images:"
+            echo "Found the following pr- tags in the Snapshot images:"
             echo "${MODIFIED_IMAGES}"
 
-            # Checkout the sources for the operator to get the build-bundle.sh script
+            # Checkout the sources for the operator to get the build-bundle.sh script.
             # We need to get the same revision that was built in the SNAPSHOT,
             # in case this script was changed in the PR.
             srcURL=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.url' <<< "${SNAPSHOT}")
             srcREV=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.revision' <<< "${SNAPSHOT}")
 
-            git clone ${srcURL} sources
-            cd sources
+            git clone ${srcURL} /workdir/sources
+            cd /workdir/sources
             git checkout ${srcREV}
 
             # Derive the PR tag from the image tags already in MODIFIED_IMAGES (e.g. "pr-1823")
             PR_TAG=$(echo "$MODIFIED_IMAGES" | grep -oP '(?<=osc-operator:)(pr-\d+)' | head -1)
-            export VERSION="${PR_TAG:-on-pr-$(date +%Y%m%d%H%M%S)}"
+            VERSION="${PR_TAG:-on-pr-$(date +%Y%m%d%H%M%S)}"
 
-            # Call the build-bundle.sh script with the list of modified images
-            export MODIFIED_IMAGES
+            # Write state for the build step
+            echo "$MODIFIED_IMAGES" > /workdir/MODIFIED_IMAGES
+            echo "$VERSION" > /workdir/VERSION
+
+        - name: build-push
+          image: quay.io/buildah/stable:latest
+          volumeMounts:
+          - name: workdir
+            mountPath: /workdir
+          script: |
+            #!/bin/bash
+            set -e
+            SUCCESSES=0
+            FAILURES=0
+
+            MODIFIED_IMAGES=$(cat /workdir/MODIFIED_IMAGES)
+            VERSION=$(cat /workdir/VERSION)
+            export MODIFIED_IMAGES VERSION
+            cd /workdir/sources
+
             if ./tests/build-bundle.sh; then
               RESULT="SUCCESS"
               SUCCESSES=1
