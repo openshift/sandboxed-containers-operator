@@ -12,6 +12,12 @@ export AUTO_GENERATE_POLICY="no"
 export CONTAINER_RUNTIME="crio"
 export K8S_TEST_DEBUG="false"
 
+# RuntimeClass the workloads should run on. Upstream kata-containers uses a
+# kata-${KATA_HYPERVISOR} naming schema (e.g. kata-qemu), whereas OSC uses a
+# different one (kata, kata-remote, kata-cc, ...) and always defines "kata" as
+# the default. See the normalization step below.
+OSC_RUNTIMECLASS="${OSC_RUNTIMECLASS:-kata}"
+
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [options]
@@ -25,7 +31,7 @@ Options:
                             Or a single .bats file, e.g. k8s-env.bats
   --tests-repo URL|DIR      Kata tests repo URL or local directory
                             (default: https://github.com/openshift/kata-containers)
-  --tests-repo-ref REF      Git ref to checkout — branch or tag (default: main)
+  --tests-repo-ref REF      Git ref to checkout — branch or tag (default: osc-release)
   --preserve-tests-repo     Do not delete the cloned test repo after execution
   --skip-setup              Skip cluster setup (node labeling, setup.sh, namespace, SCC)
   -h, --help                Show this help
@@ -35,7 +41,7 @@ EOF
 
 PROFILE="full"
 TESTS_REPO="https://github.com/openshift/kata-containers"
-TESTS_REPO_REF="main"
+TESTS_REPO_REF="osc-release"
 PRESERVE_TESTS_REPO=false
 SKIP_SETUP=false
 
@@ -71,6 +77,7 @@ PODS=(
     # k8s-privileged.bats — not present in openshift/kata-containers tree
     # k8s-footloose.bats — setup fails: requires sudo on host to create SSH keys
     # k8s-ip6tables.bats — OSC guest kernel lacks iptables module (upstream has it)
+    # k8s-qemu-rootless-sandbox.bats — dies: can't install kata config drop-in on OSC nodes
 )
 
 WORKLOADS=(
@@ -89,9 +96,10 @@ RESOURCES=(
     # k8s-pod-quota.bats — flaky: intermittent failures
     k8s-qos-pods.bats
     # k8s-sandbox-cgroup.bats — not present in openshift/kata-containers tree
+    # k8s-sandbox-cgroup-placement.bats — skips: OSC runs with sandbox_cgroup_only=false
     # k8s-sandbox-vcpus-allocation.bats — flaky: intermittent failures
-    k8s-number-cpus.bats
-    k8s-cpu-ns.bats
+    # k8s-number-cpus.bats — flaky (1/5): CPU hotplug count mismatch, guest vCPUs != requested
+    # k8s-cpu-ns.bats — flaky (2/5): CPU hotplug count mismatch, guest vCPUs != requested
 )
 
 VOLUMES=(
@@ -99,8 +107,10 @@ VOLUMES=(
     k8s-optional-empty-configmap.bats
     k8s-credentials-secrets.bats
     k8s-optional-empty-secret.bats
-    k8s-empty-dirs.bats
+    # k8s-empty-dirs.bats — "sizeLimit evicts pod" subtest always fails: kata emptyDir lives in the guest VM, host kubelet can't observe size to evict (~12 min/run wasted)
     k8s-shared-volume.bats
+    k8s-uds-shared-volume.bats
+    k8s-hostpath-volume.bats
     # k8s-volume.bats — hostPath blocked by SELinux on RHCOS: virtiofsd can't access host-created files
     # k8s-file-volume.bats — hostPath blocked by SELinux on RHCOS: virtiofsd can't access host-created files
     # k8s-block-volume.bats — setup precondition fails, 0 tests executed
@@ -108,12 +118,15 @@ VOLUMES=(
     k8s-nested-configmap-secret.bats
     k8s-inotify.bats
     # k8s-smb-volume.bats — CIFS mount fails (exit 32): OSC guest kernel lacks cifs module (upstream has it)
+    # k8s-plain-ephemeral-data-storage.bats — skips: node kata config not reachable ("No Kata runtime config found for qemu")
 )
 
 NETWORKING=(
     k8s-nginx-connectivity.bats
     k8s-port-forward.bats
     k8s-custom-dns.bats
+    # k8s-openvpn.bats — openvpn server never binds UDP/1194: OSC guest kernel lacks the tun module
+    # k8s-l3forwarding-connectivity.bats — skips: l3forwarding only implemented in runtime-rs (OSC uses go runtime)
 )
 
 SANITY=(
@@ -204,6 +217,19 @@ if [[ "$SKIP_SETUP" != "true" ]]; then
     # --- Setup upstream working directory ---
     echo "Running upstream setup.sh..."
     bash setup.sh || exit 1
+
+    # --- Point workloads at the OSC RuntimeClass ---
+    # The upstream kata-containers's setup.sh rewrites the fixtures'
+    # `runtimeClassName: kata` to kata-${KATA_HYPERVISOR} (e.g. kata-qemu). We do
+    # not control that file, so we undo it here: OSC uses a different naming
+    # schema (kata, kata-remote, kata-cc, ...) but always defines "kata" as the
+    # default RuntimeClass. Without this, every pod is rejected with
+    # `RuntimeClass "kata-qemu" not found`.
+    echo "Pointing test workloads at the '${OSC_RUNTIMECLASS}' RuntimeClass..."
+    find runtimeclass_workloads_work -type f \
+        \( -name '*.yaml' -o -name '*.yaml.in' \) -print0 |
+        xargs -0 --no-run-if-empty sed -i -E \
+            "s/^([[:space:]]*runtimeClassName:[[:space:]]+)kata(-[^[:space:]]*)?[[:space:]]*\$/\1${OSC_RUNTIMECLASS}/"
 
     # Create test namespace
     kubectl apply -f runtimeclass_workloads/tests-namespace.yaml || {
