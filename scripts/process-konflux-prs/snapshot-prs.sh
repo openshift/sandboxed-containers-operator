@@ -17,7 +17,7 @@ REPO_FILTER=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --mintmaker|--nudge)
+        --mintmaker|--nudge|--test-fbc)
             PR_TYPE="$1"
             shift
             ;;
@@ -33,7 +33,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$PR_TYPE" ]]; then
-    echo "Usage: $0 --mintmaker|--nudge [--repo REPO_NAME]" >&2
+    echo "Usage: $0 --mintmaker|--nudge|--test-fbc [--repo REPO_NAME]" >&2
     exit 1
 fi
 
@@ -53,10 +53,12 @@ while IFS= read -r pr; do
           components: (.components // []),
           build_checks_passed,
           build_checks_failed: (.build_checks_failed // []),
+          other_checks_failed: (.other_checks_failed // []),
           pending_checks,
           has_ok_to_test,
           has_lgtm,
-          has_mintmaker_skip: ((.labels // []) | any(. == "mintmaker-skip"))}')
+          has_mintmaker_skip: ((.labels // []) | any(. == "mintmaker-skip")),
+          has_hold: ((.labels // []) | any(. == "do-not-merge/hold"))}')
     snapshot=$(echo "$snapshot" | jq --argjson e "$entry" '. + [$e]')
 done < <(echo "$prs" | jq -c '.[]')
 
