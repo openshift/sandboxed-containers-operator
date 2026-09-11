@@ -91,6 +91,18 @@ while IFS= read -r pr; do
     fi
 
     if [ "$has_ok" = "false" ]; then
+        if [ "$build_ok" != "true" ] || [ "$other_n" -gt 0 ]; then
+            if [ "$build_ok" != "true" ]; then
+                failed=$(echo "$pr" | jq -r '.build_checks_failed | join(", ")')
+                reason="build checks failed: ${failed}"
+            else
+                other_names=$(echo "$pr" | jq -r '.other_checks_failed | join(", ")')
+                reason="developer verification needed — other checks failed: ${other_names}"
+            fi
+            skipped=$(echo "$skipped" | jq --argjson p "$pr" --arg r "$reason" \
+                '. + [$p + {"_skip_reason":$r}]')
+            continue
+        fi
         label_success=false
         if [ "$DRY_RUN" = true ]; then
             label_success=true
