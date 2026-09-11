@@ -45,7 +45,7 @@ spec:
             SUCCESSES=0
             FAILURES=0
 
-            dnf -y install jq git make skopeo
+            dnf -y install jq git skopeo buildah
             snapshotComponents=$(jq -c '.components[]' <<< "${SNAPSHOT}")
 
             # Look at all images listed in the SNAPSHOT, and verify the tags
