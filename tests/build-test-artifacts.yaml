@@ -1,0 +1,118 @@
+kind: PipelineRun
+apiVersion: tekton.dev/v1
+metadata:
+  name: build-test-artifacts
+spec:
+  pipelineSpec:
+    params:
+      - name: SNAPSHOT
+        type: string
+        description: 'Snapshot of the application'
+    tasks:
+    - name: build-and-push
+      description: Builds a bundle and catalog that references the modified images from the SNAPSHOT
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+      taskSpec:
+        params:
+        - name: SNAPSHOT
+          type: string
+        results:
+        - name: TEST_OUTPUT
+          description: Test output
+        volumes:
+        - name: workdir
+          emptyDir: {}
+        steps:
+        - name: prepare
+          image: registry.redhat.io/openshift4/ose-cli:latest
+          volumeMounts:
+          - name: workdir
+            mountPath: /workdir
+          env:
+          - name: SNAPSHOT
+            value: $(params.SNAPSHOT)
+          script: |
+            #!/bin/bash
+            set -e
+
+            dnf -y install jq git skopeo
+
+            snapshotComponents=$(jq -c '.components[]' <<< "${SNAPSHOT}")
+
+            # Look at all images listed in the SNAPSHOT, and verify the tags
+            # that are associated to them.
+            # All tags that contain "on-push" should be ignored, as they reference
+            # already merged code.
+            # All tags beginning with "pr-" or "pullreq-" should be listed, as they
+            # reference newly built images that we want to test.
+            MODIFIED_IMAGES=""
+            while read componentEntry
+            do
+              IMAGE=$(echo "${componentEntry}" | jq -r '.containerImage')
+              TAGS=$(skopeo inspect "docker://${IMAGE}" | jq '.RepoTags')
+
+              # Verify that the image has at least one "pr-" or "pullreq-" tag
+              IMAGE_PR_TAG=$(echo "${TAGS}" | jq -r '.[] | select(startswith("pr-") or startswith("pullreq-"))' | head -1)
+              if [ -z "${IMAGE_PR_TAG}" ]; then
+                continue
+              fi
+
+              IMAGE_REPO=$(echo "${IMAGE}" | cut -d'@' -f1)
+              MODIFIED_IMAGES="${MODIFIED_IMAGES} ${IMAGE_REPO}:${IMAGE_PR_TAG}"
+
+            done < <(echo "$snapshotComponents")
+
+            echo "Found the following pr- tags in the Snapshot images:"
+            echo "${MODIFIED_IMAGES}"
+
+            # Checkout the sources for the operator to get the build-bundle.sh script.
+            # We need to get the same revision that was built in the SNAPSHOT,
+            # in case this script was changed in the PR.
+            srcURL=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.url' <<< "${SNAPSHOT}")
+            srcREV=$(jq -r '.components[] | select(.name=="osc-operator") | .source.git.revision' <<< "${SNAPSHOT}")
+
+            git clone ${srcURL} /workdir/sources
+            cd /workdir/sources
+            git checkout ${srcREV}
+
+            # Derive the PR tag from the image tags already in MODIFIED_IMAGES (e.g. "pr-1823")
+            PR_TAG=$(echo "$MODIFIED_IMAGES" | grep -oP '(?<=osc-operator:)(pr-\d+)' | head -1)
+            VERSION="${PR_TAG:-on-pr-$(date +%Y%m%d%H%M%S)}"
+
+            # Write state for the build step
+            echo "$MODIFIED_IMAGES" > /workdir/MODIFIED_IMAGES
+            echo "$VERSION" > /workdir/VERSION
+
+        - name: build-push
+          image: quay.io/buildah/stable:latest
+          volumeMounts:
+          - name: workdir
+            mountPath: /workdir
+          script: |
+            #!/bin/bash
+            set -e
+            SUCCESSES=0
+            FAILURES=0
+
+            MODIFIED_IMAGES=$(cat /workdir/MODIFIED_IMAGES)
+            VERSION=$(cat /workdir/VERSION)
+            export MODIFIED_IMAGES VERSION
+            cd /workdir/sources
+
+            if ./tests/build-bundle.sh; then
+              RESULT="SUCCESS"
+              SUCCESSES=1
+            else
+              RESULT="FAILURE"
+              FAILURES=1
+            fi
+
+            # Output the standardized TEST_OUTPUT result in JSON form
+            TEST_OUTPUT=$(jq -rc --arg date $(date -u --iso-8601=seconds) --arg RESULT "${RESULT}" \
+                --argjson FAILURES ${FAILURES} --argjson SUCCESSES ${SUCCESSES} --null-input \
+                '{result: $RESULT, timestamp: $date, failures: $FAILURES, successes: $SUCCESSES, warnings: 0}')
+            echo -n "${TEST_OUTPUT}" | tee $(results.TEST_OUTPUT.path)
+
+            [ "$RESULT" = "SUCCESS" ] || exit 1
