@@ -466,6 +466,12 @@ function set_kernel_params_for_kata_agent() {
     kata_override="[hypervisor.qemu]
 kernel_params=\"$kernel_params\""
 
+    if [ $tee_type = "tdx" ]; then
+      echo "Adding TDX quote generation service socket port 0"
+      kata_override="$kata_override
+tdx_quote_generation_service_socket_port=0"
+    fi
+
     # Create base64 encoding of the drop-in to be used as source
     source=$(echo "$kata_override" | base64 -w0) || return 1
 
