@@ -12,3 +12,6 @@ spec:
       name: openshift-sandboxed-containers-monitor
   endpoints:
   - port: metrics
+    scheme: https
+    tlsConfig:
+      insecureSkipVerify: true
