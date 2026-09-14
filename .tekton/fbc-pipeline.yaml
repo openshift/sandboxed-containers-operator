@@ -105,7 +105,7 @@ spec:
       - name: name
         value: init
       - name: bundle
-        value: quay.io/konflux-ci/tekton-catalog/task-init:0.4.3@sha256:5f687152ab0661f84830877de93a8ec45cb0b756f71b24ac55133d03a4007936
+        value: quay.io/konflux-ci/tekton-catalog/task-init:0.4.3@sha256:c6c414a3b5dcd827720f3443a128a02d27a0a5071ea3e4dc0063d578f1f73a74
       - name: kind
         value: task
       resolver: bundles
@@ -127,7 +127,7 @@ spec:
       - name: name
         value: git-clone-oci-ta
       - name: bundle
-        value: quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta:0.2.6@sha256:3bcd4c39a346d29617013f4c47d245d38f020cdbf814cf3ce095911c528f5003
+        value: quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta:0.2.6@sha256:1d7ba568ae6e9e26800054f3942779de8abc80ddc48f0e44df6b1c2f098161dc
       - name: kind
         value: task
       resolver: bundles
@@ -153,7 +153,7 @@ spec:
       - name: name
         value: prefetch-dependencies-oci-ta
       - name: bundle
-        value: quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta:0.10.1@sha256:c09c1c3ced67fb8740b2925a7de09c0810d4e8c8f148d41c21ffe37810d85c62
+        value: quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta:0.10.3@sha256:9fd7d251f92250d89a5465756e278e053af28c6356e5ccdedc4be87bbb13c190
       - name: kind
         value: task
       resolver: bundles
@@ -209,7 +209,7 @@ spec:
       - name: name
         value: buildah-remote-oci-ta
       - name: bundle
-        value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.12.0@sha256:44c1ca2e823f006ee94e066231b033b191f0f8cee51add1e908138335eba9b30
+        value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.12.1@sha256:9afb0e30b1b5b49a5a934a09ce3b55baf892da99a784387ff72ec92bd2c374c2
       - name: kind
         value: task
       resolver: bundles
@@ -231,7 +231,7 @@ spec:
       - name: name
         value: build-image-index
       - name: bundle
-        value: quay.io/konflux-ci/tekton-catalog/task-build-image-index:0.3.1@sha256:c2cda69e681c976dd5b39caf6682d1c8f8c5e5a53a67a22a5b06d4cde773bd10
+        value: quay.io/konflux-ci/tekton-catalog/task-build-image-index:0.3.1@sha256:6ead03ca82a1b970dc60eaadae86adf374e8e70f8d951902e1fac7411dbe0550
       - name: kind
         value: task
       resolver: bundles
@@ -272,7 +272,7 @@ spec:
       - name: name
         value: apply-tags
       - name: bundle
-        value: quay.io/konflux-ci/tekton-catalog/task-apply-tags:0.3@sha256:2dae3c4beaf1070db565c536bc997e93925ae8c0c45dd8da9b4ae5293fd8c592
+        value: quay.io/konflux-ci/tekton-catalog/task-apply-tags:0.3.1@sha256:b1c71d83be8e6d0e44f9b6e58e1ad491396d4c287be9291802c9be69d9441f2f
       - name: kind
         value: task
       resolver: bundles
@@ -289,7 +289,7 @@ spec:
       - name: name
         value: validate-fbc
       - name: bundle
-        value: quay.io/konflux-ci/tekton-catalog/task-validate-fbc:0.3@sha256:5ac2ab06fa8b7b7dfaa7a57cf68d3dd8de3fa9c7d6ebaef17626509c45f234a3
+        value: quay.io/konflux-ci/tekton-catalog/task-validate-fbc:0.3@sha256:4b635b529a29088d53dc9cc8b5083e878b08da29608fbd56e6ebcedcf190cdef
       - name: kind
         value: task
       resolver: bundles
@@ -339,7 +339,7 @@ spec:
       - name: name
         value: fbc-fips-check-oci-ta
       - name: bundle
-        value: quay.io/konflux-ci/tekton-catalog/task-fbc-fips-check-oci-ta:0.1@sha256:11f4adee71143d1bb8504bb96edfa868be9624e0f1758fc299d7a9a86f30e8e0
+        value: quay.io/konflux-ci/tekton-catalog/task-fbc-fips-check-oci-ta:0.1@sha256:736177074f4949bab9467f41526d056ea5f229c3b5a4f28dbe51c38ba70e8328
       - name: kind
         value: task
       resolver: bundles
@@ -357,7 +357,7 @@ spec:
       - name: name
         value: fbc-inject-lifecycle-oci-ta
       - name: bundle
-        value: quay.io/konflux-ci/tekton-catalog/task-fbc-inject-lifecycle-oci-ta:0.1@sha256:da1217be1dcec3d5b5140ea351466607005481397b31f2b81108c4fd3012fbde
+        value: quay.io/konflux-ci/tekton-catalog/task-fbc-inject-lifecycle-oci-ta:0.1@sha256:8160f098d374c18d98acce888b20c3df70f5ce0fc5f4f530c509786557dec5f6
     params:
     - name: DOCKERFILE
       value: $(params.dockerfile)
