@@ -62,31 +62,56 @@ pr_data=$(gh pr view "$PR_NUMBER" \
     --repo "$REPO_URL" \
     --json number,title,state,labels,statusCheckRollup,baseRefName)
 
-# All checks, with null entries filtered out
+# Normalize all checks: both CheckRun (name/conclusion) and StatusContext (context/state).
+# StatusContext objects have no "name" field — they use "context" instead, and "state"
+# instead of "conclusion". Mapping: FAILURE/ERROR -> FAILURE, PENDING/EXPECTED -> IN_PROGRESS.
 checks=$(echo "$pr_data" | jq '[(.statusCheckRollup // [])[] |
-    select(.name != null) |
-    {
-        name: .name,
-        status: .status,
-        conclusion: (.conclusion // ""),
-        details_url: .detailsUrl
-    }]')
+    if .name != null then
+        {
+            name: .name,
+            status: .status,
+            conclusion: (.conclusion // ""),
+            details_url: (.detailsUrl // "")
+        }
+    elif .context != null then
+        {
+            name: .context,
+            status: (if (.state == "PENDING" or .state == "EXPECTED") then "IN_PROGRESS" else "COMPLETED" end),
+            conclusion: (if .state == "SUCCESS" then "SUCCESS"
+                         elif (.state == "FAILURE" or .state == "ERROR") then "FAILURE"
+                         elif (.state == "PENDING" or .state == "EXPECTED") then ""
+                         else .state end),
+            details_url: (.targetUrl // "")
+        }
+    else empty end]')
 
 # Labels: array of strings
 labels=$(echo "$pr_data" | jq '[(.labels // [])[].name]')
 
 # Build pipeline checks only: "Red Hat Konflux / {component}-on-pull-request[…]"
-# Enterprise-contract checks (containing "enterprise-contract") are excluded —
-# they return NEUTRAL when not required, which is not a failure.
+# Enterprise-contract checks are excluded ONLY when their conclusion is NEUTRAL
+# (not enforced on this branch). A FAILURE conclusion from an enterprise-contract
+# check is a real failure and must block the PR.
 build_checks=$(echo "$checks" | jq '[.[] |
     select(.name | startswith("Red Hat Konflux / ")) |
     select(.name | test("-on-pull-request")) |
-    select(.name | contains("enterprise-contract") | not)]')
+    select((.name | contains("enterprise-contract")) and (.conclusion == "NEUTRAL") | not)]')
+
+# Non-build checks that failed: anything with FAILURE conclusion that is not a
+# Konflux build pipeline check. These block merging and require developer attention.
+other_checks_failed=$(echo "$checks" | jq '[.[] |
+    select(
+        (.name | startswith("Red Hat Konflux / ") and test("-on-pull-request") and (contains("enterprise-contract") | not))
+        | not
+    ) |
+    select(.conclusion == "FAILURE") |
+    .name]')
 
 echo "$pr_data" | jq \
     --argjson checks "$checks" \
     --argjson labels "$labels" \
     --argjson build_checks "$build_checks" \
+    --argjson other_checks_failed "$other_checks_failed" \
     '{
         number: .number,
         title: .title,
@@ -102,6 +127,7 @@ echo "$pr_data" | jq \
             (map(.conclusion == "SUCCESS") | all)),
         build_checks_failed: [$build_checks[] |
             select(.conclusion == "FAILURE") | .name],
+        other_checks_failed: $other_checks_failed,
         pending_checks: ([$checks[] |
             select(.status == "IN_PROGRESS" or
                    .status == "QUEUED" or
