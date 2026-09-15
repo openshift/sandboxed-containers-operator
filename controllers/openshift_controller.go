@@ -908,6 +908,10 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(
 	handler string,
 	additionalNodeLabels map[string]string) error {
 
+	if os.Getenv("RUST_RUNTIME") != "" {
+		handler = "rs-" + handler
+	}
+
 	if r.kataConfig.Spec.CheckNodeEligibility {
 
 		r.Log.Info("filtering nodes with labels", "labels", additionalNodeLabels)
