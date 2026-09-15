@@ -609,4 +609,281 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 
 		ginkgo.By("SUCCESS - peerpod with GPU annotation translated to instance type")
 	})
+
+	ginkgo.It("C00000-verify proxy and trusted CA propagation to CAA and PodVM jobs [Serial]", func() {
+		if !testrun.enablePeerPods || cloudPlatform != "azure" {
+			ginkgo.Skip("Test supported only with peer-pods and Azure")
+		}
+
+		var (
+			caaDsName          = "osc-caa-ds"
+			trustedCAConfigMap = "trusted-ca"
+			subscriptionName   = "sandboxed-containers-operator"
+			httpProxyTest      = "http://proxy.test.example.com:3128"
+			httpsProxyTest     = "https://proxy.test.example.com:3129"
+			caBundleTest       = "-----BEGIN CERTIFICATE-----\nTESTDUMMYCERTDATA\n-----END CERTIFICATE-----\n"
+			trustedCAMountPath = "/etc/pki/ca-trust/extracted/pem"
+		)
+
+		ginkgo.By("Building NO_PROXY from cluster network configuration")
+		serviceNetwork, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"network.config", "cluster", "-o=jsonpath={.status.serviceNetwork[0]}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get service network CIDR")
+
+		clusterNetwork, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"network.config", "cluster", "-o=jsonpath={.status.clusterNetwork[0].cidr}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get cluster network CIDR")
+
+		machineNetwork, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"network.config", "cluster", "-o=jsonpath={.status.machineNetwork[0].cidr}",
+		).Output()
+
+		apiServerInternal, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"infrastructure", "cluster", "-o=jsonpath={.status.apiServerInternalURI}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get API server internal URI")
+
+		noProxyTest := fmt.Sprintf(
+			".cluster.local,.svc,localhost,127.0.0.1,169.254.169.254,%s,%s",
+			serviceNetwork, clusterNetwork,
+		)
+		if machineNetwork != "" {
+			noProxyTest += "," + machineNetwork
+		}
+		apiHost := strings.TrimPrefix(strings.TrimPrefix(apiServerInternal, "https://"), "http://")
+		if idx := strings.LastIndex(apiHost, ":"); idx != -1 {
+			apiHost = apiHost[:idx]
+		}
+		noProxyTest += "," + apiHost
+		Logf("Constructed NO_PROXY: %v", noProxyTest)
+		// check if trusted-ca configmap already exists, if not create it
+		if _, err = oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"configmap", trustedCAConfigMap, "-n", opNamespace).Output(); err != nil {
+			ginkgo.By("Creating trusted-ca configmap with dummy ca-bundle.crt")
+			_, err = oc.AsAdmin().WithoutNamespace().Run("create").Args(
+				"configmap", trustedCAConfigMap, "--from-literal=ca-bundle.crt="+caBundleTest, "-n", opNamespace,
+			).Output()
+			o.Expect(err).NotTo(o.HaveOccurred(), "failed to create trusted-ca configmap")
+
+			defer func() {
+				_, _ = oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+					"configmap", trustedCAConfigMap, "-n", opNamespace, "--ignore-not-found",
+				).Output()
+			}()
+		}
+
+		ginkgo.By("Deleting osc-caa daemonset to trigger re-creation")
+		_, err = oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+			"daemonset", caaDsName, "-n", opNamespace, "--ignore-not-found",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to delete osc-caa daemonset")
+
+		ginkgo.By("Save current subscription config")
+		subscriptionConfig, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"subscription", subscriptionName, "-n", opNamespace,
+			"-o=jsonpath={.spec.config}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get subscription config")
+		Logf("Saved subscription config: %v", subscriptionConfig)
+
+		ginkgo.By("Patching the subscription with proxy env vars and trusted-ca volume")
+		subscriptionPatch := `{
+			"spec": {
+				"config": {
+					"env": [
+						{"name": "HTTP_PROXY", "value": "` + httpProxyTest + `"},
+						{"name": "HTTPS_PROXY", "value": "` + httpsProxyTest + `"},
+						{"name": "NO_PROXY", "value": "` + noProxyTest + `"}
+					],
+					"volumes": [
+						{
+							"name": "trusted-ca",
+							"configMap": {
+								"name": "trusted-ca",
+								"items": [{"key": "ca-bundle.crt", "path": "tls-ca-bundle.pem"}]
+							}
+						}
+					],
+					"volumeMounts": [
+						{
+							"name": "trusted-ca",
+							"mountPath": "` + trustedCAMountPath + `",
+							"readOnly": true
+						}
+					]
+				}
+			}
+		}`
+		_, err = oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+			"subscription", subscriptionName, "-n", opNamespace,
+			"--type=merge", "-p", subscriptionPatch,
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to patch subscription with proxy config")
+		defer func() {
+			ginkgo.By("Restoring subscription to remove proxy and volume config")
+			restorePatch := fmt.Sprintf(`{"spec": {"config": %s}}`, subscriptionConfig)
+			_, restoreErr := oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+				"subscription", subscriptionName, "-n", opNamespace,
+				"--type=merge", "-p", restorePatch,
+			).Output()
+			if restoreErr != nil {
+				Logf("Warning: failed to restore subscription: %v", restoreErr)
+			}
+		}()
+
+		ginkgo.By("Waiting for operator deployment to roll out with new env vars")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(_ context.Context) (bool, error) {
+			envJSON, getErr := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"deployment", "controller-manager", "-n", opNamespace,
+				"-o=jsonpath={.spec.template.spec.containers[0].env[*].name}",
+			).Output()
+			if getErr != nil {
+				return false, nil
+			}
+			if strings.Contains(envJSON, "HTTP_PROXY") && strings.Contains(envJSON, "HTTPS_PROXY") {
+				Logf("Operator deployment has proxy env vars")
+				return true, nil
+			}
+			Logf("Waiting for proxy env vars on operator deployment...")
+			return false, nil
+		})
+		o.Expect(err).NotTo(o.HaveOccurred(), "operator deployment did not get proxy env vars in time")
+
+		ginkgo.By("Waiting for operator deployment to become ready")
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel2()
+		err = wait.PollUntilContextTimeout(ctx2, 10*time.Second, 5*time.Minute, true, func(_ context.Context) (bool, error) {
+			readyReplicas, getErr := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"deployment", "controller-manager", "-n", opNamespace,
+				"-o=jsonpath={.status.readyReplicas}",
+			).Output()
+			if getErr != nil {
+				return false, nil
+			}
+			if readyReplicas == "1" {
+				return true, nil
+			}
+			Logf("Waiting for operator deployment to become ready (readyReplicas=%v)", readyReplicas)
+			return false, nil
+		})
+		o.Expect(err).NotTo(o.HaveOccurred(), "operator deployment not ready in time")
+
+		ginkgo.By("Waiting for osc-caa daemonset to be recreated with proxy env vars and trusted-ca volume")
+		ctx3, cancel3 := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel3()
+		err = wait.PollUntilContextTimeout(ctx3, 10*time.Second, 5*time.Minute, true, func(_ context.Context) (bool, error) {
+			_, getErr := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"daemonset", caaDsName, "-n", opNamespace, "--no-headers",
+			).Output()
+			if getErr != nil {
+				Logf("CAA daemonset not found yet, waiting...")
+				return false, nil
+			}
+			return true, nil
+		})
+		o.Expect(err).NotTo(o.HaveOccurred(), "osc-caa daemonset was not recreated in time")
+
+		ginkgo.By("Verifying proxy env vars on CAA daemonset")
+		caaEnv, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"daemonset", caaDsName, "-n", opNamespace,
+			"-o=jsonpath={.spec.template.spec.containers[0].env[*]}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get CAA daemonset env vars")
+		o.Expect(caaEnv).To(o.ContainSubstring(httpProxyTest), "HTTP_PROXY not found in CAA daemonset env")
+		o.Expect(caaEnv).To(o.ContainSubstring(httpsProxyTest), "HTTPS_PROXY not found in CAA daemonset env")
+		o.Expect(caaEnv).To(o.ContainSubstring(noProxyTest), "NO_PROXY not found in CAA daemonset env")
+
+		ginkgo.By("Verifying trusted-ca volume on CAA daemonset")
+		caaVolumes, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"daemonset", caaDsName, "-n", opNamespace,
+			"-o=jsonpath={.spec.template.spec.volumes[*].name}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get CAA daemonset volumes")
+		o.Expect(caaVolumes).To(o.ContainSubstring("trusted-ca"), "trusted-ca volume not found in CAA daemonset")
+
+		caaVolumeMounts, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"daemonset", caaDsName, "-n", opNamespace,
+			"-o=jsonpath={.spec.template.spec.containers[0].volumeMounts[*].name}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get CAA daemonset volume mounts")
+		o.Expect(caaVolumeMounts).To(o.ContainSubstring("trusted-ca"), "trusted-ca volumeMount not found in CAA daemonset")
+
+		ginkgo.By("Saving current AZURE_IMAGE_ID for restoration")
+		savedImageID, err := getConfigmapParamValue(oc, "AZURE_IMAGE_ID")
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get AZURE_IMAGE_ID from peer-pods-cm")
+		Logf("Saved AZURE_IMAGE_ID: %v", savedImageID)
+
+		ginkgo.By("Deleting AZURE_IMAGE_ID from peer-pods-cm to trigger image creation job")
+		_, err = oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+			"configmap", ppConfigMapName, "-n", opNamespace,
+			"--type=json", "-p", `[{"op": "remove", "path": "/data/AZURE_IMAGE_ID"}]`,
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to remove AZURE_IMAGE_ID from peer-pods-cm")
+		defer func() {
+			ginkgo.By("Restoring AZURE_IMAGE_ID in peer-pods-cm")
+			restorePatch := fmt.Sprintf(`{"data": {"AZURE_IMAGE_ID": "%s"}}`, savedImageID)
+			_, restoreErr := oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+				"configmap", ppConfigMapName, "-n", opNamespace,
+				"--type=merge", "-p", restorePatch,
+			).Output()
+			if restoreErr != nil {
+				Logf("Warning: failed to restore AZURE_IMAGE_ID: %v", restoreErr)
+			}
+		}()
+
+		ginkgo.By("Waiting for podvm image creation job to start")
+		var jobPodName string
+		ctx4, cancel4 := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel4()
+		err = wait.PollUntilContextTimeout(ctx4, 15*time.Second, 10*time.Minute, true, func(_ context.Context) (bool, error) {
+			podList, getErr := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"pods", "-n", opNamespace,
+				"-l", "job-name=osc-podvm-image-creation",
+				"--sort-by=.metadata.creationTimestamp",
+				"-o=jsonpath={.items[-1:].metadata.name}",
+			).Output()
+			if getErr != nil || podList == "" {
+				Logf("No podvm creation job pod found yet...")
+				return false, nil
+			}
+			jobPodName = strings.TrimSpace(podList)
+			Logf("Found podvm creation job pod: %v", jobPodName)
+			return true, nil
+		})
+		o.Expect(err).NotTo(o.HaveOccurred(), "podvm image creation job pod was not found in time")
+
+		ginkgo.By("Verifying proxy env vars on PodVM creation job pod")
+		jobEnv, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"pod", jobPodName, "-n", opNamespace,
+			"-o=jsonpath={.spec.containers[0].env[*]}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get job pod env vars")
+		o.Expect(jobEnv).To(o.ContainSubstring(httpProxyTest), "HTTP_PROXY not found in job pod env")
+		o.Expect(jobEnv).To(o.ContainSubstring(httpsProxyTest), "HTTPS_PROXY not found in job pod env")
+		o.Expect(jobEnv).To(o.ContainSubstring(noProxyTest), "NO_PROXY not found in job pod env")
+
+		ginkgo.By("Verifying trusted-ca volume on PodVM creation job pod")
+		jobVolumes, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"pod", jobPodName, "-n", opNamespace,
+			"-o=jsonpath={.spec.volumes[*].name}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get job pod volumes")
+		o.Expect(jobVolumes).To(o.ContainSubstring("trusted-ca"), "trusted-ca volume not found in job pod")
+
+		jobVolumeMounts, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"pod", jobPodName, "-n", opNamespace,
+			"-o=jsonpath={.spec.containers[0].volumeMounts[*].name}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get job pod volume mounts")
+		o.Expect(jobVolumeMounts).To(o.ContainSubstring("trusted-ca"), "trusted-ca volumeMount not found in job pod")
+
+		ginkgo.By("Verifying REQUESTS_CA_BUNDLE env var on PodVM creation job pod")
+		o.Expect(jobEnv).To(o.ContainSubstring("REQUESTS_CA_BUNDLE"), "REQUESTS_CA_BUNDLE not found in job pod env")
+
+		ginkgo.By("SUCCESS - proxy and trusted CA propagation verified on CAA daemonset and PodVM job")
+	})
 })

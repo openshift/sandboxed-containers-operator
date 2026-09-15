@@ -14,6 +14,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ccov1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 	"github.com/openshift/oc/pkg/cli/admin/release"
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -375,4 +376,102 @@ func (r *KataConfigOpenShiftReconciler) getConfigMapVersion(name, namespace stri
 	}
 
 	return cm.GetResourceVersion(), true, nil
+}
+
+// Method to get proxy environment variables if they are set
+// Returns a slice of corev1.EnvVar
+func getProxyEnvVars() []corev1.EnvVar {
+	proxyEnvVars := []corev1.EnvVar{}
+
+	if os.Getenv("HTTP_PROXY") != "" {
+		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
+			Name:  "HTTP_PROXY",
+			Value: os.Getenv("HTTP_PROXY"),
+		})
+	}
+
+	if os.Getenv("HTTPS_PROXY") != "" {
+		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
+			Name:  "HTTPS_PROXY",
+			Value: os.Getenv("HTTPS_PROXY"),
+		})
+	}
+
+	if os.Getenv("NO_PROXY") != "" {
+		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
+			Name:  "NO_PROXY",
+			Value: os.Getenv("NO_PROXY"),
+		})
+	}
+
+	return proxyEnvVars
+}
+
+const (
+	trustedCAMountPath = "/etc/pki/ca-trust/extracted/pem"
+	trustedCAFilename  = trustedCAMountPath + "/tls-ca-bundle.pem"
+)
+
+// Method to generate trusted CA volume config
+// Returns a corev1.Volume and a corev1.VolumeMount
+// If the trusted CA configmap is found, it returns the configmap volume and volumeMount
+// If the trusted CA configmap is not found, it returns an empty volume and volumeMount
+func generateTrustedCAVolumeConfig(c client.Client) (corev1.Volume, corev1.VolumeMount, error) {
+	var volume corev1.Volume
+	var volumeMount corev1.VolumeMount
+
+	trustedCAConfigMap := &corev1.ConfigMap{}
+	err := c.Get(context.TODO(), types.NamespacedName{
+		Name:      "trusted-ca",
+		Namespace: OperatorNamespace,
+	}, trustedCAConfigMap)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return corev1.Volume{}, corev1.VolumeMount{}, nil
+		}
+		return corev1.Volume{}, corev1.VolumeMount{}, fmt.Errorf("failed to get trusted-ca configmap: %w", err)
+	}
+	volume = corev1.Volume{
+		Name: "trusted-ca",
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: "trusted-ca",
+				},
+				Items: []corev1.KeyToPath{
+					{
+						Key:  "ca-bundle.crt",
+						Path: "tls-ca-bundle.pem",
+					},
+				},
+			},
+		},
+	}
+	volumeMount = corev1.VolumeMount{
+		Name:      "trusted-ca",
+		MountPath: trustedCAMountPath,
+		ReadOnly:  true,
+	}
+
+	return volume, volumeMount, nil
+}
+
+const redactedValue = "REDACTED"
+
+// redactDaemonSet returns a deep copy of the DaemonSet with all
+// container and init-container EnvVar values replaced so that
+// sensitive data (e.g. proxy credentials) is never written to logs.
+func redactDaemonSet(ds *appsv1.DaemonSet) *appsv1.DaemonSet {
+	out := ds.DeepCopy()
+	redactContainers(out.Spec.Template.Spec.Containers)
+	redactContainers(out.Spec.Template.Spec.InitContainers)
+	return out
+}
+
+func redactContainers(containers []corev1.Container) {
+	for i := range containers {
+		for j := range containers[i].Env {
+			containers[i].Env[j].Value = redactedValue
+		}
+	}
 }
