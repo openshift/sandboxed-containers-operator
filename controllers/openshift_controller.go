@@ -401,7 +401,7 @@ func (r *KataConfigOpenShiftReconciler) removeLogLevel() error {
 	return nil
 }
 
-func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.DaemonSet {
+func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor(certVersion string) *appsv1.DaemonSet {
 	var (
 		runPrivileged = false
 		runUserID     = int64(1001)
@@ -444,6 +444,9 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor() *appsv1.Dae
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: dsLabels,
+					Annotations: map[string]string{
+						"kata-monitor-certs/version": certVersion,
+					},
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: "monitor",
@@ -901,7 +904,13 @@ func (r *KataConfigOpenShiftReconciler) createScc() error {
 }
 
 func (r *KataConfigOpenShiftReconciler) createDaemonsetForMonitor() error {
-	ds := r.processDaemonsetForMonitor()
+	certVersion, _, err := r.getSecretVersion("kata-monitor-certs", OperatorNamespace)
+	if err != nil {
+		r.Log.Error(err, "Failed getting secret resource version", "name", "kata-monitor-certs")
+		return err
+	}
+
+	ds := r.processDaemonsetForMonitor(certVersion)
 	// Set KataConfig instance as the owner and controller
 	if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
 		r.Log.Error(err, "failed to set controller reference on the monitor daemonset")
@@ -910,7 +919,7 @@ func (r *KataConfigOpenShiftReconciler) createDaemonsetForMonitor() error {
 	r.Log.Info("controller reference set for the monitor daemonset")
 
 	foundDS := &appsv1.DaemonSet{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDS)
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDS)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
@@ -1799,6 +1808,10 @@ func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error
 		Watches(
 			&corev1.ConfigMap{},
 			&ConfigMapEventHandler{r},
+		).
+		Watches(
+			&corev1.Secret{},
+			&SecretEventHandler{r},
 		)
 
 	mcpAvailable, err := r.isMachineConfigPoolAvailable()
@@ -2366,7 +2379,7 @@ func (r *KataConfigOpenShiftReconciler) checkDeletionEligibility() (ctrl.Result,
 }
 
 func (r *KataConfigOpenShiftReconciler) deleteDaemonsetForMonitor() error {
-	ds := r.processDaemonsetForMonitor()
+	ds := r.processDaemonsetForMonitor("")
 	err := r.Client.Delete(context.TODO(), ds)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
