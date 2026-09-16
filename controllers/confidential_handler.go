@@ -192,6 +192,9 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state Featur
 		}
 
 		// Create kata-cc runtime class restricted to the detected TEE subset
+		if r.kataConfig.Spec.EnableMixedCluster {
+			additionalLabels[nodeTypeLabelKey] = nodeTypeLabelBM
+		}
 		err = r.createRuntimeClass(
 			kataCCRuntimeClassName,
 			kataCCRuntimeClassCpuOverhead,
@@ -223,6 +226,9 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state Featur
 		}
 
 		// Create kata-cc-nvidia-gpu runtime class restricted to the detected GPU TEE subset
+		if r.kataConfig.Spec.EnableMixedCluster {
+			additionalLabels[nodeTypeLabelKey] = nodeTypeLabelBM
+		}
 		err = r.createRuntimeClass(
 			kataNvidiaGPUCCRuntimeClassName,
 			kataNvidiaGPUCCRuntimeClassCpuOverhead,

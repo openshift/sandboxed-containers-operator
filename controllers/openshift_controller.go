@@ -95,6 +95,12 @@ const (
 	kataNvidiaGPURuntimeClassName        = "kata-nvidia-gpu"
 	kataNvidiaGPURuntimeClassCpuOverhead = "1"
 	kataNvidiaGPURuntimeClassMemOverhead = "4096Mi"
+
+	// nodeTypeLabelKey is the label applied by the NFD NodeFeatureRule to
+	// classify worker nodes for mixed BM+VM cluster scheduling.
+	nodeTypeLabelKey     = "kataconfiguration.openshift.io/node-type"
+	nodeTypeLabelBM      = "bare-metal"
+	nodeTypeLabelVirtual = "virtual"
 )
 
 var (
@@ -130,6 +136,8 @@ var (
 // +kubebuilder:rbac:groups="batch",resources=jobs,verbs=create;get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=create;delete;update
+// +kubebuilder:rbac:groups=nfd.openshift.io,resources=nodefeaturerules,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=nfd.openshift.io,resources=nodefeaturediscoveries,verbs=get;list;watch
 
 func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = r.Log.WithValues("kataconfig", req.NamespacedName)
@@ -963,8 +971,11 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(
 
 		nodeSelector := r.getNodeSelectorAsMap()
 
-		// Add additional node label if provided
-		if r.kataConfig.Spec.CheckNodeEligibility && additionalNodeLabels != nil {
+		// Add additional node label if provided.
+		// additionalNodeLabels is used for two purposes:
+		// 1. CheckNodeEligibility: restricts the RC to nodes with TEE labels
+		// 2. EnableMixedCluster: restricts the RC to the correct node class (BM or VM)
+		if additionalNodeLabels != nil && (r.kataConfig.Spec.CheckNodeEligibility || r.kataConfig.Spec.EnableMixedCluster) {
 			maps.Copy(nodeSelector, additionalNodeLabels)
 		}
 
@@ -993,6 +1004,18 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(
 		err = r.Client.Create(context.TODO(), rc)
 		if err != nil {
 			return fmt.Errorf("error creating %s runtime class: %w", rc.Name, err)
+		}
+	} else {
+		// RC exists — patch scheduling.nodeSelector if it differs.
+		// This handles transitions: e.g. single-class -> mixed cluster where
+		// EnableMixedCluster is enabled after the RC was already created.
+		if !reflect.DeepEqual(foundRc.Scheduling, rc.Scheduling) {
+			r.Log.Info("Updating RuntimeClass nodeSelector", "rc.Name", rc.Name, "nodeSelector", rc.Scheduling.NodeSelector)
+			patch := client.MergeFrom(foundRc.DeepCopy())
+			foundRc.Scheduling = rc.Scheduling
+			if err := r.Client.Patch(context.TODO(), foundRc, patch); err != nil {
+				return fmt.Errorf("error updating %s runtime class scheduling: %w", rc.Name, err)
+			}
 		}
 	}
 
@@ -1229,6 +1252,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequest() (ctrl.R
 		}
 	}
 
+	if err := r.deleteNodeFeatureRule(); err != nil {
+		r.Log.Error(err, "Failed to delete NFD NodeFeatureRule during KataConfig deletion")
+		return ctrl.Result{Requeue: true}, err
+	}
+
 	err = r.deleteScc()
 	if err != nil {
 		return ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
@@ -1257,6 +1285,36 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequest() (ctrl.
 			// If no nodes are found, requeue to check again for eligible nodes
 			r.Log.Error(err, "Failed to check Node eligibility for running Kata containers")
 			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 20}, err
+		}
+	}
+
+	// Mixed cluster: deploy the NFD NodeFeatureRule that labels nodes as
+	// bare-metal or virtual, enabling per-node-class sandbox scheduling.
+	// When EnableMixedCluster is toggled off, remove the rule so NFD stops
+	// applying node-type labels on the next reconciliation cycle.
+	if r.kataConfig.Spec.EnableMixedCluster {
+		if err := r.checkNFDInstalled(); err != nil {
+			r.Log.Error(err, "NFD pre-flight check failed for mixed cluster")
+			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 30}, err
+		}
+		if err := r.ensureNodeFeatureRule(); err != nil {
+			r.Log.Error(err, "Failed to ensure NFD NodeFeatureRule for mixed cluster")
+			return ctrl.Result{Requeue: true}, err
+		}
+	} else {
+		// EnableMixedCluster is off — remove the NodeFeatureRule if it exists.
+		// Check existence first to avoid an unnecessary Delete call on every
+		// reconcile when mixed cluster was never enabled.
+		exists, err := r.nodeFeatureRuleExists()
+		if err != nil {
+			r.Log.Error(err, "Failed to check NFD NodeFeatureRule existence")
+			return ctrl.Result{Requeue: true}, err
+		}
+		if exists {
+			if err := r.deleteNodeFeatureRule(); err != nil {
+				r.Log.Error(err, "Failed to remove NFD NodeFeatureRule after mixed cluster disabled")
+				return ctrl.Result{Requeue: true}, err
+			}
 		}
 	}
 
@@ -2364,15 +2422,22 @@ func (r *KataConfigOpenShiftReconciler) postKataInstallation() (*ctrl.Result, er
 	r.resetInProgressCondition()
 
 	// creating kata runtime class if node labels exist
+	// runtime.kata is only added when CheckNodeEligibility is true — requires NFD eligibility rule.
+	// node-type is only added when EnableMixedCluster is true — orthogonal concern.
+	kataNodeLabels := map[string]string{}
+	if r.kataConfig.Spec.CheckNodeEligibility {
+		kataNodeLabels["feature.node.kubernetes.io/runtime.kata"] = "true"
+	}
+	if r.kataConfig.Spec.EnableMixedCluster {
+		kataNodeLabels[nodeTypeLabelKey] = nodeTypeLabelBM
+	}
 	err := r.createRuntimeClass(
 		kataRuntimeClassName,
 		kataRuntimeClassCpuOverhead,
 		kataRuntimeClassMemOverhead,
 		"",                   /* nil extended resource overhead */
 		kataRuntimeClassName, /* reused for handler */
-		map[string]string{
-			"feature.node.kubernetes.io/runtime.kata": "true",
-		})
+		kataNodeLabels)
 	if err != nil {
 		return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
 	}
@@ -2380,13 +2445,17 @@ func (r *KataConfigOpenShiftReconciler) postKataInstallation() (*ctrl.Result, er
 	// creating kata-nvidia-gpu runtime class if node labels exist
 	// Skip GPU runtime classes on s390x architecture as NVIDIA GPUs are not supported
 	if goruntime.GOARCH != "s390x" {
+		nvidiaLabels := maps.Clone(nvidiaGPUNodeLabels)
+		if r.kataConfig.Spec.EnableMixedCluster {
+			nvidiaLabels[nodeTypeLabelKey] = nodeTypeLabelBM
+		}
 		err = r.createRuntimeClass(
 			kataNvidiaGPURuntimeClassName,
 			kataNvidiaGPURuntimeClassCpuOverhead,
 			kataNvidiaGPURuntimeClassMemOverhead,
 			"",                            /* nil extended resource overhead */
 			kataNvidiaGPURuntimeClassName, /* reused for handler */
-			nvidiaGPUNodeLabels)
+			nvidiaLabels)
 
 		if err != nil {
 			return &ctrl.Result{Requeue: true, RequeueAfter: 15 * time.Second}, err
