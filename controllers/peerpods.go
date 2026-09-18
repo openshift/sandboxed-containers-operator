@@ -43,7 +43,7 @@ func MountProgagationRef(mode corev1.MountPropagationMode) *corev1.MountPropagat
 	return &mode
 }
 
-func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVersion string) *appsv1.DaemonSet {
+func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVersion string) (*appsv1.DaemonSet, error) {
 	var (
 		runPrivileged                = true
 		runAsUser              int64 = 0
@@ -103,7 +103,8 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVer
 							RunAsUser:  &runAsUser,
 						},
 						Command: []string{"/usr/local/bin/entrypoint.sh"},
-						Env: []corev1.EnvVar{
+						// Add proxy environment variables to the CAA container if they are set
+						Env: append(getProxyEnvVars(), []corev1.EnvVar{
 							{
 								Name: "NODE_NAME",
 								ValueFrom: &corev1.EnvVarSource{
@@ -120,7 +121,7 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVer
 								Name:  "TLS_CIPHER_SUITES",
 								Value: r.tlsCipherSuitesEnvValue(r.TLSProfileSpec),
 							},
-						},
+						}...),
 						EnvFrom: []corev1.EnvFromSource{
 							{
 								SecretRef: &corev1.SecretEnvSource{
@@ -201,8 +202,17 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVer
 			},
 		},
 	}
+	trustedCAvolume, trustedCAvolumeMount, err := generateTrustedCAVolumeConfig(r.Client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate trusted CA volume config: %v", err)
+	}
 
-	return ds
+	if trustedCAvolume != (corev1.Volume{}) {
+		ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, trustedCAvolume)
+		ds.Spec.Template.Spec.Containers[0].VolumeMounts = append(ds.Spec.Template.Spec.Containers[0].VolumeMounts, trustedCAvolumeMount)
+	}
+
+	return ds, nil
 }
 
 // Handles provider specific parts of the CAA Ds
@@ -332,14 +342,19 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 		var err error
 
 		// Create the CAA daemonset
-		ds = r.configureCAA(ds, cmVersion)
+		ds, err = r.configureCAA(ds, cmVersion)
+		if err != nil {
+			r.Log.Error(err, "Failed to configure CAA")
+			return err
+		}
 
 		ds, err = r.configureCAAProvider(ds)
 		if err != nil {
 			r.Log.Error(err, "Failed setting cloud provider specific configuration for cloud-api-adaptor DS")
 			return err
 		}
-		r.Log.Info("Got CAA ds manifest", "ds", ds)
+
+		r.Log.Info("Got CAA ds manifest", "ds", redactDaemonSet(ds))
 
 		if err := controllerutil.SetControllerReference(r.kataConfig, ds, r.Scheme); err != nil {
 			r.Log.Error(err, "Failed setting ControllerReference for cloud-api-adaptor DS")
