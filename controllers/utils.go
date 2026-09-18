@@ -376,3 +376,19 @@ func (r *KataConfigOpenShiftReconciler) getConfigMapVersion(name, namespace stri
 
 	return cm.GetResourceVersion(), true, nil
 }
+
+func (r *KataConfigOpenShiftReconciler) getSecretVersion(name, namespace string) (string, bool, error) {
+	secret := &corev1.Secret{}
+	err := r.Get(context.TODO(), types.NamespacedName{
+		Name:      name,
+		Namespace: namespace,
+	}, secret)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+
+	return secret.GetResourceVersion(), true, nil
+}
