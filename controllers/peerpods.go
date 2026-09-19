@@ -375,7 +375,11 @@ func (r *KataConfigOpenShiftReconciler) enablePeerPodsMiscConfigs() error {
 	}
 
 	// Create runtimeClass config for peer-pods
-	err = r.createRuntimeClass(peerpodsRuntimeClassName, peerpodsRuntimeClassCpuOverhead, peerpodsRuntimeClassMemOverhead, "", peerpodsRuntimeClassName, nil)
+	var peerpodNodeLabels map[string]string
+	if r.kataConfig.Spec.EnableMixedCluster {
+		peerpodNodeLabels = map[string]string{nodeTypeLabelKey: nodeTypeLabelVirtual}
+	}
+	err = r.createRuntimeClass(peerpodsRuntimeClassName, peerpodsRuntimeClassCpuOverhead, peerpodsRuntimeClassMemOverhead, "", peerpodsRuntimeClassName, peerpodNodeLabels)
 	if err != nil {
 		r.Log.Info("Error in creating kata remote runtimeclass", "err", err)
 		return err
