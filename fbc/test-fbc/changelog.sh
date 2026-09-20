@@ -20,6 +20,44 @@
 
 set -x
 
+# Detect version suffix from git context (e.g., osc-release-v1.12 -> -v1-12)
+# This suffix is used in quay.io repository names for version-specific branches.
+VERSION_SUFFIX=""
+
+# Try method 1: Check current branch name (works locally)
+BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+if [[ "$BRANCH_NAME" =~ osc-release-v([0-9]+\.[0-9]+) ]]; then
+    VERSION_SUFFIX="-v${BASH_REMATCH[1]//./-}"
+    echo "Detected version suffix from branch $BRANCH_NAME: $VERSION_SUFFIX" >&2
+fi
+
+# Try method 2: Check remote branches containing current commit (works in CI detached HEAD)
+if [ -z "$VERSION_SUFFIX" ]; then
+    REMOTE_BRANCHES=$(git branch -r --contains HEAD 2>/dev/null | grep -o 'osc-release-v[0-9]*\.[0-9]*' | head -1 || echo "")
+    if [[ "$REMOTE_BRANCHES" =~ osc-release-v([0-9]+\.[0-9]+) ]]; then
+        VERSION_SUFFIX="-v${BASH_REMATCH[1]//./-}"
+        echo "Detected version suffix from remote branches: $VERSION_SUFFIX" >&2
+    fi
+fi
+
+# Try method 3: Check git describe for version tags (handles both v1.12 and v1-12 formats)
+if [ -z "$VERSION_SUFFIX" ]; then
+    GIT_DESCRIBE=$(git describe --all --contains HEAD 2>/dev/null || echo "")
+    # First try the dotted format (osc-release-v1.12)
+    if [[ "$GIT_DESCRIBE" =~ osc-release-v([0-9]+\.[0-9]+) ]]; then
+        VERSION_SUFFIX="-v${BASH_REMATCH[1]//./-}"
+        echo "Detected version suffix from git describe: $VERSION_SUFFIX" >&2
+    # Then try the dashed format that appears in component names (v1-12)
+    elif [[ "$GIT_DESCRIBE" =~ v([0-9]+)-([0-9]+) ]]; then
+        VERSION_SUFFIX="-v${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+        echo "Detected version suffix from git describe: $VERSION_SUFFIX" >&2
+    fi
+fi
+
+if [ -z "$VERSION_SUFFIX" ]; then
+    echo "No version suffix detected, using default repository names" >&2
+fi
+
 # Takes an image reference with digest, and looks at the quay.io repository
 # for all the tags that point to the same image digest.
 # One of those tags is expected to be the git tag used to build the image.
@@ -31,7 +69,7 @@ function get_commit_for_image() {
         echo "HEAD"
         return
     fi
-    
+
     # Convert the reference to the quay.io api URL format
     IMAGE_REF=${1/registry.redhat.io\/openshift-sandboxed-containers\//quay.io\/api\/v1\/repository\/redhat-user-workloads\/ose-osc-tenant\/}
     # remove "-rhel9" from image names
@@ -41,6 +79,12 @@ function get_commit_for_image() {
     # and the quay.io repository name for cloud-api-adaptor and cloud-api-adaptor-webhook.
     # Fix it to that we can get the right image info from quay.io
     IMAGE_REF=$(echo $IMAGE_REF | sed 's/osc-cloud-api-adaptor/osc-caa/' | sed 's/osc-cloud-api-adaptor-webhook/osc-caa-webhook/')
+
+    # Apply version suffix to component names when building from version-specific branches
+    # (e.g., osc-operator becomes osc-operator-v1-12 for osc-release-v1.12 branch)
+    if [ -n "$VERSION_SUFFIX" ]; then
+        IMAGE_REF=$(echo $IMAGE_REF | sed -E "s|(ose-osc-tenant/osc-[^/@]+)|\1$VERSION_SUFFIX|")
+    fi
 
     IMAGE_NAME=$(echo "$IMAGE_REF" | cut -d "@" -f 1)
     IMAGE_DIGEST=$(echo "$IMAGE_REF" | cut -d "@" -f 2)
@@ -103,7 +147,9 @@ if [ "$#" -eq 2 ]; then
 else
     # retrieve the git tag used to build the latest image
     echo "No commit range provided, retrieving latest built image commit"
-    OLD_COMMIT=$(skopeo inspect "docker://quay.io/redhat-user-workloads/ose-osc-tenant/osc-test-fbc:latest" | jq -r '.Labels["org.opencontainers.image.revision"]')
+    # Use version-specific repository name if building from a version-specific branch
+    TEST_FBC_REPO="osc-test-fbc${VERSION_SUFFIX}"
+    OLD_COMMIT=$(skopeo inspect "docker://quay.io/redhat-user-workloads/ose-osc-tenant/${TEST_FBC_REPO}:latest" | jq -r '.Labels["org.opencontainers.image.revision"]')
     NEW_COMMIT=HEAD
 fi
 
