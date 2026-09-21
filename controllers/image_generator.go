@@ -337,6 +337,23 @@ func (r *ImageGenerator) createJobFromFile(jobFileName string) (*batchv1.Job, er
 		}
 
 	}
+	// Add proxy environment variables to the job if they are set
+	job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, getProxyEnvVars()...)
+
+	// Add trusted CA volume config to the job if it exists
+	trustedCAvolume, trustedCAvolumeMount, err := generateTrustedCAVolumeConfig(r.client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate trusted CA volume config: %v", err)
+	}
+
+	if trustedCAvolume != (corev1.Volume{}) {
+		job.Spec.Template.Spec.Volumes = append(job.Spec.Template.Spec.Volumes, trustedCAvolume)
+		job.Spec.Template.Spec.Containers[0].VolumeMounts = append(job.Spec.Template.Spec.Containers[0].VolumeMounts, trustedCAvolumeMount)
+		job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
+			Name:  "REQUESTS_CA_BUNDLE",
+			Value: trustedCAFilename,
+		})
+	}
 
 	// If RELATED_PODVM_BUILDER_IMAGE environment variable is set, use it
 	// Otherwise, use the default podvm image
