@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: peer-pods-webhook
+  name: peer-pods-webhook-metrics-monitor
+spec:
+  endpoints:
+  - port: metrics
+    scheme: https
+    tlsConfig:
+      ca:
+        configMap:
+          key: service-ca.crt
+          name: openshift-service-ca.crt
+      insecureSkipVerify: false
+      serverName: peer-pods-webhook-metrics-svc.openshift-sandboxed-containers-operator.svc
+  selector:
+    matchLabels:
+      app: peer-pods-webhook
