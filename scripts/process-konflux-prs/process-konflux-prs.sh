@@ -17,6 +17,9 @@
 # The script captures JSON output from each stage and formats it into a markdown report
 # that is saved as Konflux-PR-report-YYYYMMDD-HHMMSS.md
 #
+# If SLACK_WEBHOOK_URL is set, a Slack-formatted version of the report is posted to
+# that webhook after the markdown report is generated.
+#
 # Options:
 #   --dry-run    Snapshot all PRs without processing (no labels or merges)
 #
@@ -94,6 +97,12 @@ format_pr_row() {
   local branch="${3:-}"
   local components="${4:-}"
   local reason="${5:-}"
+  # Shorten check names in reason strings:
+  #   - Strip the "Red Hat Konflux / " prefix from all check names
+  #   - Collapse enterprise-contract check names to "conforma (component)"
+  reason=$(echo "$reason" | sed -E \
+    -e 's|Red Hat Konflux / ||g' \
+    -e 's|openshift-sandboxed-containers-enterprise-contract[^ /]* / ([^ ,]+)|conforma (\1)|g')
 
   local url="${REPO_URLS[$repo]:-}"
   local link
@@ -104,9 +113,9 @@ format_pr_row() {
   fi
 
   if [ -z "$reason" ]; then
-    printf "| %s | %s | %s | %s |\n" "$link" "$repo" "$branch" "$components"
+    printf -- '- %s %s/%s (%s)\n' "$link" "$repo" "$branch" "$components"
   else
-    printf "| %s | %s | %s | %s | %s |\n" "$link" "$repo" "$branch" "$components" "$reason"
+    printf -- '- %s %s/%s (%s)\n  - %s\n' "$link" "$repo" "$branch" "$components" "$reason"
   fi
 }
 
@@ -128,21 +137,19 @@ print_section() {
   echo ""
   echo "### $title ($count)"
   if [ -z "$reason_key" ]; then
-    echo "| PR | Repo | Branch | Components |"
-    echo "|----|----|--------|------------|"
     jq -r ".${array_key}[] | [.repo, .pr, .base_branch, (.components | join(\", \"))] | @tsv" "$json_file" | \
       while IFS=$'\t' read -r repo pr branch components; do
         format_pr_row "$repo" "$pr" "$branch" "$components" ""
       done
   else
-    echo "| PR | Repo | Branch | Components | $reason_key |"
-    echo "|----|----|--------|------------|---|"
     jq -r ".${array_key}[] | [.repo, .pr, .base_branch, (.components | join(\", \")), .${reason_key}] | @tsv" "$json_file" | \
       while IFS=$'\t' read -r repo pr branch components reason; do
         format_pr_row "$repo" "$pr" "$branch" "$components" "$reason"
       done
   fi
 }
+
+REPORT_FILE="Konflux-PR-report-$(date +%Y%m%d-%H%M%S).md"
 
 # Generate report
 {
@@ -207,4 +214,33 @@ print_section() {
     echo ""
     echo "⚠️  **DRY RUN** — No PRs were modified. The operations shown above would be performed in normal mode."
   fi
-} | tee "Konflux-PR-report-$(date +%Y%m%d-%H%M%S).md"
+} | tee "$REPORT_FILE"
+
+# --- Slack notification ---
+if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
+  echo "Sending Slack notification..." >&2
+
+  # Convert markdown to Slack mrkdwn:
+  #   - Bold: **text** → *text* (via placeholder to avoid clashing with italic)
+  #   - Italic: *text* → _text_
+  #   - Headers: # text → *text*
+  #   - Links: [text](url) → <url|text>
+  #   - Strip horizontal rules (---)
+  SLACK_MSG=$(sed -E \
+    -e 's/\*\*/\x01/g' \
+    -e 's/\*([^*]+)\*/_\1_/g' \
+    -e 's/\x01/*/g' \
+    -e 's/^#{1,3} (.+)$/*\1*/' \
+    -e 's/\[([^]]+)\]\(([^)]+)\)/<\2|\1>/g' \
+    -e '/^---$/d' \
+    "$REPORT_FILE")
+
+  SLACK_RESPONSE=$(jq -n --arg text "$SLACK_MSG" '{text: $text}' | \
+    curl -s -X POST -H 'Content-type: application/json' -d @- "$SLACK_WEBHOOK_URL")
+
+  if [ "$SLACK_RESPONSE" = "ok" ]; then
+    echo "Slack notification sent." >&2
+  else
+    echo "Warning: Slack notification may have failed: $SLACK_RESPONSE" >&2
+  fi
+fi
