@@ -243,22 +243,43 @@ spec:
             ARCH=$(uname -m)
             OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 
-            echo "Installing crane ${CRANE_VERSION}..."
             CRANE_VERSION="v0.20.3"
-            case "$ARCH" in x86_64) CRANE_ARCH="x86_64" ;; aarch64|arm64) CRANE_ARCH="arm64" ;; esac
-            curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_${OS}_${CRANE_ARCH}.tar.gz" \
-                | tar xz -C "$TOOLS_DIR" crane
-
             OPM_VERSION="v1.52.0"
+            YQ_VERSION="v4.53.6"
+
+            case "$ARCH" in
+                x86_64)
+                    CRANE_ARCH="x86_64"; OPM_ARCH="amd64"
+                    CRANE_SHA256="36c67a932f489b3f2724b64af90b599a8ef2aa7b004872597373c0ad694dc059"
+                    OPM_SHA256="ac863d6b1f93a7f0c400ab838b9c2d76b7e1c2ec9474f238a15da8873711b02d"
+                    YQ_SHA256="c5f056448f973ae7d39b5401949648a78f2dc1947d6a8eb65be60d5c504b9385"
+                    ;;
+                aarch64|arm64)
+                    CRANE_ARCH="arm64"; OPM_ARCH="arm64"
+                    CRANE_SHA256="d2235f7779cd39c6e40f43701d2512c997409f629fb53e621ede0d57d3f995e2"
+                    OPM_SHA256="ca20df87cd2f342b94bceb5eacba3fe57787377370e54669d64964659572c443"
+                    YQ_SHA256="88a1016bc1d657375a35864e4f44b6f333df8ff97b559f51bba0adcb2169df09"
+                    ;;
+            esac
+
+            echo "Installing crane ${CRANE_VERSION}..."
+            CRANE_TGZ="$TOOLS_DIR/crane.tar.gz"
+            curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_${OS}_${CRANE_ARCH}.tar.gz" \
+                -o "$CRANE_TGZ"
+            echo "${CRANE_SHA256}  ${CRANE_TGZ}" | sha256sum -c -
+            tar xzf "$CRANE_TGZ" -C "$TOOLS_DIR" crane
+            rm -f "$CRANE_TGZ"
+
             echo "Installing opm ${OPM_VERSION}..."
-            case "$ARCH" in x86_64) OPM_ARCH="amd64" ;; aarch64|arm64) OPM_ARCH="arm64" ;; esac
             curl -fsSL "https://github.com/operator-framework/operator-registry/releases/download/${OPM_VERSION}/${OS}-${OPM_ARCH}-opm" \
                 -o "$TOOLS_DIR/opm"
+            echo "${OPM_SHA256}  $TOOLS_DIR/opm" | sha256sum -c -
             chmod +x "$TOOLS_DIR/opm"
 
-            echo "Installing yq..."
-            curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_${OS}_${OPM_ARCH}" \
+            echo "Installing yq ${YQ_VERSION}..."
+            curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_${OS}_${OPM_ARCH}" \
                 -o "$TOOLS_DIR/yq"
+            echo "${YQ_SHA256}  $TOOLS_DIR/yq" | sha256sum -c -
             chmod +x "$TOOLS_DIR/yq"
 
             export PATH="$TOOLS_DIR:$PATH"
