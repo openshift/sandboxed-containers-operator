@@ -255,30 +255,6 @@ while IFS= read -r group_key; do
     else
         # ── multi-PR group ────────────────────────────────────────────────────
 
-        # Label ok-to-test on all non-held-back PRs that need it.
-        # The held-back skip inside the loop prevents labelling the lowest-numbered PR.
-        while IFS= read -r pr; do
-            repo=$(echo "$pr" | jq -r '.repo')
-            num=$(echo "$pr"  | jq -r '.pr')
-            [ "$repo" = "$hb_repo" ] && [ "$num" = "$hb_num" ] && continue
-            if [ "$(echo "$pr" | jq -r '.has_ok_to_test')" = "false" ]; then
-                label_success=false
-                if [ "$DRY_RUN" = true ]; then
-                    label_success=true
-                elif "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
-                        --label ok-to-test >/dev/null 2>&1; then
-                    label_success=true
-                fi
-                if [ "$label_success" = true ]; then
-                    labelled=$(echo "$labelled" | jq --argjson p "$pr" \
-                        '. + [$p + {"_label":"ok-to-test"}]')
-                else
-                    skipped=$(echo "$skipped" | jq --argjson p "$pr" \
-                        '. + [$p + {"_skip_reason":"failed to apply ok-to-test label"}]')
-                fi
-            fi
-        done < <(echo "$group" | jq -c '.[]')
-
         # Safety check once for the whole group (uses held-back PR's branch/repo)
         safety=$("$SCRIPT_DIR/check-merge-safety.sh" \
             --components "$comps_str" \
@@ -287,6 +263,33 @@ while IFS= read -r group_key; do
             safety='{"safe_to_merge":false,"blocking":[{"reason":"safety check failed"}]}'
         safe=$(echo "$safety"    | jq -r '.safe_to_merge')
         blocking=$(echo "$safety" | jq '.blocking')
+
+        # Label ok-to-test on all non-held-back PRs that need it, but only
+        # when safe — osc/devel PRs auto-merge on ok-to-test, so labelling
+        # before the safety check could bypass the guard.
+        if [ "$safe" = "true" ]; then
+            while IFS= read -r pr; do
+                repo=$(echo "$pr" | jq -r '.repo')
+                num=$(echo "$pr"  | jq -r '.pr')
+                [ "$repo" = "$hb_repo" ] && [ "$num" = "$hb_num" ] && continue
+                if [ "$(echo "$pr" | jq -r '.has_ok_to_test')" = "false" ]; then
+                    label_success=false
+                    if [ "$DRY_RUN" = true ]; then
+                        label_success=true
+                    elif "$SCRIPT_DIR/label-pr.sh" --repo "$repo" --pr "$num" \
+                            --label ok-to-test >/dev/null 2>&1; then
+                        label_success=true
+                    fi
+                    if [ "$label_success" = true ]; then
+                        labelled=$(echo "$labelled" | jq --argjson p "$pr" \
+                            '. + [$p + {"_label":"ok-to-test"}]')
+                    else
+                        skipped=$(echo "$skipped" | jq --argjson p "$pr" \
+                            '. + [$p + {"_skip_reason":"failed to apply ok-to-test label"}]')
+                    fi
+                fi
+            done < <(echo "$group" | jq -c '.[]')
+        fi
 
         # Process each PR in the group
         while IFS= read -r pr; do
@@ -308,8 +311,13 @@ while IFS= read -r group_key; do
                 continue
             fi
 
-            # PRs without ok-to-test were handled by the labelling loop above
+            # PRs without ok-to-test: handled by labelling loop when safe,
+            # otherwise record as skipped with blocking reason
             if [ "$has_ok" != "true" ]; then
+                if [ "$safe" != "true" ]; then
+                    skipped=$(echo "$skipped" | jq --argjson p "$pr" --argjson b "$blocking" \
+                        '. + [$p + {"_skip_reason":"waiting for on-push pipelines to complete","_blocking":$b}]')
+                fi
                 continue
             fi
 
