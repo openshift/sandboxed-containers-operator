@@ -417,7 +417,7 @@ spec:
                 - name: RELATED_IMAGE_PODVM_BUILDER
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:d491879b89aed4d60d9feaf137c200deb98d73b4f0cf55e6206cd82494c77ac2
                 - name: RELATED_IMAGE_PODVM_PAYLOAD
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:f0c7255fa3d1eddd6da45b2cbe38d782194d8f5132531d74778a36a7360a0feb
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:e9696ed3c1b3f75d5c7f570f597bb3a6a50594ce6a7e2602c290e64224c86710
                 - name: RELATED_IMAGE_PODVM_OCI
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:f5594a29501d31ccaa69001c2c8569004ea8e3f3a7fe712dae39543954b09776
                 - name: RELATED_IMAGE_MUST_GATHER
@@ -587,7 +587,7 @@ spec:
     name: peerpods-webhook
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:d491879b89aed4d60d9feaf137c200deb98d73b4f0cf55e6206cd82494c77ac2
     name: podvm-builder
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:f0c7255fa3d1eddd6da45b2cbe38d782194d8f5132531d74778a36a7360a0feb
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:e9696ed3c1b3f75d5c7f570f597bb3a6a50594ce6a7e2602c290e64224c86710
     name: podvm-payload
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:f5594a29501d31ccaa69001c2c8569004ea8e3f3a7fe712dae39543954b09776
     name: podvm-oci
