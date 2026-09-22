@@ -249,7 +249,8 @@ while IFS= read -r pr; do
     if [ "$DRY_RUN" = true ]; then
         merge_success=true
     else
-        result=$("$SCRIPT_DIR/merge-pr.sh" --repo "$repo" --pr "$num" 2>/dev/null) || \
+        head_sha=$(echo "$pr_full" | jq -r '.head_sha // ""')
+        result=$("$SCRIPT_DIR/merge-pr.sh" --repo "$repo" --pr "$num" ${head_sha:+--head-sha "$head_sha"} 2>/dev/null) || \
             result='{"success":false,"message":"merge command failed"}'
         if [ "$(echo "$result" | jq -r '.success')" = "true" ]; then
             merge_success=true

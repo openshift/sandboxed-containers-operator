@@ -60,7 +60,7 @@ fi
 # Get PR details
 pr_data=$(gh pr view "$PR_NUMBER" \
     --repo "$REPO_URL" \
-    --json number,title,state,labels,statusCheckRollup,baseRefName)
+    --json number,title,state,labels,statusCheckRollup,baseRefName,headRefOid)
 
 # Normalize all checks: both CheckRun (name/conclusion) and StatusContext (context/state).
 # StatusContext objects have no "name" field — they use "context" instead, and "state"
@@ -115,6 +115,7 @@ echo "$pr_data" | jq \
         title: .title,
         state: .state,
         base_branch: .baseRefName,
+        head_sha: .headRefOid,
         labels: $labels,
         has_ok_to_test: ($labels | any(. == "ok-to-test")),
         has_lgtm: ($labels | any(. == "lgtm")),

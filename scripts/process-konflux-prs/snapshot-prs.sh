@@ -5,8 +5,9 @@
 # Usage: ./snapshot-prs.sh --mintmaker|--nudge [--repo REPO_NAME]
 #
 # Output: JSON array of PR status objects:
-#   [{repo, pr, title, components, build_checks_passed, build_checks_failed,
-#     pending_checks, has_ok_to_test, has_lgtm, has_mintmaker_skip}, ...]
+#   [{repo, pr, title, head_sha, components, build_checks_passed,
+#     build_checks_failed, pending_checks, has_ok_to_test, has_lgtm,
+#     has_mintmaker_skip}, ...]
 
 set -euo pipefail
 
@@ -50,6 +51,7 @@ while IFS= read -r pr; do
     entry=$(echo "$status" | jq --arg repo "$repo" \
         '{repo: $repo, pr: .number, title: .title,
           base_branch: (.base_branch // ""),
+          head_sha: (.head_sha // ""),
           components: (.components // []),
           build_checks_passed,
           build_checks_failed: (.build_checks_failed // []),

@@ -1,6 +1,9 @@
 #!/bin/bash
-# Merge a PR using squash strategy
-# Usage: ./merge-pr.sh --repo REPO_NAME --pr PR_NUMBER
+# Merge a PR using merge strategy
+# Usage: ./merge-pr.sh --repo REPO_NAME --pr PR_NUMBER [--head-sha SHA]
+#
+# When --head-sha is provided, the merge is rejected if the PR's HEAD
+# has changed since the snapshot (prevents merging unchecked commits).
 #
 # Returns JSON: {success, repo, pr, message}
 
@@ -8,6 +11,7 @@ set -euo pipefail
 
 REPO_URL=""
 PR_NUMBER=""
+HEAD_SHA=""
 
 # Repository mapping
 declare -A REPOS=(
@@ -34,6 +38,10 @@ while [[ $# -gt 0 ]]; do
             PR_NUMBER="$2"
             shift 2
             ;;
+        --head-sha)
+            HEAD_SHA="$2"
+            shift 2
+            ;;
         *)
             echo "Usage: $0 --repo REPO_NAME --pr PR_NUMBER" >&2
             exit 1
@@ -48,10 +56,12 @@ fi
 
 REPO_NAME=$(basename "$REPO_URL")
 
-if gh pr merge "$PR_NUMBER" \
-    --repo "$REPO_URL" \
-    --merge \
-    --delete-branch 2>/dev/null; then
+MERGE_ARGS=("$PR_NUMBER" --repo "$REPO_URL" --merge --delete-branch)
+if [[ -n "$HEAD_SHA" ]]; then
+    MERGE_ARGS+=(--match-head-commit "$HEAD_SHA")
+fi
+
+if gh pr merge "${MERGE_ARGS[@]}" 2>/dev/null; then
     echo "{\"success\": true, \"repo\": \"$REPO_NAME\", \"pr\": $PR_NUMBER, \"message\": \"merged\"}" | jq '.'
 else
     MSG=$(gh pr view "$PR_NUMBER" --repo "$REPO_URL" --json state,mergeStateStatus \
