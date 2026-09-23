@@ -121,9 +121,24 @@ def extract_variant_from_job_name(job_name: str) -> Optional[str]:
     return None
 
 
+_GCSWEB_BASE = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com"
+_PROW_VIEW_GS_PREFIX = "https://prow.ci.openshift.org/view/gs/"
+
+
+def _prow_url_to_gcsweb(prow_url: str) -> Optional[str]:
+    """Convert a Prow ``/view/gs/BUCKET/path`` URL to a gcsweb URL."""
+    if prow_url.startswith(_PROW_VIEW_GS_PREFIX):
+        gcs_path = prow_url[len(_PROW_VIEW_GS_PREFIX):]
+        return f"{_GCSWEB_BASE}/gcs/{gcs_path}"
+    return None
+
+
 def discover_gcs_url_from_prow(prow_url: str) -> Optional[str]:
     """
-    Discover the actual GCS web URL by parsing Prow's HTML response.
+    Discover the actual GCS web URL for a Prow artifact.
+
+    Prefers a direct URL conversion (no HTTP round-trip) when the URL
+    matches the ``/view/gs/`` pattern, falling back to HTML scraping.
 
     Args:
         prow_url: Prow view URL that may return HTML
@@ -131,19 +146,29 @@ def discover_gcs_url_from_prow(prow_url: str) -> Optional[str]:
     Returns:
         Discovered GCS web URL, or None if not found
     """
+    # Fast path: derive the exact artifact URL from the Prow URL structure
+    direct = _prow_url_to_gcsweb(prow_url)
+    if direct:
+        return direct
+
     try:
         req = Request(prow_url, headers={'User-Agent': 'prowjob-analyzer/1.0'})
         with urlopen(req, timeout=30) as response:
             content_type = response.headers.get('Content-Type', '')
 
             if 'text/html' in content_type:
-                # Parse HTML to extract GCS web URL
                 html = response.read().decode('utf-8', errors='ignore')
                 # Look for gcsweb URL in the HTML
                 match = re.search(r'https://[^"\s]*gcsweb[^"\s]*', html)
                 if match:
                     gcs_url = match.group(0).rstrip('/')
                     logger.debug(f"Discovered GCS URL: {gcs_url}")
+                    return gcs_url
+                # Spyglass pages embed the GCS path in a JS variable
+                match = re.search(r'var\s+src\s*=\s*"gs/([^"]+)"', html)
+                if match:
+                    gcs_url = f"{_GCSWEB_BASE}/gcs/{match.group(1)}"
+                    logger.debug(f"Discovered GCS URL from Spyglass src: {gcs_url}")
                     return gcs_url
 
     except Exception as e:
