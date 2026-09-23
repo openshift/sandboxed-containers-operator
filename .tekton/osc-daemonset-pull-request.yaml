@@ -34,8 +34,8 @@ spec:
     value: Dockerfile
   - name: path-context
     value: scripts/kata-install
-  - name: hermetic
-    value: "false"
+  - name: prefetch-input
+    value: '[{"type": "rpm", "path": "scripts/kata-install"}, {"type": "gomod", "path": "scripts/kata-install"}]'
   - name: additional-tags
     value:
     - pr-{{pull_request_number}}
