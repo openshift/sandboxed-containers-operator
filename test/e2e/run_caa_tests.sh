@@ -104,10 +104,8 @@ AZURE_SANITY=(
     TestCreatePodWithConfigMapAzure
 )
 
-# CoCo tests need Trustee/KBS. Only TestRemoteAttestation can use a pre-installed
-# Trustee (via KBS_ENDPOINT); the rest need the framework to deploy Trustee
-# itself, so none are enabled yet.
 AZURE_COCO=(
+    TestInitDataMeasurement
 )
 
 # AWS tests are all non-CoCo.
@@ -133,6 +131,19 @@ AWS_SANITY=(
     TestAwsCreateSimplePod
     TestAwsCreatePodWithConfigMap
 )
+
+# Check running tests on environment configured for CoCo.
+check_coco() {
+    local disablecvm
+    disablecvm="$(kubectl get configmap peer-pods-cm -n "$PEERPODS_NAMESPACE" \
+        -o "jsonpath={.data.DISABLECVM}" 2>/dev/null)"
+    if [[ "$disablecvm" != "false" ]]; then
+        echo "ERROR: profile 'coco' requires a CoCo-enabled cluster." >&2
+        echo "  peer-pods-cm DISABLECVM=${disablecvm:-<not set>} (expected: false)" >&2
+        echo "  Ensure the OSC operator is configured with CoCo enabled." >&2
+        exit 1
+    fi
+}
 
 select_tests() {
     case "$PROVIDER" in
@@ -405,6 +416,10 @@ echo "=============================="
 echo ""
 
 cd "$CAA_DIR" || exit 1
+
+if [ "$PROFILE" = "coco" ]; then
+    check_coco
+fi
 
 # Serial (-parallel 1): each peer-pod test boots a cloud VM, so serial keeps the
 # VM count and the -json stream sane for go-junit-report.
