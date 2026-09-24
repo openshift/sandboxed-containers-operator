@@ -85,8 +85,9 @@ while IFS= read -r pr; do
 
     if [ "$safe" != "true" ]; then
         blocking=$(echo "$safety" | jq '.blocking')
-        skipped=$(echo "$skipped" | jq --argjson p "$pr" --argjson b "$blocking" \
-            '. + [$p + {"_skip_reason":"blocked by running on-push pipeline","_blocking":$b}]')
+        block_reason=$(echo "$blocking" | jq -r '[.[].reason] | join("; ")')
+        skipped=$(echo "$skipped" | jq --argjson p "$pr" --argjson b "$blocking" --arg r "$block_reason" \
+            '. + [$p + {"_skip_reason":$r,"_blocking":$b}]')
         continue
     fi
 

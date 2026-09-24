@@ -239,8 +239,9 @@ while IFS= read -r pr; do
     fi
 
     if [ "$safe" != "true" ]; then
-        waiting=$(echo "$waiting" | jq --argjson p "$pr_full" --argjson b "$blocking" \
-            '. + [$p + {"_wait_reason":"blocked by running on-push pipeline","_blocking":$b}]')
+        block_reason=$(echo "$blocking" | jq -r '[.[].reason] | join("; ")')
+        waiting=$(echo "$waiting" | jq --argjson p "$pr_full" --argjson b "$blocking" --arg r "$block_reason" \
+            '. + [$p + {"_wait_reason":$r,"_blocking":$b}]')
         continue
     fi
 

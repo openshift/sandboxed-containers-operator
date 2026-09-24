@@ -176,8 +176,9 @@ while IFS= read -r group_key; do
 
         if [ "$safe" != "true" ]; then
             blocking=$(echo "$safety" | jq '.blocking')
-            skipped=$(echo "$skipped" | jq --argjson p "$pr" --argjson b "$blocking" \
-                '. + [$p + {"_skip_reason":"waiting for on-push pipelines to complete","_blocking":$b}]')
+            block_reason=$(echo "$blocking" | jq -r '[.[].reason] | join("; ")')
+            skipped=$(echo "$skipped" | jq --argjson p "$pr" --argjson b "$blocking" --arg r "$block_reason" \
+                '. + [$p + {"_skip_reason":$r,"_blocking":$b}]')
             continue
         fi
 
@@ -315,8 +316,9 @@ while IFS= read -r group_key; do
             # otherwise record as skipped with blocking reason
             if [ "$has_ok" != "true" ]; then
                 if [ "$safe" != "true" ]; then
-                    skipped=$(echo "$skipped" | jq --argjson p "$pr" --argjson b "$blocking" \
-                        '. + [$p + {"_skip_reason":"waiting for on-push pipelines to complete","_blocking":$b}]')
+                    block_reason=$(echo "$blocking" | jq -r '[.[].reason] | join("; ")')
+                    skipped=$(echo "$skipped" | jq --argjson p "$pr" --argjson b "$blocking" --arg r "$block_reason" \
+                        '. + [$p + {"_skip_reason":$r,"_blocking":$b}]')
                 fi
                 continue
             fi
@@ -345,8 +347,9 @@ while IFS= read -r group_key; do
             fi
 
             if [ "$safe" != "true" ]; then
-                skipped=$(echo "$skipped" | jq --argjson p "$pr" --argjson b "$blocking" \
-                    '. + [$p + {"_skip_reason":"blocked by running on-push pipeline","_blocking":$b}]')
+                block_reason=$(echo "$blocking" | jq -r '[.[].reason] | join("; ")')
+                skipped=$(echo "$skipped" | jq --argjson p "$pr" --argjson b "$blocking" --arg r "$block_reason" \
+                    '. + [$p + {"_skip_reason":$r,"_blocking":$b}]')
                 continue
             fi
 
