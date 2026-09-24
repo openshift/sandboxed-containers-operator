@@ -1,0 +1,7 @@
+packages: [golang]
+contentOrigin:
+  repofiles: ["./ubi.repo"]
+arches:
+  - x86_64
+context:
+  image: registry.access.redhat.com/ubi9/skopeo:9.8-1789950918
