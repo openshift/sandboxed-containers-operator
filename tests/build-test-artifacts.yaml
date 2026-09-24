@@ -11,6 +11,9 @@ spec:
       - name: SNAPSHOT
         type: string
         description: 'Snapshot of the application'
+      - name: PIPELINE_RUN_NAME
+        type: string
+        default: "$(context.pipelineRun.name)"
     results:
       - name: TEST_OUTPUT
         value: $(tasks.build-and-push.results.TEST_OUTPUT)
@@ -20,9 +23,13 @@ spec:
       params:
         - name: SNAPSHOT
           value: $(params.SNAPSHOT)
+        - name: PIPELINE_RUN_NAME
+          value: $(params.PIPELINE_RUN_NAME)
       taskSpec:
         params:
         - name: SNAPSHOT
+          type: string
+        - name: PIPELINE_RUN_NAME
           type: string
         results:
         - name: TEST_OUTPUT
@@ -49,6 +56,8 @@ spec:
           env:
           - name: SNAPSHOT
             value: $(params.SNAPSHOT)
+          - name: PIPELINE_RUN_NAME
+            value: $(params.PIPELINE_RUN_NAME)
           - name: HOME
             value: /workdir
           script: |
@@ -124,7 +133,7 @@ spec:
                 | tar xz -C /workdir/sources --strip-components=1
             cd /workdir/sources
 
-            VERSION="on-pr-${srcREV:0:8}"
+            VERSION="on-pr-${PIPELINE_RUN_NAME}"
             echo "$VERSION" > /workdir/VERSION
             echo "VERSION=$VERSION"
 
