@@ -36,6 +36,7 @@ Options:
   --tests-repo-ref REF      Git ref to checkout (default: osc-release)
   --preserve-tests-repo     Do not delete the cloned test repo after execution
   --timeout DURATION        go test -timeout value (default: 90m)
+  --trustee-url URL         Trustee/KBS HTTP(S) endpoint
   -h, --help                Show this help
 EOF
     exit "${1:-1}"
@@ -49,6 +50,7 @@ TESTS_REPO="https://github.com/openshift/cloud-api-adaptor"
 TESTS_REPO_REF="osc-release"
 PRESERVE_TESTS_REPO=false
 TIMEOUT="90m"
+TRUSTEE_URL=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -60,6 +62,7 @@ while [ $# -gt 0 ]; do
         --tests-repo-ref) TESTS_REPO_REF="$2"; shift 2;;
         --preserve-tests-repo) PRESERVE_TESTS_REPO=true; shift;;
         --timeout) TIMEOUT="$2"; shift 2;;
+        --trustee-url) TRUSTEE_URL="$2"; shift 2;;
         -h|--help) usage 0;;
         *) echo "Unknown argument: $1"; usage;;
     esac
@@ -106,6 +109,7 @@ AZURE_SANITY=(
 
 AZURE_COCO=(
     TestInitDataMeasurement
+    TestRemoteAttestationAzure
 )
 
 # AWS tests are all non-CoCo.
@@ -397,6 +401,7 @@ export TEST_TEARDOWN="no"
 export TEST_PROVISION_FILE="$PROVISION_FILE"
 export CONTAINER_RUNTIME="crio"
 export TEST_CAA_NAMESPACE="${TEST_CAA_NAMESPACE:-$PEERPODS_NAMESPACE}"
+[[ -n "$TRUSTEE_URL" ]] && export KBS_ENDPOINT="$TRUSTEE_URL"
 
 label_caa_pods
 
