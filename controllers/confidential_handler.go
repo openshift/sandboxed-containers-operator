@@ -191,7 +191,6 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state Featur
 			maps.Copy(additionalLabels, imbSENodeLabels)
 		}
 
-		// Create kata-cc runtime class restricted to the detected TEE subset
 		err = r.createRuntimeClass(
 			kataCCRuntimeClassName,
 			kataCCRuntimeClassCpuOverhead,
@@ -222,7 +221,6 @@ func (r *KataConfigOpenShiftReconciler) handleConfidentialBaremetal(state Featur
 			maps.Copy(additionalLabels, amdSNPNodeLabels)
 		}
 
-		// Create kata-cc-nvidia-gpu runtime class restricted to the detected GPU TEE subset
 		err = r.createRuntimeClass(
 			kataNvidiaGPUCCRuntimeClassName,
 			kataNvidiaGPUCCRuntimeClassCpuOverhead,
