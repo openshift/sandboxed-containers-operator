@@ -8,7 +8,7 @@ import (
 
 func GetScc() *secv1.SecurityContextConstraints {
 
-	trueVar := false
+	allowPrivilegeEscalation := false
 	sccName := "sandboxed-containers-operator-scc"
 
 	return &secv1.SecurityContextConstraints{
@@ -24,7 +24,7 @@ func GetScc() *secv1.SecurityContextConstraints {
 		AllowHostNetwork:         false,
 		AllowHostPID:             false,
 		AllowHostPorts:           false,
-		AllowPrivilegeEscalation: &trueVar,
+		AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 		AllowPrivilegedContainer: false,
 		RequiredDropCapabilities: []corev1.Capability{"MKNOD", "FSETID", "KILL", "FOWNER"},
 		AllowedCapabilities:      []corev1.Capability{"DAC_READ_OVERRIDE"},
