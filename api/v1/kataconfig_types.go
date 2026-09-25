@@ -45,6 +45,17 @@ type KataConfigSpec struct {
 	// +optional
 	// +kubebuilder:default:=false
 	EnablePeerPods bool `json:"enablePeerPods"`
+
+	// EnableMixedCluster activates support for clusters with both bare-metal and
+	// VM-backed worker nodes. When true, the operator applies per-node-class
+	// configuration and restricts each RuntimeClass to its correct node class via
+	// scheduling.nodeSelector. A NodeFeatureRule is deployed via NFD to label nodes
+	// with kataconfiguration.openshift.io/node-type=bare-metal|virtual.
+	// Requires the NFD Operator and a NodeFeatureDiscovery CR to be present.
+	// Requires EnablePeerPods to be true (VM nodes use the peer-pod sandbox path).
+	// +optional
+	// +kubebuilder:default:=false
+	EnableMixedCluster bool `json:"enableMixedCluster,omitempty"`
 }
 
 // KataConfigStatus defines the observed state of KataConfig

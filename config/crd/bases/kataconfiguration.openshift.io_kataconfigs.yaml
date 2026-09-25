@@ -65,6 +65,17 @@ spec:
                   In addition this option will also enforce runtime class creation if only if node(s) support them.
                   For more information on how the check works, please refer to the sandboxed containers documentation - https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.6/html-single/user_guide/index#about-node-eligibility-checks_about-osc
                 type: boolean
+              enableMixedCluster:
+                default: false
+                description: |-
+                  EnableMixedCluster activates support for clusters with both bare-metal and
+                  VM-backed worker nodes. When true, the operator applies per-node-class
+                  configuration and restricts each RuntimeClass to its correct node class via
+                  scheduling.nodeSelector. A NodeFeatureRule is deployed via NFD to label nodes
+                  with kataconfiguration.openshift.io/node-type=bare-metal|virtual.
+                  Requires the NFD Operator and a NodeFeatureDiscovery CR to be present.
+                  Requires EnablePeerPods to be true (VM nodes use the peer-pod sandbox path).
+                type: boolean
               enablePeerPods:
                 default: false
                 description: |-
