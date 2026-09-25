@@ -205,6 +205,7 @@ spec:
         - $(params.build-args[*])
         - "GIT_URL=$(params.git-url)"
         - "GIT_REVISION=$(params.revision)"
+        - "BRANCH_BUILD_SUFFIX=-v1-13"
       - name: BUILD_ARGS_FILE
         value: $(params.build-args-file)
       - name: SOURCE_ARTIFACT
