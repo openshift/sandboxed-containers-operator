@@ -157,7 +157,10 @@ while IFS= read -r pr; do
     if [ "$DRY_RUN" = false ]; then
         head_sha=$(echo "$pr" | jq -r '.head_sha // ""')
         result=$("$SCRIPT_DIR/merge-pr.sh" --repo "$repo" --pr "$num" \
-            ${head_sha:+--head-sha "$head_sha"} 2>/dev/null) || result='{"success":false,"message":"merge command failed"}'
+            ${head_sha:+--head-sha "$head_sha"} 2>/dev/null) || true
+        if ! echo "$result" | jq -e '.success' >/dev/null 2>&1; then
+            result='{"success":false,"message":"merge command failed"}'
+        fi
         if [ "$(echo "$result" | jq -r '.success')" = "true" ]; then
             merged=$(echo "$merged" | jq --argjson p "$pr" '. + [$p]')
         else
