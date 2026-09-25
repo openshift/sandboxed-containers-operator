@@ -28,6 +28,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 
 	"k8s.io/apimachinery/pkg/labels"
 
@@ -129,7 +130,7 @@ var (
 // +kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get;list;watch
 // +kubebuilder:rbac:groups="batch",resources=jobs,verbs=create;get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list
-// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=create;delete;update
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=create;delete;get;list;update;watch
 
 func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = r.Log.WithValues("kataconfig", req.NamespacedName)
@@ -918,12 +919,20 @@ func (r *KataConfigOpenShiftReconciler) createDaemonsetForMonitor() error {
 	}
 	r.Log.Info("controller reference set for the monitor daemonset")
 
+	// TODO: propagate reconcile ctx through the call chain instead of context.TODO()
+	ctx := context.TODO()
+
+	if err := r.createKataMonitorNetworkPolicies(ctx); err != nil {
+		r.Log.Error(err, "error creating kata-monitor network policies")
+		return err
+	}
+
 	foundDS := &appsv1.DaemonSet{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDS)
+	err = r.Client.Get(ctx, types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, foundDS)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			r.Log.Info("Creating a new installation monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-			err = r.Client.Create(context.TODO(), ds)
+			err = r.Client.Create(ctx, ds)
 			if err != nil {
 				r.Log.Error(err, "error when creating monitor daemonset")
 				return err
@@ -934,12 +943,13 @@ func (r *KataConfigOpenShiftReconciler) createDaemonsetForMonitor() error {
 		}
 	} else {
 		r.Log.Info("Updating monitor daemonset", "ds.Namespace", ds.Namespace, "ds.Name", ds.Name)
-		err = r.Client.Update(context.TODO(), ds)
+		err = r.Client.Update(ctx, ds)
 		if err != nil {
 			r.Log.Error(err, "error when updating monitor daemonset")
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -1806,6 +1816,7 @@ func (eh *NodeEventHandler) Generic(ctx context.Context, event event.GenericEven
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
+		Owns(&networkingv1.NetworkPolicy{}).
 		Watches(
 			&corev1.Node{},
 			&NodeEventHandler{r}).
@@ -2393,6 +2404,13 @@ func (r *KataConfigOpenShiftReconciler) deleteDaemonsetForMonitor() error {
 			return err
 		}
 	}
+
+	// TODO: propagate reconcile ctx through the call chain instead of context.TODO()
+	if err := r.deleteKataMonitorNetworkPolicies(context.TODO()); err != nil {
+		r.Log.Error(err, "error deleting kata-monitor network policies")
+		return err
+	}
+
 	return nil
 }
 
