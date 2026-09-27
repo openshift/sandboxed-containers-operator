@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	exutil "github.com/openshift/origin/test/extended/util"
 	"github.com/tidwall/gjson"
 )
 
@@ -15,7 +14,7 @@ const (
 
 // checkPodVMImageID verifies the cloud-specific podvm image ID field exists
 // and is non-empty in the peer-pods-cm configmap.
-func checkPodVMImageID(oc *exutil.CLI, cloudPlatform string) (string, error) {
+func checkPodVMImageID(oc *CLI, cloudPlatform string) (string, error) {
 	imageIDParam := map[string]string{
 		"aws":   "PODVM_AMI_ID",
 		"azure": "AZURE_IMAGE_ID",
@@ -41,7 +40,7 @@ func checkPodVMImageID(oc *exutil.CLI, cloudPlatform string) (string, error) {
 // Note: jsonpath={.data} works with gjson because oc outputs JSON-encoded data
 // for configmaps with simple key=value pairs. If a future configmap value
 // contains special characters, switch to -o=json and query data.<param>.
-func getConfigmapParamValue(oc *exutil.CLI, param string) (string, error) {
+func getConfigmapParamValue(oc *CLI, param string) (string, error) {
 	cmData, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"configmap", ppConfigMapName, "-n", opNamespace, "-o=jsonpath={.data}",
 	).Output()
@@ -58,7 +57,7 @@ func getConfigmapParamValue(oc *exutil.CLI, param string) (string, error) {
 
 // checkPeerPodConfigMap verifies that the peer-pods-cm configmap contains all
 // required cloud-specific fields for the given provider.
-func checkPeerPodConfigMap(oc *exutil.CLI, cloudPlatform string) error {
+func checkPeerPodConfigMap(oc *CLI, cloudPlatform string) error {
 	requiredFields := map[string][]string{
 		"aws":     {"CLOUD_PROVIDER", "AWS_REGION", "AWS_SG_IDS", "AWS_SUBNET_ID", "AWS_VPC_ID", "VXLAN_PORT"},
 		"azure":   {"CLOUD_PROVIDER", "AZURE_REGION", "AZURE_NSG_ID", "AZURE_SUBNET_ID", "AZURE_RESOURCE_GROUP", "VXLAN_PORT"},
@@ -93,7 +92,7 @@ func checkPeerPodConfigMap(oc *exutil.CLI, cloudPlatform string) error {
 }
 
 // checkKataconfigPeerPods verifies that the kataconfig has enablePeerPods=true.
-func checkKataconfigPeerPods(oc *exutil.CLI, kcName string) error {
+func checkKataconfigPeerPods(oc *CLI, kcName string) error {
 	msg, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"kataconfig", kcName, "-o=jsonpath={.spec.enablePeerPods}",
 	).Output()
@@ -107,7 +106,7 @@ func checkKataconfigPeerPods(oc *exutil.CLI, kcName string) error {
 }
 
 // checkRuntimeClass verifies that the kata-remote runtimeclass exists.
-func checkRuntimeClass(oc *exutil.CLI) error {
+func checkRuntimeClass(oc *CLI) error {
 	msg, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"runtimeclass", ppRuntimeClass, "--no-headers",
 	).Output()
@@ -119,7 +118,7 @@ func checkRuntimeClass(oc *exutil.CLI) error {
 
 // validatePeerPodsSetup runs all peer-pods precondition checks and returns
 // a combined error if any fail.
-func validatePeerPodsSetup(oc *exutil.CLI, kcName, cloudPlatform string) error {
+func validatePeerPodsSetup(oc *CLI, kcName, cloudPlatform string) error {
 	var failures []string
 
 	if err := checkPeerPodConfigMap(oc, cloudPlatform); err != nil {
@@ -151,7 +150,7 @@ func validatePeerPodsSetup(oc *exutil.CLI, kcName, cloudPlatform string) error {
 // access to the cloud metadata endpoint (169.254.169.254). Peer-pod VMs always
 // have this access — it is how cloud-api-adaptor itself discovers instance
 // identity.
-func getPeerPodMetadataInstanceType(oc *exutil.CLI, namespace, podName, cloudPlatform string) (string, error) {
+func getPeerPodMetadataInstanceType(oc *CLI, namespace, podName, cloudPlatform string) (string, error) {
 	metadataCurl := map[string][]string{
 		"aws":   {"http://169.254.169.254/latest/meta-data/instance-type"},
 		"azure": {"-H", "Metadata:true", "http://169.254.169.254/metadata/instance/compute/vmSize?api-version=2023-07-01&format=text"},
@@ -171,7 +170,7 @@ func getPeerPodMetadataInstanceType(oc *exutil.CLI, namespace, podName, cloudPla
 
 // getPeerPodMetadataImageID queries the cloud metadata service from inside
 // the pod to retrieve the podvm image ID.
-func getPeerPodMetadataImageID(oc *exutil.CLI, namespace, podName, cloudPlatform string) (string, error) {
+func getPeerPodMetadataImageID(oc *CLI, namespace, podName, cloudPlatform string) (string, error) {
 	metadataCurl := map[string][]string{
 		"aws":   {"http://169.254.169.254/latest/meta-data/ami-id"},
 		"azure": {"-H", "Metadata:true", "http://169.254.169.254/metadata/instance/compute/storageProfile/imageReference/id?api-version=2023-07-01&format=text"},
@@ -189,7 +188,7 @@ func getPeerPodMetadataImageID(oc *exutil.CLI, namespace, podName, cloudPlatform
 
 // getPeerPodMetadataTags queries the cloud metadata service from inside
 // the pod to retrieve instance tags.
-func getPeerPodMetadataTags(oc *exutil.CLI, namespace, podName, cloudPlatform string) (string, error) {
+func getPeerPodMetadataTags(oc *CLI, namespace, podName, cloudPlatform string) (string, error) {
 	metadataCurl := map[string][]string{
 		"aws":   {"http://169.254.169.254/latest/meta-data/tags/instance/key1"},
 		"azure": {"-H", "Metadata:true", "http://169.254.169.254/metadata/instance/compute/tags?api-version=2023-07-01&format=text"},
