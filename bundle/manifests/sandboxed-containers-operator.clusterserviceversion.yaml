@@ -404,7 +404,7 @@ spec:
                 env:
                 - name: PEERPODS_NAMESPACE
                   value: openshift-sandboxed-containers-operator
-                - name: TP_KATA_DAEMONSET
+                - name: RELATED_IMAGE_KATA_DAEMONSET
                   value: quay.io/openshift_sandboxed_containers/osc-daemonset:1.13
                 - name: RELATED_IMAGE_KATA_MONITOR
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:38f0043d9fc24985e8cb63eae5610e2d2dd1f3db43e78e1b9da133b9ad70a1c2
@@ -555,6 +555,8 @@ spec:
   provider:
     name: Red Hat
   relatedImages:
+  - image: quay.io/openshift_sandboxed_containers/osc-daemonset:1.13
+    name: kata-daemonset
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:38f0043d9fc24985e8cb63eae5610e2d2dd1f3db43e78e1b9da133b9ad70a1c2
     name: kata-monitor
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:daf04d817f3c43f4a44c437c41a50ba24000d22704234f243522a4d290533b97
