@@ -8,7 +8,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	// import apps/v1 for Deployment
 	appsv1 "k8s.io/api/apps/v1"
@@ -94,14 +94,25 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookService() error {
 		},
 	}
 
-	// Create webhook service
-	if err := r.Client.Create(context.Background(), webhookService); err != nil {
-		// Check if the webhook service already exists
-		if !k8serrors.IsAlreadyExists(err) {
-			return err
-		}
+	// Create or update webhook service
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      webhookSvcName,
+			Namespace: webhookSvcNamespace,
+		},
 	}
-	r.Log.Info("created peerpods mutating webhook service")
+	_, err := controllerutil.CreateOrUpdate(context.Background(), r.Client, svc, func() error {
+		svc.Labels = webhookService.Labels
+		svc.Annotations = webhookService.Annotations
+		svc.Spec.Ports = webhookService.Spec.Ports
+		svc.Spec.Selector = webhookService.Spec.Selector
+		svc.Spec.Type = webhookService.Spec.Type
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	r.Log.Info("reconciled peerpods mutating webhook service")
 	return nil
 }
 
@@ -282,24 +293,26 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookDeployment() error 
 		},
 	}
 
-	// Create webhook deployment
-	if err := r.Client.Create(context.Background(), webhookDeployment); err != nil {
-		if !k8serrors.IsAlreadyExists(err) {
-			return err
-		}
-		existing := &appsv1.Deployment{}
-		if err := r.Client.Get(context.Background(), client.ObjectKeyFromObject(webhookDeployment), existing); err != nil {
-			return err
-		}
-		for i := range existing.Spec.Template.Spec.Containers {
-			if existing.Spec.Template.Spec.Containers[i].Name == webhookDeploymentName {
-				existing.Spec.Template.Spec.Containers[i].Env = webhookDeployment.Spec.Template.Spec.Containers[0].Env
-				break
-			}
-		}
-		if err := r.Client.Update(context.Background(), existing); err != nil {
-			return err
-		}
+	// Create or update webhook deployment
+	deploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      webhookDeploymentName,
+			Namespace: webhookDeploymentNamespace,
+		},
+	}
+	_, err := controllerutil.CreateOrUpdate(context.Background(), r.Client, deploy, func() error {
+		deploy.Labels = webhookDeployment.Labels
+		deploy.Spec.Replicas = webhookDeployment.Spec.Replicas
+		deploy.Spec.Selector = webhookDeployment.Spec.Selector
+		deploy.Spec.Strategy = webhookDeployment.Spec.Strategy
+		deploy.Spec.Template.Labels = webhookDeployment.Spec.Template.Labels
+		deploy.Spec.Template.Spec.Volumes = webhookDeployment.Spec.Template.Spec.Volumes
+		deploy.Spec.Template.Spec.SecurityContext = webhookDeployment.Spec.Template.Spec.SecurityContext
+		deploy.Spec.Template.Spec.Containers = webhookDeployment.Spec.Template.Spec.Containers
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	r.Log.Info("reconciled peerpods mutating webhook deployment")
 	return nil
@@ -446,11 +459,36 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookConfig() error {
 		},
 	}
 
-	// Create MutatingWebhookConfiguration object
-	if err := r.Client.Create(context.Background(), mutatingWebhookConfig); err != nil {
-		if !k8serrors.IsAlreadyExists(err) {
-			return err
+	// Create or update MutatingWebhookConfiguration object
+	cfg := &admissionregistrationv1.MutatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: webhookConfigName,
+		},
+	}
+	_, err := controllerutil.CreateOrUpdate(context.Background(), r.Client, cfg, func() error {
+		cfg.Labels = mutatingWebhookConfig.Labels
+		cfg.Annotations = mutatingWebhookConfig.Annotations
+		existing := cfg.Webhooks
+		cfg.Webhooks = make([]admissionregistrationv1.MutatingWebhook, len(mutatingWebhookConfig.Webhooks))
+		for i, desired := range mutatingWebhookConfig.Webhooks {
+			for _, e := range existing {
+				if e.Name == desired.Name {
+					cfg.Webhooks[i].ClientConfig.CABundle = e.ClientConfig.CABundle
+					break
+				}
+			}
+			cfg.Webhooks[i].Name = desired.Name
+			cfg.Webhooks[i].ClientConfig.Service = desired.ClientConfig.Service
+			cfg.Webhooks[i].Rules = desired.Rules
+			cfg.Webhooks[i].FailurePolicy = desired.FailurePolicy
+			cfg.Webhooks[i].SideEffects = desired.SideEffects
+			cfg.Webhooks[i].AdmissionReviewVersions = desired.AdmissionReviewVersions
+			cfg.Webhooks[i].NamespaceSelector = desired.NamespaceSelector
 		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	r.Log.Info("created peerpods mutating webhook configuration")
 	return nil
