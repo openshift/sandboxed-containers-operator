@@ -31,18 +31,23 @@ const (
 	webhookSvcSecretName = "peer-pods-webhook-svc-secret"
 	webhookDefaultImage  = "quay.io/confidential-containers/peer-pods-webhook:latest"
 
+	// Define webhook metrics port name and number
+	webhookMetricsPortName = "metrics"
+	webhookMetricsPort     = 8443
+
 	// Define webhook mutating config name
 	webhookConfigName = "mutating-webhook-configuration"
 )
 
 // Method to create the mutating webhook service
 func (r *KataConfigOpenShiftReconciler) createMutatingWebhookService() error {
-
 	// Define webhook service port
 	webhookServicePort := int32(443)
 
 	// Define webhook service target port
 	webhookServiceTargetPort := intstr.FromInt(9443)
+
+	webhookMetricsTargetPort := intstr.FromInt(8443)
 
 	// Define webhook service type
 	webhookServiceType := corev1.ServiceTypeClusterIP
@@ -66,6 +71,7 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookService() error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      webhookSvcName,
 			Namespace: webhookSvcNamespace,
+			Labels:    webhookServiceSelector,
 			// Add annotations to the service
 			Annotations: webhookServiceAnnotations,
 		},
@@ -75,6 +81,11 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookService() error {
 					Name:       webhookSvcName,
 					Port:       webhookServicePort,
 					TargetPort: webhookServiceTargetPort,
+				},
+				{
+					Name:       webhookMetricsPortName,
+					Port:       webhookMetricsPort,
+					TargetPort: webhookMetricsTargetPort,
 				},
 			},
 			Selector:  webhookServiceSelector,
@@ -92,12 +103,10 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookService() error {
 	}
 	r.Log.Info("created peerpods mutating webhook service")
 	return nil
-
 }
 
 // Method to create the mutating webhook deployment
 func (r *KataConfigOpenShiftReconciler) createMutatingWebhookDeployment() error {
-
 	// Define webhook deployment namespace
 	webhookDeploymentNamespace := os.Getenv("PEERPODS_NAMESPACE")
 
@@ -148,7 +157,25 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookDeployment() error 
 						Secret: &corev1.SecretVolumeSource{
 							SecretName:  webhookSvcSecretName,
 							DefaultMode: &defaultMode,
-							// Add items
+							Items: []corev1.KeyToPath{
+								{
+									Key:  "tls.crt",
+									Path: "tls.crt",
+								},
+								{
+									Key:  "tls.key",
+									Path: "tls.key",
+								},
+							},
+						},
+					},
+				},
+				{
+					Name: "metrics-cert",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName:  webhookSvcSecretName,
+							DefaultMode: &defaultMode,
 							Items: []corev1.KeyToPath{
 								{
 									Key:  "tls.crt",
@@ -221,13 +248,15 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookDeployment() error 
 							"memory": resource.MustParse("128Mi"),
 						},
 					},
-					// Add volume mounts
 					VolumeMounts: []corev1.VolumeMount{
 						{
-							Name: "webhook-cert",
-							// This is the default path for webhook servers created using
-							// controller-runtime
+							Name:      "webhook-cert",
 							MountPath: "/tmp/k8s-webhook-server/serving-certs",
+							ReadOnly:  true,
+						},
+						{
+							Name:      "metrics-cert",
+							MountPath: "/tmp/k8s-metrics-server/serving-certs",
 							ReadOnly:  true,
 						},
 					},
@@ -278,7 +307,6 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookDeployment() error 
 
 // Method to create the mutating webhook config
 func (r *KataConfigOpenShiftReconciler) createMutatingWebhookConfig() error {
-
 	// Define webhook path
 	webhookPath := "/mutate-v1-pod"
 
@@ -430,7 +458,6 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookConfig() error {
 
 // Method to delete the Mutating Webhook Deployment
 func (r *KataConfigOpenShiftReconciler) deleteMutatingWebhookDeployment() error {
-
 	webhookDeploymentNamespace := os.Getenv("PEERPODS_NAMESPACE")
 
 	deployment := &appsv1.Deployment{
@@ -452,7 +479,6 @@ func (r *KataConfigOpenShiftReconciler) deleteMutatingWebhookDeployment() error 
 
 // Method to delete the Mutating Webhook Service
 func (r *KataConfigOpenShiftReconciler) deleteMutatingWebhookService() error {
-
 	webhookSvcNamespace := os.Getenv("PEERPODS_NAMESPACE")
 
 	service := &corev1.Service{
