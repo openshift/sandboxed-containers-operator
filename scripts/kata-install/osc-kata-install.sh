@@ -280,10 +280,41 @@ install_kata() {
 	# builds a host-kernel-derived initrd and symlinks the kernel. When
 	# packages were already present or the RPM postinstall scriptlet failed
 	# silently inside the DaemonSet chroot, these files may be missing.
-	if ! chroot /host test -e /var/cache/kata-containers/osbuilder-images/kata.kernel; then
-		echo "kata VM kernel/initrd missing, running kata-osbuilder.sh"
-		chroot /host mkdir -p /var/cache/kata-containers/osbuilder-images
-		chroot /host /usr/libexec/kata-containers/osbuilder/kata-osbuilder.sh
+	#
+	# SHORT-TERM FIX: skip osbuilder on IBM Cloud peer-pods deployments.
+	#
+	# On IBM Cloud workers, kata-remote (peer-pods) is the only runtime in
+	# use. The local kata VM initrd is never needed — kata-agent runs inside
+	# the remote peer pod VSI, not on the worker. However, kata-osbuilder.sh
+	# fails on IBM Cloud RHCOS workers because the kata-agent binary shipped
+	# in kata-containers-3.25.0-7.rhaos4.20/21.el9 is a dynamically linked
+	# PIE executable, and strip(1) corrupts it in the chroot environment.
+	# This causes permanent CrashLoopBackOff on every pod restart.
+	#
+	# KNOWN LIMITATION: this guard is IBM Cloud-specific. It does not protect
+	# other peer-pods-only cloud deployments (AWS, Azure) that have the same
+	# strip bug. Those providers are not affected today because they do not
+	# yet use the DaemonSet install path, but this should be revisited.
+	#
+	# LONG-TERM: two upstream changes are needed to remove this guard:
+	#   1. Fix strip(1) corrupting the dynamically linked kata-agent in
+	#      rootfs.sh (kata-containers/kata-containers). The RPM should either
+	#      ship the binary pre-stripped, or rootfs.sh must handle strip
+	#      failure non-fatally. This same bug also affects
+	#      kata-osbuilder-generate.service at boot — that service will fail
+	#      with the same error on every node reboot until the strip bug is
+	#      fixed, even with this guard in place.
+	#   2. When enablePeerPods is true and no local kata runtime class is
+	#      needed, the controller should not create the kata/kata-nvidia-gpu
+	#      RuntimeClasses, and the kata-osbuilder-generate.service should not
+	#      be enabled. The local kata VM stack is unnecessary overhead on
+	#      pure peer-pods deployments.
+	if [[ "${CLOUD_PROVIDER:-}" != "ibmcloud" ]]; then
+		if ! chroot /host test -e /var/cache/kata-containers/osbuilder-images/kata.kernel; then
+			echo "kata VM kernel/initrd missing, running kata-osbuilder.sh"
+			chroot /host mkdir -p /var/cache/kata-containers/osbuilder-images
+			chroot /host /usr/libexec/kata-containers/osbuilder/kata-osbuilder.sh
+		fi
 	fi
 
 	# Set label before CRI-O restart (restart kills this pod).
