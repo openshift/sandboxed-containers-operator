@@ -7,9 +7,9 @@ entries:
     name: sandboxed-containers-operator
     schema: olm.package
   - entries:
-      - name: sandboxed-containers-operator.v1.13.0
-        replaces: sandboxed-containers-operator.v1.12.1
-        skipRange: '>=1.1.0 <1.13.0'
+      - name: sandboxed-containers-operator.v1.13.1
+        replaces: sandboxed-containers-operator.v1.13.0
+        skipRange: '>=1.1.0 <1.13.1'
     name: stable
     package: sandboxed-containers-operator
     schema: olm.channel
