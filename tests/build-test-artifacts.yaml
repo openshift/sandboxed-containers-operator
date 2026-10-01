@@ -365,11 +365,16 @@ spec:
                     -f "$CATALOG_TAR" \
                     -t "$CATALOG_IMG"
 
+                # Unlike a Dockerfile-based build (see fbc/test-fbc/Dockerfile),
+                # we cannot run "opm serve --cache-only" here to pre-populate
+                # the serve cache, because crane only manipulates image layers
+                # without executing anything. Disable cache integrity checking
+                # so opm builds the cache from scratch at startup.
                 crane mutate "$CATALOG_IMG" \
                     --label operators.operatorframework.io.index.configs.v1=/configs \
                     --label quay.expires-after=5d \
                     --entrypoint /bin/opm \
-                    --cmd "serve,/configs,--cache-dir=/tmp/cache" \
+                    --cmd "serve,/configs,--cache-dir=/tmp/cache,--cache-enforce-integrity=false" \
                     -t "$CATALOG_IMG"
 
                 rm -f "$CATALOG_TAR"
