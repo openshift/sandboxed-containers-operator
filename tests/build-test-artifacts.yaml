@@ -34,6 +34,8 @@ spec:
         results:
         - name: TEST_OUTPUT
           description: Test output
+        - name: CATALOG_IMAGE
+          description: "The catalog image URL, empty if build was skipped"
         volumes:
         - name: workdir
           emptyDir: {}
@@ -244,6 +246,7 @@ spec:
             echo "BUILD_MODE=$BUILD_MODE"
             if [ "$BUILD_MODE" = "SKIP" ]; then
                 echo "Nothing to publish, exiting."
+                echo -n "" > "$(results.CATALOG_IMAGE.path)"
                 exit 0
             fi
 
@@ -415,4 +418,40 @@ spec:
                 '{result: $RESULT, timestamp: $date, failures: $FAILURES, successes: $SUCCESSES, warnings: $WARNINGS, note: $NOTE}')
             echo -n "${TEST_OUTPUT}" | tee "$(results.TEST_OUTPUT.path)"
 
+            if [ "$RESULT" = "SUCCESS" ]; then
+                echo -n "quay.io/redhat-user-workloads/ose-osc-tenant/osc-test-fbc:${VERSION}" > "$(results.CATALOG_IMAGE.path)"
+            else
+                echo -n "" > "$(results.CATALOG_IMAGE.path)"
+            fi
+
             [ "$RESULT" = "SUCCESS" ] || exit 1
+    - name: prowjob-olmv1
+      onError: continue
+      timeout: "8h"
+      when:
+        - input: "$(tasks.build-and-push.results.CATALOG_IMAGE)"
+          operator: notin
+          values: [""]
+      runAfter:
+        - build-and-push
+      taskRef:
+        resolver: git
+        params:
+        - name: url
+          value: https://github.com/openshift/konflux-tasks
+        - name: revision
+          value: 4826f365057d22d0189fa0db00d953c151f90c77
+        - name: pathInRepo
+          value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: VARIANT
+          value: ""
+        - name: ENVS
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.build-and-push.results.CATALOG_IMAGE)"
+      matrix:
+        params:
+          - name: PROWJOB_NAME
+            value:
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-sandboxed-containers-operator-e2e-olmv1
