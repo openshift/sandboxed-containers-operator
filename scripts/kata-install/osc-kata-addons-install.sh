@@ -23,7 +23,7 @@ update_config() {
     
     local config_file="/etc/kata-containers/kata-se/configuration.toml"
     
-    if [ ! -f  chroot /host "$config_file" ]; then
+    if ! chroot /host test -f "$config_file"; then
         echo "Warning: Configuration file not found: $config_file"
         return 1
     fi
