@@ -7,12 +7,10 @@ import (
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
-	exutil "github.com/openshift/origin/test/extended/util"
-	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-func deleteKataResource(oc *exutil.CLI, res, resNs, resName string) bool {
+func deleteKataResource(oc *CLI, res, resNs, resName string) bool {
 	const pollInterval = 15 * time.Second
 
 	Logf("Initiating deletion of %v %v in ns %v (timeout: %v)", res, resName, resNs, podDeleteTimeout*time.Second)
@@ -82,7 +80,7 @@ func deleteKataResource(oc *exutil.CLI, res, resNs, resName string) bool {
 	return true
 }
 
-func deleteResource(oc *exutil.CLI, res, resName, resNs string, duration, interval time.Duration) (string, error) {
+func deleteResource(oc *CLI, res, resName, resNs string, duration, interval time.Duration) (string, error) {
 	msg, err := oc.AsAdmin().WithoutNamespace().Run("delete").Args(
 		res, resName, "-n", resNs,
 		"--ignore-not-found",
@@ -108,12 +106,12 @@ func deleteResource(oc *exutil.CLI, res, resName, resNs string, duration, interv
 	if errCheck != nil {
 		Logf("Timeout waiting for delete to finish on %v %v -n %v: %v", res, resName, resNs, msg)
 	}
-	compat_otp.AssertWaitPollNoErr(errCheck, fmt.Sprintf("%v %v was not finally deleted in ns %v", res, resName, resNs))
+	AssertWaitPollNoErr(errCheck, fmt.Sprintf("%v %v was not finally deleted in ns %v", res, resName, resNs))
 
 	return fmt.Sprintf("deleted %v %v -n %v", res, resName, resNs), nil
 }
 
-func checkResourceJsonpath(oc *exutil.CLI, resType, resName, resNs, jsonpath, expected string, duration, interval time.Duration) (string, error) {
+func checkResourceJsonpath(oc *CLI, resType, resName, resNs, jsonpath, expected string, duration, interval time.Duration) (string, error) {
 	var msg string
 	ctx, cancel := context.WithTimeout(context.Background(), duration)
 	defer cancel()
@@ -128,11 +126,11 @@ func checkResourceJsonpath(oc *exutil.CLI, resType, resName, resNs, jsonpath, ex
 		}
 		return false, nil
 	})
-	compat_otp.AssertWaitPollNoErr(errCheck, fmt.Sprintf("%v %v in ns %v is not in %v state after %v: %v", resType, resName, resNs, expected, duration, msg))
+	AssertWaitPollNoErr(errCheck, fmt.Sprintf("%v %v in ns %v is not in %v state after %v: %v", resType, resName, resNs, expected, duration, msg))
 	return msg, nil
 }
 
 
-func checkControlPod(oc *exutil.CLI, podName, podNs, expStatus string) (string, error) {
+func checkControlPod(oc *CLI, podName, podNs, expStatus string) (string, error) {
 	return checkResourceJsonpath(oc, "pods", podName, podNs, "-o=jsonpath={.status.phase}", expStatus, podSnooze*time.Second, 10*time.Second)
 }

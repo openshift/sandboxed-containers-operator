@@ -10,7 +10,6 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
-	exutil "github.com/openshift/origin/test/extended/util"
 )
 
 // DeploymentDescription describes a kata deployment to be created from a Go template.
@@ -43,7 +42,7 @@ func NewDeploymentDescription(testrun *TestRunDescription, name string, replicas
 	}
 }
 
-func createKataDeploymentFromDescription(oc *exutil.CLI, deploy *DeploymentDescription) error {
+func createKataDeploymentFromDescription(oc *CLI, deploy *DeploymentDescription) error {
 	if deploy.namespace == "" {
 		deploy.namespace = oc.Namespace()
 	}
@@ -108,7 +107,7 @@ func processDeploymentGoTemplate(deploy *DeploymentDescription) (string, error) 
 	return configFile, nil
 }
 
-func waitForDeployment(oc *exutil.CLI, deploy *DeploymentDescription) (int, int, error) {
+func waitForDeployment(oc *CLI, deploy *DeploymentDescription) (int, int, error) {
 	var (
 		intervalSeconds = int(deploy.pollInterval.Seconds())
 		maxSeconds      = int(deploy.timeout.Seconds())
@@ -144,7 +143,7 @@ func waitForDeployment(oc *exutil.CLI, deploy *DeploymentDescription) (int, int,
 	return readyReplicas, elapsedSeconds, nil
 }
 
-func scaleDeployment(oc *exutil.CLI, deploy *DeploymentDescription, scaleNumber int) error {
+func scaleDeployment(oc *CLI, deploy *DeploymentDescription, scaleNumber int) error {
 	_, err := oc.AsAdmin().WithoutNamespace().Run("scale").Args(
 		"deployment", deploy.name, "--replicas="+strconv.Itoa(scaleNumber), "-n", deploy.namespace,
 	).Output()
@@ -160,7 +159,7 @@ func scaleDeployment(oc *exutil.CLI, deploy *DeploymentDescription, scaleNumber 
 	return err
 }
 
-func createServiceAndRoute(oc *exutil.CLI, deployName, podNs string) (string, error) {
+func createServiceAndRoute(oc *CLI, deployName, podNs string) (string, error) {
 	msg, err := oc.WithoutNamespace().Run("expose").Args("deployment", deployName, "-n", podNs).Output()
 	if err != nil {
 		Logf("Expose deployment failed with: %v %v", msg, err)
@@ -183,7 +182,7 @@ func createServiceAndRoute(oc *exutil.CLI, deployName, podNs string) (string, er
 	return strings.Trim(host, "'"), nil
 }
 
-func deleteRouteAndService(oc *exutil.CLI, deployName, deployNs string) {
+func deleteRouteAndService(oc *CLI, deployName, deployNs string) {
 	if _, err := deleteResource(oc, "svc", deployName, deployNs, podSnooze*time.Second, 10*time.Second); err != nil {
 		Logf("failed to delete service %v: %v", deployName, err)
 	}

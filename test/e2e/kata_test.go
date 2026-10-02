@@ -9,7 +9,6 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
-	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
 	"github.com/tidwall/gjson"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -18,7 +17,7 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 	defer ginkgo.GinkgoRecover()
 
 	var (
-		oc            = compat_otp.NewCLI("kata", compat_otp.KubeConfigPath())
+		oc            = NewOC("kata")
 		cloudPlatform string
 	)
 
@@ -168,10 +167,10 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		o.Expect(actualCPU).To(o.Equal(cpu),
 			fmt.Sprintf("Actual CPU count %v isn't matching expected %v\nannotations:\n%v", actualCPU, cpu, podAnnotations))
 
-		nodeName, nodeErr := compat_otp.GetPodNodeName(oc, pod.namespace, pod.name)
+		nodeName, nodeErr := GetPodNodeName(oc, pod.namespace, pod.name)
 		o.Expect(nodeErr).NotTo(o.HaveOccurred(), "failed to get pod node name")
 		cmd := "ps -ef | grep uuid | grep -v grep"
-		vmFlags, err := compat_otp.DebugNodeWithOptionsAndChroot(oc, nodeName, []string{"-q"}, "bin/sh", "-c", cmd)
+		vmFlags, err := DebugNodeWithOptionsAndChroot(oc, nodeName, []string{"-q"}, "bin/sh", "-c", cmd)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Failed debug node to get qemu instance options")
 		o.Expect(vmFlags).To(o.ContainSubstring(memoryOptions),
 			fmt.Sprintf("VM flags don't contain expected %v\nannotations:\n%v", memoryOptions, podAnnotations))
@@ -281,7 +280,7 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 			numOfVMs     int
 		)
 
-		kataNodes := compat_otp.GetNodeListByLabel(oc, kataocLabel)
+		kataNodes := GetNodeListByLabel(oc, kataocLabel)
 		o.Expect(len(kataNodes) > 0).To(o.BeTrue(), fmt.Sprintf("kata nodes list is empty %v", kataNodes))
 
 		if !kataconfig.enablePeerPods {
@@ -325,7 +324,7 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 			numOfVMs     int
 		)
 
-		kataNodes := compat_otp.GetNodeListByLabel(oc, kataocLabel)
+		kataNodes := GetNodeListByLabel(oc, kataocLabel)
 		o.Expect(len(kataNodes) > 0).To(o.BeTrue(), fmt.Sprintf("kata nodes list is empty %v", kataNodes))
 
 		if !kataconfig.enablePeerPods {

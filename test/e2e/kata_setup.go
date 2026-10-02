@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	exutil "github.com/openshift/origin/test/extended/util"
-	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
 	"github.com/tidwall/gjson"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -33,7 +31,7 @@ type KataconfigDescription struct {
 	enablePeerPods   bool
 }
 
-func getCloudProvider(oc *exutil.CLI) string {
+func getCloudProvider(oc *CLI) string {
 	var cloudprovider string
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -52,11 +50,11 @@ func getCloudProvider(oc *exutil.CLI) string {
 		Logf("Cluster cloud provider: %s", cloudprovider)
 		return true, nil
 	})
-	compat_otp.AssertWaitPollNoErr(err, "Waiting for get cloudProvider timeout")
+	AssertWaitPollNoErr(err, "Waiting for get cloudProvider timeout")
 	return cloudprovider
 }
 
-func getClusterVersion(oc *exutil.CLI) (clusterVersion, ocpMajorVer, ocpMinorVer string, minorVer int) {
+func getClusterVersion(oc *CLI) (clusterVersion, ocpMajorVer, ocpMinorVer string, minorVer int) {
 	jsonVersion, err := oc.AsAdmin().WithoutNamespace().Run("version").Args("-o", "json").Output()
 	if err != nil || jsonVersion == "" || !gjson.Get(jsonVersion, "openshiftVersion").Exists() {
 		Logf("Error: could not get oc version: %v %v", jsonVersion, err)
@@ -78,7 +76,7 @@ func getClusterVersion(oc *exutil.CLI) (clusterVersion, ocpMajorVer, ocpMinorVer
 	return clusterVersion, ocpMajorVer, ocpMinorVer, minorVer
 }
 
-func getTestRunConfigmap(oc *exutil.CLI, testrun *TestRunDescription, ns, name string) (bool, error) {
+func getTestRunConfigmap(oc *CLI, testrun *TestRunDescription, ns, name string) (bool, error) {
 	if testrun.checked {
 		return true, nil
 	}
@@ -144,7 +142,7 @@ func getTestRunConfigmap(oc *exutil.CLI, testrun *TestRunDescription, ns, name s
 	return true, nil
 }
 
-func checkKataconfigIsCreated(oc *exutil.CLI, kcName string) error {
+func checkKataconfigIsCreated(oc *CLI, kcName string) error {
 	msg, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"kataconfig", kcName, "-o=jsonpath={.status.conditions[?(@.type=='InProgress')].status}",
 	).Output()
@@ -157,9 +155,9 @@ func checkKataconfigIsCreated(oc *exutil.CLI, kcName string) error {
 	return nil
 }
 
-func getInstancesOnNode(oc *exutil.CLI, opNamespace, node string) (int, error) {
+func getInstancesOnNode(oc *CLI, opNamespace, node string) (int, error) {
 	cmd := "ps -ef | grep qemu-kvm | grep -v grep | wc -l"
-	msg, err := compat_otp.DebugNodeWithOptionsAndChroot(oc, node, []string{"-q"}, "bin/sh", "-c", cmd)
+	msg, err := DebugNodeWithOptionsAndChroot(oc, node, []string{"-q"}, "bin/sh", "-c", cmd)
 	if err != nil {
 		return 0, err
 	}
@@ -170,7 +168,7 @@ func getInstancesOnNode(oc *exutil.CLI, opNamespace, node string) (int, error) {
 	return instances, nil
 }
 
-func getTotalInstancesOnNodes(oc *exutil.CLI, opNamespace string, nodeList []string) int {
+func getTotalInstancesOnNodes(oc *CLI, opNamespace string, nodeList []string) int {
 	total := 0
 	for i, node := range nodeList {
 		count, err := getInstancesOnNode(oc, opNamespace, node)

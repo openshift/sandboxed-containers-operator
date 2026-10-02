@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
-	exutil "github.com/openshift/origin/test/extended/util"
 )
 
 // PodDescription describes a kata pod to be created from a Go template.
@@ -48,7 +47,7 @@ func NewPodDescription(testrun *TestRunDescription, baseName string) *PodDescrip
 	}
 }
 
-func createKataPodFromDescription(oc *exutil.CLI, pod *PodDescription) error {
+func createKataPodFromDescription(oc *CLI, pod *PodDescription) error {
 	if pod.namespace == "" {
 		pod.namespace = oc.Namespace()
 	}

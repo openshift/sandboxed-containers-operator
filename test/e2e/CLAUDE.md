@@ -1,12 +1,14 @@
 # Kata E2E Test Suite
 
-Standalone Ginkgo-based e2e tests for OpenShift Sandboxed Containers,
-migrated from `openshift-tests-private`.
+Standalone Ginkgo-based e2e tests for OpenShift Sandboxed Containers.
+Uses a self-contained `oc` CLI wrapper (`CLI` type in `oc_client.go`)
+instead of the origin `exutil` framework, to avoid pulling in ~7000
+unrelated k8s/origin test registrations.
 
 ## oc CLI Namespace Rules
 
-The `exutil.CLI` wrapper (`oc`) auto-injects `--namespace=<framework-namespace>`
-into every command via `Run()`. This is the framework's test namespace (e.g.
+The `CLI` wrapper (`oc`) auto-injects `--namespace=<test-namespace>`
+into every command via `Run()`. This is the per-test namespace (e.g.
 `e2e-kata-xxxxx`), NOT the namespace you want to target.
 
 **When passing `-n <namespace>` explicitly, you MUST use `WithoutNamespace()`**
@@ -20,13 +22,13 @@ oc.AsAdmin().Run("get").Args("pods", "-n", deploy.namespace).Output()
 // CORRECT — only -n deploy.namespace
 oc.AsAdmin().WithoutNamespace().Run("get").Args("pods", "-n", deploy.namespace).Output()
 
-// CORRECT — uses the framework's test namespace (no explicit -n needed)
+// CORRECT — uses the test namespace (no explicit -n needed)
 oc.AsAdmin().Run("get").Args("pods").Output()
 ```
 
 | You want to target... | Pattern |
 |---|---|
-| Framework test namespace (`e2e-kata-xxxxx`) | `oc.Run("get").Args("pods")` |
+| Test namespace (`e2e-kata-xxxxx`) | `oc.Run("get").Args("pods")` |
 | Specific namespace (`default`, operator ns) | `oc.WithoutNamespace().Run("get").Args("pods", "-n", ns)` |
 | Cluster-scoped resource (nodes, infrastructure) | `oc.WithoutNamespace().Run("get").Args("nodes")` |
 
