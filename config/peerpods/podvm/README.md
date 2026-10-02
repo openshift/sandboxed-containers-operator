@@ -67,3 +67,10 @@ PODVM_IMAGE_URI: "oci::quay.io/openshift_sandboxed_containers/libvirt-podvm-imag
 In this example, `<image_tag>` and `<image_path>` are optional. If not provided, the default values will be `<image_tag>`: `latest` and `<image_path>`: `/image/podvm.qcow2`.
 
 **Note:** When pulling container images from authenticated registries, make sure that the OpenShift `pull-secrets` are updated with the necessary registry credentials.
+
+## Related documentation
+
+- [Peer-pods encrypted scratch storage](../../../docs/peerpods-encrypted-scratch.md) — how writable
+  container data is protected inside a pod VM. Note that this describes the prebuilt dm-verity
+  image, which is the operator's default on x86_64 and is produced outside this repository. Images
+  built by the scripts here do not have it; the CoCo variant uses a tmpfs overlay instead.
