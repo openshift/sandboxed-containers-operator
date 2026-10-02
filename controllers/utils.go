@@ -14,6 +14,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ccov1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 	"github.com/openshift/oc/pkg/cli/admin/release"
+	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -24,6 +25,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
@@ -431,35 +433,78 @@ func getProxyEnvVars(logger logr.Logger) []corev1.EnvVar {
 }
 
 const (
-	trustedCAMountPath = "/etc/pki/ca-trust/extracted/pem"
-	trustedCAFilename  = trustedCAMountPath + "/tls-ca-bundle.pem"
+	trustedCAMountPath     = "/etc/pki/ca-trust/extracted/pem"
+	trustedCAFilename      = trustedCAMountPath + "/tls-ca-bundle.pem"
+	trustedCAConfigMapName = "trusted-ca"
 )
 
 // Method to generate trusted CA volume config
 // Returns a corev1.Volume and a corev1.VolumeMount
 // If the trusted CA configmap is found, it returns the configmap volume and volumeMount
-// If the trusted CA configmap is not found, it returns an empty volume and volumeMount
-func generateTrustedCAVolumeConfig(c client.Client) (corev1.Volume, corev1.VolumeMount, error) {
-	var volume corev1.Volume
-	var volumeMount corev1.VolumeMount
+// If the trusted CA configmap is not found, it checks if the cluster proxy configuration has a trusted CA config
+// If the cluster proxy configuration has a trusted CA config, it creates a new configmap in the namespace
+// If the cluster proxy configuration does not have a trusted CA config, it skips the trusted CA configuration
+func generateTrustedCAVolumeConfig(c client.Client, kataConfig *kataconfigurationv1.KataConfig, logger logr.Logger) (corev1.Volume, corev1.VolumeMount) {
+	volume := corev1.Volume{}
+	volumeMount := corev1.VolumeMount{}
 
-	trustedCAConfigMap := &corev1.ConfigMap{}
+	proxy := &configv1.Proxy{}
+	trustedCA := &corev1.ConfigMap{}
+
 	err := c.Get(context.TODO(), types.NamespacedName{
-		Name:      "trusted-ca",
+		Name:      trustedCAConfigMapName,
 		Namespace: OperatorNamespace,
-	}, trustedCAConfigMap)
+	}, trustedCA)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			return corev1.Volume{}, corev1.VolumeMount{}, nil
+			logger.Info("Trusted CA ConfigMap not found in namespace, check if it's needed")
+			err = c.Get(context.TODO(), client.ObjectKey{Name: "cluster"}, proxy)
+			if err != nil {
+				logger.Info("Failed to get cluster proxy configuration, skipping trusted CA configuration", "error", err)
+				return volume, volumeMount
+			}
+			if proxy.Spec.TrustedCA.Name != "" {
+				logger.Info("Trusted CA config is found in cluster proxy configuration, creating ConfigMap in namespace")
+				trustedCA = &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      trustedCAConfigMapName,
+						Namespace: OperatorNamespace,
+						Labels: map[string]string{
+							"config.openshift.io/inject-trusted-cabundle": "true",
+						},
+					},
+					Data: map[string]string{"ca-bundle.crt": ""},
+				}
+
+				err = ctrl.SetControllerReference(kataConfig, trustedCA, c.Scheme())
+				if err != nil {
+					logger.Info("Failed to set controller reference for trusted CA ConfigMap", "error", err)
+					return volume, volumeMount
+				}
+
+				err = c.Create(context.TODO(), trustedCA)
+				if err != nil {
+					logger.Info("Failed to create trusted CA ConfigMap, skipping trusted CA configuration", "error", err)
+					return volume, volumeMount
+				}
+				logger.Info("Trusted CA ConfigMap created")
+			} else {
+				logger.Info("Trusted CA config is not found in cluster proxy configuration, skipping trusted CA configuration")
+				return volume, volumeMount
+			}
+		} else {
+			logger.Info("Failed to get trusted CA configuration", "error", err)
+			return volume, volumeMount
 		}
-		return corev1.Volume{}, corev1.VolumeMount{}, fmt.Errorf("failed to get trusted-ca configmap: %w", err)
 	}
+
+	logger.Info("Trusted CA ConfigMap found, creating volume and volume mount")
 	volume = corev1.Volume{
 		Name: "trusted-ca",
 		VolumeSource: corev1.VolumeSource{
 			ConfigMap: &corev1.ConfigMapVolumeSource{
 				LocalObjectReference: corev1.LocalObjectReference{
-					Name: "trusted-ca",
+					Name: trustedCAConfigMapName,
 				},
 				Items: []corev1.KeyToPath{
 					{
@@ -476,7 +521,7 @@ func generateTrustedCAVolumeConfig(c client.Client) (corev1.Volume, corev1.Volum
 		ReadOnly:  true,
 	}
 
-	return volume, volumeMount, nil
+	return volume, volumeMount
 }
 
 const redactedValue = "REDACTED"
