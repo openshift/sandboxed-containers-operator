@@ -2,6 +2,7 @@ FROM registry.access.redhat.com/ubi9/skopeo:9.8-1790752231
 
 ARG ORG_ID
 ARG ACTIVATION_KEY
+ARG VERSION
 
 # This registers RHEL when building on an unsubscribed system
 # If you are running a UBI container on a registered and subscribed RHEL host,
@@ -28,6 +29,19 @@ RUN GOSUMDB=off GOBIN=/usr/local/bin go install github.com/opencontainers/umoci/
 
 # Clean up the tools directory and remove golang to reduce image size
 RUN cd / && rm -rf /tmp/tools && dnf remove -y golang && dnf clean all
+
+# Red Hat labels
+LABEL name="openshift-sandboxed-containers/osc-daemonset-rhel9" \
+cpe="cpe:/a:redhat:confidential_compute_attestation:1.130::el9" \
+version="$VERSION" \
+com.redhat.component="osc-daemonset" \
+summary="This daemonset manages the Openshift Sandboxed Containers runtime installation" \
+maintainer="redhat@redhat.com" \
+description="The Openshift Sandboxed containers daemonset manages the deployment of node-side components" \
+io.k8s.display-name="openshift-sandboxed-containers-operator" \
+io.k8s.description="This daemonset manages the Openshift Sandboxed Containers runtime installation" \
+io.openshift.tags=""
+
 
 WORKDIR /
 
