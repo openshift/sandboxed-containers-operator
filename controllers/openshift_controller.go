@@ -127,6 +127,7 @@ var (
 // +kubebuilder:rbac:groups=confidentialcontainers.org,resources=peerpods/finalizers,verbs=update
 // +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get;list;watch
+// +kubebuilder:rbac:groups=config.openshift.io,resources=proxies,verbs=get;list;watch
 // +kubebuilder:rbac:groups="batch",resources=jobs,verbs=create;get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=create;delete;update
@@ -1816,7 +1817,8 @@ func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error
 		Watches(
 			&corev1.Secret{},
 			&SecretEventHandler{r},
-		)
+		).
+		Owns(&corev1.ConfigMap{})
 
 	mcpAvailable, err := r.isMachineConfigPoolAvailable()
 	if err != nil {

@@ -170,7 +170,7 @@ func ImageCreate(c client.Client, kataConfig *kataconfigurationv1.KataConfig) (i
 		return ImageCreationFailed, ErrUpdatingImageConfigMap
 	}
 
-	status, err := ig.imageCreateJobRunner()
+	status, err := ig.imageCreateJobRunner(kataConfig)
 	if err != nil {
 		igLogger.Info("error running image create job", "err", err)
 		return ImageCreationFailed, err
@@ -181,7 +181,7 @@ func ImageCreate(c client.Client, kataConfig *kataconfigurationv1.KataConfig) (i
 }
 
 // ImageDelete deletes a podvm image for a cloud provider if present
-func ImageDelete(c client.Client) (int, error) {
+func ImageDelete(c client.Client, kataConfig *kataconfigurationv1.KataConfig) (int, error) {
 	if err := InitializeImageGenerator(c); err != nil {
 		igLogger.Info("error initializing ImageGenerator instance", "err", err)
 		return ImageDeletionFailed, ErrInitializingImageGenerator
@@ -198,7 +198,7 @@ func ImageDelete(c client.Client) (int, error) {
 		return ImageDeletionFailed, ErrValidatingPeerPodsConfigs
 	}
 
-	status, err := ig.imageDeleteJobRunner()
+	status, err := ig.imageDeleteJobRunner(kataConfig)
 	if err != nil {
 		igLogger.Info("error running image delete job", "err", err)
 		return ImageDeletionFailed, err
@@ -282,7 +282,7 @@ func newImageGenerator(client client.Client) (*ImageGenerator, error) {
 }
 
 // Method to create a Kubernetes Job from yaml file
-func (r *ImageGenerator) createJobFromFile(jobFileName string) (*batchv1.Job, error) {
+func (r *ImageGenerator) createJobFromFile(jobFileName string, kataConfig *kataconfigurationv1.KataConfig) (*batchv1.Job, error) {
 	igLogger.Info("Create Job out of YAML file", "jobFileName", jobFileName)
 
 	jobYamlFile := filepath.Join(peerpodsImageJobsPathLocation, jobFileName)
@@ -341,10 +341,7 @@ func (r *ImageGenerator) createJobFromFile(jobFileName string) (*batchv1.Job, er
 	job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, getProxyEnvVars(igLogger)...)
 
 	// Add trusted CA volume config to the job if it exists
-	trustedCAvolume, trustedCAvolumeMount, err := generateTrustedCAVolumeConfig(r.client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate trusted CA volume config: %v", err)
-	}
+	trustedCAvolume, trustedCAvolumeMount := generateTrustedCAVolumeConfig(r.client, kataConfig, igLogger)
 
 	if trustedCAvolume != (corev1.Volume{}) {
 		job.Spec.Template.Spec.Volumes = append(job.Spec.Template.Spec.Volumes, trustedCAvolume)
@@ -441,7 +438,7 @@ func (r *ImageGenerator) getPeerPodsCM() (*corev1.ConfigMap, error) {
 // libvirt-podvm-image-cm.yaml for Libvirt
 // ibmcloud-podvm-image-cm.yaml for IBM Cloud
 
-func (r *ImageGenerator) imageCreateJobRunner() (int, error) {
+func (r *ImageGenerator) imageCreateJobRunner(kataConfig *kataconfigurationv1.KataConfig) (int, error) {
 	igLogger.Info("imageCreateJobRunner: Start")
 
 	// We create the job first irrespective of the image ID being set or not
@@ -449,7 +446,7 @@ func (r *ImageGenerator) imageCreateJobRunner() (int, error) {
 
 	filename := "osc-podvm-create-job.yaml"
 
-	job, err := r.createJobFromFile(filename)
+	job, err := r.createJobFromFile(filename, kataConfig)
 	if err != nil {
 		igLogger.Info("error creating the image creation job object from yaml file", "err", err)
 		return ImageCreationFailed, ErrCreatingImageJob
@@ -523,13 +520,13 @@ func (r *ImageGenerator) imageCreateJobRunner() (int, error) {
 // libvirt-podvm-image-cm.yaml for Libvirt
 // Successful deletion removes the image ID from peer-pods-cm
 
-func (r *ImageGenerator) imageDeleteJobRunner() (int, error) {
+func (r *ImageGenerator) imageDeleteJobRunner(kataConfig *kataconfigurationv1.KataConfig) (int, error) {
 	igLogger.Info("imageDeleteJobRunner: Start")
 
 	// file format: osc-podvm-[create|delete]-job.yaml
 	filename := "osc-podvm-delete-job.yaml"
 
-	job, err := r.createJobFromFile(filename)
+	job, err := r.createJobFromFile(filename, kataConfig)
 	if err != nil {
 		igLogger.Info("error creating image deletion job from yaml file", "err", err)
 		return ImageDeletionFailed, ErrCreatingImageJob
