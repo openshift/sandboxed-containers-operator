@@ -2,6 +2,244 @@
 lockfileVersion: 1
 lockfileVendor: redhat
 arches:
+- arch: s390x
+  packages:
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/c/cpp-11.5.0-14.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 8595948
+    checksum: sha256:22a09eda4868eedebfb35fa8058f7c18829619ff95147a6965c4f718131e8f5e
+    name: cpp
+    evr: 11.5.0-14.el9
+    sourcerpm: gcc-11.5.0-14.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/g/gcc-11.5.0-14.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 26825105
+    checksum: sha256:6458c5b0abe4cc8fba4c3a104784af27fe5a9d2b9697dfe8ca1e3b26f208a0e9
+    name: gcc
+    evr: 11.5.0-14.el9
+    sourcerpm: gcc-11.5.0-14.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/g/glibc-devel-2.34-275.el9_8.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 54280
+    checksum: sha256:afc3171234ba01129468f8e08f175f17454f060961c364bc35a1242ea41b9111
+    name: glibc-devel
+    evr: 2.34-275.el9_8
+    sourcerpm: glibc-2.34-275.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/g/glibc-headers-2.34-275.el9_8.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 557847
+    checksum: sha256:4d87900e5abc5755b1bf57a4e127d6edddd8f59b1501b5005d0463c3ad3e457d
+    name: glibc-headers
+    evr: 2.34-275.el9_8
+    sourcerpm: glibc-2.34-275.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/g/golang-1.26.7-2.el9_8.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 1520127
+    checksum: sha256:1a996cac6c20254f109cc904e8e42866520dd686d85accea215e0e359d9c41d6
+    name: golang
+    evr: 1.26.7-2.el9_8
+    sourcerpm: golang-1.26.7-2.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/g/golang-bin-1.26.7-2.el9_8.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 46533766
+    checksum: sha256:948cdcf452abbbd590d9552a1eae7ef061c78bcd717c80d059def1c9db440089
+    name: golang-bin
+    evr: 1.26.7-2.el9_8
+    sourcerpm: golang-1.26.7-2.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/g/golang-race-1.26.7-2.el9_8.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 1711787
+    checksum: sha256:cdf8536fbba9d019882ad9e90b0b34d4997077eac595fef7adcb631768f4c492
+    name: golang-race
+    evr: 1.26.7-2.el9_8
+    sourcerpm: golang-1.26.7-2.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/g/golang-src-1.26.7-2.el9_8.noarch.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 12879471
+    checksum: sha256:ff54c6f194fcf25d743af1af7893242085c798b7ce04056066fee993c2167166
+    name: golang-src
+    evr: 1.26.7-2.el9_8
+    sourcerpm: golang-1.26.7-2.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/k/kernel-headers-5.14.0-687.53.1.el9_8.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 2955557
+    checksum: sha256:9b1a97d19e52dfb5387cae5fd1a7888ce3e1f794b17117ef4cc1eeb1daca8aeb
+    name: kernel-headers
+    evr: 5.14.0-687.53.1.el9_8
+    sourcerpm: kernel-5.14.0-687.53.1.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/l/libasan-11.5.0-14.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 412888
+    checksum: sha256:c3c8a337bc659412c7c7cb3be1aba0283596251a99a261e12760959d34fe5a7b
+    name: libasan
+    evr: 11.5.0-14.el9
+    sourcerpm: gcc-11.5.0-14.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/l/libmpc-1.2.1-4.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 66959
+    checksum: sha256:5d57ddf803a764bbbf229ccb71c8b4fbeed604b39858174d8ffee1b24510cc8c
+    name: libmpc
+    evr: 1.2.1-4.el9
+    sourcerpm: libmpc-1.2.1-4.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/l/libubsan-11.5.0-14.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 178214
+    checksum: sha256:878f2d9993ac668fd6b6d102da23662c1c0ad5e2f547507b46320fc7b698e8c8
+    name: libubsan
+    evr: 11.5.0-14.el9
+    sourcerpm: gcc-11.5.0-14.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/l/libxcrypt-devel-4.4.18-3.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 33073
+    checksum: sha256:b3f6b6b72b5c96a8527e6dd46c421066f94d48f0ada76bbc638bf89f81b19360
+    name: libxcrypt-devel
+    evr: 4.4.18-3.el9
+    sourcerpm: libxcrypt-4.4.18-3.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/o/openssl-devel-3.5.8-1.el9_8.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 5048884
+    checksum: sha256:d8b8c7b922db5cdcb11f503591c39d5ab9031262193f6a5932c4b5d8b17520cc
+    name: openssl-devel
+    evr: 1:3.5.8-1.el9_8
+    sourcerpm: openssl-3.5.8-1.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/b/binutils-2.35.2-72.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 4764430
+    checksum: sha256:0a7f24a918c2a4da72a943c3124fe39b40a6778c2f61c4f186d0ece444639dbb
+    name: binutils
+    evr: 2.35.2-72.el9
+    sourcerpm: binutils-2.35.2-72.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/b/binutils-gold-2.35.2-72.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 850871
+    checksum: sha256:1b2b69ee6d9b4ec61e50534e0b20d34cd2227cbdb5c58b586c96bbdae7f50953
+    name: binutils-gold
+    evr: 2.35.2-72.el9
+    sourcerpm: binutils-2.35.2-72.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/d/diffutils-3.7-12.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 410465
+    checksum: sha256:a8015025ca40048059576a71f398c47d4b563e6a91e1e27a453f9212312df259
+    name: diffutils
+    evr: 3.7-12.el9
+    sourcerpm: diffutils-3.7-12.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/e/elfutils-debuginfod-client-0.194-1.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 43581
+    checksum: sha256:b3298012048c8af3337ff1606fcc426e245527e348de123c34b180c5318e891d
+    name: elfutils-debuginfod-client
+    evr: 0.194-1.el9
+    sourcerpm: elfutils-0.194-1.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/l/libatomic-11.5.0-14.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 23565
+    checksum: sha256:d47293bae690a1bcb9de6459429b7e8159bfc4f6977592fbe2f6d527e214aff2
+    name: libatomic
+    evr: 11.5.0-14.el9
+    sourcerpm: gcc-11.5.0-14.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/l/libpkgconf-1.7.3-10.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 37876
+    checksum: sha256:fa1da3b44d85663cceaa0faf8eb5f2f7325cc83c381d6018f303edd06cab5938
+    name: libpkgconf
+    evr: 1.7.3-10.el9
+    sourcerpm: pkgconf-1.7.3-10.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/m/make-4.3-8.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 553451
+    checksum: sha256:09c0e578e23112cb98e2234f9587fe7b6def2ae6a4b16e6d52559d546389f4d1
+    name: make
+    evr: 1:4.3-8.el9
+    sourcerpm: make-4.3-8.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/p/pkgconf-1.7.3-10.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 45258
+    checksum: sha256:a5f966f792cacc4696e4187593a915fb56452dd272cf4c81d930968adb3ee00c
+    name: pkgconf
+    evr: 1.7.3-10.el9
+    sourcerpm: pkgconf-1.7.3-10.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/p/pkgconf-m4-1.7.3-10.el9.noarch.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 16054
+    checksum: sha256:91bafd6e06099451f60288327b275cfcc651822f6145176a157c6b0fa5131e02
+    name: pkgconf-m4
+    evr: 1.7.3-10.el9
+    sourcerpm: pkgconf-1.7.3-10.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/p/pkgconf-pkg-config-1.7.3-10.el9.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 12411
+    checksum: sha256:ef854bfe75102d994afb58510121164c4b9b8359b7d983cd8904c425a175b750
+    name: pkgconf-pkg-config
+    evr: 1.7.3-10.el9
+    sourcerpm: pkgconf-1.7.3-10.el9.src.rpm
+  source:
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/source/SRPMS/Packages/g/golang-1.26.7-2.el9_8.src.rpm
+    repoid: ubi-9-for-s390x-appstream-source-rpms
+    size: 36539286
+    checksum: sha256:7a9ea792be9d09b61bc321ce8b65a040430d06891d6372aeb929753c2f270770
+    name: golang
+    evr: 1.26.7-2.el9_8
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/source/SRPMS/Packages/l/libmpc-1.2.1-4.el9.src.rpm
+    repoid: ubi-9-for-s390x-appstream-source-rpms
+    size: 846236
+    checksum: sha256:47774c27b65e63251f3a1cea99efbe8caed86448a573e34a44ab28ad88cc3ece
+    name: libmpc
+    evr: 1.2.1-4.el9
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/b/binutils-2.35.2-72.el9.src.rpm
+    repoid: ubi-9-for-s390x-baseos-source-rpms
+    size: 22476311
+    checksum: sha256:82174416ee39df7795da7fab8d37ea5dbbe25f1dbc2df39f5fb3f8a168bf5120
+    name: binutils
+    evr: 2.35.2-72.el9
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/d/diffutils-3.7-12.el9.src.rpm
+    repoid: ubi-9-for-s390x-baseos-source-rpms
+    size: 1477522
+    checksum: sha256:7a10e2d961f8d755f8ccf51a1fb7f68687671b82d9486e4b8d648561af1a185e
+    name: diffutils
+    evr: 3.7-12.el9
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/e/elfutils-0.194-1.el9.src.rpm
+    repoid: ubi-9-for-s390x-baseos-source-rpms
+    size: 12030455
+    checksum: sha256:643279e796ded16c5be5cdc2a91839c787e62e59757008675eb0580a4a42af21
+    name: elfutils
+    evr: 0.194-1.el9
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/g/gcc-11.5.0-14.el9.src.rpm
+    repoid: ubi-9-for-s390x-baseos-source-rpms
+    size: 81978017
+    checksum: sha256:19dec462f2880508570ca42a82c2f76fbd95fcad8d3e3ff812e9ca50cdeb2d8f
+    name: gcc
+    evr: 11.5.0-14.el9
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/g/glibc-2.34-275.el9_8.src.rpm
+    repoid: ubi-9-for-s390x-baseos-source-rpms
+    size: 20442764
+    checksum: sha256:bd7a453f66e13da24d073f53070c2d209fcd88ca2aaa24ab3b2f81cae198b46c
+    name: glibc
+    evr: 2.34-275.el9_8
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/l/libxcrypt-4.4.18-3.el9.src.rpm
+    repoid: ubi-9-for-s390x-baseos-source-rpms
+    size: 543970
+    checksum: sha256:d18f72eb41ecd0370e2e47f1dc5774be54e9ff3b4dd333578017666c7c488f40
+    name: libxcrypt
+    evr: 4.4.18-3.el9
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/m/make-4.3-8.el9.src.rpm
+    repoid: ubi-9-for-s390x-baseos-source-rpms
+    size: 2335546
+    checksum: sha256:a5cc45d6c158b255cda528c496dbb8bc7783acb9898b97a39a1811230e102d7c
+    name: make
+    evr: 1:4.3-8.el9
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/o/openssl-3.5.8-1.el9_8.src.rpm
+    repoid: ubi-9-for-s390x-baseos-source-rpms
+    size: 53429735
+    checksum: sha256:393e8694b8161826f67f149cd7dde6b63da96f02efc050fda651d265907f2c20
+    name: openssl
+    evr: 1:3.5.8-1.el9_8
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/p/pkgconf-1.7.3-10.el9.src.rpm
+    repoid: ubi-9-for-s390x-baseos-source-rpms
+    size: 310904
+    checksum: sha256:4d53718592b298ca7c49665b1f4e7bd32dcb42cad15c89345585da9f20d4fcae
+    name: pkgconf
+    evr: 1.7.3-10.el9
+  module_metadata: []
 - arch: x86_64
   packages:
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/appstream/os/Packages/c/cpp-11.5.0-14.el9.x86_64.rpm
