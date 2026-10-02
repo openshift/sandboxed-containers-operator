@@ -1,0 +1,38 @@
+---
+lockfileVersion: 1
+lockfileVendor: redhat
+arches:
+- arch: s390x
+  packages:
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/t/tar-1.34-13.el9_8.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 910326
+    checksum: sha256:811cba7426379544fd3fbf6e5a8638bed49132e447b0c536c91e6fd315fac6a0
+    name: tar
+    evr: 2:1.34-13.el9_8
+    sourcerpm: tar-1.34-13.el9_8.src.rpm
+  source:
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/t/tar-1.34-13.el9_8.src.rpm
+    repoid: ubi-9-for-s390x-baseos-source-rpms
+    size: 2312101
+    checksum: sha256:15eeffee75eaef17e056cef4d5207825782a755db6dfd509a759e672ffd03b6c
+    name: tar
+    evr: 2:1.34-13.el9_8
+  module_metadata: []
+- arch: x86_64
+  packages:
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/t/tar-1.34-13.el9_8.x86_64.rpm
+    repoid: ubi-9-for-x86_64-baseos-rpms
+    size: 914200
+    checksum: sha256:913d84cd94463e3f0400d80c6742a2974eeab6445ac71ff9eb802a70779c146f
+    name: tar
+    evr: 2:1.34-13.el9_8
+    sourcerpm: tar-1.34-13.el9_8.src.rpm
+  source:
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/source/SRPMS/Packages/t/tar-1.34-13.el9_8.src.rpm
+    repoid: ubi-9-for-x86_64-baseos-source-rpms
+    size: 2312101
+    checksum: sha256:15eeffee75eaef17e056cef4d5207825782a755db6dfd509a759e672ffd03b6c
+    name: tar
+    evr: 2:1.34-13.el9_8
+  module_metadata: []
