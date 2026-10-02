@@ -338,7 +338,7 @@ func (r *ImageGenerator) createJobFromFile(jobFileName string) (*batchv1.Job, er
 
 	}
 	// Add proxy environment variables to the job if they are set
-	job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, getProxyEnvVars()...)
+	job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, getProxyEnvVars(igLogger)...)
 
 	// Add trusted CA volume config to the job if it exists
 	trustedCAvolume, trustedCAvolumeMount, err := generateTrustedCAVolumeConfig(r.client)

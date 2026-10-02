@@ -104,7 +104,7 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVer
 						},
 						Command: []string{"/usr/local/bin/entrypoint.sh"},
 						// Add proxy environment variables to the CAA container if they are set
-						Env: append(getProxyEnvVars(), []corev1.EnvVar{
+						Env: append(getProxyEnvVars(r.Log), []corev1.EnvVar{
 							{
 								Name: "NODE_NAME",
 								ValueFrom: &corev1.EnvVarSource{

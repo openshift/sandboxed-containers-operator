@@ -396,28 +396,35 @@ func (r *KataConfigOpenShiftReconciler) getSecretVersion(name, namespace string)
 
 // Method to get proxy environment variables if they are set
 // Returns a slice of corev1.EnvVar
-func getProxyEnvVars() []corev1.EnvVar {
-	proxyEnvVars := []corev1.EnvVar{}
-
+func getProxyEnvVars(logger logr.Logger) []corev1.EnvVar {
+	proxyEnvVars := make([]corev1.EnvVar, 0)
+	proxyEnvVarsMap := make(map[string]string)
+	// Check if the proxy environment variables are set and add them to the map
 	if os.Getenv("HTTP_PROXY") != "" {
-		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
-			Name:  "HTTP_PROXY",
-			Value: os.Getenv("HTTP_PROXY"),
-		})
+		proxyEnvVarsMap["HTTP_PROXY"] = os.Getenv("HTTP_PROXY")
+		proxyEnvVarsMap["http_proxy"] = os.Getenv("HTTP_PROXY")
 	}
 
 	if os.Getenv("HTTPS_PROXY") != "" {
-		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
-			Name:  "HTTPS_PROXY",
-			Value: os.Getenv("HTTPS_PROXY"),
-		})
+		proxyEnvVarsMap["HTTPS_PROXY"] = os.Getenv("HTTPS_PROXY")
+		proxyEnvVarsMap["https_proxy"] = os.Getenv("HTTPS_PROXY")
 	}
 
 	if os.Getenv("NO_PROXY") != "" {
-		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
-			Name:  "NO_PROXY",
-			Value: os.Getenv("NO_PROXY"),
-		})
+		proxyEnvVarsMap["NO_PROXY"] = os.Getenv("NO_PROXY")
+		proxyEnvVarsMap["no_proxy"] = os.Getenv("NO_PROXY")
+	}
+
+	if len(proxyEnvVarsMap) > 0 {
+		for key, value := range proxyEnvVarsMap {
+			proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
+				Name:  key,
+				Value: value,
+			})
+		}
+		logger.Info("Using proxy environment variables")
+	} else {
+		logger.Info("No proxy environment variables found, skipping proxy configuration")
 	}
 
 	return proxyEnvVars
