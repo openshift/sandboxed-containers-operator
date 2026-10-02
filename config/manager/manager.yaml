@@ -99,7 +99,7 @@ spec:
             - name: RELATED_IMAGE_PODVM_PAYLOAD
               value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:be1c8f46ed814bdb06e9e5a8351783ec920d1e90c4158dffb179eb87d608e694
             - name: RELATED_IMAGE_PODVM_OCI
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:032390abf800fe4002c9615d4b0e7202eb954e977b0203d27322bead27e88d97
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:16057aabdfb8ca93f7a6a231ec556b8daf8738149f9f6a6c64d9f0ddfd32085c
             - name: RELATED_IMAGE_MUST_GATHER
               value: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:3be069376799c5e519d640fede7c983729cd015399f64a80c5d87784fb56b031
             - name: RELATED_IMAGE_STORAGE_HELPER
