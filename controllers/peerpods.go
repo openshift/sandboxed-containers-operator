@@ -58,6 +58,11 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVer
 		"name": caaDsName,
 	}
 
+	effectiveProxyEnvVars, err := getEffectiveProxyEnvVars(context.TODO(), r.Client, r.Log)
+	if err != nil {
+		return nil, err
+	}
+
 	imageString := os.Getenv("RELATED_IMAGE_CAA")
 	if imageString == "" {
 		r.Log.Info("RELATED_IMAGE_CAA env var is unset or empty, cloud-api-adaptor pods will not run")
@@ -105,7 +110,7 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVer
 						Command: []string{"/usr/local/bin/entrypoint.sh"},
 						// Add proxy environment variables to the CAA container if they are set
 						Env: func() []corev1.EnvVar {
-							vars := append(getProxyEnvVars(), corev1.EnvVar{
+							vars := append(effectiveProxyEnvVars, corev1.EnvVar{
 								Name: "NODE_NAME",
 								ValueFrom: &corev1.EnvVarSource{
 									FieldRef: &corev1.ObjectFieldSelector{

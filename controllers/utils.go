@@ -395,33 +395,90 @@ func (r *KataConfigOpenShiftReconciler) getSecretVersion(name, namespace string)
 	return secret.GetResourceVersion(), true, nil
 }
 
-// Method to get proxy environment variables if they are set
-// Returns a slice of corev1.EnvVar
-func getProxyEnvVars() []corev1.EnvVar {
-	proxyEnvVars := []corev1.EnvVar{}
-
-	if os.Getenv("HTTP_PROXY") != "" {
-		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
-			Name:  "HTTP_PROXY",
-			Value: os.Getenv("HTTP_PROXY"),
-		})
+// getProxyEnvVars gets the proxy environment variables if they are set
+// Returns a map of the proxy environment variables
+func getProxyEnvVars(logger logr.Logger) map[string]string {
+	proxyEnvVars := make(map[string]string)
+	// Check if the proxy environment variables are set and add them to the map
+	for canonical, lower := range map[string]string{
+		"HTTP_PROXY":  "http_proxy",
+		"HTTPS_PROXY": "https_proxy",
+		"NO_PROXY":    "no_proxy",
+	} {
+		if v, ok := os.LookupEnv(canonical); ok {
+			proxyEnvVars[canonical] = v
+			proxyEnvVars[lower] = v
+		}
 	}
 
-	if os.Getenv("HTTPS_PROXY") != "" {
-		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
-			Name:  "HTTPS_PROXY",
-			Value: os.Getenv("HTTPS_PROXY"),
-		})
-	}
-
-	if os.Getenv("NO_PROXY") != "" {
-		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
-			Name:  "NO_PROXY",
-			Value: os.Getenv("NO_PROXY"),
-		})
+	if len(proxyEnvVars) > 0 {
+		logger.Info("Using proxy environment variables")
 	}
 
 	return proxyEnvVars
+}
+
+// getProxyCREnvVars gets the proxy environment variables from the cluster proxy configuration
+// Returns a map of the proxy environment variables
+func getProxyCREnvVars(ctx context.Context, c client.Client, logger logr.Logger) (map[string]string, error) {
+	proxyEnvVars := make(map[string]string)
+
+	proxy := &configv1.Proxy{}
+	if err := c.Get(ctx, client.ObjectKey{Name: "cluster"}, proxy); err != nil {
+		if k8serrors.IsNotFound(err) {
+			return proxyEnvVars, nil
+		}
+		logger.Error(err, "Failed to get cluster proxy configuration")
+		return nil, err
+
+	}
+	if proxy.Spec.HTTPProxy != "" {
+		proxyEnvVars["HTTP_PROXY"] = proxy.Spec.HTTPProxy
+		proxyEnvVars["http_proxy"] = proxy.Spec.HTTPProxy
+	}
+	if proxy.Spec.HTTPSProxy != "" {
+		proxyEnvVars["HTTPS_PROXY"] = proxy.Spec.HTTPSProxy
+		proxyEnvVars["https_proxy"] = proxy.Spec.HTTPSProxy
+	}
+
+	noProxy := proxy.Status.NoProxy
+	if noProxy == "" {
+		noProxy = proxy.Spec.NoProxy
+	}
+	if noProxy != "" {
+		proxyEnvVars["NO_PROXY"] = noProxy
+		proxyEnvVars["no_proxy"] = noProxy
+	}
+
+	if len(proxyEnvVars) > 0 {
+		logger.Info("Using proxy configuration from cluster proxy configuration")
+	}
+
+	return proxyEnvVars, nil
+}
+
+// getEffectiveProxyEnvVars gets the effective proxy environment variables
+// It first gets the proxy environment variables from the cluster proxy configuration
+// Then it gets the proxy environment variables from the environment
+// It returns a slice of corev1.EnvVar with the effective proxy environment variables
+func getEffectiveProxyEnvVars(ctx context.Context, c client.Client, logger logr.Logger) ([]corev1.EnvVar, error) {
+
+	effectiveProxyEnvVars := make([]corev1.EnvVar, 0)
+	effectiveEnvVars, err := getProxyCREnvVars(ctx, c, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	for key, value := range getProxyEnvVars(logger) {
+		effectiveEnvVars[key] = value
+	}
+	for key, value := range effectiveEnvVars {
+		effectiveProxyEnvVars = append(effectiveProxyEnvVars, corev1.EnvVar{
+			Name:  key,
+			Value: value,
+		})
+	}
+	return effectiveProxyEnvVars, nil
 }
 
 const (
