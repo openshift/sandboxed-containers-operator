@@ -43,16 +43,20 @@ func MountProgagationRef(mode corev1.MountPropagationMode) *corev1.MountPropagat
 	return &mode
 }
 
+// ParseCAAUpdateStrategy converts the value of the caaUpdateStrategy option
+// into a daemonset update strategy type. Only RollingUpdate and OnDelete are valid.
+// The rejected value is left out of the error on purpose, so that it doesn't end up in the logs.
 func ParseCAAUpdateStrategy(s string) (appsv1.DaemonSetUpdateStrategyType, error) {
 	switch appsv1.DaemonSetUpdateStrategyType(s) {
 	case appsv1.RollingUpdateDaemonSetStrategyType, appsv1.OnDeleteDaemonSetStrategyType:
 		return appsv1.DaemonSetUpdateStrategyType(s), nil
 	default:
-		return "", fmt.Errorf("invalid CAA update strategy: %q", s)
+		return "", fmt.Errorf("invalid CAA update strategy, expected %q or %q",
+			appsv1.RollingUpdateDaemonSetStrategyType, appsv1.OnDeleteDaemonSetStrategyType)
 	}
 }
 
-// Returns the update strategy of the CAA daemonset.
+// caaUpdateStrategy returns the update strategy of the CAA daemonset.
 //
 // The behavior is as follows:
 //   - If the type is OnDelete, the CAA pods are only replaced when they are deleted.
@@ -77,6 +81,7 @@ func caaUpdateStrategy(strategyType appsv1.DaemonSetUpdateStrategyType) appsv1.D
 	}
 }
 
+// configureCAA sets the desired spec of the CAA daemonset on ds.
 func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVersion string) (*appsv1.DaemonSet, error) {
 	var (
 		runPrivileged                = true
