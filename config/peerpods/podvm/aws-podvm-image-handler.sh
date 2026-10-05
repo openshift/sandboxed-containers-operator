@@ -321,6 +321,13 @@ function create_ami_from_prebuilt_artifact() {
         ;;
     esac
 
+}
+
+# Delete the intermediate S3 bucket and, for the CCO flow, the extended
+# image-creation credentials. Must run AFTER get_ami_id: in the CCO flow the
+# cleanup deletes the CredentialsRequest, which revokes the exported access keys
+# that get_ami_id still relies on.
+function cleanup_prebuilt_intermediate_resources() {
     # Cleanup: delete bucket and credentials based on credential source
     if [[ -n "${AWS_ROLE_ARN}" ]]; then
         echo "IRSA flow: deleting bucket only (no credential cleanup needed)"
@@ -485,6 +492,9 @@ function create_ami() {
         create_ami_from_scratch
     elif [[ "${IMAGE_TYPE}" == "pre-built" ]]; then
         create_ami_from_prebuilt_artifact
+        # The intermediate resources aren't needed anymore.
+        # This fires after get_ami_id, which depends on the credentials cleanup revokes.
+        trap cleanup_prebuilt_intermediate_resources EXIT
     fi
 
     # Get the ami id
@@ -493,7 +503,6 @@ function create_ami() {
 
     # Add the ami id as annotation to peer-pods-cm configmap
     update_cm_annotation "LATEST_AMI_ID" "${AMI_ID}"
-
 }
 
 # Function to delete the ami's snapshots
