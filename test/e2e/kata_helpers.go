@@ -23,6 +23,7 @@ const (
 	opNamespace          = "openshift-sandboxed-containers-operator"
 	testrunConfigmapNs   = "default"
 	testrunConfigmapName = "osc-config"
+	caaDaemonsetName     = "osc-caa-ds"
 )
 
 var (
