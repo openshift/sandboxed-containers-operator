@@ -73,6 +73,10 @@ RUN if [[ -n "$CERT_RPM" ]] ; then \
     dnf install -y $CERT_RPM ; \
     fi
 
+# Set the crypto policy to DEFAULT:PQ to comply with post-quantum crypto requirement
+# The tool is part of the package "crypto-policies-scripts", which is already
+# installed in our base image
+RUN update-crypto-policies --set DEFAULT:PQ
 
 COPY cloud-api-adaptor /src/cloud-api-adaptor
 
