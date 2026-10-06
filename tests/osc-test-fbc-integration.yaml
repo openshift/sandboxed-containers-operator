@@ -49,7 +49,7 @@ spec:
               set -e
               dnf -y install jq
               echo "Snapshot: ${SNAPSHOT}"
-              catalogImage=$(jq -r '.components[] | select(.name=="osc-test-fbc") | .containerImage' <<< "${SNAPSHOT}")
+              catalogImage=$(jq -r '.components[] | select(.name=="osc-test-fbc-v1.13") | .containerImage' <<< "${SNAPSHOT}")
               echo "Catalog image: ${catalogImage}"
               echo -n "${catalogImage}" > $(results.CATALOG_IMAGE.path)
     - name: determine-prowjobs
