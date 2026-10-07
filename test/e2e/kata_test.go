@@ -611,8 +611,6 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 	})
 
 	ginkgo.It("C00000-verify proxy and trusted CA propagation to CAA and PodVM jobs [Serial]", func() {
-		// TODO: fix broken test due "osc-caa daemonset was not recreated in time" error
-		ginkgo.Skip("Test broken on CI")
 		if !testrun.enablePeerPods || cloudPlatform != "azure" {
 			ginkgo.Skip("Test supported only with peer-pods and Azure")
 		}
@@ -624,7 +622,6 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 			httpProxyTest      = "http://proxy.test.example.com:3128"
 			httpsProxyTest     = "https://proxy.test.example.com:3129"
 			caBundleTest       = "-----BEGIN CERTIFICATE-----\nTESTDUMMYCERTDATA\n-----END CERTIFICATE-----\n"
-			trustedCAMountPath = "/etc/pki/ca-trust/extracted/pem"
 		)
 
 		ginkgo.By("Building NO_PROXY from cluster network configuration")
@@ -708,40 +705,14 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		)
 		mergedEnv := "[" + strings.Join(envEntries, ",") + "]"
 
-		var volEntries []string
-		gjson.Get(subscriptionConfig, "volumes").ForEach(func(_, value gjson.Result) bool {
-			if value.Get("name").String() != "trusted-ca" {
-				volEntries = append(volEntries, value.Raw)
-			}
-			return true
-		})
-		volEntries = append(volEntries,
-			`{"name":"trusted-ca","configMap":{"name":"trusted-ca","items":[{"key":"ca-bundle.crt","path":"tls-ca-bundle.pem"}]}}`,
-		)
-		mergedVolumes := "[" + strings.Join(volEntries, ",") + "]"
-
-		var vmEntries []string
-		gjson.Get(subscriptionConfig, "volumeMounts").ForEach(func(_, value gjson.Result) bool {
-			if value.Get("name").String() != "trusted-ca" {
-				vmEntries = append(vmEntries, value.Raw)
-			}
-			return true
-		})
-		vmEntries = append(vmEntries,
-			fmt.Sprintf(`{"name":"trusted-ca","mountPath":"%s","readOnly":true}`, trustedCAMountPath),
-		)
-		mergedVolumeMounts := "[" + strings.Join(vmEntries, ",") + "]"
-
 		ginkgo.By("Patching the subscription with proxy env vars and trusted-ca volume")
 		subscriptionPatch := fmt.Sprintf(`{
 			"spec": {
 				"config": {
-					"env": %s,
-					"volumes": %s,
-					"volumeMounts": %s
+					"env": %s
 				}
 			}
-		}`, mergedEnv, mergedVolumes, mergedVolumeMounts)
+		}`, mergedEnv)
 
 		_, err = oc.AsAdmin().WithoutNamespace().Run("patch").Args(
 			"subscription", subscriptionName, "-n", opNamespace,
