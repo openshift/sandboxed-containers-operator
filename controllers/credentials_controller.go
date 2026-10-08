@@ -67,7 +67,7 @@ const (
 // TODO: reduce secret's RBAC if possible
 
 // the following is not required by this controller, it's required by the AWS podvm creation scripts (ami-helper.sh)
-//+kubebuilder:rbac:groups=cloudcredential.openshift.io,resources=credentialsrequests,verbs=create;delete;get;list
+//+kubebuilder:rbac:groups=cloudcredential.openshift.io,resources=credentialsrequests,verbs=create;delete;get;list;watch
 
 // Reconcile watches the cco-secret only (filtered by secretsFilterPredicate), its only role is to map
 // CCO provisioned credentials to the peer-pods-secret format.

@@ -135,6 +135,7 @@ rules:
   - delete
   - get
   - list
+  - watch
 - apiGroups:
   - confidentialcontainers.org
   resources:
