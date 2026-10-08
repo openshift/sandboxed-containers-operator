@@ -20,15 +20,39 @@ spec:
         results:
         - name: TEST_OUTPUT
           description: Test output
+        volumes:
+        - name: podinfo
+          downwardAPI:
+            items:
+            - path: "labels"
+              fieldRef:
+                fieldPath: metadata.labels
         steps:
-        - image: registry.redhat.io/openshift4/ose-cli:latest
+        - name: show-snapshot
+          image: registry.redhat.io/openshift4/ose-cli:latest
           env:
           - name: SNAPSHOT
             value: $(params.SNAPSHOT)
+          volumeMounts:
+          - name: podinfo
+            mountPath: /etc/podinfo
+            readOnly: true
           script: |
             #!/bin/bash
             set -e
             dnf -y install jq
+
+            echo "=== Pod labels (via downward API) ==="
+            if [ -f /etc/podinfo/labels ]; then
+                cat /etc/podinfo/labels
+                echo ""
+                TRIGGER_COMPONENT=$(grep 'appstudio.openshift.io/component=' /etc/podinfo/labels | sed 's/.*="//' | sed 's/"$//' || true)
+                echo "Trigger component: ${TRIGGER_COMPONENT}"
+            else
+                echo "WARNING: /etc/podinfo/labels not found"
+            fi
+            echo "==================================="
+
             snapshotComponents=$(jq -c '.components[]' <<< "${SNAPSHOT}")
 
             echo -e "Example test task for the Snapshot:\n ${SNAPSHOT}"
