@@ -23,6 +23,10 @@ const (
 	opNamespace          = "openshift-sandboxed-containers-operator"
 	testrunConfigmapNs   = "default"
 	testrunConfigmapName = "osc-config"
+
+	nodeTypeLabelKey    = "kataconfiguration.openshift.io/node-type"
+	kataCapableLabelKey = "kataconfiguration.openshift.io/kata-capable"
+	nestedVirtLabelKey  = "kataconfiguration.openshift.io/nested-virt-capable"
 )
 
 var (
