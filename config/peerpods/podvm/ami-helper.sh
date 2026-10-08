@@ -59,6 +59,9 @@ spec:
         - iam:ListRolePolicies
         - iam:DeleteRole
         - iam:DeleteRolePolicy
+        # Required by ec2:ImportSnapshot/ImportImage: AWS now enforces that the
+        # calling principal has iam:PassRole on the vmimport service role.
+        - iam:PassRole
       resource: "arn:aws:iam::*:role/vmimport"
     - effect: Allow
       action:
@@ -289,6 +292,12 @@ spec:
     apiVersion: cloudcredential.openshift.io/v1
     kind: AWSProviderSpec
     statementEntries:
+    # Required by ec2:ImportSnapshot/ImportImage: AWS now enforces that the
+    # calling principal has iam:PassRole on the vmimport service role.
+    - effect: Allow
+      action:
+        - iam:PassRole
+      resource: "arn:aws:iam::*:role/vmimport"
     - effect: Allow
       action:
         - s3:GetBucketLocation

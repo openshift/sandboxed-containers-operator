@@ -21,9 +21,11 @@ metadata:
     features.operators.openshift.io/fips-compliant: "false"
     features.operators.openshift.io/proxy-aware: "false"
     features.operators.openshift.io/tls-profiles: "false"
-    features.operators.openshift.io/token-auth-aws: "true"
-    features.operators.openshift.io/token-auth-azure: "true"
-    features.operators.openshift.io/token-auth-gcp: "true"
+    # Token-auth set to false to avoid forcing users to provide WIF/STS parameters
+    # in the console when peer-pods is not enabled
+    features.operators.openshift.io/token-auth-aws: "false"
+    features.operators.openshift.io/token-auth-azure: "false"
+    features.operators.openshift.io/token-auth-gcp: "false"
     olm.skipRange: '>=1.1.0 <1.14.0'
     operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
     operators.openshift.io/valid-subscription: '["OpenShift Container Platform", "OpenShift
@@ -270,6 +272,7 @@ spec:
           - delete
           - get
           - list
+          - watch
         - apiGroups:
           - confidentialcontainers.org
           resources:
@@ -303,6 +306,7 @@ spec:
           - config.openshift.io
           resources:
           - apiservers
+          - authentications
           - clusterversions
           - infrastructures
           verbs:
@@ -349,6 +353,14 @@ spec:
           - list
           - patch
           - update
+          - watch
+        - apiGroups:
+          - operator.openshift.io
+          resources:
+          - cloudcredentials
+          verbs:
+          - get
+          - list
           - watch
         - apiGroups:
           - security.openshift.io
