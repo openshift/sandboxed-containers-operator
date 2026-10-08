@@ -610,3 +610,328 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		ginkgo.By("SUCCESS - peerpod with GPU annotation translated to instance type")
 	})
 })
+
+var _ = ginkgo.Describe("[sig-kata] Mixed Cluster", ginkgo.Serial, func() {
+	defer ginkgo.GinkgoRecover()
+
+	var (
+		oc = compat_otp.NewCLI("kata-mixed", compat_otp.KubeConfigPath())
+	)
+
+	testrun := TestRunDescription{
+		checked:        false,
+		workloadImage:  "quay.io/openshift/origin-hello-openshift",
+		workloadToTest: "kata",
+	}
+
+	isMixedCluster := func() bool {
+		bmNodes, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"nodes", "-l", nodeTypeLabelKey+"=bare-metal", "--no-headers",
+		).Output()
+		vmNodes, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"nodes", "-l", nodeTypeLabelKey+"=virtual", "--no-headers",
+		).Output()
+		return len(bmNodes) > 0 && len(vmNodes) > 0
+	}
+
+	ginkgo.BeforeEach(func() {
+		if !isMixedCluster() {
+			ginkgo.Skip("Mixed cluster tests require both BM and VM nodes with EnableMixedCluster=true")
+		}
+
+		if !testrun.checked {
+			configmapExists, err := getTestRunConfigmap(oc, &testrun, testrunConfigmapNs, testrunConfigmapName)
+			if configmapExists {
+				o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("osc-config validation failed: %v", err))
+			}
+			testrun.checked = true
+		}
+	})
+
+	// --- Node Label Tests ---
+
+	ginkgo.It("MC01-verify BM nodes labeled with node-type and kata-capable [Serial]", func() {
+		ginkgo.By("Checking BM nodes have node-type=bare-metal")
+		bmNodes, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"nodes", "-l", nodeTypeLabelKey+"=bare-metal", "-o=jsonpath={.items[*].metadata.name}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to list BM nodes")
+		o.Expect(bmNodes).NotTo(o.BeEmpty(), "no nodes with node-type=bare-metal found")
+		Logf("BM nodes: %v", bmNodes)
+
+		ginkgo.By("Checking BM nodes have kata-capable=true")
+		capableNodes, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"nodes", "-l", kataCapableLabelKey+"=true,"+nodeTypeLabelKey+"=bare-metal",
+			"-o=jsonpath={.items[*].metadata.name}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to list kata-capable BM nodes")
+		o.Expect(capableNodes).To(o.Equal(bmNodes), "not all BM nodes are labeled kata-capable")
+
+		ginkgo.By("SUCCESS - all BM nodes labeled correctly")
+	})
+
+	ginkgo.It("MC02-verify nested-virt VM nodes labeled with kata-capable and nested-virt-capable [Serial]", func() {
+		nestedNodes, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"nodes", "-l", nestedVirtLabelKey+"=true", "-o=jsonpath={.items[*].metadata.name}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to list nested-virt nodes")
+
+		if nestedNodes == "" {
+			ginkgo.Skip("No nested-virt-capable nodes found in cluster")
+		}
+
+		Logf("Nested-virt nodes: %v", nestedNodes)
+
+		ginkgo.By("Checking nested-virt nodes also have kata-capable=true")
+		capableNested, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"nodes", "-l", nestedVirtLabelKey+"=true,"+kataCapableLabelKey+"=true",
+			"-o=jsonpath={.items[*].metadata.name}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to list kata-capable nested-virt nodes")
+		o.Expect(capableNested).To(o.Equal(nestedNodes),
+			"not all nested-virt nodes are labeled kata-capable")
+
+		ginkgo.By("Checking nested-virt nodes also have node-type=virtual")
+		virtualNested, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"nodes", "-l", nestedVirtLabelKey+"=true,"+nodeTypeLabelKey+"=virtual",
+			"-o=jsonpath={.items[*].metadata.name}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to list virtual nested-virt nodes")
+		o.Expect(virtualNested).To(o.Equal(nestedNodes),
+			"not all nested-virt nodes are labeled node-type=virtual")
+
+		ginkgo.By("SUCCESS - nested-virt nodes labeled correctly")
+	})
+
+	// --- RuntimeClass nodeSelector Tests ---
+
+	ginkgo.It("MC03-verify kata RuntimeClass has kata-capable nodeSelector [Serial]", func() {
+		ginkgo.By("Checking kata RuntimeClass nodeSelector")
+		sel, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"runtimeclass", "kata", "-o=jsonpath={.scheduling.nodeSelector}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get kata RuntimeClass")
+		o.Expect(sel).To(o.ContainSubstring(kataCapableLabelKey),
+			fmt.Sprintf("kata RuntimeClass missing %v in nodeSelector: %v", kataCapableLabelKey, sel))
+
+		ginkgo.By("SUCCESS - kata RuntimeClass has kata-capable nodeSelector")
+	})
+
+	ginkgo.It("MC04-verify kata-remote RuntimeClass has node-type=virtual nodeSelector [Serial]", func() {
+		ginkgo.By("Checking kata-remote RuntimeClass nodeSelector")
+		sel, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"runtimeclass", "kata-remote", "-o=jsonpath={.scheduling.nodeSelector}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get kata-remote RuntimeClass")
+		o.Expect(sel).To(o.ContainSubstring("virtual"),
+			fmt.Sprintf("kata-remote RuntimeClass missing node-type=virtual in nodeSelector: %v", sel))
+
+		ginkgo.By("SUCCESS - kata-remote RuntimeClass has node-type=virtual nodeSelector")
+	})
+
+	ginkgo.It("MC05-verify kata-nvidia-gpu RuntimeClass has node-type=bare-metal nodeSelector [Serial]", func() {
+		ginkgo.By("Checking if kata-nvidia-gpu RuntimeClass exists")
+		_, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"runtimeclass", "kata-nvidia-gpu",
+		).Output()
+		if err != nil {
+			ginkgo.Skip("kata-nvidia-gpu RuntimeClass not present")
+		}
+
+		sel, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"runtimeclass", "kata-nvidia-gpu", "-o=jsonpath={.scheduling.nodeSelector}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get kata-nvidia-gpu RuntimeClass nodeSelector")
+		o.Expect(sel).To(o.ContainSubstring("bare-metal"),
+			fmt.Sprintf("kata-nvidia-gpu missing node-type=bare-metal in nodeSelector: %v", sel))
+
+		ginkgo.By("SUCCESS - kata-nvidia-gpu RuntimeClass has bare-metal nodeSelector")
+	})
+
+	ginkgo.It("MC06-verify kata-cc RuntimeClass has node-type=bare-metal nodeSelector [Serial]", func() {
+		ginkgo.By("Checking if kata-cc RuntimeClass exists")
+		_, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"runtimeclass", "kata-cc",
+		).Output()
+		if err != nil {
+			ginkgo.Skip("kata-cc RuntimeClass not present")
+		}
+
+		sel, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"runtimeclass", "kata-cc", "-o=jsonpath={.scheduling.nodeSelector}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get kata-cc RuntimeClass nodeSelector")
+		o.Expect(sel).To(o.ContainSubstring("bare-metal"),
+			fmt.Sprintf("kata-cc missing node-type=bare-metal in nodeSelector: %v", sel))
+
+		ginkgo.By("SUCCESS - kata-cc RuntimeClass has bare-metal nodeSelector")
+	})
+
+	ginkgo.It("MC07-verify kata-cc-nvidia-gpu RuntimeClass has node-type=bare-metal nodeSelector [Serial]", func() {
+		ginkgo.By("Checking if kata-cc-nvidia-gpu RuntimeClass exists")
+		_, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"runtimeclass", "kata-cc-nvidia-gpu",
+		).Output()
+		if err != nil {
+			ginkgo.Skip("kata-cc-nvidia-gpu RuntimeClass not present")
+		}
+
+		sel, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"runtimeclass", "kata-cc-nvidia-gpu", "-o=jsonpath={.scheduling.nodeSelector}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get kata-cc-nvidia-gpu RuntimeClass nodeSelector")
+		o.Expect(sel).To(o.ContainSubstring("bare-metal"),
+			fmt.Sprintf("kata-cc-nvidia-gpu missing node-type=bare-metal in nodeSelector: %v", sel))
+
+		ginkgo.By("SUCCESS - kata-cc-nvidia-gpu RuntimeClass has bare-metal nodeSelector")
+	})
+
+	// --- Pod Scheduling Tests ---
+
+	ginkgo.It("MC08-deploy kata pod on kata-capable node [Serial]", func() {
+		ginkgo.By("Deploying kata pod")
+		testrun.runtimeClassName = "kata"
+		pod := NewPodDescription(&testrun, "mixed-kata")
+
+		err := createKataPodFromDescription(oc, pod)
+		defer deleteKataResource(oc, "pod", pod.namespace, pod.name)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create kata pod")
+
+		ginkgo.By("Verifying pod landed on kata-capable node")
+		nodeName, err := compat_otp.GetPodNodeName(oc, pod.namespace, pod.name)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get pod node name")
+
+		nodeLabels, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"node", nodeName, "-o=jsonpath={.metadata.labels}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get node labels")
+		o.Expect(nodeLabels).To(o.ContainSubstring(kataCapableLabelKey),
+			fmt.Sprintf("kata pod landed on node %v without kata-capable label", nodeName))
+
+		ginkgo.By("SUCCESS - kata pod scheduled on kata-capable node")
+	})
+
+	ginkgo.It("MC09-deploy kata-remote pod on virtual node [Serial]", func() {
+		ginkgo.By("Deploying kata-remote pod")
+		testrun.runtimeClassName = "kata-remote"
+		pod := NewPodDescription(&testrun, "mixed-remote")
+
+		err := createKataPodFromDescription(oc, pod)
+		defer deleteKataResource(oc, "pod", pod.namespace, pod.name)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create kata-remote pod")
+
+		ginkgo.By("Verifying pod landed on virtual node")
+		nodeName, err := compat_otp.GetPodNodeName(oc, pod.namespace, pod.name)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get pod node name")
+
+		nodeType, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"node", nodeName, fmt.Sprintf("-o=jsonpath={.metadata.labels.%s}", nodeTypeLabelKey),
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get node-type label")
+		o.Expect(nodeType).To(o.Equal("virtual"),
+			fmt.Sprintf("kata-remote pod landed on node %v with node-type=%v, expected virtual", nodeName, nodeType))
+
+		ginkgo.By("SUCCESS - kata-remote pod scheduled on virtual node")
+	})
+
+	ginkgo.It("MC10-verify kata pod does not land on non-kata-capable node [Serial]", func() {
+		ginkgo.By("Checking that no kata-oc node has kata pod without kata-capable label")
+		pods, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"pods", "--all-namespaces", "--field-selector=status.phase=Running",
+			"-o=jsonpath={range .items[?(@.spec.runtimeClassName==\"kata\")]}{.spec.nodeName}{\"\\n\"}{end}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to list running kata pods")
+
+		if pods == "" {
+			ginkgo.Skip("No running kata pods found to verify")
+		}
+
+		for _, nodeName := range strings.Split(strings.TrimSpace(pods), "\n") {
+			if nodeName == "" {
+				continue
+			}
+			capable, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"node", nodeName,
+				fmt.Sprintf("-o=jsonpath={.metadata.labels.%s}", kataCapableLabelKey),
+			).Output()
+			o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("failed to check labels on node %v", nodeName))
+			o.Expect(capable).To(o.Equal("true"),
+				fmt.Sprintf("kata pod running on node %v without kata-capable=true", nodeName))
+		}
+
+		ginkgo.By("SUCCESS - no kata pods on non-kata-capable nodes")
+	})
+
+	// --- Day-2 Tests ---
+
+	ginkgo.It("MC11-verify EnableMixedCluster toggle off and on restores labels and nodeSelectors [Serial]", func() {
+		ginkgo.By("Recording current node labels before toggle")
+		bmBefore, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"nodes", "-l", nodeTypeLabelKey+"=bare-metal", "-o=jsonpath={.items[*].metadata.name}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to list BM nodes before toggle")
+		o.Expect(bmBefore).NotTo(o.BeEmpty(), "no BM nodes found before toggle")
+
+		ginkgo.By("Toggling EnableMixedCluster to false")
+		_, err = oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+			"kataconfig", "example-kataconfig", "--type=merge",
+			"-p", `{"spec":{"enableMixedCluster":false}}`,
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to patch kataconfig to disable mixed cluster")
+
+		ginkgo.By("Waiting for node-type labels to be removed")
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 3*time.Minute, true, func(_ context.Context) (bool, error) {
+			bmNodes, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"nodes", "-l", nodeTypeLabelKey+"=bare-metal", "--no-headers",
+			).Output()
+			if bmNodes == "" {
+				return true, nil
+			}
+			Logf("Still waiting for node-type labels to be removed...")
+			return false, nil
+		})
+		o.Expect(err).NotTo(o.HaveOccurred(), "node-type labels not removed after disabling mixed cluster")
+
+		ginkgo.By("Verifying kata RuntimeClass no longer has kata-capable nodeSelector")
+		sel, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"runtimeclass", "kata", "-o=jsonpath={.scheduling.nodeSelector}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get kata RuntimeClass after toggle off")
+		o.Expect(sel).NotTo(o.ContainSubstring(kataCapableLabelKey),
+			fmt.Sprintf("kata RuntimeClass still has kata-capable after toggle off: %v", sel))
+
+		ginkgo.By("Toggling EnableMixedCluster back to true")
+		_, err = oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+			"kataconfig", "example-kataconfig", "--type=merge",
+			"-p", `{"spec":{"enableMixedCluster":true}}`,
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to patch kataconfig to re-enable mixed cluster")
+
+		ginkgo.By("Waiting for node-type labels to be reapplied")
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel2()
+		err = wait.PollUntilContextTimeout(ctx2, 10*time.Second, 3*time.Minute, true, func(_ context.Context) (bool, error) {
+			bmNodes, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"nodes", "-l", nodeTypeLabelKey+"=bare-metal", "--no-headers",
+			).Output()
+			if bmNodes != "" {
+				return true, nil
+			}
+			Logf("Still waiting for node-type labels to be reapplied...")
+			return false, nil
+		})
+		o.Expect(err).NotTo(o.HaveOccurred(), "node-type labels not reapplied after re-enabling mixed cluster")
+
+		ginkgo.By("Verifying kata RuntimeClass has kata-capable nodeSelector again")
+		sel, err = oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"runtimeclass", "kata", "-o=jsonpath={.scheduling.nodeSelector}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get kata RuntimeClass after toggle on")
+		o.Expect(sel).To(o.ContainSubstring(kataCapableLabelKey),
+			fmt.Sprintf("kata RuntimeClass missing kata-capable after toggle on: %v", sel))
+
+		ginkgo.By("SUCCESS - EnableMixedCluster toggle off/on restores labels and nodeSelectors")
+	})
+})
