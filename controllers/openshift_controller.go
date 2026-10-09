@@ -145,7 +145,7 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 			// KataConfig is gone — remove our finalizer from the CSV so OLM can
 			// proceed with operator deletion if it was waiting on us (KATA-6228).
 			if csvErr := r.ensureCSVFinalizer(false); csvErr != nil {
-				r.Log.Info("Failed to remove CSV cleanup finalizer after KataConfig deletion", "err", csvErr)
+				return ctrl.Result{}, csvErr
 			}
 			return ctrl.Result{}, nil
 		}
@@ -159,7 +159,7 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 	if csvErr := r.ensureCSVFinalizer(
 		controllerutil.ContainsFinalizer(r.kataConfig, kataConfigFinalizer),
 	); csvErr != nil {
-		r.Log.Info("Failed to sync CSV cleanup finalizer", "err", csvErr)
+		return ctrl.Result{}, csvErr
 	}
 
 	oldObjStatus := r.kataConfig.Status.DeepCopy()
