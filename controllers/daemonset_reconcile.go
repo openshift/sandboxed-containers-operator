@@ -143,6 +143,12 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 		}
 	}
 
+	// TODO: propagate reconcile ctx through the call chain instead of context.TODO()
+	if err := r.deleteKataInstallNetworkPolicies(context.TODO()); err != nil {
+		r.Log.Error(err, "error deleting kata-install network policies")
+		return ctrl.Result{}, err
+	}
+
 	isUninstallDaemonSetJustCreated := false
 
 	// Create kata uninstall daemonset if it doesn't exist
@@ -154,6 +160,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 	}
 	if err := controllerutil.SetControllerReference(r.kataConfig, kataUninstallDaemonSet, r.Scheme); err != nil {
 		r.Log.Error(err, "Failed setting ControllerReference for kata uninstallation DaemonSet")
+		return ctrl.Result{}, err
+	}
+
+	if err := r.createKataUninstallNetworkPolicies(context.TODO()); err != nil {
+		r.Log.Error(err, "error creating kata-uninstall network policies")
 		return ctrl.Result{}, err
 	}
 
@@ -206,6 +217,11 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 
 	err = r.deleteDaemonsetForMonitor()
 	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.deleteKataUninstallNetworkPolicies(context.TODO()); err != nil {
+		r.Log.Error(err, "error deleting kata-uninstall network policies")
 		return ctrl.Result{}, err
 	}
 
@@ -312,6 +328,12 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet
 	}
 	if err := controllerutil.SetControllerReference(r.kataConfig, kataInstallDaemonSet, r.Scheme); err != nil {
 		r.Log.Error(err, "Failed setting ControllerReference for kata installation DaemonSet")
+		return ctrl.Result{}, err
+	}
+
+	// TODO: propagate reconcile ctx through the call chain instead of context.TODO()
+	if err := r.createKataInstallNetworkPolicies(context.TODO()); err != nil {
+		r.Log.Error(err, "error creating kata-install network policies")
 		return ctrl.Result{}, err
 	}
 

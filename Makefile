@@ -40,6 +40,9 @@ BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
 # BUNDLE_GEN_FLAGS are the flags passed to the operator-sdk generate bundle command
 BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 
+# The image tag for the FBC catalog (e.g. make fbc-catalog-build FBC_CATALOG_IMG=example.com/operator-fbc:v0.1.0).
+FBC_CATALOG_IMG ?= $(IMAGE_TAG_BASE)-fbc-catalog:v$(VERSION)
+
 # USE_IMAGE_DIGESTS defines if images are resolved via tags or digests
 # You can enable this value if you would like to use SHA Based Digests
 # To enable set flag to true
@@ -338,6 +341,30 @@ catalog-build: opm ## Build a catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
+
+.PHONY: fbc-catalog-render
+fbc-catalog-render: opm ## Render FBC catalog from template using BUNDLE_IMG.
+	mkdir -p fbc/test-fbc/catalog/sandboxed-containers-operator
+	sed -e 's|image: .*|image: $(BUNDLE_IMG)|' \
+		-e 's|name: sandboxed-containers-operator\.v[0-9.]*|name: sandboxed-containers-operator.v$(VERSION)|' \
+		-e 's|skipRange: .*|skipRange: ">=1.1.0 <$(VERSION)"|' \
+		-e '/replaces:/d' \
+		fbc/test-fbc/catalog-template.yaml > fbc/test-fbc/catalog-template.yaml.render
+	$(OPM) alpha render-template basic --migrate-level bundle-object-to-csv-metadata \
+		fbc/test-fbc/catalog-template.yaml.render \
+		> fbc/test-fbc/catalog/sandboxed-containers-operator/catalog.json; \
+	ret=$$?; rm -f fbc/test-fbc/catalog-template.yaml.render; exit $$ret
+	$(OPM) validate fbc/test-fbc/catalog/
+
+.PHONY: fbc-catalog-build
+fbc-catalog-build: fbc-catalog-render ## Build an FBC catalog image for OLM v1.
+	printf 'FROM quay.io/operator-framework/opm:v1.46.0 AS builder\nCOPY fbc/test-fbc/catalog /configs\nRUN ["/bin/opm", "serve", "/configs", "--cache-dir=/tmp/cache", "--cache-only"]\nFROM quay.io/operator-framework/opm:v1.46.0\nCOPY --from=builder /configs /configs\nCOPY --from=builder /tmp/cache /tmp/cache\nENTRYPOINT ["/bin/opm"]\nCMD ["serve", "/configs", "--cache-dir=/tmp/cache"]\nLABEL operators.operatorframework.io.index.configs.v1=/configs\n' | \
+		$(CONTAINER_TOOL) build -f - -t $(FBC_CATALOG_IMG) .
+	rm -rf fbc/test-fbc/catalog
+
+.PHONY: fbc-catalog-push
+fbc-catalog-push: ## Push the FBC catalog image.
+	$(MAKE) docker-push IMG=$(FBC_CATALOG_IMG)
 
 ##@ Cleanup
 
