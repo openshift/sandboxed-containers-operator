@@ -52,6 +52,9 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 			o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("osc-config validation failed: %v", err))
 			kataconfig.runtimeClassName = testrun.runtimeClassName
 			kataconfig.enablePeerPods = testrun.enablePeerPods
+			if testrun.kataConfigName != "" {
+				kataconfig.name = testrun.kataConfigName
+			}
 		} else {
 			Logf("No osc-config configmap found, using defaults")
 		}
