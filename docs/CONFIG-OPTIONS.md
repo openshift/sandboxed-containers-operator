@@ -113,3 +113,46 @@ For non-feature configuration options (such as image specifications, network set
 the values and format depend on the specific option. Refer to the individual
 documentation for each configuration option to understand the expected format
 and valid values.
+
+#### caaUpdateStrategy
+
+Sets the update strategy of the cloud-api-adaptor (CAA) daemonset `osc-caa-ds`.
+This option only has an effect when peer pods are enabled.
+
+| Value | Behavior |
+|-------|----------|
+| `RollingUpdate` (default) | When the CAA daemonset changes, the CAA pods are replaced automatically, one node at a time. |
+| `OnDelete` | When the CAA daemonset changes, the running CAA pods are left untouched. A CAA pod is only replaced when it is deleted. |
+
+The values are case sensitive. Any other value is ignored and the default is used.
+
+The CAA daemonset changes when the operator is upgraded to a version shipping a
+new CAA image, and when the `peer-pods-cm` ConfigMap is updated. A restarted CAA
+pod loses track of the peer pods it was serving, which disrupts the peer pods
+running on that node. With `RollingUpdate` the next node is processed as soon
+as the new CAA pod is ready, regardless of the state of the workloads.
+
+`OnDelete` lets the administrator decide when each node is disrupted, e.g. one
+availability zone at a time, waiting for the workloads to recover in between:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: osc-feature-gates
+  namespace: openshift-sandboxed-containers-operator
+data:
+  caaUpdateStrategy: "OnDelete"
+```
+
+The CAA pods that still need to be deleted are the ones that are not counted
+in the `UP-TO-DATE` column:
+
+```
+oc get daemonset osc-caa-ds -n openshift-sandboxed-containers-operator
+```
+
+> [!IMPORTANT]
+> With `OnDelete`, a new CAA image or a change to `peer-pods-cm` is **not**
+> applied to a node until its CAA pod is deleted. Switching back to
+> `RollingUpdate` immediately rolls out all the CAA pods that are not up to date.
