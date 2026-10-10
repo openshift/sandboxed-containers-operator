@@ -104,7 +104,7 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVer
 						},
 						Command: []string{"/usr/local/bin/entrypoint.sh"},
 						// Add proxy environment variables to the CAA container if they are set
-						Env: append(getProxyEnvVars(), []corev1.EnvVar{
+						Env: append(getProxyEnvVars(r.Log), []corev1.EnvVar{
 							{
 								Name: "NODE_NAME",
 								ValueFrom: &corev1.EnvVarSource{
@@ -202,10 +202,7 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVer
 			},
 		},
 	}
-	trustedCAvolume, trustedCAvolumeMount, err := generateTrustedCAVolumeConfig(r.Client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate trusted CA volume config: %v", err)
-	}
+	trustedCAvolume, trustedCAvolumeMount := generateTrustedCAVolumeConfig(r.Client, r.kataConfig, r.Log)
 
 	if trustedCAvolume != (corev1.Volume{}) {
 		ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, trustedCAvolume)
@@ -452,7 +449,7 @@ func (r *KataConfigOpenShiftReconciler) deletePodVMImage() (*ctrl.Result, error)
 	// ImageDeletionFailed
 	// RequeueNeeded
 	// ImageDeletionStatusUnknown
-	status, err := ImageDelete(r.Client)
+	status, err := ImageDelete(r.Client, r.kataConfig)
 	switch status {
 	case ImageDeletedSuccessfully:
 		r.setInProgressConditionToPodVMImageDeleted()

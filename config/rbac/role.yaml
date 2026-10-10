@@ -171,6 +171,7 @@ rules:
   - apiservers
   - clusterversions
   - infrastructures
+  - proxies
   verbs:
   - get
   - list
