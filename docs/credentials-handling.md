@@ -285,7 +285,11 @@ data:
   AWS_SECRET_ACCESS_KEY: <base64-encoded-secret-access-key>
 ```
 
-**AWS-specific requirements**: When using manual AWS credentials for image creation, you must pre-create the S3 bucket and vmimport IAM role before deploying KataConfig. You can use the `ami-helper.sh` script to automate this setup:
+**AWS-specific requirements (S3 bucket and vmimport role)**: podvm image creation needs an S3 bucket and the `vmimport` IAM service role. How they are provisioned depends on whether you set a custom `BUCKET_NAME` in the `peer-pods-cm` ConfigMap:
+
+- **Operator-created (default, no custom `BUCKET_NAME`)**: the image-creation job creates the bucket and `vmimport` role automatically, and deletes them once image creation completes. This requires the credentials in `peer-pods-secret` to carry the extended image-creation permissions — S3 bucket/object management on `podvm-*` and `iam:CreateRole`/`PutRolePolicy`/`GetRole`/`ListRolePolicies`/`DeleteRole`/`DeleteRolePolicy`/`PassRole` on `role/vmimport` (see `config/peerpods/credentials-requests/credentials_request_aws.yaml` for the exact set). It is recommended to reduce these to the runtime permissions once image creation has completed successfully.
+
+- **User-created (custom `BUCKET_NAME`)**: if you set a custom `BUCKET_NAME`, the operator expects the bucket and `vmimport` role to already exist and only validates the bucket — it will not create or delete them. This lets you grant the credentials narrower permissions. Pre-create the resources with `ami-helper.sh`:
 
 ```bash
 # Set your bucket name and region
@@ -308,7 +312,7 @@ The script will:
 Alternatively, you can create these resources manually. The vmimport role trust policy and permissions must allow EC2 VM Import to access your S3 bucket.
 
 #### Credentials Cleanup
-1. Delete the S3 bucket and vmimport role (can be done after image creation is completed):
+1. If you pre-created a custom bucket and `vmimport` role, delete them once image creation is completed (with the default operator-created bucket this is handled for you):
 ```bash
 ./config/peerpods/podvm/ami-helper.sh -s -d -b ${BUCKET_NAME} -r ${REGION}
 ```

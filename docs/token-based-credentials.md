@@ -73,7 +73,7 @@ echo "OIDC Resource Group: ${OIDC_RESOURCE_GROUP}"
 ### 2. Fetch the CredentialsRequest from the operator image
 
 The committed CredentialsRequest is bundled inside the operator image under
-`/config/peerpods/credentials-requests/ccoctl/`. Copy it out:
+`/config/peerpods/credentials-requests/`. Copy it out:
 
 ```bash
 mkdir credrequests
@@ -83,8 +83,8 @@ OPERATOR_POD=$(oc get pods -n openshift-sandboxed-containers-operator \
   -o jsonpath='{.items[0].metadata.name}')
 
 oc cp -n openshift-sandboxed-containers-operator \
-  "${OPERATOR_POD}:config/peerpods/credentials-requests/ccoctl/credentials_request_azure_wif.yaml" \
-  ./credrequests/credentials_request_azure_wif.yaml
+  "${OPERATOR_POD}:config/peerpods/credentials-requests/credentials_request_azure.yaml" \
+  ./credrequests/credentials_request_azure.yaml
 ```
 
 ### 3. Run ccoctl to create the managed identity and generate the secret manifest
@@ -129,7 +129,7 @@ Complete configuration and create a KataConfig with `enablePeerPods: true`
 ### Reducing Permissions After Image Creation
 
 The CredentialsRequest bundled in the operator image
-(`credentials_request_azure_wif.yaml`) includes extended role assignments required
+(`credentials_request_azure.yaml`) includes extended role assignments required
 for the podvm image creation job (Storage Account Contributor, Compute Gallery Artifacts Publisher).
 Once image creation has completed successfully these roles are no longer needed and can be removed
 to follow the principle of least privilege.
@@ -140,8 +140,8 @@ by the cloud-api-adaptor at runtime, then re-run `ccoctl` command from earlier t
 ```bash
 # Create a reduced CredentialsRequest (runtime roles only, no image creation roles)
 # This removes everything after the #### marker (image creation permissions)
-sed '/####/,$d' credrequests/credentials_request_azure_wif.yaml > \
-  credrequests/credentials_request_azure_wif_minimal.yaml
+sed '/####/,$d' credrequests/credentials_request_azure.yaml > \
+  credrequests/credentials_request_azure_minimal.yaml
 
 # Re-run ccoctl — updates the role assignments without recreating the identity or secret
 ./ccoctl azure create-managed-identities \
@@ -156,7 +156,7 @@ sed '/####/,$d' credrequests/credentials_request_azure_wif.yaml > \
 ```
 
 > **Note:** If you need to create a new podvm image in the future, re-run `ccoctl` with the full
-> `credentials_request_azure_wif.yaml` (fetched from the operator image) to restore
+> `credentials_request_azure.yaml` (fetched from the operator image) to restore
 > the extended permissions, then reduce them again once image creation completes.
 
 ### Cleanup
@@ -201,7 +201,7 @@ echo "OIDC:     ${OIDC_PROVIDER}"
 ### 2. Fetch the CredentialsRequest from the operator image
 
 The committed CredentialsRequest is bundled inside the operator image under
-`/config/peerpods/credentials-requests/ccoctl/`. Copy it out:
+`/config/peerpods/credentials-requests/`. Copy it out:
 
 ```bash
 mkdir credrequests
@@ -211,8 +211,8 @@ OPERATOR_POD=$(oc get pods -n openshift-sandboxed-containers-operator \
   -o jsonpath='{.items[0].metadata.name}')
 
 oc cp -n openshift-sandboxed-containers-operator \
-  "${OPERATOR_POD}:config/peerpods/credentials-requests/ccoctl/credentials_request_aws_sts.yaml" \
-  ./credrequests/credentials_request_aws_sts.yaml
+  "${OPERATOR_POD}:config/peerpods/credentials-requests/credentials_request_aws.yaml" \
+  ./credrequests/credentials_request_aws.yaml
 ```
 
 ### 3. Run ccoctl to create the IAM role and generate the secret manifest
@@ -252,7 +252,7 @@ Complete configuration and create a KataConfig with `enablePeerPods: true`
 
 ### Reducing Permissions After Image Creation
 
-The CredentialsRequest bundled in the operator image (`credentials_request_aws_sts.yaml`) includes
+The CredentialsRequest bundled in the operator image (`credentials_request_aws.yaml`) includes
 extended permissions required for the podvm image creation job (S3 bucket management, VMImport IAM
 role). Once image creation has completed successfully these permissions are no longer needed and
 can be removed to follow the principle of least privilege.
@@ -264,8 +264,8 @@ in place.
 ```bash
 # Create a reduced CredentialsRequest
 # This removes everything after the #### marker (image creation permissions)
-sed '/####/,$d' credrequests/credentials_request_aws_sts.yaml > \
-  credrequests/credentials_request_aws_sts_minimal.yaml
+sed '/####/,$d' credrequests/credentials_request_aws.yaml > \
+  credrequests/credentials_request_aws_minimal.yaml
 
 # Re-run ccoctl — updates the IAM role policy without recreating the role or secret
 ./ccoctl aws create-iam-roles \
@@ -277,7 +277,7 @@ sed '/####/,$d' credrequests/credentials_request_aws_sts.yaml > \
 ```
 
 > **Note:** If you need to create a new podvm image in the future, re-run `ccoctl` with the full
-> `credentials_request_aws_sts.yaml` (fetched from the operator image) to restore the extended
+> `credentials_request_aws.yaml` (fetched from the operator image) to restore the extended
 > permissions, then reduce them again once image creation completes.
 
 ### Cleanup
