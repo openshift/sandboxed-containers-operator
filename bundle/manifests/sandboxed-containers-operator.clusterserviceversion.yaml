@@ -408,7 +408,7 @@ spec:
                 - name: RELATED_IMAGE_KATA_DAEMONSET
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-daemonset-rhel9@sha256:124dd88098df72fbf07425a3ce2d8609178b72324ba97f491edad58943ead3eb
                 - name: RELATED_IMAGE_KATA_MONITOR
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:78b3a09a73c6a8f7f400b8a1c0ba48026a52c9c8cc6017c062bc6803f9ecded1
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:62abf8ec5a1079fe6cc351d4207725c4286bd1b85506c8c56725b4993d952727
                 - name: RELATED_IMAGE_CAA
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:1ad4181df6f6d5467fdd9afac326298448dc76f659b4108e0c8c95c7d5608139
                 - name: RELATED_IMAGE_PEERPODS_WEBHOOK
@@ -558,7 +558,7 @@ spec:
   relatedImages:
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-daemonset-rhel9@sha256:124dd88098df72fbf07425a3ce2d8609178b72324ba97f491edad58943ead3eb
     name: kata-daemonset
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:78b3a09a73c6a8f7f400b8a1c0ba48026a52c9c8cc6017c062bc6803f9ecded1
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:62abf8ec5a1079fe6cc351d4207725c4286bd1b85506c8c56725b4993d952727
     name: kata-monitor
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:1ad4181df6f6d5467fdd9afac326298448dc76f659b4108e0c8c95c7d5608139
     name: caa
