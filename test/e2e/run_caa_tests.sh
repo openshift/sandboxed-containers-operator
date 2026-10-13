@@ -36,6 +36,7 @@ Options:
   --tests-repo-ref REF      Git ref to checkout (default: osc-release)
   --preserve-tests-repo     Do not delete the cloned test repo after execution
   --timeout DURATION        go test -timeout value (default: 90m)
+  --trustee-url URL         Trustee/KBS HTTP(S) endpoint
   -h, --help                Show this help
 EOF
     exit "${1:-1}"
@@ -49,6 +50,7 @@ TESTS_REPO="https://github.com/openshift/cloud-api-adaptor"
 TESTS_REPO_REF="osc-release"
 PRESERVE_TESTS_REPO=false
 TIMEOUT="90m"
+TRUSTEE_URL=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -60,6 +62,7 @@ while [ $# -gt 0 ]; do
         --tests-repo-ref) TESTS_REPO_REF="$2"; shift 2;;
         --preserve-tests-repo) PRESERVE_TESTS_REPO=true; shift;;
         --timeout) TIMEOUT="$2"; shift 2;;
+        --trustee-url) TRUSTEE_URL="$2"; shift 2;;
         -h|--help) usage 0;;
         *) echo "Unknown argument: $1"; usage;;
     esac
@@ -104,10 +107,9 @@ AZURE_SANITY=(
     TestCreatePodWithConfigMapAzure
 )
 
-# CoCo tests need Trustee/KBS. Only TestRemoteAttestation can use a pre-installed
-# Trustee (via KBS_ENDPOINT); the rest need the framework to deploy Trustee
-# itself, so none are enabled yet.
 AZURE_COCO=(
+    TestInitDataMeasurement
+    TestRemoteAttestationAzure
 )
 
 # AWS tests are all non-CoCo.
@@ -133,6 +135,19 @@ AWS_SANITY=(
     TestAwsCreateSimplePod
     TestAwsCreatePodWithConfigMap
 )
+
+# Check running tests on environment configured for CoCo.
+check_coco() {
+    local disablecvm
+    disablecvm="$(kubectl get configmap peer-pods-cm -n "$PEERPODS_NAMESPACE" \
+        -o "jsonpath={.data.DISABLECVM}" 2>/dev/null)"
+    if [[ "$disablecvm" != "false" ]]; then
+        echo "ERROR: profile 'coco' requires a CoCo-enabled cluster." >&2
+        echo "  peer-pods-cm DISABLECVM=${disablecvm:-<not set>} (expected: false)" >&2
+        echo "  Ensure the OSC operator is configured with CoCo enabled." >&2
+        exit 1
+    fi
+}
 
 select_tests() {
     case "$PROVIDER" in
@@ -386,6 +401,7 @@ export TEST_TEARDOWN="no"
 export TEST_PROVISION_FILE="$PROVISION_FILE"
 export CONTAINER_RUNTIME="crio"
 export TEST_CAA_NAMESPACE="${TEST_CAA_NAMESPACE:-$PEERPODS_NAMESPACE}"
+[[ -n "$TRUSTEE_URL" ]] && export KBS_ENDPOINT="$TRUSTEE_URL"
 
 label_caa_pods
 
@@ -405,6 +421,10 @@ echo "=============================="
 echo ""
 
 cd "$CAA_DIR" || exit 1
+
+if [ "$PROFILE" = "coco" ]; then
+    check_coco
+fi
 
 # Serial (-parallel 1): each peer-pod test boots a cloud VM, so serial keeps the
 # VM count and the -json stream sane for go-junit-report.
