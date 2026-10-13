@@ -43,4 +43,9 @@ data:
 
   # precreated artifacts
   #BUCKET_NAME: existing-bucket-name
+
+  # Record of the intermediate S3 bucket the image-creation job generated when
+  # no BUCKET_NAME was provided. Managed by the job for visibility only (set on
+  # each run that generates a bucket); do not set this manually.
+  #GENERATED_BUCKET_NAME: ""
   #PODVM_IMAGE_URI: bootc::image-registry.openshift-image-registry.svc:5000/openshift-sandboxed-containers-operator/podvm-bootc
