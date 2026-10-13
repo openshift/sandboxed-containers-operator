@@ -238,6 +238,14 @@ function is_cco_flow_secret() {
     fi
 }
 
+# Returns 0 if the user supplied a custom bucket name, i.e. BUCKET_NAME differs
+# from the auto-generated default. Comparing against the default (rather than
+# "is BUCKET_NAME set") stays correct across job reruns, since the default name
+# is patched back into the aws-podvm-image-cm configmap on the first run.
+function is_user_provided_bucket() {
+    [[ -n "${BUCKET_NAME}" && "${BUCKET_NAME}" != "${AMI_BASE_NAME}-${AMI_VERSION}" ]]
+}
+
 function prepare_for_prebuilt_artifact() {
     echo "Preparing infrastructure for prebuilt artifact"
 
@@ -257,14 +265,20 @@ function prepare_for_prebuilt_artifact() {
         /scripts/ami-helper.sh -i -b ${BUCKET_NAME} || error_exit "Failed to extend credentials using the helper script"
         export AWS_ACCESS_KEY_ID=$(kubectl get secret ${extended_secret_name} -n openshift-sandboxed-containers-operator -o jsonpath='{.data.aws_access_key_id}' | base64 -d)
         export AWS_SECRET_ACCESS_KEY=$(kubectl get secret ${extended_secret_name} -n openshift-sandboxed-containers-operator -o jsonpath='{.data.aws_secret_access_key}' | base64 -d)
-    else
-        echo "Using manual credentials (expecting s3 ${BUCKET_NAME} bucket to exist and vmimport service role to be set)"
-
-        # Validate bucket exists
+    elif is_user_provided_bucket; then
+        # A custom bucket name was supplied: assume the user manages the bucket
+        # and vmimport role themselves (e.g. with narrowly-scoped credentials).
+        # Validate the bucket exists rather than creating it.
+        echo "Using manual credentials with a user-provided bucket (expecting s3 ${BUCKET_NAME} bucket and vmimport role to exist)"
         aws s3api head-bucket --bucket ${BUCKET_NAME} --region ${AWS_REGION} 2>/dev/null || \
-            error_exit "Bucket ${BUCKET_NAME} not found or not accessible. When using manual credentials, you must create the bucket and vmimport role before image creation. Use ami-helper.sh or see docs/credentials-handling.md for details."
-
+            error_exit "Bucket ${BUCKET_NAME} not found or not accessible. When providing a custom bucket name you must create the bucket and vmimport role before image creation. See docs/credentials-handling.md for details."
         echo "Verified bucket ${BUCKET_NAME} is accessible"
+    else
+        # No custom bucket name: assume the provided credentials have full
+        # permissions and create the bucket and vmimport role, same as IRSA.
+        echo "Using manual credentials: creating bucket and vmimport role"
+        /scripts/ami-helper.sh -s -b ${BUCKET_NAME} || error_exit "Failed to create bucket using the helper script"
+        echo "Note: the provided credentials need S3 and iam:CreateRole/PassRole permissions. It is recommended to reduce these permissions after image creation."
     fi
 }
 
@@ -335,8 +349,11 @@ function cleanup_prebuilt_intermediate_resources() {
     elif is_cco_flow_secret; then
         echo "CCO flow: deleting bucket and cleaning extended credentials"
         /scripts/ami-helper.sh -i -c -d -b ${BUCKET_NAME} || echo "Warning: Failed to clean up"
+    elif is_user_provided_bucket; then
+        echo "Manual credentials with user-provided bucket: skipping cleanup (bucket and vmimport role are user-managed)"
     else
-        echo "Manual credentials: bucket and vmimport role were pre-created, perform manual cleanup"
+        echo "Manual credentials: deleting bucket and vmimport role"
+        /scripts/ami-helper.sh -s -d -b ${BUCKET_NAME} || echo "Warning: Failed to delete the bucket. Make sure to re-enable any permissions that were previously reduced"
     fi
 }
 
