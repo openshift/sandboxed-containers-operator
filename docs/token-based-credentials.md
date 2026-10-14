@@ -1,6 +1,6 @@
 # Token-Based Credentials Setup Using ccoctl
 
-This guide describes how to set up token-based credentials (Azure Workload Identity and AWS STS) for the sandboxed-containers-operator (for peer-pods usage) using `ccoctl`. This applies only to clusters with token-based authentication enabled.
+This guide describes how to set up token-based credentials (Azure Workload Identity, AWS STS and GCP Workload Identity Federation) for the sandboxed-containers-operator (for peer-pods usage) using `ccoctl`. This applies only to clusters with token-based authentication enabled.
 
 ## Overview
 
@@ -8,6 +8,7 @@ The `ccoctl` tool provides a standardized way to provision cloud credentials tha
 
 - **Azure**: Creates managed identities with federated credentials (Workload Identity)
 - **AWS**: Creates IAM roles with OIDC trust policies (STS/IRSA)
+- **GCP**: Creates IAM service accounts bound to a workload identity pool (Workload Identity Federation)
 
 Both approaches follow the same pattern, once you have deployed the OSC operator catalog:
 1. You run `ccoctl` locally to create cloud resources and generate a `cco-secret` manifest
@@ -291,3 +292,146 @@ oc delete secret cco-secret -n openshift-sandboxed-containers-operator
 ```
 
 > **Note**: AWS resources are tag-protected, so `ccoctl delete` only removes resources it created. For extra safety or if you prefer manual cleanup, delete only the IAM roles (filtered by `ccoctl.openshift.io/${AWS_NAME}: owned` tag) using AWS CLI.
+
+---
+
+## GCP Workload Identity Federation Setup
+
+With GCP Workload Identity Federation (WIF), the cloud-api-adaptor authenticates to
+GCP via a short-lived, projected service account token exchanged by GCP STS — no
+static service account key is stored in the cluster. `ccoctl` creates an IAM
+service account bound to the cluster's workload identity pool and generates a
+`cco-secret` whose `service_account.json` contains an `external_account`
+configuration. The credentials controller detects this format and maps it to the
+`GCP_WIF_CREDENTIALS` key in `peer-pods-secret` (static service account keys are
+mapped to `GCP_CREDENTIALS`, preserving the existing flow).
+
+### Prerequisites
+
+- OpenShift cluster on GCP with OIDC issuer configured (Workload Identity mode) and OSC operator installed
+- `gcloud` CLI installed and authenticated with permissions to create service accounts and IAM policy bindings
+- `oc` CLI authenticated to your OpenShift cluster
+
+### 1. Collect environment info
+
+```bash
+GCP_PROJECT_ID=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.gcp.projectID}')
+
+# On an OpenShift GCP WIF cluster the workload identity pool and provider are
+# created at install time and named after the cluster infrastructure name.
+INFRA_NAME=$(oc get infrastructure cluster -o jsonpath='{.status.infrastructureName}')
+POOL_ID="${INFRA_NAME}"
+PROVIDER_ID="${INFRA_NAME}"
+
+echo "Project:  ${GCP_PROJECT_ID}"
+echo "Pool:     ${POOL_ID}"
+echo "Provider: ${PROVIDER_ID}"
+
+# Verify the pool and provider exist (adjust the names above if they differ)
+gcloud iam workload-identity-pools list --location=global --project="${GCP_PROJECT_ID}"
+```
+
+### 2. Fetch the CredentialsRequest from the operator image
+
+The committed CredentialsRequest is bundled inside the operator image under
+`/config/peerpods/credentials-requests/`. Copy it out:
+
+```bash
+mkdir credrequests
+
+OPERATOR_POD=$(oc get pods -n openshift-sandboxed-containers-operator \
+  -l control-plane=controller-manager \
+  -o jsonpath='{.items[0].metadata.name}')
+
+oc cp -n openshift-sandboxed-containers-operator \
+  "${OPERATOR_POD}:config/peerpods/credentials-requests/credentials_request_gcp.yaml" \
+  ./credrequests/credentials_request_gcp.yaml
+```
+
+### 3. Run ccoctl to create the service account and generate the secret manifest
+
+```bash
+# Use some unique name prefix for the created cloud resources
+GCP_NAME="osc-peerpods-$(oc get clusterversion -o jsonpath='{.items[0].spec.clusterID}' | cut -c1-8)"
+
+./ccoctl gcp create-service-accounts \
+  --name="${GCP_NAME}" \
+  --project="${GCP_PROJECT_ID}" \
+  --credentials-requests-dir=./credrequests \
+  --workload-identity-pool="${POOL_ID}" \
+  --workload-identity-provider="${PROVIDER_ID}" \
+  --output-dir=./ccoctl-output
+```
+
+This creates an IAM service account bound to the workload identity pool and writes
+a `cco-secret` manifest to `./ccoctl-output/manifests/`.
+
+### 4. Apply the generated secret
+
+```bash
+oc apply -f ./ccoctl-output/manifests/openshift-sandboxed-containers-operator-cco-secret-credentials.yaml
+```
+
+The credentials controller will detect `cco-secret`, recognize the
+`external_account` (WIF) configuration, and automatically create a populated
+`peer-pods-secret` with `GCP_WIF_CREDENTIALS`.
+
+### 5. Verify peer-pods-secret was created
+
+```bash
+oc get secret peer-pods-secret -n openshift-sandboxed-containers-operator -o yaml
+
+# Confirm it contains the WIF (external_account) credentials
+oc get secret peer-pods-secret -n openshift-sandboxed-containers-operator \
+  -o jsonpath='{.data.GCP_WIF_CREDENTIALS}' | base64 -d | jq .type
+```
+
+The output should be `"external_account"`.
+
+### 6. Continue with OSC installation
+
+Complete configuration and create a KataConfig with `enablePeerPods: true`
+
+### Reducing Permissions After Image Creation
+
+The CredentialsRequest bundled in the operator image (`credentials_request_gcp.yaml`)
+includes extended permissions required for the podvm image creation job (GCS bucket
+management and `compute.images.create`/`delete`). Once image creation has completed
+successfully these permissions are no longer needed and can be removed to follow the
+principle of least privilege.
+
+To reduce permissions, create a trimmed CredentialsRequest that contains only the
+permissions required by the cloud-api-adaptor at runtime, then re-run `ccoctl` to
+update the service account's project policy bindings in place.
+
+```bash
+# Create a reduced CredentialsRequest (runtime permissions only)
+# This removes everything after the #### marker (image creation permissions)
+sed '/####/,$d' credrequests/credentials_request_gcp.yaml > \
+  credrequests/credentials_request_gcp_minimal.yaml
+
+# Re-run ccoctl — updates the policy bindings without recreating the service account or secret
+./ccoctl gcp create-service-accounts \
+  --name="${GCP_NAME}" \
+  --project="${GCP_PROJECT_ID}" \
+  --credentials-requests-dir=./credrequests \
+  --workload-identity-pool="${POOL_ID}" \
+  --workload-identity-provider="${PROVIDER_ID}" \
+  --output-dir=./ccoctl-output
+```
+
+> **Note:** If you need to create a new podvm image in the future, re-run `ccoctl` with the full
+> `credentials_request_gcp.yaml` (fetched from the operator image) to restore the extended
+> permissions, then reduce them again once image creation completes.
+
+### Cleanup
+
+```bash
+oc delete secret cco-secret -n openshift-sandboxed-containers-operator
+
+./ccoctl gcp delete \
+  --name="${GCP_NAME}" \
+  --project="${GCP_PROJECT_ID}"
+```
+
+> **Note**: `ccoctl gcp delete` removes the IAM service accounts it created for this `--name`. It does not delete the cluster's shared workload identity pool/provider. For manual cleanup, delete only the service accounts whose names are prefixed with `${GCP_NAME}` using the GCP console or `gcloud`.
