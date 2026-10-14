@@ -640,6 +640,8 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 	azureConfigMapKeys := []string{"AZURE_RESOURCE_GROUP", "AZURE_REGION", "CLOUD_PROVIDER"}
 	// gcp Secret Keys
 	gcpSecretKeys := []string{"GCP_CREDENTIALS"}
+	// gcp Secret Keys for Workload Identity Federation (WIF)
+	gcpSecretWIFKeys := []string{"GCP_WIF_CREDENTIALS"}
 	// gcp ConfigMap Keys
 	gcpConfigMapKeys := []string{"GCP_PROJECT_ID", "GCP_ZONE", "CLOUD_PROVIDER"}
 	// libvirt Secret Keys
@@ -678,7 +680,8 @@ func (r *ImageGenerator) validatePeerPodsConfigs() error {
 
 	case "gcp":
 		// Check if gcp Secret Keys are present in the peerPodsSecret
-		if !checkKeysPresentAndNotEmpty(peerPodsSecret.Data, gcpSecretKeys) {
+		// Support both static credentials and Workload Identity Federation (WIF)
+		if !(checkKeysPresentAndNotEmpty(peerPodsSecret.Data, gcpSecretKeys) || checkKeysPresentAndNotEmpty(peerPodsSecret.Data, gcpSecretWIFKeys)) {
 			return fmt.Errorf("validatePeerPodsConfigs: cannot find the required keys in peer-pods-secret Secret")
 		}
 
