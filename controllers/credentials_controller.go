@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -151,7 +152,9 @@ func (r *SecretReconciler) ccoDataMapping(ccoSecretData map[string][]byte) map[s
 		"azure_client_secret":        "AZURE_CLIENT_SECRET",
 		"azure_tenant_id":            "AZURE_TENANT_ID",
 		"azure_federated_token_file": "AZURE_FEDERATED_TOKEN_FILE",
-		"service_account.json":       "GCP_CREDENTIALS",
+		// GCP's "service_account.json" is handled separately below because it maps
+		// to a different peer-pods key depending on whether it is a static key or
+		// a Workload Identity Federation (external_account) config.
 		// the following are usually set in them CM, ignore them for now
 		//"azure_region":          "AZURE_REGION",
 		//"azure_resourcegroup":   "AZURE_RESOURCE_GROUP",
@@ -190,6 +193,24 @@ func (r *SecretReconciler) ccoDataMapping(ccoSecretData map[string][]byte) map[s
 					peerPodsSecretData[ppKey] = []byte(value)
 				}
 			}
+		}
+	}
+
+	// Handle ccoctl GCP format: the "service_account.json" key is produced by
+	// `ccoctl gcp create-service-accounts`. Its content is either a static service
+	// account key (type "service_account") or a Workload Identity Federation config
+	// (type "external_account"). Route it to the env var the image creation job and
+	// CAA expect, based on the credential type.
+	if saJSON, ok := ccoSecretData["service_account.json"]; ok {
+		var creds struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(saJSON, &creds); err == nil && creds.Type == "external_account" {
+			r.Log.Info("ccoDataMapping: ccoctl GCP Workload Identity (external_account) config identified, mapping to GCP_WIF_CREDENTIALS")
+			peerPodsSecretData["GCP_WIF_CREDENTIALS"] = saJSON
+		} else {
+			r.Log.Info("ccoDataMapping: ccoctl GCP static service account key identified, mapping to GCP_CREDENTIALS")
+			peerPodsSecretData["GCP_CREDENTIALS"] = saJSON
 		}
 	}
 
@@ -411,7 +432,7 @@ func (kh *KataConfigHandler) teardownPeerPodsCredentials(ctx context.Context) (b
 // trySetupCredentialsFromEnv checks if token based authentication workflow environment variables
 // are provided (propagated from provisioning at Subscription creation) and creates/updates
 // the peer-pods-secret accordingly.
-// Currently supports Azure and AWS.
+// Currently supports Azure, AWS and GCP.
 // Returns true if WIF/STS parameters are detected and secret was created/updated successfully.
 // Returns false if no WIF/STS environment variables are found or if there's an error.
 func (kh *KataConfigHandler) trySetupCredentialsFromEnv(ctx context.Context) (bool, error) {
@@ -426,12 +447,27 @@ func (kh *KataConfigHandler) trySetupCredentialsFromEnv(ctx context.Context) (bo
 	// AWS
 	roleARN := os.Getenv("ROLEARN") // AWS IAM Role ARN
 
+	// GCP (Workload Identity Federation)
+	// The web console sets PROJECT_NUMBER/POOL_ID/PROVIDER_ID, while the CLI sets the
+	// fully-formed AUDIENCE directly. Both set SERVICE_ACCOUNT_EMAIL.
+	gcpServiceAccount := os.Getenv("SERVICE_ACCOUNT_EMAIL") // GCP service account to impersonate
+	gcpAudience := os.Getenv("AUDIENCE")                    // GCP workload identity provider resource name
+	gcpProjectNumber := os.Getenv("PROJECT_NUMBER")         // GCP project number
+	gcpPoolID := os.Getenv("POOL_ID")                       // GCP workload identity pool ID
+	gcpProviderID := os.Getenv("PROVIDER_ID")               // GCP workload identity provider ID
+	if gcpAudience == "" && gcpProjectNumber != "" && gcpPoolID != "" && gcpProviderID != "" {
+		gcpAudience = fmt.Sprintf("//iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/providers/%s",
+			gcpProjectNumber, gcpPoolID, gcpProviderID)
+	}
+
 	tokenPath := "/var/run/secrets/openshift/serviceaccount/token"
 
 	// Check if Azure WIF credentials are provided
 	hasAzureWIFCreds := len(clientID) > 0 && len(tenantID) > 0 && len(subscriptionID) > 0
 	// Check if AWS STS credentials are provided
 	hasAWSSTSCreds := len(roleARN) > 0
+	// Check if GCP WIF credentials are provided
+	hasGCPWIFCreds := len(gcpServiceAccount) > 0 && len(gcpAudience) > 0
 
 	secretData := map[string][]byte{}
 	if hasAzureWIFCreds {
@@ -444,6 +480,14 @@ func (kh *KataConfigHandler) trySetupCredentialsFromEnv(ctx context.Context) (bo
 		kh.reconciler.Log.Info("AWS token-based workflow (STS) detected, creating peer-pods-secret")
 		secretData["AWS_ROLE_ARN"] = []byte(roleARN)
 		secretData["AWS_WEB_IDENTITY_TOKEN_FILE"] = []byte(tokenPath)
+	} else if hasGCPWIFCreds {
+		kh.reconciler.Log.Info("GCP token-based workflow (WIF) detected, creating peer-pods-secret")
+		wifCreds, err := buildGCPWIFCredentials(gcpAudience, gcpServiceAccount, tokenPath)
+		if err != nil {
+			kh.reconciler.Log.Error(err, "Failed to build GCP WIF credentials")
+			return false, err
+		}
+		secretData["GCP_WIF_CREDENTIALS"] = wifCreds
 	} else {
 		kh.reconciler.Log.Info("No STS/WIF credentials found in enviroment variables")
 		return false, nil
@@ -462,6 +506,28 @@ func (kh *KataConfigHandler) trySetupCredentialsFromEnv(ctx context.Context) (bo
 
 	kh.reconciler.Log.Info("Successfully created/updated peer-pods-secret for STS workflow based on provided enviroment variables")
 	return true, nil
+}
+
+// buildGCPWIFCredentials assembles the GCP Workload Identity Federation credentials
+// JSON (type "external_account") expected by cloud-api-adaptor in GCP_WIF_CREDENTIALS.
+// The credential_source file points to the projected service account token so GCP STS
+// can exchange it for an access token that impersonates the given service account.
+func buildGCPWIFCredentials(audience, serviceAccountEmail, tokenPath string) ([]byte, error) {
+	creds := map[string]interface{}{
+		"type":               "external_account",
+		"audience":           audience,
+		"subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+		"token_url":          "https://sts.googleapis.com/v1/token",
+		"service_account_impersonation_url": fmt.Sprintf(
+			"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateAccessToken", serviceAccountEmail),
+		"credential_source": map[string]interface{}{
+			"file": tokenPath,
+			"format": map[string]interface{}{
+				"type": "text",
+			},
+		},
+	}
+	return json.Marshal(creds)
 }
 
 // create credentialRequests for all supported providers
