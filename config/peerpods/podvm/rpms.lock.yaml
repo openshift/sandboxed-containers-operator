@@ -347,6 +347,27 @@ arches:
     name: pcre-utf32
     evr: 8.44-4.el9
     sourcerpm: pcre-8.44-4.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/p/pcre2-devel-10.40-7.el9_8.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 530653
+    checksum: sha256:1aec5705224299fc6db35c206f93ad0945eda716198b0723a48fbd5550ea2f16
+    name: pcre2-devel
+    evr: 10.40-7.el9_8
+    sourcerpm: pcre2-10.40-7.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/p/pcre2-utf16-10.40-7.el9_8.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 211619
+    checksum: sha256:0b04a79fafb30593f556d98757291e8b6570ad96a669a03a88bc9c5df1b0f925
+    name: pcre2-utf16
+    evr: 10.40-7.el9_8
+    sourcerpm: pcre2-10.40-7.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/p/pcre2-utf32-10.40-7.el9_8.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 199624
+    checksum: sha256:5c6e650d538d7e3ab40d80281db53c1ff10ec742567423e1ab0a3a01d8b722e0
+    name: pcre2-utf32
+    evr: 10.40-7.el9_8
+    sourcerpm: pcre2-10.40-7.el9_8.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/p/perl-AutoLoader-5.74-484.el9_8.noarch.rpm
     repoid: ubi-9-for-s390x-appstream-rpms
     size: 26763
@@ -1117,27 +1138,6 @@ arches:
     name: python3-wheel
     evr: 1:0.36.2-8.el9
     sourcerpm: python-wheel-0.36.2-8.el9.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/p/pcre2-devel-10.40-6.el9.s390x.rpm
-    repoid: rhel-9-for-s390x-appstream-rpms
-    size: 528585
-    checksum: sha256:fe8e92c82f3f3dfa449505185e8ca242710170e8de1bf2d195513b14801a74e0
-    name: pcre2-devel
-    evr: 10.40-6.el9
-    sourcerpm: pcre2-10.40-6.el9.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/p/pcre2-utf16-10.40-6.el9.s390x.rpm
-    repoid: rhel-9-for-s390x-appstream-rpms
-    size: 207477
-    checksum: sha256:2c110b29a9444e443c0700c543af47f38114ff7ca5d41363915d54fe991b13e6
-    name: pcre2-utf16
-    evr: 10.40-6.el9
-    sourcerpm: pcre2-10.40-6.el9.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/p/pcre2-utf32-10.40-6.el9.s390x.rpm
-    repoid: rhel-9-for-s390x-appstream-rpms
-    size: 195777
-    checksum: sha256:d5814c3428fa5978362e0ba8fffb6d2ce4b1ce609b6e95b3d2227e143bf72526
-    name: pcre2-utf32
-    evr: 10.40-6.el9
-    sourcerpm: pcre2-10.40-6.el9.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/q/qemu-img-10.1.0-17.el9_8.5.s390x.rpm
     repoid: rhel-9-for-s390x-appstream-rpms
     size: 1901214
@@ -1729,6 +1729,12 @@ arches:
     checksum: sha256:7edbd87b866a3f6e3df1426d660b902e063193d6186027bf99f6d77626a43817
     name: pcre
     evr: 8.44-4.el9
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/p/pcre2-10.40-7.el9_8.src.rpm
+    repoid: ubi-9-for-s390x-baseos-source-rpms
+    size: 1805958
+    checksum: sha256:43c40093332890a77f7d7c573a1b540867319bbcaaec5a6dfd73101765dc6ea0
+    name: pcre2
+    evr: 10.40-7.el9_8
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/p/pkgconf-1.7.3-10.el9.src.rpm
     repoid: ubi-9-for-s390x-baseos-source-rpms
     size: 310904
@@ -1801,12 +1807,6 @@ arches:
     checksum: sha256:9c864465c92115ad613c822f457af3f1f9d6e545321746cceb8b4c0f461a2fc4
     name: oniguruma
     evr: 6.9.6-1.el9.6
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/source/SRPMS/Packages/p/pcre2-10.40-6.el9.src.rpm
-    repoid: rhel-9-for-s390x-baseos-source-rpms
-    size: 1789790
-    checksum: sha256:a570f7192be555222aa3704882b9199fb013a84ad4d7dcf40a93d8de2ecf6e0a
-    name: pcre2
-    evr: 10.40-6.el9
   module_metadata: []
 - arch: x86_64
   packages:
@@ -2146,6 +2146,27 @@ arches:
     name: pcre-utf32
     evr: 8.44-4.el9
     sourcerpm: pcre-8.44-4.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/appstream/os/Packages/p/pcre2-devel-10.40-7.el9_8.x86_64.rpm
+    repoid: ubi-9-for-x86_64-appstream-rpms
+    size: 530728
+    checksum: sha256:2d364f3ae081abc335f60508227ae8af0ce61d22035051ec811cb06f12f5b1b3
+    name: pcre2-devel
+    evr: 10.40-7.el9_8
+    sourcerpm: pcre2-10.40-7.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/appstream/os/Packages/p/pcre2-utf16-10.40-7.el9_8.x86_64.rpm
+    repoid: ubi-9-for-x86_64-appstream-rpms
+    size: 224219
+    checksum: sha256:55df20fc3c277a31256871a581a267647686d76c694f223b531ac295cdca3665
+    name: pcre2-utf16
+    evr: 10.40-7.el9_8
+    sourcerpm: pcre2-10.40-7.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/appstream/os/Packages/p/pcre2-utf32-10.40-7.el9_8.x86_64.rpm
+    repoid: ubi-9-for-x86_64-appstream-rpms
+    size: 213233
+    checksum: sha256:be9a7393cb23b49b0f8e7df3146b03ea978f4d1e18e379f195064382666f9f52
+    name: pcre2-utf32
+    evr: 10.40-7.el9_8
+    sourcerpm: pcre2-10.40-7.el9_8.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/appstream/os/Packages/p/perl-AutoLoader-5.74-484.el9_8.noarch.rpm
     repoid: ubi-9-for-x86_64-appstream-rpms
     size: 26763
@@ -2916,27 +2937,6 @@ arches:
     name: python3-wheel
     evr: 1:0.36.2-8.el9
     sourcerpm: python-wheel-0.36.2-8.el9.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/p/pcre2-devel-10.40-6.el9.x86_64.rpm
-    repoid: rhel-9-for-x86_64-appstream-rpms
-    size: 528624
-    checksum: sha256:f2fa0c49019f12b9c01986c1d05ffc83863ac7b47b8e348d6357e7fbdf3b17e3
-    name: pcre2-devel
-    evr: 10.40-6.el9
-    sourcerpm: pcre2-10.40-6.el9.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/p/pcre2-utf16-10.40-6.el9.x86_64.rpm
-    repoid: rhel-9-for-x86_64-appstream-rpms
-    size: 220256
-    checksum: sha256:935664188bce50473e3c148fc9d71167d3881fc2de9ccc99394c03d00e8ff5b3
-    name: pcre2-utf16
-    evr: 10.40-6.el9
-    sourcerpm: pcre2-10.40-6.el9.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/p/pcre2-utf32-10.40-6.el9.x86_64.rpm
-    repoid: rhel-9-for-x86_64-appstream-rpms
-    size: 209174
-    checksum: sha256:d50fc56a1e9710b3374826c82044d4624b6c5949db0178d5774f575a5fcd6934
-    name: pcre2-utf32
-    evr: 10.40-6.el9
-    sourcerpm: pcre2-10.40-6.el9.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/q/qemu-img-10.1.0-17.el9_8.5.x86_64.rpm
     repoid: rhel-9-for-x86_64-appstream-rpms
     size: 2682565
@@ -3534,6 +3534,12 @@ arches:
     checksum: sha256:7edbd87b866a3f6e3df1426d660b902e063193d6186027bf99f6d77626a43817
     name: pcre
     evr: 8.44-4.el9
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/source/SRPMS/Packages/p/pcre2-10.40-7.el9_8.src.rpm
+    repoid: ubi-9-for-x86_64-baseos-source-rpms
+    size: 1805958
+    checksum: sha256:43c40093332890a77f7d7c573a1b540867319bbcaaec5a6dfd73101765dc6ea0
+    name: pcre2
+    evr: 10.40-7.el9_8
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/source/SRPMS/Packages/p/pkgconf-1.7.3-10.el9.src.rpm
     repoid: ubi-9-for-x86_64-baseos-source-rpms
     size: 310904
@@ -3606,10 +3612,4 @@ arches:
     checksum: sha256:9c864465c92115ad613c822f457af3f1f9d6e545321746cceb8b4c0f461a2fc4
     name: oniguruma
     evr: 6.9.6-1.el9.6
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/source/SRPMS/Packages/p/pcre2-10.40-6.el9.src.rpm
-    repoid: rhel-9-for-x86_64-baseos-source-rpms
-    size: 1789790
-    checksum: sha256:a570f7192be555222aa3704882b9199fb013a84ad4d7dcf40a93d8de2ecf6e0a
-    name: pcre2
-    evr: 10.40-6.el9
   module_metadata: []
