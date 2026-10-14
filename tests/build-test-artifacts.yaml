@@ -34,6 +34,10 @@ spec:
         results:
         - name: TEST_OUTPUT
           description: Test output
+        - name: CATALOG_IMAGE
+          description: "The catalog image URL, empty if build was skipped"
+        - name: TRIGGER_COMPONENT
+          description: "The Konflux component that triggered this pipeline run"
         volumes:
         - name: workdir
           emptyDir: {}
@@ -43,6 +47,12 @@ spec:
         - name: fbc-push-secret
           secret:
             secretName: osc-test-fbc-image-push
+        - name: podinfo
+          downwardAPI:
+            items:
+            - path: "labels"
+              fieldRef:
+                fieldPath: metadata.labels
         steps:
         - name: build
           image: registry.redhat.io/ubi9/ubi:latest
@@ -53,6 +63,9 @@ spec:
           volumeMounts:
           - name: workdir
             mountPath: /workdir
+          - name: podinfo
+            mountPath: /etc/podinfo
+            readOnly: true
           env:
           - name: SNAPSHOT
             value: $(params.SNAPSHOT)
@@ -63,6 +76,13 @@ spec:
           script: |
             #!/bin/bash
             set -e
+
+            TRIGGER_COMPONENT=""
+            if [ -f /etc/podinfo/labels ]; then
+                TRIGGER_COMPONENT=$(grep '^appstudio.openshift.io/component=' /etc/podinfo/labels | sed 's/.*="//' | sed 's/"$//' || true)
+            fi
+            echo "Trigger component: ${TRIGGER_COMPONENT}"
+            echo -n "${TRIGGER_COMPONENT}" > "$(results.TRIGGER_COMPONENT.path)"
 
             RESULTS_FILE="$(results.TEST_OUTPUT.path)"
             trap 'if [ $? -ne 0 ] && [ ! -s "$RESULTS_FILE" ]; then printf "{\"result\":\"ERROR\",\"timestamp\":\"%s\",\"failures\":1,\"successes\":0,\"warnings\":0,\"note\":\"Build step failed unexpectedly\"}" "$(date -u --iso-8601=seconds)" > "$RESULTS_FILE"; fi' EXIT
@@ -244,6 +264,7 @@ spec:
             echo "BUILD_MODE=$BUILD_MODE"
             if [ "$BUILD_MODE" = "SKIP" ]; then
                 echo "Nothing to publish, exiting."
+                echo -n "" > "$(results.CATALOG_IMAGE.path)"
                 exit 0
             fi
 
@@ -420,4 +441,46 @@ spec:
                 '{result: $RESULT, timestamp: $date, failures: $FAILURES, successes: $SUCCESSES, warnings: $WARNINGS, note: $NOTE}')
             echo -n "${TEST_OUTPUT}" | tee "$(results.TEST_OUTPUT.path)"
 
+            if [ "$RESULT" = "SUCCESS" ]; then
+                echo -n "quay.io/redhat-user-workloads/ose-osc-tenant/osc-test-fbc:${VERSION}" > "$(results.CATALOG_IMAGE.path)"
+            else
+                echo -n "" > "$(results.CATALOG_IMAGE.path)"
+            fi
+
             [ "$RESULT" = "SUCCESS" ] || exit 1
+    - name: prowjob-olmv1
+      timeout: "3h"
+      when:
+        - input: "$(tasks.build-and-push.results.CATALOG_IMAGE)"
+          operator: notin
+          values: [""]
+        - input: "$(tasks.build-and-push.results.TRIGGER_COMPONENT)"
+          operator: in
+          values: ["osc-operator"]
+      runAfter:
+        - build-and-push
+      taskRef:
+        resolver: git
+        params:
+        - name: url
+          value: https://github.com/openshift/konflux-tasks
+        - name: revision
+          value: c0b26efc3cf62b2ad2cde127f5309a4ac0cbfbcc
+        - name: pathInRepo
+          value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: PROWJOB_ORG
+          value: openshift
+        - name: PROWJOB_REPO
+          value: sandboxed-containers-operator
+        - name: VARIANT
+          value: ""
+        - name: ENVS
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.build-and-push.results.CATALOG_IMAGE)"
+      matrix:
+        params:
+          - name: PROWJOB_NAME
+            value:
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-azure-ipi-peerpod-olmv1
