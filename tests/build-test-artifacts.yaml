@@ -36,8 +36,8 @@ spec:
           description: Test output
         - name: CATALOG_IMAGE
           description: "The catalog image URL, empty if build was skipped"
-        - name: TRIGGER_COMPONENT
-          description: "The Konflux component that triggered this pipeline run"
+        - name: HAS_OPERATOR_AND_BUNDLE
+          description: "Whether the snapshot contains both osc-operator and osc-operator-bundle components"
         volumes:
         - name: workdir
           emptyDir: {}
@@ -47,12 +47,6 @@ spec:
         - name: fbc-push-secret
           secret:
             secretName: osc-test-fbc-image-push
-        - name: podinfo
-          downwardAPI:
-            items:
-            - path: "labels"
-              fieldRef:
-                fieldPath: metadata.labels
         steps:
         - name: build
           image: registry.redhat.io/ubi9/ubi:latest
@@ -63,9 +57,6 @@ spec:
           volumeMounts:
           - name: workdir
             mountPath: /workdir
-          - name: podinfo
-            mountPath: /etc/podinfo
-            readOnly: true
           env:
           - name: SNAPSHOT
             value: $(params.SNAPSHOT)
@@ -76,13 +67,6 @@ spec:
           script: |
             #!/bin/bash
             set -e
-
-            TRIGGER_COMPONENT=""
-            if [ -f /etc/podinfo/labels ]; then
-                TRIGGER_COMPONENT=$(grep '^appstudio.openshift.io/component=' /etc/podinfo/labels | sed 's/.*="//' | sed 's/"$//' || true)
-            fi
-            echo "Trigger component: ${TRIGGER_COMPONENT}"
-            echo -n "${TRIGGER_COMPONENT}" > "$(results.TRIGGER_COMPONENT.path)"
 
             RESULTS_FILE="$(results.TEST_OUTPUT.path)"
             trap 'if [ $? -ne 0 ] && [ ! -s "$RESULTS_FILE" ]; then printf "{\"result\":\"ERROR\",\"timestamp\":\"%s\",\"failures\":1,\"successes\":0,\"warnings\":0,\"note\":\"Build step failed unexpectedly\"}" "$(date -u --iso-8601=seconds)" > "$RESULTS_FILE"; fi' EXIT
@@ -101,6 +85,23 @@ spec:
             echo "jq installed: $(jq --version)"
 
             echo "Parsing snapshot..."
+            SNAPSHOT_COMPONENTS=$(jq -r '.components[].name' <<< "${SNAPSHOT}")
+            HAS_OPERATOR=false
+            HAS_BUNDLE=false
+            for COMP in $SNAPSHOT_COMPONENTS; do
+                if [ "$COMP" = "osc-operator" ]; then
+                    HAS_OPERATOR=true
+                elif [ "$COMP" = "osc-operator-bundle" ]; then
+                    HAS_BUNDLE=true
+                fi
+            done
+            HAS_OPERATOR_AND_BUNDLE=false
+            if [ "$HAS_OPERATOR" = "true" ] && [ "$HAS_BUNDLE" = "true" ]; then
+                HAS_OPERATOR_AND_BUNDLE=true
+            fi
+            echo -n "${HAS_OPERATOR_AND_BUNDLE}" > "$(results.HAS_OPERATOR_AND_BUNDLE.path)"
+            echo "Has both operator and bundle: ${HAS_OPERATOR_AND_BUNDLE}"
+
             SNAPSHOT_IMAGES=$(jq -r '.components[].containerImage' <<< "${SNAPSHOT}")
 
             # Categorize snapshot images to decide what to build.
@@ -454,9 +455,9 @@ spec:
         - input: "$(tasks.build-and-push.results.CATALOG_IMAGE)"
           operator: notin
           values: [""]
-        - input: "$(tasks.build-and-push.results.TRIGGER_COMPONENT)"
+        - input: "$(tasks.build-and-push.results.HAS_OPERATOR_AND_BUNDLE)"
           operator: in
-          values: ["osc-operator"]
+          values: ["true"]
       runAfter:
         - build-and-push
       taskRef:
