@@ -13,7 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2026-10-01T05:11:16Z"
+    createdAt: "2026-10-15T11:14:47Z"
     features.operators.openshift.io/cnf: "false"
     features.operators.openshift.io/cni: "false"
     features.operators.openshift.io/csi: "false"
@@ -339,6 +339,7 @@ spec:
           - create
           - delete
           - update
+          - watch
         - apiGroups:
           - node.k8s.io
           resources:
