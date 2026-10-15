@@ -14,6 +14,16 @@ RESULTS_DIR="${RESULTS_DIR}/$(date +"%Y-%m-%d_%H%M%S")"
 # it expects to the OSC pods.
 CAA_DS_SELECTOR="${CAA_DS_SELECTOR:-name=osc-caa-ds}"
 
+# Defaults for the signed image, its registry (policy transport key) and the
+# cosign public key it is signed with. These differ between upstream and
+# downstream, so they are overridable via environment variables.
+export SIGNED_IMAGE="quay.io/confidential-devhub/signed/fraud-detection@sha256:f93a4e266b4466f5a1d49c26d25cc181c59ee7487ad985a706f1a858aae4c620"
+export SIGNED_IMAGE_REGISTRY="quay.io/confidential-devhub/signed/fraud-detection"
+export SIGNED_IMAGE_COSIGN_PUBKEY="-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAETu9VYQKSSp5u58gJGCdgFWcF73PX
+Q/k24PGr91SNwY8/70pkIfn7hRHup13WXEmEUaKHcpn83uNobzMfvHlu2Q==
+-----END PUBLIC KEY-----"
+
 usage() {
     cat <<EOF
 Usage: $(basename "$0") -p PROVIDER [options]
@@ -110,6 +120,7 @@ AZURE_SANITY=(
 AZURE_COCO=(
     TestInitDataMeasurement
     TestRemoteAttestationAzure
+    TestAzureSignedImage
 )
 
 # AWS tests are all non-CoCo.
@@ -424,6 +435,8 @@ cd "$CAA_DIR" || exit 1
 
 if [ "$PROFILE" = "coco" ]; then
     check_coco
+    export KBS_MANAGEMENT=operator
+    export TEST_KBS=true
 fi
 
 # Serial (-parallel 1): each peer-pod test boots a cloud VM, so serial keeps the
