@@ -6,6 +6,10 @@ spec:
   taskRunTemplate:
     podTemplate:
       automountServiceAccountToken: false
+  taskRunSpecs:
+    - pipelineTaskName: build-and-push
+      podTemplate:
+        automountServiceAccountToken: true
   pipelineSpec:
     params:
       - name: SNAPSHOT
@@ -36,8 +40,8 @@ spec:
           description: Test output
         - name: CATALOG_IMAGE
           description: "The catalog image URL, empty if build was skipped"
-        - name: HAS_OPERATOR_AND_BUNDLE
-          description: "Whether the snapshot contains both osc-operator and osc-operator-bundle components"
+        - name: RUN_OLMV1
+          description: "Whether the OLMv1 test should run (true only for group snapshots that rebuilt both operator and bundle)"
         volumes:
         - name: workdir
           emptyDir: {}
@@ -47,6 +51,12 @@ spec:
         - name: fbc-push-secret
           secret:
             secretName: osc-test-fbc-image-push
+        - name: podinfo
+          downwardAPI:
+            items:
+            - path: "labels"
+              fieldRef:
+                fieldPath: metadata.labels
         steps:
         - name: build
           image: registry.redhat.io/ubi9/ubi:latest
@@ -57,6 +67,9 @@ spec:
           volumeMounts:
           - name: workdir
             mountPath: /workdir
+          - name: podinfo
+            mountPath: /etc/podinfo
+            readOnly: true
           env:
           - name: SNAPSHOT
             value: $(params.SNAPSHOT)
@@ -84,23 +97,46 @@ spec:
             export PATH="$TOOLS_DIR:$PATH"
             echo "jq installed: $(jq --version)"
 
-            echo "Parsing snapshot..."
-            SNAPSHOT_COMPONENTS=$(jq -r '.components[].name' <<< "${SNAPSHOT}")
-            HAS_OPERATOR=false
-            HAS_BUNDLE=false
-            for COMP in $SNAPSHOT_COMPONENTS; do
-                if [ "$COMP" = "osc-operator" ]; then
-                    HAS_OPERATOR=true
-                elif [ "$COMP" = "osc-operator-bundle" ]; then
-                    HAS_BUNDLE=true
-                fi
-            done
-            HAS_OPERATOR_AND_BUNDLE=false
-            if [ "$HAS_OPERATOR" = "true" ] && [ "$HAS_BUNDLE" = "true" ]; then
-                HAS_OPERATOR_AND_BUNDLE=true
+            echo "Determining whether to run OLMv1 test..."
+            RUN_OLMV1=false
+            SNAPSHOT_TYPE=""
+            SNAPSHOT_NAME=""
+            if [ -f /etc/podinfo/labels ]; then
+                SNAPSHOT_TYPE=$(grep '^test.appstudio.openshift.io/type=' /etc/podinfo/labels | sed 's/.*="//' | sed 's/"$//' || true)
+                SNAPSHOT_NAME=$(grep '^appstudio.openshift.io/snapshot=' /etc/podinfo/labels | sed 's/.*="//' | sed 's/"$//' || true)
             fi
-            echo -n "${HAS_OPERATOR_AND_BUNDLE}" > "$(results.HAS_OPERATOR_AND_BUNDLE.path)"
-            echo "Has both operator and bundle: ${HAS_OPERATOR_AND_BUNDLE}"
+            echo "Snapshot type: ${SNAPSHOT_TYPE}, name: ${SNAPSHOT_NAME}"
+
+            if [ "$SNAPSHOT_TYPE" = "group" ] && [ -n "$SNAPSHOT_NAME" ]; then
+                TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+                API_SERVER="https://kubernetes.default.svc"
+                CA_CERT="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+                HTTP_CODE=$(curl -s -o /workdir/snapshot-response.json -w "%{http_code}" --cacert "$CA_CERT" \
+                    -H "Authorization: Bearer $TOKEN" \
+                    "$API_SERVER/apis/appstudio.redhat.com/v1alpha1/namespaces/$NAMESPACE/snapshots/$SNAPSHOT_NAME")
+
+                if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+                    GROUP_INFO=$(jq -r '.metadata.annotations["test.appstudio.openshift.io/group-test-info"] // ""' /workdir/snapshot-response.json)
+
+                    if [ -n "$GROUP_INFO" ] && echo "$GROUP_INFO" | jq -e 'type == "array"' > /dev/null 2>&1; then
+                        HAS_OPERATOR=$(echo "$GROUP_INFO" | jq -r '[.[].component] | index("osc-operator") != null')
+                        HAS_BUNDLE=$(echo "$GROUP_INFO" | jq -r '[.[].component] | index("osc-operator-bundle") != null')
+                        if [ "$HAS_OPERATOR" = "true" ] && [ "$HAS_BUNDLE" = "true" ]; then
+                            RUN_OLMV1=true
+                        fi
+                        echo "Group rebuilt components: $(echo "$GROUP_INFO" | jq -r '[.[].component] | join(", ")')"
+                    elif [ -n "$GROUP_INFO" ]; then
+                        echo "WARNING: group-test-info is not a valid JSON array, skipping OLMv1 gate check"
+                    fi
+                else
+                    echo "WARNING: failed to fetch Snapshot CR (HTTP $HTTP_CODE), skipping OLMv1 gate check"
+                fi
+                rm -f /workdir/snapshot-response.json
+            fi
+            echo -n "${RUN_OLMV1}" > "$(results.RUN_OLMV1.path)"
+            echo "Run OLMv1: ${RUN_OLMV1}"
 
             SNAPSHOT_IMAGES=$(jq -r '.components[].containerImage' <<< "${SNAPSHOT}")
 
@@ -455,7 +491,7 @@ spec:
         - input: "$(tasks.build-and-push.results.CATALOG_IMAGE)"
           operator: notin
           values: [""]
-        - input: "$(tasks.build-and-push.results.HAS_OPERATOR_AND_BUNDLE)"
+        - input: "$(tasks.build-and-push.results.RUN_OLMV1)"
           operator: in
           values: ["true"]
       runAfter:
