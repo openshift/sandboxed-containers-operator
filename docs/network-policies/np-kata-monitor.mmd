@@ -1,0 +1,17 @@
+---
+title: "kata-monitor (3 NPs)"
+---
+graph TB
+    PROM["Prometheus (host-network)"]
+
+    PROM -- "B2: kata-monitor-allow-metrics-ingress<br/>TCP 8443 · annotation: host-network" --> MON
+
+    MON["<b>kata-monitor pod</b><br/>label: name=openshift-sandboxed-containers-monitor<br/>DaemonSet · port 8443/TCP"]
+
+    MON -- "B3: kata-monitor-allow-dns-egress<br/>TCP+UDP 5353" --> DNS["CoreDNS (openshift-dns)"]
+
+    DENY["B1: kata-monitor-deny-all<br/>❌ all other ingress + egress blocked"]
+
+    DENY -.- MON
+
+    style DENY fill:#ffcccc,stroke:#cc0000

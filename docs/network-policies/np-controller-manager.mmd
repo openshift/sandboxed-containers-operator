@@ -1,0 +1,21 @@
+---
+title: "controller-manager — Phase 2 OLM bundle (pending)"
+---
+graph TB
+    APISERVER_IN["kube-apiserver (host-network)"]
+    PROM["Prometheus (host-network)"]
+
+    APISERVER_IN -- "A2: controller-manager-allow-webhook-ingress<br/>TCP 9443 · annotation: host-network" --> OP
+    PROM -- "A3: controller-manager-allow-metrics-ingress<br/>TCP 8443 · annotation: host-network" --> OP
+
+    OP["<b>controller-manager pod</b><br/>label: control-plane=controller-manager<br/>Deployment · ports 9443, 8443/TCP"]
+
+    OP -- "A4: controller-manager-allow-dns-egress<br/>TCP+UDP 5353" --> DNS["CoreDNS (openshift-dns)"]
+    OP -- "A5: controller-manager-allow-apiserver-egress<br/>all egress" --> APISERVER_OUT["kube-apiserver"]
+
+    DENY["A1: controller-manager-deny-all<br/>❌ all other ingress + egress blocked"]
+
+    DENY -.- OP
+
+    style DENY fill:#ffcccc,stroke:#cc0000
+    style OP fill:#e0e0e0,stroke:#999999,stroke-width:2px,stroke-dasharray: 5 5
