@@ -31,21 +31,25 @@ func deleteKataResource(oc *CLI, res, resNs, resName string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), podDeleteTimeout*time.Second)
 	defer cancel()
 	errCheck := wait.PollUntilContextTimeout(ctx, pollInterval, podDeleteTimeout*time.Second, true, func(_ context.Context) (bool, error) {
+		// --ignore-not-found makes a missing resource exit 0 with empty stdout,
+		// so an empty result means deleted. Output() returns stdout only, so the
+		// "NotFound" message is not available to match on.
 		output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-			res, resName, "-n", resNs, "--no-headers",
+			res, resName, "-n", resNs, "--no-headers", "--ignore-not-found",
 		).Output()
+		lastOutput = output
 		if err != nil {
 			Logf("get %v %v returned error: %v", res, resName, err)
+			return false, nil
 		}
-		lastOutput = output
 
-		if strings.Contains(output, "not found") || strings.Contains(output, "NotFound") {
+		if output == "" {
 			return true, nil
 		}
 
 		elapsed := time.Since(startTime)
 		Logf("Waiting for %v %v deletion... (elapsed: %v, status: %v)",
-			res, resName, elapsed.Round(time.Second), strings.TrimSpace(output))
+			res, resName, elapsed.Round(time.Second), output)
 		return false, nil
 	})
 
@@ -93,12 +97,17 @@ func deleteResource(oc *CLI, res, resName, resNs string, duration, interval time
 	ctx, cancel := context.WithTimeout(context.Background(), duration)
 	defer cancel()
 	errCheck := wait.PollUntilContextTimeout(ctx, interval, duration, true, func(_ context.Context) (bool, error) {
+		// See deleteKataResource: an empty result under --ignore-not-found means
+		// the resource is gone.
 		var getErr error
-		msg, getErr = oc.AsAdmin().WithoutNamespace().Run("get").Args(res, resName, "-n", resNs, "--no-headers").Output()
+		msg, getErr = oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			res, resName, "-n", resNs, "--no-headers", "--ignore-not-found",
+		).Output()
 		if getErr != nil {
 			Logf("get %v %v returned error: %v", res, resName, getErr)
+			return false, nil
 		}
-		if strings.Contains(msg, "not found") {
+		if msg == "" {
 			return true, nil
 		}
 		return false, nil
@@ -129,7 +138,6 @@ func checkResourceJsonpath(oc *CLI, resType, resName, resNs, jsonpath, expected 
 	AssertWaitPollNoErr(errCheck, fmt.Sprintf("%v %v in ns %v is not in %v state after %v: %v", resType, resName, resNs, expected, duration, msg))
 	return msg, nil
 }
-
 
 func checkControlPod(oc *CLI, podName, podNs, expStatus string) (string, error) {
 	return checkResourceJsonpath(oc, "pods", podName, podNs, "-o=jsonpath={.status.phase}", expStatus, podSnooze*time.Second, 10*time.Second)
