@@ -157,6 +157,13 @@ spec:
             echo "$VERSION" > /workdir/VERSION
             echo "VERSION=$VERSION"
 
+            # Deterministic tag derived from the snapshot's image digests, so that
+            # a separate integration test can locate this catalog without knowing
+            # which PipelineRun built it.
+            SNAPSHOT_TAG="on-pr-$(jq -r '[.components[].containerImage] | sort | join(",")' <<< "${SNAPSHOT}" | sha256sum | cut -c1-12)"
+            echo "$SNAPSHOT_TAG" > /workdir/SNAPSHOT_TAG
+            echo "SNAPSHOT_TAG=$SNAPSHOT_TAG"
+
             if [ "$HAS_OPERATOR_IMAGES" = "true" ]; then
                 echo "Build mode: FULL — patching CSV with snapshot image digests"
 
@@ -407,6 +414,9 @@ spec:
                     rm -f "$DIFF_TAR"
                 fi
 
+                SNAPSHOT_TAG=$(cat /workdir/SNAPSHOT_TAG)
+                crane tag "$CATALOG_IMG" "$SNAPSHOT_TAG"
+
                 echo "Catalog image pushed."
                 echo "$CATALOG_IMG" >> /workdir/produced-images.txt
             ) &> /workdir/publish.log
@@ -448,39 +458,3 @@ spec:
             fi
 
             [ "$RESULT" = "SUCCESS" ] || exit 1
-    - name: prowjob-olmv1
-      timeout: "3h"
-      when:
-        - input: "$(tasks.build-and-push.results.CATALOG_IMAGE)"
-          operator: notin
-          values: [""]
-        - input: "$(tasks.build-and-push.results.TRIGGER_COMPONENT)"
-          operator: in
-          values: ["osc-operator"]
-      runAfter:
-        - build-and-push
-      taskRef:
-        resolver: git
-        params:
-        - name: url
-          value: https://github.com/openshift/konflux-tasks
-        - name: revision
-          value: c0b26efc3cf62b2ad2cde127f5309a4ac0cbfbcc
-        - name: pathInRepo
-          value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
-      params:
-        - name: SNAPSHOT
-          value: $(params.SNAPSHOT)
-        - name: PROWJOB_ORG
-          value: openshift
-        - name: PROWJOB_REPO
-          value: sandboxed-containers-operator
-        - name: VARIANT
-          value: ""
-        - name: ENVS
-          value: "CATALOG_SOURCE_IMAGE=$(tasks.build-and-push.results.CATALOG_IMAGE)"
-      matrix:
-        params:
-          - name: PROWJOB_NAME
-            value:
-              - periodic-ci-openshift-sandboxed-containers-operator-devel-azure-ipi-peerpod-olmv1
