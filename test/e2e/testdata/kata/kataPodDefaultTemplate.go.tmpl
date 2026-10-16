@@ -29,8 +29,8 @@ spec:
   {{- end}}
 {{- end}}
   containers:
-    - name: hello-openshift
-      image: {{or .image "quay.io/openshift/origin-hello-openshift"}}
+    - name: workload
+      image: {{.image}}
       imagePullPolicy: IfNotPresent
       ports:
         - containerPort: {{or .port 8080}}

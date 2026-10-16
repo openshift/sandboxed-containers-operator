@@ -20,7 +20,7 @@ type DeploymentDescription struct {
 	image            string
 	replicas         int
 	port             int
-timeout          time.Duration
+	timeout          time.Duration
 	pollInterval     time.Duration
 	attributes       map[string]interface{}
 	annotations      map[string]string
@@ -34,7 +34,7 @@ func NewDeploymentDescription(testrun *TestRunDescription, name string, replicas
 		runtimeClassName: testrun.runtimeClassName,
 		image:            testrun.workloadImage,
 		replicas:         replicas,
-		port:             8888,
+		port:             8080,
 		timeout:          600 * time.Second,
 		pollInterval:     10 * time.Second,
 		attributes:       make(map[string]interface{}),
