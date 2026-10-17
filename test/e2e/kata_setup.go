@@ -22,6 +22,7 @@ type TestRunDescription struct {
 	workloadImage    string
 	operatorVer      string
 	ocpMinorVerInt   int
+	kataConfigName   string
 }
 
 // KataconfigDescription holds the expected kataconfig resource properties.
@@ -132,6 +133,10 @@ func getTestRunConfigmap(oc *CLI, testrun *TestRunDescription, ns, name string) 
 
 	if gjson.Get(configmapData, "enableGPU").Exists() {
 		testrun.enableGPU = gjson.Get(configmapData, "enableGPU").Bool()
+	}
+
+	if gjson.Get(configmapData, "kataConfigName").Exists() {
+		testrun.kataConfigName = gjson.Get(configmapData, "kataConfigName").String()
 	}
 
 	if errorMessage != "" {
