@@ -6,6 +6,10 @@ spec:
   taskRunTemplate:
     podTemplate:
       automountServiceAccountToken: false
+  taskRunSpecs:
+    - pipelineTaskName: build-and-push
+      podTemplate:
+        automountServiceAccountToken: true
   pipelineSpec:
     params:
       - name: SNAPSHOT
@@ -36,8 +40,8 @@ spec:
           description: Test output
         - name: CATALOG_IMAGE
           description: "The catalog image URL, empty if build was skipped"
-        - name: TRIGGER_COMPONENT
-          description: "The Konflux component that triggered this pipeline run"
+        - name: RUN_OLMV1
+          description: "Whether the OLMv1 test should run (true only for group snapshots that rebuilt both operator and bundle)"
         volumes:
         - name: workdir
           emptyDir: {}
@@ -77,13 +81,6 @@ spec:
             #!/bin/bash
             set -e
 
-            TRIGGER_COMPONENT=""
-            if [ -f /etc/podinfo/labels ]; then
-                TRIGGER_COMPONENT=$(grep '^appstudio.openshift.io/component=' /etc/podinfo/labels | sed 's/.*="//' | sed 's/"$//' || true)
-            fi
-            echo "Trigger component: ${TRIGGER_COMPONENT}"
-            echo -n "${TRIGGER_COMPONENT}" > "$(results.TRIGGER_COMPONENT.path)"
-
             RESULTS_FILE="$(results.TEST_OUTPUT.path)"
             trap 'if [ $? -ne 0 ] && [ ! -s "$RESULTS_FILE" ]; then printf "{\"result\":\"ERROR\",\"timestamp\":\"%s\",\"failures\":1,\"successes\":0,\"warnings\":0,\"note\":\"Build step failed unexpectedly\"}" "$(date -u --iso-8601=seconds)" > "$RESULTS_FILE"; fi' EXIT
 
@@ -100,7 +97,47 @@ spec:
             export PATH="$TOOLS_DIR:$PATH"
             echo "jq installed: $(jq --version)"
 
-            echo "Parsing snapshot..."
+            echo "Determining whether to run OLMv1 test..."
+            RUN_OLMV1=false
+            SNAPSHOT_TYPE=""
+            SNAPSHOT_NAME=""
+            if [ -f /etc/podinfo/labels ]; then
+                SNAPSHOT_TYPE=$(grep '^test.appstudio.openshift.io/type=' /etc/podinfo/labels | sed 's/.*="//' | sed 's/"$//' || true)
+                SNAPSHOT_NAME=$(grep '^appstudio.openshift.io/snapshot=' /etc/podinfo/labels | sed 's/.*="//' | sed 's/"$//' || true)
+            fi
+            echo "Snapshot type: ${SNAPSHOT_TYPE}, name: ${SNAPSHOT_NAME}"
+
+            if [ "$SNAPSHOT_TYPE" = "group" ] && [ -n "$SNAPSHOT_NAME" ]; then
+                TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+                API_SERVER="https://kubernetes.default.svc"
+                CA_CERT="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+                HTTP_CODE=$(curl -s -o /workdir/snapshot-response.json -w "%{http_code}" --cacert "$CA_CERT" \
+                    -H "Authorization: Bearer $TOKEN" \
+                    "$API_SERVER/apis/appstudio.redhat.com/v1alpha1/namespaces/$NAMESPACE/snapshots/$SNAPSHOT_NAME")
+
+                if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+                    GROUP_INFO=$(jq -r '.metadata.annotations["test.appstudio.openshift.io/group-test-info"] // ""' /workdir/snapshot-response.json)
+
+                    if [ -n "$GROUP_INFO" ] && echo "$GROUP_INFO" | jq -e 'type == "array"' > /dev/null 2>&1; then
+                        HAS_OPERATOR=$(echo "$GROUP_INFO" | jq -r '[.[].component] | index("osc-operator") != null')
+                        HAS_BUNDLE=$(echo "$GROUP_INFO" | jq -r '[.[].component] | index("osc-operator-bundle") != null')
+                        if [ "$HAS_OPERATOR" = "true" ] && [ "$HAS_BUNDLE" = "true" ]; then
+                            RUN_OLMV1=true
+                        fi
+                        echo "Group rebuilt components: $(echo "$GROUP_INFO" | jq -r '[.[].component] | join(", ")')"
+                    elif [ -n "$GROUP_INFO" ]; then
+                        echo "WARNING: group-test-info is not a valid JSON array, skipping OLMv1 gate check"
+                    fi
+                else
+                    echo "WARNING: failed to fetch Snapshot CR (HTTP $HTTP_CODE), skipping OLMv1 gate check"
+                fi
+                rm -f /workdir/snapshot-response.json
+            fi
+            echo -n "${RUN_OLMV1}" > "$(results.RUN_OLMV1.path)"
+            echo "Run OLMv1: ${RUN_OLMV1}"
+
             SNAPSHOT_IMAGES=$(jq -r '.components[].containerImage' <<< "${SNAPSHOT}")
 
             # Categorize snapshot images to decide what to build.
@@ -454,9 +491,9 @@ spec:
         - input: "$(tasks.build-and-push.results.CATALOG_IMAGE)"
           operator: notin
           values: [""]
-        - input: "$(tasks.build-and-push.results.TRIGGER_COMPONENT)"
+        - input: "$(tasks.build-and-push.results.RUN_OLMV1)"
           operator: in
-          values: ["osc-operator"]
+          values: ["true"]
       runAfter:
         - build-and-push
       taskRef:
