@@ -26,6 +26,7 @@ import (
 	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl/controllers"
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgapi "github.com/openshift/api/machineconfiguration/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	openshifttls "github.com/openshift/controller-runtime-common/pkg/tls"
 	"go.uber.org/zap/zapcore"
@@ -77,6 +78,8 @@ func init() {
 	utilruntime.Must(peerpod.AddToScheme(scheme))
 
 	utilruntime.Must(configv1.AddToScheme(scheme))
+
+	utilruntime.Must(operatorv1.AddToScheme(scheme))
 
 	utilruntime.Must(ccov1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
