@@ -70,6 +70,8 @@ type KataConfigOpenShiftReconciler struct {
 
 	DeploymentMode DeploymentMode
 
+	CAAUpdateStrategy appsv1.DaemonSetUpdateStrategyType
+
 	TLSProfileSpec configv1.TLSProfileSpec
 }
 

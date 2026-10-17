@@ -43,6 +43,45 @@ func MountProgagationRef(mode corev1.MountPropagationMode) *corev1.MountPropagat
 	return &mode
 }
 
+// ParseCAAUpdateStrategy converts the value of the caaUpdateStrategy option
+// into a daemonset update strategy type. Only RollingUpdate and OnDelete are valid.
+// The rejected value is left out of the error on purpose, so that it doesn't end up in the logs.
+func ParseCAAUpdateStrategy(s string) (appsv1.DaemonSetUpdateStrategyType, error) {
+	switch appsv1.DaemonSetUpdateStrategyType(s) {
+	case appsv1.RollingUpdateDaemonSetStrategyType, appsv1.OnDeleteDaemonSetStrategyType:
+		return appsv1.DaemonSetUpdateStrategyType(s), nil
+	default:
+		return "", fmt.Errorf("invalid CAA update strategy, expected %q or %q",
+			appsv1.RollingUpdateDaemonSetStrategyType, appsv1.OnDeleteDaemonSetStrategyType)
+	}
+}
+
+// caaUpdateStrategy returns the update strategy of the CAA daemonset.
+//
+// The behavior is as follows:
+//   - If the type is OnDelete, the CAA pods are only replaced when they are deleted.
+//     A restarted CAA pod loses track of the peer pods it was serving, so this lets
+//     the admin decide when each node gets disrupted.
+//   - Otherwise, the CAA pods are rolled out automatically, one node at a time.
+func caaUpdateStrategy(strategyType appsv1.DaemonSetUpdateStrategyType) appsv1.DaemonSetUpdateStrategy {
+	if strategyType == appsv1.OnDeleteDaemonSetStrategyType {
+		return appsv1.DaemonSetUpdateStrategy{
+			Type: appsv1.OnDeleteDaemonSetStrategyType,
+		}
+	}
+
+	return appsv1.DaemonSetUpdateStrategy{
+		Type: appsv1.RollingUpdateDaemonSetStrategyType,
+		RollingUpdate: &appsv1.RollingUpdateDaemonSet{
+			MaxUnavailable: &intstr.IntOrString{
+				Type:   intstr.Int,
+				IntVal: 1,
+			},
+		},
+	}
+}
+
+// configureCAA sets the desired spec of the CAA daemonset on ds.
 func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVersion string) (*appsv1.DaemonSet, error) {
 	var (
 		runPrivileged                = true
@@ -72,15 +111,7 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVer
 		Selector: &metav1.LabelSelector{
 			MatchLabels: dsLabelSelectors,
 		},
-		UpdateStrategy: appsv1.DaemonSetUpdateStrategy{
-			Type: "RollingUpdate",
-			RollingUpdate: &appsv1.RollingUpdateDaemonSet{
-				MaxUnavailable: &intstr.IntOrString{
-					Type:   intstr.Int,
-					IntVal: 1,
-				},
-			},
-		},
+		UpdateStrategy: caaUpdateStrategy(r.CAAUpdateStrategy),
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: dsLabelSelectors,
