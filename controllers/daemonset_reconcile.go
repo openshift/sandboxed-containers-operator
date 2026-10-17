@@ -261,6 +261,10 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 func (r *KataConfigOpenShiftReconciler) processKataConfigInstallRequestDaemonSet() (ctrl.Result, error) {
 	r.Log.Info("Kata installation in progress")
 
+	if r.kataConfig.Spec.EnableMixedCluster {
+		return ctrl.Result{}, fmt.Errorf("enableMixedCluster is not supported in DaemonSet deployment mode: mixed cluster support requires MachineConfig deployment mode for NFD NodeFeatureRule lifecycle management")
+	}
+
 	// Check Node Eligibility
 	if r.kataConfig.Spec.CheckNodeEligibility {
 		err := r.checkNodeEligibility()
