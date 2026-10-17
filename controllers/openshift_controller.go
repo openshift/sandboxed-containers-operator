@@ -45,7 +45,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -140,14 +142,24 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 	err := r.Client.Get(context.TODO(), req.NamespacedName, r.kataConfig)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			// Request object not found, could have been deleted after ctrl request.
-			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			// Return and don't requeue
+			// KataConfig is gone — remove our finalizer from the CSV so OLM can
+			// proceed with operator deletion if it was waiting on us (KATA-6228).
+			if csvErr := r.ensureCSVFinalizer(false); csvErr != nil {
+				return ctrl.Result{}, csvErr
+			}
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
 		r.Log.Error(err, "Cannot retrieve kataConfig")
 		return ctrl.Result{}, err
+	}
+
+	// Keep the CSV finalizer in sync with the KataConfig finalizer so the
+	// controller cannot be torn down by OLM while node cleanup is in progress.
+	if csvErr := r.ensureCSVFinalizer(
+		controllerutil.ContainsFinalizer(r.kataConfig, kataConfigFinalizer),
+	); csvErr != nil {
+		return ctrl.Result{}, csvErr
 	}
 
 	oldObjStatus := r.kataConfig.Status.DeepCopy()
@@ -769,6 +781,57 @@ func (r *KataConfigOpenShiftReconciler) removeFinalizer() error {
 	if err != nil {
 		r.Log.Error(err, "Unable to update KataConfig")
 		return err
+	}
+	return nil
+}
+
+// ensureCSVFinalizer adds kataConfigCleanupFinalizer to the operator's own CSV
+// while r.kataConfig has its cleanup finalizer present, and removes it once the
+// KataConfig finalizer is gone.  This prevents OLM from tearing down the
+// controller before node cleanup completes (KATA-6228).
+//
+// When no CSV is found (e.g. operator installed without OLM) the function is a
+// no-op so non-OLM deployments are unaffected.
+func (r *KataConfigOpenShiftReconciler) ensureCSVFinalizer(kataConfigFinalizerPresent bool) error {
+	csvList := &unstructured.UnstructuredList{}
+	csvList.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "operators.coreos.com",
+		Version: "v1alpha1",
+		Kind:    "ClusterServiceVersionList",
+	})
+	if err := r.Client.List(context.TODO(), csvList,
+		client.InNamespace(OperatorNamespace)); err != nil {
+		if meta.IsNoMatchError(err) {
+			// OLM not present — fine, nothing to do.
+			return nil
+		}
+		return err
+	}
+
+	var csv *unstructured.Unstructured
+	for i := range csvList.Items {
+		if strings.Contains(csvList.Items[i].GetName(), "sandboxed-containers") {
+			csv = &csvList.Items[i]
+			break
+		}
+	}
+	if csv == nil {
+		// No matching CSV — operator may have been installed without OLM.
+		return nil
+	}
+
+	hasFinalizer := controllerutil.ContainsFinalizer(csv, kataConfigCleanupFinalizer)
+
+	switch {
+	case kataConfigFinalizerPresent && !hasFinalizer:
+		r.Log.Info("Adding cleanup finalizer to CSV", "csv", csv.GetName())
+		controllerutil.AddFinalizer(csv, kataConfigCleanupFinalizer)
+		return r.Client.Update(context.TODO(), csv)
+
+	case !kataConfigFinalizerPresent && hasFinalizer:
+		r.Log.Info("Removing cleanup finalizer from CSV", "csv", csv.GetName())
+		controllerutil.RemoveFinalizer(csv, kataConfigCleanupFinalizer)
+		return r.Client.Update(context.TODO(), csv)
 	}
 	return nil
 }
