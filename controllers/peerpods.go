@@ -282,6 +282,18 @@ func (r *KataConfigOpenShiftReconciler) configureCAAProvider(ds *appsv1.DaemonSe
 		}
 
 		return ds, nil
+	case GCPProvider:
+		// Only add bound-sa-token volume if cluster is in token-based auth mode (GCP WIF)
+		isTokenBased, err := isClusterInTokenBasedAuthMode(r.Client)
+		if err != nil {
+			r.Log.Error(err, "Failed to determine token-based auth mode for GCP")
+			// Don't fail the whole operation, but log the issue
+		}
+		if isTokenBased {
+			r.addBoundSATokenVolume(ds)
+		}
+
+		return ds, nil
 	default:
 		return ds, nil
 	}
