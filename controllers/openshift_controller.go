@@ -132,6 +132,7 @@ var (
 // +kubebuilder:rbac:groups="batch",resources=jobs,verbs=create;get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=create;delete;update
+// +kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;update
 
 func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = r.Log.WithValues("kataconfig", req.NamespacedName)
@@ -801,39 +802,57 @@ func (r *KataConfigOpenShiftReconciler) ensureCSVFinalizer(kataConfigFinalizerPr
 	})
 	if err := r.Client.List(context.TODO(), csvList,
 		client.InNamespace(OperatorNamespace)); err != nil {
-		if meta.IsNoMatchError(err) {
-			// OLM not present — fine, nothing to do.
+		if meta.IsNoMatchError(err) || k8serrors.IsForbidden(err) {
+			// OLM not present or RBAC not yet in place — skip silently.
+			r.Log.V(1).Info("Skipping CSV finalizer management", "reason", err.Error())
 			return nil
 		}
 		return err
 	}
 
-	var csv *unstructured.Unstructured
+	// Operate on every matching CSV so that during an OLM upgrade — when both
+	// the old (Replacing) and new CSV coexist — we manage finalizers on all of
+	// them rather than picking an arbitrary first match.
 	for i := range csvList.Items {
-		if strings.Contains(csvList.Items[i].GetName(), "sandboxed-containers") {
-			csv = &csvList.Items[i]
-			break
+		csv := &csvList.Items[i]
+		if !strings.Contains(csv.GetName(), "sandboxed-containers") {
+			continue
+		}
+		if err := r.applyCSVFinalizer(csv, kataConfigFinalizerPresent); err != nil {
+			return err
 		}
 	}
-	if csv == nil {
-		// No matching CSV — operator may have been installed without OLM.
-		return nil
-	}
-
-	hasFinalizer := controllerutil.ContainsFinalizer(csv, kataConfigCleanupFinalizer)
-
-	switch {
-	case kataConfigFinalizerPresent && !hasFinalizer:
-		r.Log.Info("Adding cleanup finalizer to CSV", "csv", csv.GetName())
-		controllerutil.AddFinalizer(csv, kataConfigCleanupFinalizer)
-		return r.Client.Update(context.TODO(), csv)
-
-	case !kataConfigFinalizerPresent && hasFinalizer:
-		r.Log.Info("Removing cleanup finalizer from CSV", "csv", csv.GetName())
-		controllerutil.RemoveFinalizer(csv, kataConfigCleanupFinalizer)
-		return r.Client.Update(context.TODO(), csv)
-	}
 	return nil
+}
+
+// applyCSVFinalizer adds or removes kataConfigCleanupFinalizer on a single CSV,
+// retrying once on Conflict because OLM frequently updates CSV status fields.
+func (r *KataConfigOpenShiftReconciler) applyCSVFinalizer(csv *unstructured.Unstructured, kataConfigFinalizerPresent bool) error {
+	for attempt := 0; ; attempt++ {
+		hasFinalizer := controllerutil.ContainsFinalizer(csv, kataConfigCleanupFinalizer)
+		switch {
+		case kataConfigFinalizerPresent && !hasFinalizer:
+			r.Log.Info("Adding cleanup finalizer to CSV", "csv", csv.GetName())
+			controllerutil.AddFinalizer(csv, kataConfigCleanupFinalizer)
+		case !kataConfigFinalizerPresent && hasFinalizer:
+			r.Log.Info("Removing cleanup finalizer from CSV", "csv", csv.GetName())
+			controllerutil.RemoveFinalizer(csv, kataConfigCleanupFinalizer)
+		default:
+			return nil
+		}
+
+		err := r.Client.Update(context.TODO(), csv)
+		if err == nil || !k8serrors.IsConflict(err) || attempt >= 2 {
+			return err
+		}
+		// Re-fetch the latest version before retrying.
+		if getErr := r.Client.Get(context.TODO(), types.NamespacedName{
+			Name:      csv.GetName(),
+			Namespace: csv.GetNamespace(),
+		}, csv); getErr != nil {
+			return getErr
+		}
+	}
 }
 
 func (r *KataConfigOpenShiftReconciler) listKataPods() error {
