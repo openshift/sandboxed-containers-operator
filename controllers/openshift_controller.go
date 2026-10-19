@@ -70,7 +70,8 @@ type KataConfigOpenShiftReconciler struct {
 
 	DeploymentMode DeploymentMode
 
-	TLSProfileSpec configv1.TLSProfileSpec
+	TLSProfileSpec  configv1.TLSProfileSpec
+	HonorTLSProfile bool
 }
 
 type customKernelConfig struct {
@@ -469,16 +470,23 @@ func (r *KataConfigOpenShiftReconciler) processDaemonsetForMonitor(certVersion s
 									Type: "osc_monitor.process",
 								},
 							},
-							Command: []string{
-								"/usr/bin/kata-monitor",
-								"--listen-address=:8443",
-								"--log-level=debug",
-								"--runtime-endpoint=/run/crio/crio.sock",
-								"--tls-cert-file=/etc/kata-monitor/certs/tls.crt",
-								"--tls-key-file=/etc/kata-monitor/certs/tls.key",
-								"--tls-min-version=" + string(r.TLSProfileSpec.MinTLSVersion),
-								"--tls-cipher-suites=" + r.tlsCipherSuitesEnvValue(r.TLSProfileSpec),
-							},
+							Command: func() []string {
+								cmd := []string{
+									"/usr/bin/kata-monitor",
+									"--listen-address=:8443",
+									"--log-level=debug",
+									"--runtime-endpoint=/run/crio/crio.sock",
+									"--tls-cert-file=/etc/kata-monitor/certs/tls.crt",
+									"--tls-key-file=/etc/kata-monitor/certs/tls.key",
+								}
+								if r.HonorTLSProfile {
+									cmd = append(cmd,
+										"--tls-min-version="+string(r.TLSProfileSpec.MinTLSVersion),
+										"--tls-cipher-suites="+r.tlsCipherSuitesEnvValue(r.TLSProfileSpec),
+									)
+								}
+								return cmd
+							}(),
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "crio-sock",
