@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,6 +36,13 @@ var (
 	descFailedPods = prometheus.NewDesc(
 		"kata_failed_remote_pods",
 		"Total number of kata-remote pods that are not Running or Succeeded.", nil, nil)
+	// setup_type:      baremetal | peerpods | confidential_baremetal | confidential_peerpods
+	// cloud_provider:  aws | azure | gcp | libvirt | ibmcloud | unknown
+	// tee_type:        tdx | snp | se | none (no TEE-capable nodes detected)
+	descSetupInfo = prometheus.NewDesc(
+		"osc_setup_info",
+		"Info-style metric indicating the setup type, cloud provider, and TEE silicon when a KataConfig exists.",
+		[]string{"setup_type", "cloud_provider", "tee_type"}, nil)
 )
 
 // OscMetricsCollector implements prometheus.Collector and exposes kata_* metrics
@@ -50,6 +58,7 @@ func (c *OscMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- descFailureRatio
 	ch <- descTotalPods
 	ch <- descFailedPods
+	ch <- descSetupInfo
 }
 
 func (c *OscMetricsCollector) Collect(ch chan<- prometheus.Metric) {
@@ -103,8 +112,82 @@ func (c *OscMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		if !inProgress && nodes.NodeCount > 0 && nodes.ReadyNodeCount == nodes.NodeCount {
 			success = 1.0
 		}
+
+		setupType := c.computeSetupType(ctx, &kc)
+		cloudProvider := c.computeCloudProvider(ctx)
+		teeType := c.computeTEEType(ctx)
+		ch <- prometheus.MustNewConstMetric(descSetupInfo, prometheus.GaugeValue, 1.0, setupType, cloudProvider, teeType)
 	}
 	ch <- prometheus.MustNewConstMetric(descKataConfigSuccess, prometheus.GaugeValue, success)
+}
+
+func (c *OscMetricsCollector) computeSetupType(ctx context.Context, kc *kataconfigurationv1.KataConfig) string {
+	isPeerPods := kc.Spec.EnablePeerPods
+
+	isConfidential := false
+	cm := &corev1.ConfigMap{}
+	if err := c.client.Get(ctx, client.ObjectKey{Name: FgConfigMapName, Namespace: OperatorNamespace}, cm); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			oscMetricsLog.Error(err, "failed to get feature gate ConfigMap")
+		}
+	} else if val, ok := cm.Data[ConfidentialFeatureGate]; ok {
+		parsed, perr := strconv.ParseBool(val)
+		if perr != nil {
+			oscMetricsLog.Error(perr, "invalid confidential feature gate value", "value", val)
+		}
+		isConfidential = parsed
+	}
+
+	switch {
+	case isPeerPods && isConfidential:
+		return "confidential_peerpods"
+	case isPeerPods:
+		return "peerpods"
+	case isConfidential:
+		return "confidential_baremetal"
+	default:
+		return "baremetal"
+	}
+}
+
+// computeCloudProvider returns a known provider label for telemetry.
+// The allowlist bounds label cardinality; unsupported platforms are bucketed as "unknown".
+func (c *OscMetricsCollector) computeCloudProvider(ctx context.Context) string {
+	provider, err := getCloudProviderFromInfraWithContext(ctx, c.client)
+	if err != nil {
+		oscMetricsLog.Error(err, "failed to get cloud provider")
+		return "unknown"
+	}
+	switch provider {
+	case "aws", "azure", "gcp", LibvirtProvider, IBMCloudProvider:
+		return provider
+	default:
+		return "unknown"
+	}
+}
+
+// computeTEEType returns the TEE silicon type present on cluster nodes.
+// Returns "none" when no nodes carry a recognised TEE label.
+func (c *OscMetricsCollector) computeTEEType(ctx context.Context) string {
+	teeLabels := []struct {
+		label   string
+		teeType string
+	}{
+		{intelTDXNodeLabel, "tdx"},
+		{amdSNPNodeLabel, "snp"},
+		{ibmSENodeLabel, "se"},
+	}
+	for _, tee := range teeLabels {
+		nodes := &corev1.NodeList{}
+		if err := c.client.List(ctx, nodes, client.MatchingLabels{tee.label: "true"}); err != nil {
+			oscMetricsLog.Error(err, "failed to list nodes for TEE detection", "label", tee.label)
+			return "unknown"
+		}
+		if len(nodes.Items) > 0 {
+			return tee.teeType
+		}
+	}
+	return "none"
 }
 
 // RegisterOscMetricsCollector registers the collector with the controller-runtime metrics
