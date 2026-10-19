@@ -42,7 +42,7 @@ spec:
 {{- end}}
       containers:
         - name: {{.name}}
-          image: {{or .image "quay.io/openshift/origin-hello-openshift"}}
+          image: {{.image}}
           imagePullPolicy: IfNotPresent
           {{- if .command}}
           command:
@@ -51,7 +51,7 @@ spec:
           {{- end}}
           {{- end}}
           ports:
-            - containerPort: {{or .port 8888}}
+            - containerPort: {{.port}}
           securityContext:
             privileged: false
             allowPrivilegeEscalation: false

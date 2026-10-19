@@ -27,11 +27,15 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		enablePeerPods:   false,
 	}
 
+	// workloadImage must serve HTTP on port 8080 and run as a non-root user;
+	// workloadMessage is the body C00100 expects from it. Both are overridable
+	// via the osc-config configmap.
 	testrun := TestRunDescription{
 		checked:          false,
 		runtimeClassName: kataconfig.runtimeClassName,
 		enablePeerPods:   kataconfig.enablePeerPods,
-		workloadImage:    "quay.io/openshift/origin-hello-openshift",
+		workloadImage:    "ghcr.io/nginxinc/nginx-unprivileged:alpine@sha256:e234d4f7e346c098f7b22245690372382aded5be988611eb2c53ae62231eece7",
+		workloadMessage:  "Welcome to nginx!",
 		workloadToTest:   "kata",
 	}
 
@@ -244,7 +248,7 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 
 		var (
 			statusCode   = 200
-			testPageBody = "Hello OpenShift!"
+			testPageBody = testrun.workloadMessage
 		)
 
 		ginkgo.By("Create deployment with kata runtime")

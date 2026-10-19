@@ -20,6 +20,7 @@ type TestRunDescription struct {
 	enableGPU        bool
 	workloadToTest   string
 	workloadImage    string
+	workloadMessage  string
 	operatorVer      string
 	ocpMinorVerInt   int
 }
@@ -124,6 +125,14 @@ func getTestRunConfigmap(oc *CLI, testrun *TestRunDescription, ns, name string) 
 		}
 	} else {
 		errorMessage += "workloadToTest is missing from data\n"
+	}
+
+	// Required alongside workloadImage: a mismatch between the two surfaces as a
+	// response body assertion failure in C00100, which is harder to diagnose.
+	if gjson.Get(configmapData, "workloadMessage").Exists() {
+		testrun.workloadMessage = gjson.Get(configmapData, "workloadMessage").String()
+	} else {
+		errorMessage += "workloadMessage is missing from data\n"
 	}
 
 	if gjson.Get(configmapData, "operatorVer").Exists() {
