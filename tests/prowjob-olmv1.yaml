@@ -31,6 +31,8 @@ spec:
             description: Test output
           - name: CATALOG_IMAGE
             description: "The catalog image URL"
+          - name: BRANCH_AVAILABLE
+            description: "Whether TARGET_BRANCH is set (true/false)"
         volumes:
           - name: fbc-push-secret
             secret:
@@ -65,12 +67,27 @@ spec:
                 value: $(params.SNAPSHOT)
               - name: HOME
                 value: /tmp/home
+              - name: TARGET_BRANCH
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/branch']
             script: |
               #!/bin/bash
               set -e
 
               RESULTS_FILE="$(results.TEST_OUTPUT.path)"
               trap 'if [ $? -ne 0 ] && [ ! -s "$RESULTS_FILE" ]; then printf "{\"result\":\"ERROR\",\"timestamp\":\"%s\",\"failures\":1,\"successes\":0,\"warnings\":0,\"note\":\"Wait step failed unexpectedly\"}" "$(date -u --iso-8601=seconds)" > "$RESULTS_FILE"; fi' EXIT
+
+              if [ -z "$TARGET_BRANCH" ]; then
+                echo "WARNING: TARGET_BRANCH not set (pac.test.appstudio.openshift.io/branch annotation missing)"
+                echo "Skipping - cannot determine ci-operator config without a target branch"
+                echo -n "false" > "$(results.BRANCH_AVAILABLE.path)"
+                echo -n "" > "$(results.CATALOG_IMAGE.path)"
+                printf '{"result":"SKIPPED","timestamp":"%s","failures":0,"successes":0,"warnings":0,"note":"TARGET_BRANCH not set, skipping prowjob trigger"}' \
+                    "$(date -u --iso-8601=seconds)" > "$RESULTS_FILE"
+                exit 0
+              fi
+              echo -n "true" > "$(results.BRANCH_AVAILABLE.path)"
 
               TOOLS_DIR="/tmp/tools"
               mkdir -p "$TOOLS_DIR" "/tmp/home"
@@ -151,6 +168,10 @@ spec:
       timeout: "3h"
       runAfter:
         - wait-for-catalog
+      when:
+        - input: "$(tasks.wait-for-catalog.results.BRANCH_AVAILABLE)"
+          operator: in
+          values: ["true"]
       taskRef:
         resolver: git
         params:
@@ -225,6 +246,10 @@ spec:
                 RESULT="FAILURE"
                 NOTE="Prow job failed"
                 FAILURES=1; SUCCESSES=0
+              elif [ "$(params.PROWJOB_STATUS)" = "None" ]; then
+                RESULT="SKIPPED"
+                NOTE="Prow job skipped (TARGET_BRANCH not set)"
+                FAILURES=0; SUCCESSES=0
               else
                 RESULT="ERROR"
                 NOTE="Prow job status unknown: $(params.PROWJOB_STATUS)"
