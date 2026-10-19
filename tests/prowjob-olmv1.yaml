@@ -1,0 +1,236 @@
+kind: PipelineRun
+apiVersion: tekton.dev/v1
+metadata:
+  name: prowjob-olmv1
+spec:
+  taskRunTemplate:
+    podTemplate:
+      automountServiceAccountToken: false
+  pipelineSpec:
+    params:
+      - name: SNAPSHOT
+        type: string
+        description: 'Snapshot of the application'
+    results:
+      - name: TEST_OUTPUT
+        value: $(finally.report-result.results.TEST_OUTPUT)
+    tasks:
+    - name: wait-for-catalog
+      description: >-
+        Waits for the catalog image built by the build-test-artifacts integration
+        test, using a deterministic tag derived from the snapshot's image digests.
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+      taskSpec:
+        params:
+          - name: SNAPSHOT
+            type: string
+        results:
+          - name: TEST_OUTPUT
+            description: Test output
+          - name: CATALOG_IMAGE
+            description: "The catalog image URL"
+        volumes:
+          - name: fbc-push-secret
+            secret:
+              secretName: osc-test-fbc-image-push
+          - name: tmp
+            emptyDir: {}
+        steps:
+          - name: wait
+            image: registry.redhat.io/ubi9/ubi:latest
+            securityContext:
+              runAsUser: 65534
+              runAsNonRoot: true
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: ["ALL"]
+            computeResources:
+              limits:
+                cpu: 500m
+                memory: 512Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+            volumeMounts:
+              - name: fbc-push-secret
+                mountPath: /tmp/push-secret
+                readOnly: true
+              - name: tmp
+                mountPath: /tmp
+            env:
+              - name: SNAPSHOT
+                value: $(params.SNAPSHOT)
+              - name: HOME
+                value: /tmp/home
+            script: |
+              #!/bin/bash
+              set -e
+
+              RESULTS_FILE="$(results.TEST_OUTPUT.path)"
+              trap 'if [ $? -ne 0 ] && [ ! -s "$RESULTS_FILE" ]; then printf "{\"result\":\"ERROR\",\"timestamp\":\"%s\",\"failures\":1,\"successes\":0,\"warnings\":0,\"note\":\"Wait step failed unexpectedly\"}" "$(date -u --iso-8601=seconds)" > "$RESULTS_FILE"; fi' EXIT
+
+              TOOLS_DIR="/tmp/tools"
+              mkdir -p "$TOOLS_DIR" "/tmp/home"
+              ARCH=$(uname -m)
+              OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+
+              echo "Installing jq..."
+              case "$ARCH" in
+                  x86_64)
+                      JQ_ARCH="amd64"
+                      JQ_SHA256="5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5"
+                      ;;
+                  aarch64|arm64)
+                      JQ_ARCH="arm64"
+                      JQ_SHA256="4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8b4a5"
+                      ;;
+                  *) echo "ERROR: unsupported architecture: $ARCH"; exit 1 ;;
+              esac
+              curl -fsSL "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-${JQ_ARCH}" \
+                  -o "$TOOLS_DIR/jq"
+              echo "${JQ_SHA256}  $TOOLS_DIR/jq" | sha256sum -c -
+              chmod +x "$TOOLS_DIR/jq"
+
+              CRANE_VERSION="v0.20.3"
+              echo "Installing crane ${CRANE_VERSION}..."
+              case "$ARCH" in
+                  x86_64)
+                      CRANE_ARCH="x86_64"
+                      CRANE_SHA256="36c67a932f489b3f2724b64af90b599a8ef2aa7b004872597373c0ad694dc059"
+                      ;;
+                  aarch64|arm64)
+                      CRANE_ARCH="arm64"
+                      CRANE_SHA256="d2235f7779cd39c6e40f43701d2512c997409f629fb53e621ede0d57d3f995e2"
+                      ;;
+                  *) echo "ERROR: unsupported architecture: $ARCH"; exit 1 ;;
+              esac
+              curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_${OS}_${CRANE_ARCH}.tar.gz" \
+                  -o "/tmp/crane.tar.gz"
+              echo "${CRANE_SHA256}  /tmp/crane.tar.gz" | sha256sum -c -
+              tar xzf /tmp/crane.tar.gz -C "$TOOLS_DIR" crane
+              rm -f /tmp/crane.tar.gz
+
+              export PATH="$TOOLS_DIR:$PATH"
+
+              DOCKER_CONFIG="/tmp/docker-config"
+              mkdir -p "$DOCKER_CONFIG"
+              cp /tmp/push-secret/.dockerconfigjson "$DOCKER_CONFIG/config.json"
+              export DOCKER_CONFIG
+
+              # Must match the tag computation in build-test-artifacts.yaml
+              SNAPSHOT_TAG="on-pr-$(jq -r '[.components[].containerImage] | sort | join(",")' <<< "${SNAPSHOT}" | sha256sum | cut -c1-12)"
+              CATALOG_IMG="quay.io/redhat-user-workloads/ose-osc-tenant/osc-test-fbc:${SNAPSHOT_TAG}"
+              echo "Waiting for catalog image: $CATALOG_IMG"
+
+              TIMEOUT=1800
+              INTERVAL=30
+              elapsed=0
+              while ! crane digest "$CATALOG_IMG" &>/dev/null; do
+                  if [ $elapsed -ge $TIMEOUT ]; then
+                      NOTE="Catalog image not available after ${TIMEOUT}s: ${CATALOG_IMG}"
+                      echo "ERROR: $NOTE"
+                      printf '{"result":"ERROR","timestamp":"%s","failures":1,"successes":0,"warnings":0,"note":"%s"}' \
+                          "$(date -u --iso-8601=seconds)" "$NOTE" > "$RESULTS_FILE"
+                      exit 1
+                  fi
+                  echo "Waiting... (${elapsed}s elapsed)"
+                  sleep $INTERVAL
+                  elapsed=$((elapsed + INTERVAL))
+              done
+
+              echo "Catalog image available: $CATALOG_IMG"
+              echo -n "$CATALOG_IMG" > "$(results.CATALOG_IMAGE.path)"
+
+              printf '{"result":"SUCCESS","timestamp":"%s","failures":0,"successes":1,"warnings":0,"note":"Catalog image found: %s"}' \
+                  "$(date -u --iso-8601=seconds)" "$CATALOG_IMG" > "$RESULTS_FILE"
+
+    - name: prowjob-olmv1
+      timeout: "3h"
+      runAfter:
+        - wait-for-catalog
+      taskRef:
+        resolver: git
+        params:
+        - name: url
+          value: https://github.com/openshift/konflux-tasks
+        - name: revision
+          value: c0b26efc3cf62b2ad2cde127f5309a4ac0cbfbcc
+        - name: pathInRepo
+          value: tasks/provide-prowjob/0.1/provide-prowjob.yaml
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: PROWJOB_ORG
+          value: openshift
+        - name: PROWJOB_REPO
+          value: sandboxed-containers-operator
+        - name: VARIANT
+          value: ""
+        - name: ENVS
+          value: "CATALOG_SOURCE_IMAGE=$(tasks.wait-for-catalog.results.CATALOG_IMAGE)"
+      matrix:
+        params:
+          - name: PROWJOB_NAME
+            value:
+              - periodic-ci-openshift-sandboxed-containers-operator-devel-azure-ipi-peerpod-olmv1
+    finally:
+    - name: report-result
+      params:
+        - name: WAIT_STATUS
+          value: $(tasks.wait-for-catalog.status)
+        - name: PROWJOB_STATUS
+          value: $(tasks.prowjob-olmv1.status)
+      taskSpec:
+        params:
+          - name: WAIT_STATUS
+            type: string
+          - name: PROWJOB_STATUS
+            type: string
+        results:
+          - name: TEST_OUTPUT
+            description: Test output
+        steps:
+          - name: report
+            image: registry.redhat.io/ubi9/ubi-minimal:latest
+            securityContext:
+              runAsUser: 65534
+              runAsNonRoot: true
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: ["ALL"]
+            computeResources:
+              limits:
+                cpu: 500m
+                memory: 512Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+            script: |
+              #!/bin/bash
+              set -e
+
+              if [ "$(params.WAIT_STATUS)" != "Succeeded" ]; then
+                RESULT="ERROR"
+                NOTE="Catalog image was not available in time"
+                FAILURES=1; SUCCESSES=0
+              elif [ "$(params.PROWJOB_STATUS)" = "Succeeded" ]; then
+                RESULT="SUCCESS"
+                NOTE="Prow job completed successfully"
+                FAILURES=0; SUCCESSES=1
+              elif [ "$(params.PROWJOB_STATUS)" = "Failed" ]; then
+                RESULT="FAILURE"
+                NOTE="Prow job failed"
+                FAILURES=1; SUCCESSES=0
+              else
+                RESULT="ERROR"
+                NOTE="Prow job status unknown: $(params.PROWJOB_STATUS)"
+                FAILURES=1; SUCCESSES=0
+              fi
+
+              printf '{"result":"%s","timestamp":"%s","failures":%d,"successes":%d,"warnings":0,"note":"%s"}' \
+                  "$RESULT" "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" \
+                  "$FAILURES" "$SUCCESSES" "$NOTE" > "$(results.TEST_OUTPUT.path)"
