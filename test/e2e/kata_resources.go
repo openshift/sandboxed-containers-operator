@@ -41,7 +41,7 @@ func deleteKataResource(oc *CLI, res, resNs, resName string) bool {
 
 		// oc writes "not found" to stderr, so check both output and err.Error().
 		notFound := strings.Contains(output, "not found") || strings.Contains(output, "NotFound") ||
-			(err != nil && strings.Contains(err.Error(), "NotFound"))
+			(err != nil && strings.Contains(strings.ToLower(err.Error()), "not found"))
 		if notFound {
 			return true, nil
 		}
@@ -102,7 +102,7 @@ func deleteResource(oc *CLI, res, resName, resNs string, duration, interval time
 			Logf("get %v %v returned error: %v", res, resName, getErr)
 		}
 		// oc writes "not found" to stderr, so check both msg and getErr.Error().
-		if strings.Contains(msg, "not found") || (getErr != nil && strings.Contains(getErr.Error(), "NotFound")) {
+		if strings.Contains(msg, "not found") || (getErr != nil && strings.Contains(strings.ToLower(getErr.Error()), "not found")) {
 			return true, nil
 		}
 		return false, nil
