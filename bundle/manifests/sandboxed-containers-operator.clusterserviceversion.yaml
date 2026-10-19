@@ -338,7 +338,10 @@ spec:
           verbs:
           - create
           - delete
+          - get
+          - list
           - update
+          - watch
         - apiGroups:
           - node.k8s.io
           resources:
