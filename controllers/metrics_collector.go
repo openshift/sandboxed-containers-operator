@@ -43,7 +43,19 @@ var (
 		"osc_setup_info",
 		"Info-style metric indicating the setup type, cloud provider, and TEE silicon when a KataConfig exists.",
 		[]string{"setup_type", "cloud_provider", "tee_type"}, nil)
+	descKataPods = prometheus.NewDesc(
+		"osc_kata_pods",
+		"Number of pods using each kata RuntimeClass.",
+		[]string{"runtimeclass"}, nil)
 )
+
+var kataRuntimeClasses = []string{
+	kataRuntimeClassName,
+	kataNvidiaGPURuntimeClassName,
+	kataRemoteRuntimeClass,
+	kataCCRuntimeClassName,
+	kataNvidiaGPUCCRuntimeClassName,
+}
 
 // OscMetricsCollector implements prometheus.Collector and exposes kata_* metrics
 // on each scrape using the manager's cache — preserving the pull-model semantics
@@ -59,6 +71,7 @@ func (c *OscMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- descTotalPods
 	ch <- descFailedPods
 	ch <- descSetupInfo
+	ch <- descKataPods
 }
 
 func (c *OscMetricsCollector) Collect(ch chan<- prometheus.Metric) {
@@ -74,13 +87,15 @@ func (c *OscMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(descRuntimeClassAvailable, prometheus.GaugeValue, rcAvail)
 
 	var totalPods, failedPods float64
+	remoteListed := false
 	if rcAvail == 1.0 {
 		podList := &corev1.PodList{}
 		if err := c.client.List(ctx, podList, client.MatchingFields{"spec.runtimeClassName": kataRemoteRuntimeClass}); err != nil {
 			oscMetricsLog.Error(err, "failed to list kata-remote pods")
 		} else {
+			remoteListed = true
+			totalPods = float64(len(podList.Items))
 			for _, pod := range podList.Items {
-				totalPods++
 				if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodSucceeded {
 					failedPods++
 				}
@@ -117,6 +132,21 @@ func (c *OscMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		cloudProvider := c.computeCloudProvider(ctx)
 		teeType := c.computeTEEType(ctx)
 		ch <- prometheus.MustNewConstMetric(descSetupInfo, prometheus.GaugeValue, 1.0, setupType, cloudProvider, teeType)
+
+		for _, rcName := range kataRuntimeClasses {
+			if rcName == kataRemoteRuntimeClass {
+				if remoteListed {
+					ch <- prometheus.MustNewConstMetric(descKataPods, prometheus.GaugeValue, totalPods, rcName)
+				}
+				continue
+			}
+			podList := &corev1.PodList{}
+			if err := c.client.List(ctx, podList, client.MatchingFields{"spec.runtimeClassName": rcName}); err != nil {
+				oscMetricsLog.Error(err, "failed to list pods", "runtimeclass", rcName)
+				continue
+			}
+			ch <- prometheus.MustNewConstMetric(descKataPods, prometheus.GaugeValue, float64(len(podList.Items)), rcName)
+		}
 	}
 	ch <- prometheus.MustNewConstMetric(descKataConfigSuccess, prometheus.GaugeValue, success)
 }
