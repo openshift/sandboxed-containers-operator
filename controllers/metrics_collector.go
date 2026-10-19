@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
@@ -52,7 +53,8 @@ func (c *OscMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (c *OscMetricsCollector) Collect(ch chan<- prometheus.Metric) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	rcAvail := 0.0
 	if err := c.client.Get(ctx, client.ObjectKey{Name: kataRemoteRuntimeClass}, &nodeapi.RuntimeClass{}); err == nil {
