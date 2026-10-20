@@ -19,7 +19,47 @@ const (
 	// to restart before it reconciles, and the pods are then replaced one node
 	// at a time.
 	caaRolloutTimeout = 5 * time.Minute
+	// podvmImageJobName is the job the operator runs to build the podvm image.
+	podvmImageJobName = "osc-podvm-image-creation"
+	// podvmImageJobTimeout bounds how long the operator takes to tear down an
+	// image job once the image ID is back in peer-pods-cm.
+	podvmImageJobTimeout = 5 * time.Minute
 )
+
+// waitForPodvmImageJobIdle blocks until no podvm image creation job is
+// running.
+//
+// The operator starts that job whenever the image ID is missing from
+// peer-pods-cm, and on completion the job writes the newly built ID back into
+// the configmap. That write rolls the CAA daemonset and repoints peer pods at
+// a different image, so a test that clears the image ID has to leave the job
+// finished or removed rather than running on into whatever uses the cluster
+// next.
+func waitForPodvmImageJobIdle(oc *CLI) error {
+	ctx, cancel := context.WithTimeout(context.Background(), podvmImageJobTimeout)
+	defer cancel()
+
+	return wait.PollUntilContextTimeout(ctx, 15*time.Second, podvmImageJobTimeout, true,
+		func(_ context.Context) (bool, error) {
+			active, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"job", podvmImageJobName, "-n", opNamespace,
+				"--ignore-not-found", "-o=jsonpath={.status.active}",
+			).Output()
+			if err != nil {
+				Logf("Waiting for the %s job to be queryable: %v", podvmImageJobName, err)
+				return false, nil
+			}
+
+			// Empty output means the job is gone or has no running pod.
+			if active == "" || active == "0" {
+				Logf("No %s job is running", podvmImageJobName)
+				return true, nil
+			}
+
+			Logf("Waiting for the %s job to finish or be removed (%s active pod(s))", podvmImageJobName, active)
+			return false, nil
+		})
+}
 
 // getCaaDaemonSetGeneration returns the CAA daemonset's metadata.generation.
 // Take it as a baseline before a change the operator reacts to, so that

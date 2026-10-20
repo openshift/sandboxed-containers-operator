@@ -858,6 +858,14 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 			).Output()
 			o.Expect(restoreErr).NotTo(o.HaveOccurred(), "failed to restore AZURE_IMAGE_ID in peer-pods-cm")
 
+			// Restoring the ID makes the operator tear down the image job it
+			// started above. Leave only once that has happened: a job allowed
+			// to run on writes the image it builds into peer-pods-cm, rolling
+			// the daemonset again long after this test is done.
+			ginkgo.By("Waiting for the podvm image creation job to finish or be removed")
+			o.Expect(waitForPodvmImageJobIdle(oc)).To(o.Succeed(),
+				"podvm image creation job was still running")
+
 			ginkgo.By("Waiting for the CAA daemonset to pick up the restored peer-pods-cm")
 			o.Expect(waitForCaaDaemonSetRollout(oc, baseline)).To(o.Succeed(),
 				"CAA daemonset did not settle after restoring AZURE_IMAGE_ID")
