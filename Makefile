@@ -79,6 +79,7 @@ BUILTIN_CLOUD_PROVIDERS ?= aws azure
 space := $() $()
 comma := ,
 GOFLAGS := -tags=$(subst $(space),$(comma),$(strip $(BUILTIN_CLOUD_PROVIDERS)))
+GOARCH ?= $(shell go env GOARCH)
 
 .PHONY: all
 all: build
@@ -141,7 +142,16 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
-	CGO_ENABLED=1 GOOS=linux go build $(GOFLAGS) -o bin/manager cmd/manager/main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build $(GOFLAGS) -o bin/manager cmd/manager/main.go
+
+# Architecture-prefixed convenience targets: make x86-<target> or make arm64-<target>
+# sets the appropriate GOARCH and PLATFORMS for any downstream target.
+# Examples: make x86-build, make x86-docker-buildx, make arm64-docker-buildx
+x86-%:
+	$(MAKE) $* GOARCH=amd64 PLATFORMS=linux/amd64
+
+arm64-%:
+	$(MAKE) $* GOARCH=arm64 PLATFORMS=linux/arm64
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
