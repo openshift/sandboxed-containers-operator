@@ -1,16 +1,85 @@
 package kata
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/tidwall/gjson"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
 	ppConfigMapName = "peer-pods-cm"
 	ppRuntimeClass  = "kata-remote"
+	// caaDsName is the cloud-api-adaptor daemonset deployed by the operator.
+	caaDsName = "osc-caa-ds"
+	// caaRolloutTimeout bounds a CAA daemonset rollout. The operator may have
+	// to restart before it reconciles, and the pods are then replaced one node
+	// at a time.
+	caaRolloutTimeout = 5 * time.Minute
 )
+
+// getCaaDaemonSetGeneration returns the CAA daemonset's metadata.generation.
+// Take it as a baseline before a change the operator reacts to, so that
+// waitForCaaDaemonSetRollout can tell "not reconciled yet" from "done".
+func getCaaDaemonSetGeneration(oc *CLI) (string, error) {
+	generation, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"daemonset", caaDsName, "-n", opNamespace, "-o=jsonpath={.metadata.generation}",
+	).Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get %s generation: %w", caaDsName, err)
+	}
+	return generation, nil
+}
+
+// waitForCaaDaemonSetRollout blocks until the operator has rewritten the CAA
+// daemonset past baselineGeneration and every node runs a pod of the new
+// revision.
+//
+// The operator builds the daemonset from peer-pods-cm, from the trusted-ca
+// configmap and from its own environment, and reconciles asynchronously: a
+// change to any of those rolls the daemonset some time after the change lands.
+// Waiting only for the generation to move returns while pods of the previous
+// revision are still being replaced, which hands a half-rolled daemonset to
+// whatever runs next.
+func waitForCaaDaemonSetRollout(oc *CLI, baselineGeneration string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), caaRolloutTimeout)
+	defer cancel()
+
+	return wait.PollUntilContextTimeout(ctx, 10*time.Second, caaRolloutTimeout, true,
+		func(_ context.Context) (bool, error) {
+			dsJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"daemonset", caaDsName, "-n", opNamespace, "-o=json",
+			).Output()
+			if err != nil {
+				Logf("Waiting for the %s daemonset to be readable...", caaDsName)
+				return false, nil
+			}
+
+			generation := gjson.Get(dsJSON, "metadata.generation").String()
+			if generation == baselineGeneration {
+				Logf("Waiting for the operator to rewrite %s (generation still %s)", caaDsName, generation)
+				return false, nil
+			}
+
+			status := gjson.Get(dsJSON, "status")
+			observed := status.Get("observedGeneration").String()
+			desired := status.Get("desiredNumberScheduled").Int()
+			updated := status.Get("updatedNumberScheduled").Int()
+			available := status.Get("numberAvailable").Int()
+
+			if observed != generation || updated != desired || available != desired {
+				Logf("Waiting for %s rollout: generation=%s observed=%s updated=%d available=%d desired=%d",
+					caaDsName, generation, observed, updated, available, desired)
+				return false, nil
+			}
+
+			Logf("%s rolled out (generation=%s, %d pods available)", caaDsName, generation, available)
+			return true, nil
+		})
+}
 
 // checkPodVMImageID verifies the cloud-specific podvm image ID field exists
 // and is non-empty in the peer-pods-cm configmap.
