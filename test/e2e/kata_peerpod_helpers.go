@@ -98,27 +98,43 @@ func waitForCaaDaemonSetRollout(oc *CLI, baselineGeneration string) error {
 				return false, nil
 			}
 
-			generation := gjson.Get(dsJSON, "metadata.generation").String()
-			if generation == baselineGeneration {
-				Logf("Waiting for the operator to rewrite %s (generation still %s)", caaDsName, generation)
+			done, reason := daemonSetRolledOut(dsJSON, baselineGeneration)
+			if !done {
+				Logf("Waiting for %s rollout: %s", caaDsName, reason)
 				return false, nil
 			}
 
-			status := gjson.Get(dsJSON, "status")
-			observed := status.Get("observedGeneration").String()
-			desired := status.Get("desiredNumberScheduled").Int()
-			updated := status.Get("updatedNumberScheduled").Int()
-			available := status.Get("numberAvailable").Int()
-
-			if observed != generation || updated != desired || available != desired {
-				Logf("Waiting for %s rollout: generation=%s observed=%s updated=%d available=%d desired=%d",
-					caaDsName, generation, observed, updated, available, desired)
-				return false, nil
-			}
-
-			Logf("%s rolled out (generation=%s, %d pods available)", caaDsName, generation, available)
+			Logf("%s rolled out: %s", caaDsName, reason)
 			return true, nil
 		})
+}
+
+// daemonSetRolledOut reports whether dsJSON describes a daemonset the operator
+// has rewritten past baselineGeneration and whose every node runs an available
+// pod of that new revision. The second return value explains the verdict and
+// is meant for logging.
+//
+// numberReady alone is not enough: with maxUnavailable 1 it is satisfied while
+// a node still runs a pod of the previous revision, so updatedNumberScheduled
+// has to be checked too.
+func daemonSetRolledOut(dsJSON, baselineGeneration string) (bool, string) {
+	generation := gjson.Get(dsJSON, "metadata.generation").String()
+	if generation == baselineGeneration {
+		return false, fmt.Sprintf("the operator has not rewritten it yet (generation still %s)", generation)
+	}
+
+	status := gjson.Get(dsJSON, "status")
+	observed := status.Get("observedGeneration").String()
+	desired := status.Get("desiredNumberScheduled").Int()
+	updated := status.Get("updatedNumberScheduled").Int()
+	available := status.Get("numberAvailable").Int()
+
+	if observed != generation || updated != desired || available != desired {
+		return false, fmt.Sprintf("generation=%s observed=%s updated=%d available=%d desired=%d",
+			generation, observed, updated, available, desired)
+	}
+
+	return true, fmt.Sprintf("generation=%s, %d pods available", generation, available)
 }
 
 // checkPodVMImageID verifies the cloud-specific podvm image ID field exists
