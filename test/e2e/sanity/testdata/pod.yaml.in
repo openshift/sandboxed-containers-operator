@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${POD_NAME}
+  namespace: ${SANITY_NAMESPACE}
+spec:
+  runtimeClassName: ${SANITY_RUNTIME_CLASS}
+  terminationGracePeriodSeconds: 5
+  containers:
+    - name: sanity
+      image: ${SANITY_IMAGE}
+      command: ["sleep", "infinity"]
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
