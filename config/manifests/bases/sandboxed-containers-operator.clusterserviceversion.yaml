@@ -13,6 +13,7 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
+    console.openshift.io/plugins: '["osc-openshift-console-plugin","coco-openshift-console-plugin"]'
     features.operators.openshift.io/cnf: "false"
     features.operators.openshift.io/cni: "false"
     features.operators.openshift.io/csi: "false"

@@ -25,11 +25,15 @@ import (
 	provider "github.com/confidential-containers/cloud-api-adaptor/src/cloud-providers"
 	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl/controllers"
 	configv1 "github.com/openshift/api/config/v1"
+	consolev1 "github.com/openshift/api/console/v1"
 	mcfgapi "github.com/openshift/api/machineconfiguration/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	openshifttls "github.com/openshift/controller-runtime-common/pkg/tls"
 	"go.uber.org/zap/zapcore"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	nodeapi "k8s.io/api/node/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -77,6 +81,10 @@ func init() {
 	utilruntime.Must(peerpod.AddToScheme(scheme))
 
 	utilruntime.Must(configv1.AddToScheme(scheme))
+
+	utilruntime.Must(consolev1.Install(scheme))
+
+	utilruntime.Must(operatorv1.Install(scheme))
 
 	utilruntime.Must(ccov1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
@@ -138,6 +146,18 @@ func main() {
 		tlsOptsList = []func(*tls.Config){tlsOpt}
 	}
 
+	// Console plugins deployed by this operator. Declared here so that they can
+	// still be removed on uninstall even when the console plugin controllers
+	// were never registered (e.g. on an unsupported OCP version).
+	consolePlugins := []struct {
+		name        string
+		displayName string
+		imageEnvVar string
+	}{
+		{"osc-openshift-console-plugin", "OpenShift Sandboxed Containers", "RELATED_IMAGE_OSC_CONSOLE_PLUGIN"},
+		{"coco-openshift-console-plugin", "Confidential Containers", "RELATED_IMAGE_COCO_CONSOLE_PLUGIN"},
+	}
+
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
@@ -170,6 +190,21 @@ func main() {
 					},
 				},
 				&corev1.Pod{}: {}, // needed by OscMetricsCollector; cluster-wide
+				&appsv1.Deployment{}: {
+					Namespaces: map[string]cache.Config{
+						controllers.OperatorNamespace: {},
+					},
+				},
+				&corev1.Service{}: {
+					Namespaces: map[string]cache.Config{
+						controllers.OperatorNamespace: {},
+					},
+				},
+				&networkingv1.NetworkPolicy{}: {
+					Namespaces: map[string]cache.Config{
+						controllers.OperatorNamespace: {},
+					},
+				},
 			},
 		},
 	})
@@ -229,6 +264,32 @@ func main() {
 			os.Exit(1)
 		}
 
+		ocpVersion, err := controllers.GetOpenshiftVersion(ctx, tempClient)
+		if err != nil {
+			// A transient API failure here must not crash-loop the operator: the
+			// version is only needed to decide whether to register the console
+			// plugin controllers. Uninstall cleanup is registered unconditionally
+			// below and does not depend on them.
+			setupLog.Error(err, "unable to detect OpenShift version, console plugin controllers will not be registered")
+		} else if controllers.IsConsolePluginSupported(ocpVersion) {
+			setupLog.Info("Detected OCP version for console plugins", "version", ocpVersion)
+			for _, cp := range consolePlugins {
+				if err = (&controllers.ConsolePluginReconciler{
+					Client:            mgr.GetClient(),
+					Scheme:            mgr.GetScheme(),
+					PluginName:        cp.name,
+					DisplayName:       cp.displayName,
+					ImageEnvVar:       cp.imageEnvVar,
+					OperatorCSVPrefix: "sandboxed-containers-operator",
+				}).SetupWithManager(mgr); err != nil {
+					setupLog.Error(err, "unable to create controller", "controller", "ConsolePlugin", "plugin", cp.name)
+					os.Exit(1)
+				}
+			}
+		} else {
+			setupLog.Info("OCP version < 4.22 — console plugin controllers will not be registered",
+				"detectedVersion", ocpVersion)
+		}
 	}
 
 	if err = (&kataconfigurationv1.KataConfig{}).SetupWebhookWithManager(mgr); err != nil {
@@ -261,8 +322,26 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctx); err != nil {
-		setupLog.Error(err, "problem running manager")
+	startErr := mgr.Start(ctx)
+
+	// The manager has stopped: if the operator is being uninstalled, remove the
+	// console plugin resources OLM cannot delete itself (cluster-scoped
+	// ConsolePlugin CRs and the Console operator configuration). OLM deletes
+	// the operator Deployment when the CSV starts terminating, so this is the
+	// only point where cleanup is guaranteed to run while the process is alive.
+	if isOpenshift {
+		pluginNames := make([]string, 0, len(consolePlugins))
+		for _, cp := range consolePlugins {
+			pluginNames = append(pluginNames, cp.name)
+		}
+		if err := controllers.CleanupConsolePluginsOnUninstall(cfg, scheme, os.Getenv("POD_NAMESPACE"),
+			"sandboxed-containers-operator", pluginNames, setupLog); err != nil {
+			setupLog.Error(err, "failed to clean up console plugin resources on uninstall")
+		}
+	}
+
+	if startErr != nil {
+		setupLog.Error(startErr, "problem running manager")
 		os.Exit(1)
 	}
 }
