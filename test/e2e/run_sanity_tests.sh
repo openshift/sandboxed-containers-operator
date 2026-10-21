@@ -22,31 +22,46 @@ cluster was installed with.
 Requires: bats, oc, envsubst
 
 Options:
-  -w, --workload TYPE       Workload to check: kata, peer-pods (default: kata)
-  -r, --runtime_class NAME  RuntimeClass to run the pod with
-                            (default: kata for kata, kata-remote for peer-pods)
+  -w, --workload TYPE       Workload to check: kata, peer-pods, coco
+                            (default: kata)
+  -r, --runtime_class NAME  RuntimeClass to run the pod with (default: kata
+                            for kata, kata-remote for peer-pods; required for
+                            coco)
+      --initdata FILE       coco only: file holding the initdata of the
+                            cluster, gzipped and Base64-encoded as the
+                            documentation produces it. It is set on the pod
+                            as the cc_init_data annotation. Not needed on a
+                            peer pods cluster whose peer-pods-cm carries
+                            INITDATA
       --timeout SECONDS     How long to wait for the pod to be ready
-                            (default: 180 for kata, 420 for peer-pods)
+                            (default: 180 for kata, 420 for peer-pods, 600 for
+                            coco)
   -h, --help                Show this help
 
 Environment:
-  SANITY_IMAGE      Workload image (default:
-                    registry.access.redhat.com/ubi9/ubi-minimal:latest)
-  SANITY_NAMESPACE  Namespace to run the workload in (default: osc-sanity)
-  SANITY_KEEP_NS    Set to keep the namespace after the run, for debugging
-  RESULTS_DIR       Where to write results (default: ${SCRIPT_DIR}/results)
+  SANITY_IMAGE        Workload image (default:
+                      registry.access.redhat.com/ubi9/ubi-minimal:latest)
+  SANITY_NAMESPACE    Namespace to run the workload in (default: osc-sanity)
+  SANITY_TRUSTEE_NS   Namespace Trustee runs in
+                      (default: trustee-operator-system)
+  SANITY_KBS_RESOURCE Resource the coco workload reads from Trustee
+                      (default: default/kbsres1/key1)
+  SANITY_KEEP_NS      Set to keep the namespace after the run, for debugging
+  RESULTS_DIR         Where to write results (default: ${SCRIPT_DIR}/results)
 EOF
     exit "${1:-1}"
 }
 
 WORKLOAD="kata"
 RUNTIME_CLASS=""
+INITDATA_FILE=""
 TIMEOUT=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         -w|--workload) WORKLOAD="$2"; shift 2;;
         -r|--runtime_class) RUNTIME_CLASS="$2"; shift 2;;
+        --initdata) INITDATA_FILE="$2"; shift 2;;
         --timeout) TIMEOUT="$2"; shift 2;;
         -h|--help) usage 0;;
         *) echo "Unknown argument: $1"; usage;;
@@ -71,11 +86,33 @@ case "$WORKLOAD" in
         RUNTIME_CLASS="${RUNTIME_CLASS:-kata-remote}"
         TIMEOUT="${TIMEOUT:-420}"
         ;;
+    coco)
+        # Both the peer pods and the bare-metal flavour are legitimate, so
+        # there is no sensible default RuntimeClass to pick.
+        if [[ -z "$RUNTIME_CLASS" ]]; then
+            echo "ERROR: --runtime_class is required for the coco workload" >&2
+            usage
+        fi
+        TIMEOUT="${TIMEOUT:-600}"
+        ;;
     *)
         echo "Unknown workload: $WORKLOAD"
         usage
         ;;
 esac
+
+if [[ -n "$INITDATA_FILE" ]]; then
+    if [[ "$WORKLOAD" != "coco" ]]; then
+        echo "ERROR: --initdata only applies to the coco workload" >&2
+        exit 1
+    fi
+    if [[ ! -f "$INITDATA_FILE" ]]; then
+        echo "ERROR: initdata file not found: $INITDATA_FILE" >&2
+        exit 1
+    fi
+    SANITY_INITDATA="$(tr -d '\n' < "$INITDATA_FILE")"
+fi
+export SANITY_INITDATA="${SANITY_INITDATA:-}"
 
 if ! oc get runtimeclass "$RUNTIME_CLASS" &>/dev/null; then
     echo "ERROR: RuntimeClass $RUNTIME_CLASS does not exist in the cluster" >&2
@@ -87,6 +124,8 @@ export SANITY_RUNTIME_CLASS="$RUNTIME_CLASS"
 export SANITY_TIMEOUT="$TIMEOUT"
 export SANITY_IMAGE="${SANITY_IMAGE:-registry.access.redhat.com/ubi9/ubi-minimal:latest}"
 export SANITY_NAMESPACE="${SANITY_NAMESPACE:-osc-sanity}"
+export SANITY_TRUSTEE_NS="${SANITY_TRUSTEE_NS:-trustee-operator-system}"
+export SANITY_KBS_RESOURCE="${SANITY_KBS_RESOURCE:-default/kbsres1/key1}"
 
 mkdir -p "$RESULTS_DIR" || exit 1
 export SANITY_LOG_FILE="${RESULTS_DIR}/${WORKLOAD}-failure.log"
@@ -119,6 +158,19 @@ Image:        $SANITY_IMAGE
 Namespace:    $SANITY_NAMESPACE
 Timeout:      ${SANITY_TIMEOUT}s
 Results:      $RESULTS_DIR
+EOF
+
+if [[ "$SANITY_WORKLOAD" == "coco" ]]; then
+    initdata="none (the cluster configuration applies)"
+    [[ -n "$SANITY_INITDATA" ]] && initdata="$INITDATA_FILE"
+    cat <<EOF
+Trustee:      $SANITY_TRUSTEE_NS
+KBS resource: $SANITY_KBS_RESOURCE
+Initdata:     $initdata
+EOF
+fi
+
+cat <<EOF
 ==============================
 
 EOF
