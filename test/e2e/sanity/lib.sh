@@ -17,6 +17,8 @@ SANITY_LOG_FILE="${SANITY_LOG_FILE:-/tmp/sanity-${SANITY_WORKLOAD}-failure.log}"
 export SANITY_WORKLOAD SANITY_RUNTIME_CLASS SANITY_NAMESPACE SANITY_IMAGE \
     SANITY_TIMEOUT SANITY_LOG_FILE
 
+CAA_NAMESPACE="openshift-sandboxed-containers-operator"
+
 # Write a message to stdout and to the failure log.
 log() {
     echo "$*" | tee -a "$SANITY_LOG_FILE"
@@ -85,9 +87,27 @@ collect_node_journal() {
          journalctl -u crio --since '${since}' -o cat"
 }
 
+# Name of the cloud-api-adaptor pod running on a node, empty if there is none.
+caa_pod_on_node() {
+    oc get pods -n "$CAA_NAMESPACE" -l name=osc-caa-ds \
+        --field-selector "spec.nodeName=$1" \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null
+}
+
+# Logs of the cloud-api-adaptor pod that created the peer pod VM. The node
+# journal is of little help for peer pods, the adaptor logs are where the VM
+# lifecycle shows up.
+collect_caa_logs() {
+    local caa="$1"
+
+    dump "cloud-api-adaptor ${caa} logs, last $(sanity_elapsed)s" \
+        oc logs -n "$CAA_NAMESPACE" "$caa" \
+        --since="$(sanity_elapsed)s"
+}
+
 # Logs that explain a failure of the workload under test.
 collect_failure_logs() {
-    local node
+    local node caa
 
     collect_pod_logs
 
@@ -97,5 +117,17 @@ collect_failure_logs() {
         return
     fi
 
-    collect_node_journal "$node"
+    case "$SANITY_WORKLOAD" in
+        kata)
+            collect_node_journal "$node"
+            ;;
+        peer-pods)
+            caa="$(caa_pod_on_node "$node")"
+            if [[ -z "$caa" ]]; then
+                log "No cloud-api-adaptor pod runs on node ${node}"
+                return
+            fi
+            collect_caa_logs "$caa"
+            ;;
+    esac
 }

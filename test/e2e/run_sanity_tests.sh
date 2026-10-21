@@ -22,11 +22,11 @@ cluster was installed with.
 Requires: bats, oc, envsubst
 
 Options:
-  -w, --workload TYPE       Workload to check: kata (default: kata)
+  -w, --workload TYPE       Workload to check: kata, peer-pods (default: kata)
   -r, --runtime_class NAME  RuntimeClass to run the pod with
-                            (default: kata for the kata workload)
+                            (default: kata for kata, kata-remote for peer-pods)
       --timeout SECONDS     How long to wait for the pod to be ready
-                            (default: 180 for the kata workload)
+                            (default: 180 for kata, 420 for peer-pods)
   -h, --help                Show this help
 
 Environment:
@@ -66,6 +66,10 @@ case "$WORKLOAD" in
     kata)
         RUNTIME_CLASS="${RUNTIME_CLASS:-kata}"
         TIMEOUT="${TIMEOUT:-180}"
+        ;;
+    peer-pods)
+        RUNTIME_CLASS="${RUNTIME_CLASS:-kata-remote}"
+        TIMEOUT="${TIMEOUT:-420}"
         ;;
     *)
         echo "Unknown workload: $WORKLOAD"

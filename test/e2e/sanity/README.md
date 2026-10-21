@@ -17,6 +17,9 @@ export KUBECONFIG=~/path/to/kubeconfig
 
 # kata containers
 ./run_sanity_tests.sh --workload kata --runtime_class kata
+
+# peer pods
+./run_sanity_tests.sh --workload peer-pods --runtime_class kata-remote
 ```
 
 The cluster is not inspected to find out how it was installed: pass the
@@ -37,6 +40,7 @@ bats sanity/kata.bats
 | `--workload` | RuntimeClass | Default timeout | Checks |
 |---|---|---|---|
 | `kata` | `kata` | 180s | pod runs, pod is deleted |
+| `peer-pods` | `kata-remote` | 420s | pod runs, pod is deleted |
 
 ## Logs collected on failure
 
@@ -47,6 +51,7 @@ Everything is printed to stdout and appended to
 |---|---|
 | all | `oc get pod`, `oc describe pod`, `oc logs` |
 | `kata` | kata and CRI-O journal entries of the pod's node |
+| `peer-pods` | logs of the cloud-api-adaptor pod running on the pod's node |
 
 Journal entries are limited to the time window of the test run, so that the
 output holds what happened to this pod and not the whole history of the node.
