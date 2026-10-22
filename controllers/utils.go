@@ -169,8 +169,12 @@ func getPeerPodsSecret(c client.Client) (*corev1.Secret, error) {
 
 // Method to get cloud provider from infrastructure (lowercase)
 func getCloudProviderFromInfra(c client.Client) (string, error) {
+	return getCloudProviderFromInfraWithContext(context.TODO(), c)
+}
+
+func getCloudProviderFromInfraWithContext(ctx context.Context, c client.Client) (string, error) {
 	infrastructure := &configv1.Infrastructure{}
-	err := c.Get(context.TODO(), types.NamespacedName{Name: "cluster"}, infrastructure)
+	err := c.Get(ctx, types.NamespacedName{Name: "cluster"}, infrastructure)
 	if err != nil {
 		return "", err
 	}

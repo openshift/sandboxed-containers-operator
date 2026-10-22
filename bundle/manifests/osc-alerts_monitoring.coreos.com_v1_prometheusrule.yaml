@@ -22,3 +22,11 @@ spec:
       labels:
         purpose: alive_signal
         severity: info
+  - name: telemetry.rules
+    rules:
+    - expr: max(osc_setup_info) by (setup_type, cloud_provider, tee_type)
+      record: cluster:osc_setup_info:max
+    - expr: sum(osc_kata_pods) by (runtimeclass)
+      record: cluster:osc_kata_pods:sum
+    - expr: vector(1)
+      record: cluster:osc_active:max
