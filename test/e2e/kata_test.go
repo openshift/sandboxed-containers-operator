@@ -615,6 +615,14 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 	})
 
 	ginkgo.It("C00000-verify proxy and trusted CA propagation to CAA and PodVM jobs [Serial]", func() {
+		// This test patches the Subscription and peer-pods-cm, each of which
+		// makes the operator rewrite the CAA daemonset. Its cleanup returns
+		// while that rollout is still in flight, and as the last spec of the
+		// suite it leaves the daemonset replacing pods after the step is over.
+		// The caa suite runs next in the post-phase chain, labels the live CAA
+		// pods and then cannot find them, failing every pod-VM assessment.
+		// Re-enable once the cleanup waits for the rollout (PR #3504).
+		ginkgo.Skip("leaves the CAA daemonset rolling and breaks the caa suite")
 		if !testrun.enablePeerPods || cloudPlatform != "azure" {
 			ginkgo.Skip("Test supported only with peer-pods and Azure")
 		}
