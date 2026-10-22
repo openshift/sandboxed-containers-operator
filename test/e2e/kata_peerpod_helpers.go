@@ -110,13 +110,20 @@ func waitForCaaDaemonSetRollout(oc *CLI, baselineGeneration string) error {
 }
 
 // daemonSetRolledOut reports whether dsJSON describes a daemonset the operator
-// has rewritten past baselineGeneration and whose every node runs an available
-// pod of that new revision. The second return value explains the verdict and
-// is meant for logging.
+// has rewritten past baselineGeneration and whose every node already runs a pod
+// of that new revision. The second return value explains the verdict and is
+// meant for logging.
 //
-// numberReady alone is not enough: with maxUnavailable 1 it is satisfied while
-// a node still runs a pod of the previous revision, so updatedNumberScheduled
-// has to be checked too.
+// numberReady is not the measure: with maxUnavailable 1 it is satisfied while a
+// node still runs a pod of the previous revision, which is exactly the state
+// that loses a label applied to the pods. updatedNumberScheduled is, because no
+// further replacement is pending once it reaches desiredNumberScheduled.
+//
+// Readiness is deliberately not required. A daemonset controller restarts a
+// failing container in place rather than replacing the pod, so an unhealthy
+// pod keeps its labels; and C00000 misconfigures the daemonset on purpose —
+// pointing it at a proxy that does not exist — so demanding health there waits
+// for a state the test only restores in a later cleanup.
 func daemonSetRolledOut(dsJSON, baselineGeneration string) (bool, string) {
 	generation := gjson.Get(dsJSON, "metadata.generation").String()
 	if generation == baselineGeneration {
@@ -127,14 +134,13 @@ func daemonSetRolledOut(dsJSON, baselineGeneration string) (bool, string) {
 	observed := status.Get("observedGeneration").String()
 	desired := status.Get("desiredNumberScheduled").Int()
 	updated := status.Get("updatedNumberScheduled").Int()
-	available := status.Get("numberAvailable").Int()
 
-	if observed != generation || updated != desired || available != desired {
-		return false, fmt.Sprintf("generation=%s observed=%s updated=%d available=%d desired=%d",
-			generation, observed, updated, available, desired)
+	if observed != generation || updated != desired {
+		return false, fmt.Sprintf("generation=%s observed=%s updated=%d desired=%d",
+			generation, observed, updated, desired)
 	}
 
-	return true, fmt.Sprintf("generation=%s, %d pods available", generation, available)
+	return true, fmt.Sprintf("generation=%s, %d of %d pods updated", generation, updated, desired)
 }
 
 // checkPodVMImageID verifies the cloud-specific podvm image ID field exists

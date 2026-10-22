@@ -55,11 +55,22 @@ func TestDaemonSetRolledOut(t *testing.T) {
 			want: false,
 		},
 		{
-			// A pod of the new revision is scheduled on every node but one is
-			// not available yet, e.g. still pulling or failing to mount.
-			name: "updated pod not available",
+			// Every node runs a pod of the new revision but one is not ready
+			// yet, e.g. still pulling. No replacement is pending, so a label
+			// applied now survives.
+			name: "updated pod not ready yet",
 			json: dsJSON(4, 4, 2, 2, 1, 1),
-			want: false,
+			want: true,
+		},
+		{
+			// C00000 points the daemonset at a proxy that does not exist, so
+			// its pods crash-loop until a later cleanup restores the
+			// subscription. The controller restarts them in place rather than
+			// replacing them, so this is settled as far as labels go and
+			// requiring readiness here would deadlock the cleanup.
+			name: "updated pods crash-looping",
+			json: dsJSON(4, 4, 2, 2, 0, 0),
+			want: true,
 		},
 	}
 
