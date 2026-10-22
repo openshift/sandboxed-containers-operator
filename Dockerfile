@@ -26,7 +26,9 @@ RUN echo "export CONTROLLER_TOOLS_VERSION=$(grep -m 1 controller-tools go.mod | 
 RUN . ./controller-tools-ver && mv bin/controller-gen bin/controller-gen-$CONTROLLER_TOOLS_VERSION
 
 # make sure 'make' uses the right version of controller-gen
-RUN . ./controller-tools-ver && make build
+# TARGETARCH is set by docker buildx for the target platform; empty for plain docker build (host arch).
+ARG TARGETARCH
+RUN . ./controller-tools-ver && make build ${TARGETARCH:+GOARCH=${TARGETARCH}}
 
 # Use OpenShift base image
 FROM registry.redhat.io/ubi9/ubi-minimal-pqc:9.8-1791946957
