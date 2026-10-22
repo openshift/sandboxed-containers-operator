@@ -1,95 +1,6 @@
 #!/bin/bash
 
-# Error tracking
-ERROR_LOG="/must-gather/must-gather-errors.log"
-ERROR_COUNT=0
-
-# Initialize error log
-echo "Must-gather error log - $(date)" > "$ERROR_LOG"
-echo "======================================" >> "$ERROR_LOG"
-echo "" >> "$ERROR_LOG"
-
-# Log error helper function
-# Redacts node names, pod names, and IP addresses to avoid exposing internal identifiers
-log_error() {
-    local context="$1"
-    local command="$2"
-    local exit_code="$3"
-    local output="$4"
-
-    ((ERROR_COUNT++))
-
-    # Redact node and pod names from context and command
-    local redacted_context=$(echo "$context" | sed -E 's/(node|pod) [a-zA-Z0-9._-]+/\1 <redacted>/g')
-    local redacted_command=$(echo "$command" | sed -E 's/(node|pod)-[a-zA-Z0-9._-]+/<\1-name>/g')
-
-    # Redact sensitive data from output: hostnames, IP addresses, pod/node names
-    local redacted_output=""
-    if [[ -n "$output" ]]; then
-        redacted_output=$(echo "$output" | \
-            sed -E 's/[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/<ipv4-address>/g' | \
-            sed -E 's/([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}/<ipv6-address>/g' | \
-            sed -E 's/(node|pod)-[a-zA-Z0-9._-]+/<\1-name>/g' | \
-            sed -E 's/\.cluster\.local/<cluster-domain>/g')
-    fi
-
-    {
-        echo "ERROR #${ERROR_COUNT} at $(date)"
-        echo "Context: $redacted_context"
-        echo "Command: $redacted_command"
-        echo "Exit Code: $exit_code"
-        if [[ -n "$redacted_output" ]]; then
-            echo "Output (redacted):"
-            echo "$redacted_output"
-        fi
-        echo "---"
-        echo ""
-    } >> "$ERROR_LOG"
-}
-
-# Execute oc command with retry logic
-exec_with_retry() {
-    local max_retries=3
-    local retry_delay=2
-    local timeout=30
-    local attempt=1
-    local output
-    local exit_code
-
-    while [[ $attempt -le $max_retries ]]; do
-        output=$(timeout "$timeout" "$@" 2>&1)
-        exit_code=$?
-
-        if [[ $exit_code -eq 0 ]]; then
-            echo "$output"
-            return 0
-        fi
-
-        if [[ $exit_code -eq 124 ]]; then
-            # Timeout occurred
-            if [[ $attempt -lt $max_retries ]]; then
-                echo "Timeout on attempt $attempt, retrying..." >&2
-                sleep "$retry_delay"
-                ((attempt++))
-                ((retry_delay *= 2))  # Exponential backoff
-                continue
-            fi
-        fi
-
-        # Command failed
-        if [[ $attempt -lt $max_retries ]]; then
-            sleep "$retry_delay"
-            ((attempt++))
-            continue
-        fi
-
-        # All retries exhausted
-        echo "$output"
-        return "$exit_code"
-    done
-
-    return "$exit_code"
-}
+source /usr/bin/gather_common
 
 check_node_gather_pods_ready() {
     line=$(oc get ds node-gather-daemonset -o=custom-columns=DESIRED:.status.desiredNumberScheduled,READY:.status.numberReady --no-headers -n node-gather)
@@ -432,24 +343,9 @@ else
 fi
 
 # KataConfig-related events
-if ! output=$(exec_with_retry oc get events --field-selector involvedObject.kind=KataConfig --sort-by='.lastTimestamp' -A 2>&1); then
-    log_error "Gathering KataConfig events" \
-              "oc get events --field-selector involvedObject.kind=KataConfig" \
-              "$?" \
-              "$output"
-else
-    echo "$output" > "${KATACONFIG_PATH}/kataconfig-events.txt"
-fi
-
-# Controller manager deployment status
-if ! output=$(exec_with_retry oc get deployment -n openshift-sandboxed-containers-operator -o wide 2>&1); then
-    log_error "Gathering controller manager deployment status" \
-              "oc get deployment -n openshift-sandboxed-containers-operator -o wide" \
-              "$?" \
-              "$output"
-else
-    echo "$output" > "${KATACONFIG_PATH}/controller-manager-status.txt"
-fi
+collect_resource "Gathering KataConfig events" \
+    "${KATACONFIG_PATH}/kataconfig-events.txt" \
+    oc get events --field-selector involvedObject.kind=KataConfig --sort-by='.lastTimestamp' -A
 
 oc delete -f $DAEMONSET_MANIFEST
 oc delete -f $CRD_MANIFEST

@@ -63,8 +63,8 @@ Data collected for peer-pods (cloud-API-adaptor) deployments.
 
 #### Locations
 - sandboxed-containers/peer-pods/peer-pods-cm.yaml
-- sandboxed-containers/peer-pods/peer-pods-secret-keys.json
-- sandboxed-containers/peer-pods/cloud-credentials-keys.json
+- sandboxed-containers/peer-pods/peer-pods-secret-keys.txt
+- sandboxed-containers/peer-pods/cloud-credentials-keys.txt
 - sandboxed-containers/peer-pods/peerpodconfig.yaml
 - sandboxed-containers/peer-pods/**_podvmimagejob_**.yaml
 - sandboxed-containers/peer-pods/**_podvmimagejob_**\_description
