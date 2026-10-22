@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${POD_NAME}
+  namespace: ${SANITY_NAMESPACE}
+${SANITY_ANNOTATIONS}
+spec:
+  runtimeClassName: ${SANITY_RUNTIME_CLASS}
+  terminationGracePeriodSeconds: 5
+  initContainers:
+    # Reading a resource from Trustee only succeeds once the pod has
+    # attested. The pod becomes Ready only if this container exited 0, which
+    # is how the test asserts the result: peer pods do not surface container
+    # logs and the Kata Agent policy denies exec, so the test cannot read the
+    # output of a command running in the pod.
+    - name: trustee
+      image: ${SANITY_IMAGE}
+      # Whichever of the two tools the image carries: a cluster whose image
+      # security policy only admits one image leaves no choice of workload
+      # image, and those are not all built the same.
+      #
+      # No shell variable holds the URL, and this comment avoids writing a
+      # dollar sign followed by a name: envsubst substitutes every such
+      # pattern it finds blindly, with no notion of shell or YAML syntax, so
+      # a name it does not know gets replaced with an empty string wherever
+      # it appears, comments included. That is how this script shipped with
+      # the URL silently emptied out on a confidential-containers CI run,
+      # whose pinned envsubst additionally has no way to restrict which
+      # names it touches. The URL is spelled out twice instead.
+      command:
+        - sh
+        - -c
+        - |
+          if command -v curl >/dev/null 2>&1; then
+              exec curl -f -s -S -o /dev/null "http://127.0.0.1:8006/cdh/resource/${SANITY_KBS_RESOURCE}"
+          fi
+          exec wget -q -O /dev/null "http://127.0.0.1:8006/cdh/resource/${SANITY_KBS_RESOURCE}"
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+  containers:
+    - name: sanity
+      image: ${SANITY_IMAGE}
+      command: ["sleep", "infinity"]
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
