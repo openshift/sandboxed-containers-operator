@@ -431,6 +431,26 @@ else
     echo "$output" > "${KATACONFIG_PATH}/kataconfig-describe.txt"
 fi
 
+# KataConfig-related events
+if ! output=$(exec_with_retry oc get events --field-selector involvedObject.kind=KataConfig --sort-by='.lastTimestamp' -A 2>&1); then
+    log_error "Gathering KataConfig events" \
+              "oc get events --field-selector involvedObject.kind=KataConfig" \
+              "$?" \
+              "$output"
+else
+    echo "$output" > "${KATACONFIG_PATH}/kataconfig-events.txt"
+fi
+
+# Controller manager deployment status
+if ! output=$(exec_with_retry oc get deployment -n openshift-sandboxed-containers-operator -o wide 2>&1); then
+    log_error "Gathering controller manager deployment status" \
+              "oc get deployment -n openshift-sandboxed-containers-operator -o wide" \
+              "$?" \
+              "$output"
+else
+    echo "$output" > "${KATACONFIG_PATH}/controller-manager-status.txt"
+fi
+
 oc delete -f $DAEMONSET_MANIFEST
 oc delete -f $CRD_MANIFEST
 

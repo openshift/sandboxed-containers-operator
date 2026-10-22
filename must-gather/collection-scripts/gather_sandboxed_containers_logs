@@ -41,24 +41,25 @@ for operator in "${operators[@]}"; do
     done
 done
 
-# mcps
-mcps=()
-#  description of the following mcps
-#  - master
-#  - worker
-#  - kata-oc
-mcps+=(master)
-mcps+=(worker)
-mcps+=(kata-oc)
+# mcps — skip on HCP hosted clusters where MachineConfigPools do not exist
+TOPOLOGY=$(oc get infrastructure cluster -o jsonpath='{.status.controlPlaneTopology}' 2>/dev/null)
+if [[ "$TOPOLOGY" == "External" ]]; then
+    echo "HCP hosted cluster detected, skipping MachineConfigPool collection"
+else
+    mcps=()
+    mcps+=(master)
+    mcps+=(worker)
+    mcps+=(kata-oc)
 
-MCP_PATH=${OSC_PATH}/mcps
-mkdir -p ${MCP_PATH}
+    MCP_PATH=${OSC_PATH}/mcps
+    mkdir -p ${MCP_PATH}
 
-for mcp in "${mcps[@]}"; do
-    if oc get mcp "${mcp}" &>/dev/null; then
-        oc describe mcp "${mcp}" > "${MCP_PATH}/${mcp}_description"
-    fi
-done
+    for mcp in "${mcps[@]}"; do
+        if oc get mcp "${mcp}" &>/dev/null; then
+            oc describe mcp "${mcp}" > "${MCP_PATH}/${mcp}_description"
+        fi
+    done
+fi
 
 # installplans
 INSTALLPLAN_NS=${NAMESPACE_PATH}/openshift-sandboxed-containers-operator
@@ -99,3 +100,54 @@ for deploymentUnit in "${deploymentUnits[@]}"; do
 	oc get $deploymentUnit -A -o json | jq -r '.items[] | select(.spec.runtimeClassName | test("kata")).metadata.name' 2>/dev/null > ${DEPLOYMENT_UNIT_PATH}/${deploymentUnit}
 
 done
+
+# peer-pods resources
+PEERPODS_PATH=${OSC_PATH}/peer-pods
+mkdir -p ${PEERPODS_PATH}
+
+echo "Collecting peer-pods resources..."
+
+# peer-pods-cm ConfigMap — contains VPC, subnet, security group, AMI/image ID, region
+oc get configmap peer-pods-cm -n openshift-sandboxed-containers-operator -o yaml > "${PEERPODS_PATH}/peer-pods-cm.yaml" 2>/dev/null
+
+# peer-pods-secret — key names only (not values) for security
+if oc get secret peer-pods-secret -n openshift-sandboxed-containers-operator &>/dev/null; then
+	oc get secret peer-pods-secret -n openshift-sandboxed-containers-operator -o jsonpath='{.data}' 2>/dev/null | jq 'keys' > "${PEERPODS_PATH}/peer-pods-secret-keys.json" 2>/dev/null
+fi
+
+# peerpodconfig CR
+oc get peerpodconfig -n openshift-sandboxed-containers-operator -o yaml > "${PEERPODS_PATH}/peerpodconfig.yaml" 2>/dev/null
+
+# PodVMImageJob resources — status, conditions
+for podvmimagejob in $(oc get podvmimagejob -n openshift-sandboxed-containers-operator -o'custom-columns=name:metadata.name' --no-headers 2>/dev/null); do
+	oc get podvmimagejob "${podvmimagejob}" -n openshift-sandboxed-containers-operator -o yaml > "${PEERPODS_PATH}/${podvmimagejob}.yaml" 2>/dev/null
+	oc describe podvmimagejob "${podvmimagejob}" -n openshift-sandboxed-containers-operator > "${PEERPODS_PATH}/${podvmimagejob}_description" 2>/dev/null
+done
+
+# cloud-credentials secret structure (key names only)
+if oc get secret cloud-credentials -n openshift-sandboxed-containers-operator &>/dev/null; then
+	oc get secret cloud-credentials -n openshift-sandboxed-containers-operator -o jsonpath='{.data}' 2>/dev/null | jq 'keys' > "${PEERPODS_PATH}/cloud-credentials-keys.json" 2>/dev/null
+fi
+
+# OLM diagnostics
+OLM_PATH=${OSC_PATH}/olm
+mkdir -p ${OLM_PATH}
+
+echo "Collecting OLM diagnostics..."
+
+# CatalogSource resources (YAML, not just pod logs)
+oc get catalogsource -n openshift-marketplace -o yaml > "${OLM_PATH}/catalogsources.yaml" 2>/dev/null
+
+# OperatorGroup in the OSC namespace
+oc get operatorgroup -n openshift-sandboxed-containers-operator -o yaml > "${OLM_PATH}/operatorgroup.yaml" 2>/dev/null
+
+# InstallPlan status with conditions
+for installplan in $(oc get installplans -n openshift-sandboxed-containers-operator -o'custom-columns=name:metadata.name' --no-headers 2>/dev/null); do
+	oc get installplan ${installplan} -n openshift-sandboxed-containers-operator -o yaml > "${OLM_PATH}/${installplan}.yaml" 2>/dev/null
+done
+
+# CredentialsRequests in the operator namespace
+oc get credentialsrequest -n openshift-sandboxed-containers-operator -o yaml > "${OLM_PATH}/credentialsrequests.yaml" 2>/dev/null
+
+# Controller manager deployment status
+oc get deployment -n openshift-sandboxed-containers-operator -o yaml > "${OLM_PATH}/deployments.yaml" 2>/dev/null
