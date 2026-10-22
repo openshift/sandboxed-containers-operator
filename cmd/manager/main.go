@@ -28,6 +28,7 @@ import (
 	mcfgapi "github.com/openshift/api/machineconfiguration/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	openshifttls "github.com/openshift/controller-runtime-common/pkg/tls"
+	libgocrypto "github.com/openshift/library-go/pkg/crypto"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	nodeapi "k8s.io/api/node/v1"
@@ -122,16 +123,37 @@ func main() {
 	// On non-OpenShift clusters the config.openshift.io/APIServer CRD is absent, so skip
 	// the fetch and leave tlsOptsList empty to use controller-runtime's TLS defaults.
 	var (
-		tlsProfileSpec configv1.TLSProfileSpec
-		tlsOptsList    []func(*tls.Config)
+		tlsProfileSpec  configv1.TLSProfileSpec
+		tlsAdherence    configv1.TLSAdherencePolicy
+		tlsOptsList     []func(*tls.Config)
+		honorTLSProfile bool
 	)
 	if isOpenshift {
 		tlsProfileSpec, err = openshifttls.FetchAPIServerTLSProfile(ctx, tempClient)
 		if err != nil {
-			setupLog.Error(err, "unable to fetch TLS profile from APIServer CR")
-			os.Exit(1)
+			if !k8serrors.IsNotFound(err) {
+				setupLog.Error(err, "unable to fetch TLS profile from APIServer CR")
+				os.Exit(1)
+			}
+			setupLog.Info("APIServer CR not found, falling back to Intermediate TLS profile")
+			tlsProfileSpec = *configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
 		}
-		tlsOpt, unsupportedCiphers := openshifttls.NewTLSConfigFromProfile(tlsProfileSpec)
+		tlsAdherence, err = openshifttls.FetchAPIServerTLSAdherencePolicy(ctx, tempClient)
+		if err != nil {
+			if !k8serrors.IsNotFound(err) {
+				setupLog.Error(err, "unable to fetch TLS adherence policy from APIServer CR")
+				os.Exit(1)
+			}
+			setupLog.Info("APIServer CR not found, defaulting to no-opinion TLS adherence")
+		}
+		honorTLSProfile = libgocrypto.ShouldHonorClusterTLSProfile(tlsAdherence)
+		setupLog.Info("TLS adherence policy", "adherence", tlsAdherence, "honorProfile", honorTLSProfile)
+
+		effectiveProfile := tlsProfileSpec
+		if !honorTLSProfile {
+			effectiveProfile = *configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
+		}
+		tlsOpt, unsupportedCiphers := openshifttls.NewTLSConfigFromProfile(effectiveProfile)
 		if len(unsupportedCiphers) > 0 {
 			setupLog.Info("TLS profile contains ciphers not supported by Go crypto/tls, ignoring them", "ciphers", unsupportedCiphers)
 		}
@@ -182,10 +204,15 @@ func main() {
 		// Watch APIServer CR for TLS profile changes; graceful shutdown triggers a restart
 		// so the new profile is applied to all connections.
 		watcher := &openshifttls.SecurityProfileWatcher{
-			Client:                mgr.GetClient(),
-			InitialTLSProfileSpec: tlsProfileSpec,
+			Client:                    mgr.GetClient(),
+			InitialTLSProfileSpec:     tlsProfileSpec,
+			InitialTLSAdherencePolicy: tlsAdherence,
 			OnProfileChange: func(_ context.Context, _, _ configv1.TLSProfileSpec) {
 				setupLog.Info("TLS profile changed, triggering graceful restart")
+				cancel()
+			},
+			OnAdherencePolicyChange: func(_ context.Context, _, _ configv1.TLSAdherencePolicy) {
+				setupLog.Info("TLS adherence policy changed, triggering graceful restart")
 				cancel()
 			},
 		}
@@ -209,10 +236,11 @@ func main() {
 		setupLog.Info("added labels")
 
 		if err = (&controllers.KataConfigOpenShiftReconciler{
-			Client:         mgr.GetClient(),
-			Log:            ctrl.Log.WithName("controllers").WithName("KataConfig"),
-			Scheme:         mgr.GetScheme(),
-			TLSProfileSpec: tlsProfileSpec,
+			Client:          mgr.GetClient(),
+			Log:             ctrl.Log.WithName("controllers").WithName("KataConfig"),
+			Scheme:          mgr.GetScheme(),
+			TLSProfileSpec:  tlsProfileSpec,
+			HonorTLSProfile: honorTLSProfile,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create KataConfig controller for OpenShift cluster", "controller", "KataConfig")
 			os.Exit(1)

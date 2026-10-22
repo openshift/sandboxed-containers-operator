@@ -13,6 +13,7 @@ require (
 	github.com/openshift/api v0.0.0-20260511191110-9b69e5fa27e9
 	github.com/openshift/cloud-credential-operator v0.0.0-20260520203253-833d9a3e986b
 	github.com/openshift/controller-runtime-common v0.0.0-20260428152732-64ee174f5e2e
+	github.com/openshift/library-go v0.0.0-20260518135129-e368fba8ffd7
 	github.com/openshift/machine-config-operator v0.0.1-0.20250730172805-468599a9ae73
 	github.com/openshift/oc v0.0.0-alpha.0.0.20260515184714-a052bd401833
 	github.com/prometheus/client_golang v1.23.2
@@ -191,7 +192,6 @@ require (
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/opencontainers/runtime-spec v1.3.0 // indirect
 	github.com/openshift/client-go v0.0.0-20260512113608-deb4dc54551a // indirect
-	github.com/openshift/library-go v0.0.0-20260518135129-e368fba8ffd7 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect

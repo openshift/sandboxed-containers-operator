@@ -225,29 +225,20 @@ func (r *KataConfigOpenShiftReconciler) createMutatingWebhookDeployment() error 
 					Args: []string{
 						" --leader-elect",
 					},
-					// Define 3 env variables
-					Env: []corev1.EnvVar{
-						{
-							Name:  "PEERPODS_NAMESPACE",
-							Value: webhookDeploymentNamespace,
-						},
-						{
-							Name:  "TARGET_RUNTIMECLASS",
-							Value: peerpodsRuntimeClassName,
-						},
-						{
-							Name:  "POD_VM_EXTENDED_RESOURCE",
-							Value: "kata.peerpods.io/vm",
-						},
-						{
-							Name:  "TLS_MIN_VERSION",
-							Value: string(r.TLSProfileSpec.MinTLSVersion),
-						},
-						{
-							Name:  "TLS_CIPHER_SUITES",
-							Value: r.tlsCipherSuitesEnvValue(r.TLSProfileSpec),
-						},
-					},
+					Env: func() []corev1.EnvVar {
+						vars := []corev1.EnvVar{
+							{Name: "PEERPODS_NAMESPACE", Value: webhookDeploymentNamespace},
+							{Name: "TARGET_RUNTIMECLASS", Value: peerpodsRuntimeClassName},
+							{Name: "POD_VM_EXTENDED_RESOURCE", Value: "kata.peerpods.io/vm"},
+						}
+						if r.HonorTLSProfile {
+							vars = append(vars,
+								corev1.EnvVar{Name: "TLS_MIN_VERSION", Value: string(r.TLSProfileSpec.MinTLSVersion)},
+								corev1.EnvVar{Name: "TLS_CIPHER_SUITES", Value: r.tlsCipherSuitesEnvValue(r.TLSProfileSpec)},
+							)
+						}
+						return vars
+					}(),
 					// Define resources
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
