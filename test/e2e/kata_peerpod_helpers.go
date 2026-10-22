@@ -1,16 +1,147 @@
 package kata
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/tidwall/gjson"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
 	ppConfigMapName = "peer-pods-cm"
 	ppRuntimeClass  = "kata-remote"
+	// caaDsName is the cloud-api-adaptor daemonset deployed by the operator.
+	caaDsName = "osc-caa-ds"
+	// caaRolloutTimeout bounds a CAA daemonset rollout. The operator may have
+	// to restart before it reconciles, and the pods are then replaced one node
+	// at a time.
+	caaRolloutTimeout = 5 * time.Minute
+	// podvmImageJobName is the job the operator runs to build the podvm image.
+	podvmImageJobName = "osc-podvm-image-creation"
+	// podvmImageJobTimeout bounds how long the operator takes to tear down an
+	// image job once the image ID is back in peer-pods-cm.
+	podvmImageJobTimeout = 5 * time.Minute
 )
+
+// waitForPodvmImageJobIdle blocks until no podvm image creation job is
+// running.
+//
+// The operator starts that job whenever the image ID is missing from
+// peer-pods-cm, and on completion the job writes the newly built ID back into
+// the configmap. That write rolls the CAA daemonset and repoints peer pods at
+// a different image, so a test that clears the image ID has to leave the job
+// finished or removed rather than running on into whatever uses the cluster
+// next.
+func waitForPodvmImageJobIdle(oc *CLI) error {
+	ctx, cancel := context.WithTimeout(context.Background(), podvmImageJobTimeout)
+	defer cancel()
+
+	return wait.PollUntilContextTimeout(ctx, 15*time.Second, podvmImageJobTimeout, true,
+		func(_ context.Context) (bool, error) {
+			active, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"job", podvmImageJobName, "-n", opNamespace,
+				"--ignore-not-found", "-o=jsonpath={.status.active}",
+			).Output()
+			if err != nil {
+				Logf("Waiting for the %s job to be queryable: %v", podvmImageJobName, err)
+				return false, nil
+			}
+
+			// Empty output means the job is gone or has no running pod.
+			if active == "" || active == "0" {
+				Logf("No %s job is running", podvmImageJobName)
+				return true, nil
+			}
+
+			Logf("Waiting for the %s job to finish or be removed (%s active pod(s))", podvmImageJobName, active)
+			return false, nil
+		})
+}
+
+// getCaaDaemonSetGeneration returns the CAA daemonset's metadata.generation.
+// Take it as a baseline before a change the operator reacts to, so that
+// waitForCaaDaemonSetRollout can tell "not reconciled yet" from "done".
+func getCaaDaemonSetGeneration(oc *CLI) (string, error) {
+	generation, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"daemonset", caaDsName, "-n", opNamespace, "-o=jsonpath={.metadata.generation}",
+	).Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get %s generation: %w", caaDsName, err)
+	}
+	return generation, nil
+}
+
+// waitForCaaDaemonSetRollout blocks until the operator has rewritten the CAA
+// daemonset past baselineGeneration and every node runs a pod of the new
+// revision.
+//
+// The operator builds the daemonset from peer-pods-cm, from the trusted-ca
+// configmap and from its own environment, and reconciles asynchronously: a
+// change to any of those rolls the daemonset some time after the change lands.
+// Waiting only for the generation to move returns while pods of the previous
+// revision are still being replaced, which hands a half-rolled daemonset to
+// whatever runs next.
+func waitForCaaDaemonSetRollout(oc *CLI, baselineGeneration string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), caaRolloutTimeout)
+	defer cancel()
+
+	return wait.PollUntilContextTimeout(ctx, 10*time.Second, caaRolloutTimeout, true,
+		func(_ context.Context) (bool, error) {
+			dsJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"daemonset", caaDsName, "-n", opNamespace, "-o=json",
+			).Output()
+			if err != nil {
+				Logf("Waiting for the %s daemonset to be readable...", caaDsName)
+				return false, nil
+			}
+
+			done, reason := daemonSetRolledOut(dsJSON, baselineGeneration)
+			if !done {
+				Logf("Waiting for %s rollout: %s", caaDsName, reason)
+				return false, nil
+			}
+
+			Logf("%s rolled out: %s", caaDsName, reason)
+			return true, nil
+		})
+}
+
+// daemonSetRolledOut reports whether dsJSON describes a daemonset the operator
+// has rewritten past baselineGeneration and whose every node already runs a pod
+// of that new revision. The second return value explains the verdict and is
+// meant for logging.
+//
+// numberReady is not the measure: with maxUnavailable 1 it is satisfied while a
+// node still runs a pod of the previous revision, which is exactly the state
+// that loses a label applied to the pods. updatedNumberScheduled is, because no
+// further replacement is pending once it reaches desiredNumberScheduled.
+//
+// Readiness is deliberately not required. A daemonset controller restarts a
+// failing container in place rather than replacing the pod, so an unhealthy
+// pod keeps its labels; and C00000 misconfigures the daemonset on purpose —
+// pointing it at a proxy that does not exist — so demanding health there waits
+// for a state the test only restores in a later cleanup.
+func daemonSetRolledOut(dsJSON, baselineGeneration string) (bool, string) {
+	generation := gjson.Get(dsJSON, "metadata.generation").String()
+	if generation == baselineGeneration {
+		return false, fmt.Sprintf("the operator has not rewritten it yet (generation still %s)", generation)
+	}
+
+	status := gjson.Get(dsJSON, "status")
+	observed := status.Get("observedGeneration").String()
+	desired := status.Get("desiredNumberScheduled").Int()
+	updated := status.Get("updatedNumberScheduled").Int()
+
+	if observed != generation || updated != desired {
+		return false, fmt.Sprintf("generation=%s observed=%s updated=%d desired=%d",
+			generation, observed, updated, desired)
+	}
+
+	return true, fmt.Sprintf("generation=%s, %d of %d pods updated", generation, updated, desired)
+}
 
 // checkPodVMImageID verifies the cloud-specific podvm image ID field exists
 // and is non-empty in the peer-pods-cm configmap.

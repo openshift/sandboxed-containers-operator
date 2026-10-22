@@ -620,7 +620,6 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		}
 
 		var (
-			caaDsName          = "osc-caa-ds"
 			trustedCAConfigMap = "trusted-ca"
 			subscriptionName   = "sandboxed-containers-operator"
 			httpProxyTest      = "http://proxy.test.example.com:3128"
@@ -658,6 +657,7 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		noProxyTest += "," + apiHost
 		Logf("Constructed NO_PROXY: %v", noProxyTest)
 		// check if trusted-ca configmap already exists, if not create it
+		trustedCACreated := false
 		if _, err = oc.AsAdmin().WithoutNamespace().Run("get").Args(
 			"configmap", trustedCAConfigMap, "-n", opNamespace).Output(); err != nil {
 			ginkgo.By("Creating trusted-ca configmap with dummy ca-bundle.crt")
@@ -665,7 +665,12 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 				"configmap", trustedCAConfigMap, "--from-literal=ca-bundle.crt="+caBundleTest, "-n", opNamespace,
 			).Output()
 			o.Expect(err).NotTo(o.HaveOccurred(), "failed to create trusted-ca configmap")
+			trustedCACreated = true
 
+			// The subscription cleanup below removes the configmap on the
+			// usual path, where its removal can ride on a reconcile that
+			// actually fires. This only catches a failure before that cleanup
+			// is registered.
 			ginkgo.DeferCleanup(func() {
 				_, err := oc.AsAdmin().WithoutNamespace().Run("delete").Args(
 					"configmap", trustedCAConfigMap, "-n", opNamespace, "--ignore-not-found",
@@ -727,32 +732,38 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		// wait for the caa daemonset to be recreated after restoring the subscription
 		ginkgo.DeferCleanup(func() {
 			ginkgo.By("Restoring subscription to remove proxy and volume config")
+			// Baseline the generation here rather than reusing the pre-test
+			// one: the daemonset has already rolled forward, so the pre-test
+			// value would be satisfied before this restore is reconciled.
+			baseline, genErr := getCaaDaemonSetGeneration(oc)
+			o.Expect(genErr).NotTo(o.HaveOccurred(), "failed to read the CAA daemonset generation")
+
+			// Drop the configmap here rather than in its own cleanup. The
+			// operator mounts trusted-ca into the daemonset for as long as it
+			// exists, but does not watch it — isConfigMapRelevant covers
+			// peer-pods-cm and the feature-gate maps only — so deleting it
+			// reconciles nothing on its own. Removing it first lets the
+			// reconcile the subscription restore triggers rebuild the
+			// daemonset without the volume and without the proxy settings in
+			// a single roll.
+			if trustedCACreated {
+				ginkgo.By("Deleting the trusted-ca configmap")
+				_, delErr := oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+					"configmap", trustedCAConfigMap, "-n", opNamespace, "--ignore-not-found",
+				).Output()
+				o.Expect(delErr).NotTo(o.HaveOccurred(), "failed to delete trusted-ca configmap")
+			}
+
 			restorePatch := fmt.Sprintf(`[{"op": "replace", "path": "/spec/config", "value": %s}]`, subscriptionConfig)
 			_, restoreErr := oc.AsAdmin().WithoutNamespace().Run("patch").Args(
 				"subscription", subscriptionName, "-n", opNamespace,
 				"--type=json", "-p", restorePatch,
 			).Output()
 			o.Expect(restoreErr).NotTo(o.HaveOccurred(), "failed to restore subscription")
-			ctx4, cancel4 := context.WithTimeout(context.Background(), 5*time.Minute)
-			err = wait.PollUntilContextTimeout(ctx4, 10*time.Second, 5*time.Minute, true, func(_ context.Context) (bool, error) {
-				caaDSJSON, getErr := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-					"daemonset", caaDsName, "-n", opNamespace,
-					"-o=json",
-				).Output()
-				if getErr != nil {
-					Logf("CAA daemonset not found yet, waiting...")
-					return false, nil
-				}
-				if gjson.Get(caaDSJSON, "status.observedGeneration").String() == caaDSGenStart {
-					return false, nil
-				}
-				if gjson.Get(caaDSJSON, "status.numberReady").Int() != gjson.Get(caaDSJSON, "status.desiredNumberScheduled").Int() {
-					return false, nil
-				}
-				return true, nil
-			})
-			cancel4()
-			o.Expect(err).NotTo(o.HaveOccurred(), "osc-caa daemonset was not recreated in time")
+
+			ginkgo.By("Waiting for the CAA daemonset to drop the proxy and trusted-ca configuration")
+			o.Expect(waitForCaaDaemonSetRollout(oc, baseline)).To(o.Succeed(),
+				"CAA daemonset did not settle after restoring the subscription")
 		})
 
 		// wait for the operator deployment to roll out with new env vars
@@ -778,25 +789,8 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 
 		// wait for the caa daemonset to be recreated with proxy env vars and trusted-ca volume
 		ginkgo.By("Waiting for osc-caa daemonset to be recreated with proxy env vars and trusted-ca volume")
-		ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel2()
-		err = wait.PollUntilContextTimeout(ctx2, 10*time.Second, 5*time.Minute, true, func(_ context.Context) (bool, error) {
-			newCaaDSGeneration, getErr := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"daemonset", caaDsName, "-n", opNamespace,
-				"-o=jsonpath={.metadata.generation}",
-			).Output()
-			if getErr != nil {
-				Logf("CAA daemonset not found yet, waiting...")
-				return false, nil
-			}
-			if newCaaDSGeneration == caaDSGenStart {
-				return false, nil
-			}
-			Logf("osc-caa daemonset has been recreated (generation=%v)", newCaaDSGeneration)
-			caaDSGenStart = newCaaDSGeneration
-			return true, nil
-		})
-		o.Expect(err).NotTo(o.HaveOccurred(), "osc-caa daemonset was not recreated in time")
+		o.Expect(waitForCaaDaemonSetRollout(oc, caaDSGenStart)).To(o.Succeed(),
+			"CAA daemonset did not settle after patching the subscription")
 
 		ginkgo.By("Verifying proxy env vars on CAA daemonset")
 		caaEnv, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
@@ -852,12 +846,29 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 
 		ginkgo.DeferCleanup(func() {
 			ginkgo.By("Restoring AZURE_IMAGE_ID in peer-pods-cm")
+			// The daemonset pod template carries peer-pods-cm's
+			// resourceVersion, so writing the configmap back rolls it too.
+			baseline, genErr := getCaaDaemonSetGeneration(oc)
+			o.Expect(genErr).NotTo(o.HaveOccurred(), "failed to read the CAA daemonset generation")
+
 			restorePatch := fmt.Sprintf(`{"data": {"AZURE_IMAGE_ID": "%s"}}`, savedImageID)
 			_, restoreErr := oc.AsAdmin().WithoutNamespace().Run("patch").Args(
 				"configmap", ppConfigMapName, "-n", opNamespace,
 				"--type=merge", "-p", restorePatch,
 			).Output()
 			o.Expect(restoreErr).NotTo(o.HaveOccurred(), "failed to restore AZURE_IMAGE_ID in peer-pods-cm")
+
+			// Restoring the ID makes the operator tear down the image job it
+			// started above. Leave only once that has happened: a job allowed
+			// to run on writes the image it builds into peer-pods-cm, rolling
+			// the daemonset again long after this test is done.
+			ginkgo.By("Waiting for the podvm image creation job to finish or be removed")
+			o.Expect(waitForPodvmImageJobIdle(oc)).To(o.Succeed(),
+				"podvm image creation job was still running")
+
+			ginkgo.By("Waiting for the CAA daemonset to pick up the restored peer-pods-cm")
+			o.Expect(waitForCaaDaemonSetRollout(oc, baseline)).To(o.Succeed(),
+				"CAA daemonset did not settle after restoring AZURE_IMAGE_ID")
 		})
 
 		ginkgo.By("Waiting for podvm image creation job to start")
