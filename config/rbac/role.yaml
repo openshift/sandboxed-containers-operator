@@ -208,6 +208,26 @@ rules:
   - update
   - watch
 - apiGroups:
+  - nfd.openshift.io
+  resources:
+  - nodefeaturediscoveries
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - nfd.openshift.io
+  resources:
+  - nodefeaturerules
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - node.k8s.io
   resources:
   - runtimeclasses
