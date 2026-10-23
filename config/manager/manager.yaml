@@ -108,6 +108,10 @@ spec:
               value: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:0a53ddea4f160df8bd24c751dbaea92e494d362ccce7f94d31be6d46cc39c923
             - name: RELATED_IMAGE_STORAGE_HELPER
               value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:0fb895d79477f0789b9130875f0ce39b40d0d4db7273a2a7d1e979f445927a94
+            - name: RELATED_IMAGE_OSC_CONSOLE_PLUGIN
+              value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-console-plugin@sha256:c456bf9da75c12531f1ece9a7b8bf43a6f3c716e7ad96de2f27705ecb77ca787
+            - name: RELATED_IMAGE_COCO_CONSOLE_PLUGIN
+              value: quay.io/redhat-user-workloads/ose-osc-tenant/coco-console-plugin@sha256:7b33946d1785aa05137f94d9423696192838e7c5e1b8e88e2f74c13790339310
           imagePullPolicy: Always
           resources:
             limits:

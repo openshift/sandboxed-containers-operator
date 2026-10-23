@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	k8sversion "k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
@@ -290,6 +291,28 @@ func GetImageForComponent(componentName string, client client.Client) (string, e
 
 	// Didn't find it
 	return "", fmt.Errorf("empty result for image name")
+}
+
+// GetOpenshiftVersion reads the ClusterVersion CR and returns "major.minor".
+func GetOpenshiftVersion(ctx context.Context, c client.Client) (string, error) {
+	cv := &configv1.ClusterVersion{}
+	if err := c.Get(ctx, client.ObjectKey{Name: "version"}, cv); err != nil {
+		return "", fmt.Errorf("reading ClusterVersion: %w", err)
+	}
+	parts := strings.Split(cv.Status.Desired.Version, ".")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("unexpected ClusterVersion format: %q", cv.Status.Desired.Version)
+	}
+	return parts[0] + "." + parts[1], nil
+}
+
+// IsConsolePluginSupported returns true if the given OCP version supports console plugins (>= 4.22).
+func IsConsolePluginSupported(ocpVersion string) bool {
+	v, err := k8sversion.ParseGeneric(ocpVersion)
+	if err != nil {
+		return false
+	}
+	return v.AtLeast(k8sversion.MajorMinor(4, 22))
 }
 
 // labelNodes updates the labels of nodes matching the given selector.
