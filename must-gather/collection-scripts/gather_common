@@ -1,0 +1,137 @@
+#!/bin/bash
+
+# Shared error handling and utility functions for must-gather collection scripts.
+# Source this file at the top of each gather_* script:
+#   source /usr/bin/gather_common
+
+# Error tracking
+ERROR_LOG="/must-gather/must-gather-errors.log"
+ERROR_COUNT=0
+
+# Initialize error log (only once — check if already initialized)
+if [[ ! -f "$ERROR_LOG" ]]; then
+    echo "Must-gather error log - $(date)" > "$ERROR_LOG"
+    echo "======================================" >> "$ERROR_LOG"
+    echo "" >> "$ERROR_LOG"
+fi
+
+# Log error helper function
+# Redacts node names, pod names, and IP addresses to avoid exposing internal identifiers
+log_error() {
+    local context="$1"
+    local command="$2"
+    local exit_code="$3"
+    local output="$4"
+
+    ((ERROR_COUNT++))
+
+    # Redact node and pod names from context and command
+    local redacted_context=$(echo "$context" | sed -E 's/(node|pod) [a-zA-Z0-9._-]+/\1 <redacted>/g')
+    local redacted_command=$(echo "$command" | sed -E 's/(node|pod)-[a-zA-Z0-9._-]+/<\1-name>/g')
+
+    # Redact sensitive data from output: hostnames, IP addresses, pod/node names
+    local redacted_output=""
+    if [[ -n "$output" ]]; then
+        redacted_output=$(echo "$output" | \
+            sed -E 's/[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/<ipv4-address>/g' | \
+            sed -E 's/([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}/<ipv6-address>/g' | \
+            sed -E 's/(node|pod)-[a-zA-Z0-9._-]+/<\1-name>/g' | \
+            sed -E 's/\.cluster\.local/<cluster-domain>/g')
+    fi
+
+    {
+        echo "ERROR #${ERROR_COUNT} at $(date)"
+        echo "Context: $redacted_context"
+        echo "Command: $redacted_command"
+        echo "Exit Code: $exit_code"
+        if [[ -n "$redacted_output" ]]; then
+            echo "Output (redacted):"
+            echo "$redacted_output"
+        fi
+        echo "---"
+        echo ""
+    } >> "$ERROR_LOG"
+}
+
+# Execute oc command with retry logic
+exec_with_retry() {
+    local max_retries=3
+    local retry_delay=2
+    local timeout=30
+    local attempt=1
+    local output
+    local exit_code
+
+    while [[ $attempt -le $max_retries ]]; do
+        output=$(timeout "$timeout" "$@" 2>&1)
+        exit_code=$?
+
+        if [[ $exit_code -eq 0 ]]; then
+            echo "$output"
+            return 0
+        fi
+
+        if [[ $exit_code -eq 124 ]]; then
+            # Timeout occurred
+            if [[ $attempt -lt $max_retries ]]; then
+                echo "Timeout on attempt $attempt, retrying..." >&2
+                sleep "$retry_delay"
+                ((attempt++))
+                ((retry_delay *= 2))  # Exponential backoff
+                continue
+            fi
+        fi
+
+        # Command failed
+        if [[ $attempt -lt $max_retries ]]; then
+            sleep "$retry_delay"
+            ((attempt++))
+            continue
+        fi
+
+        # All retries exhausted
+        echo "$output"
+        return "$exit_code"
+    done
+
+    return "$exit_code"
+}
+
+# Run a command, log errors on failure, write output to a file on success.
+# Usage: collect_resource "context description" "output_file" command [args...]
+collect_resource() {
+    local context="$1"
+    local output_file="$2"
+    shift 2
+
+    local output
+    local exit_code
+    output=$(exec_with_retry "$@" 2>&1)
+    exit_code=$?
+
+    if [[ $exit_code -ne 0 ]]; then
+        log_error "$context" "$*" "$exit_code" "$output"
+        return "$exit_code"
+    fi
+
+    if [[ -n "$output" ]]; then
+        echo "$output" > "$output_file"
+    fi
+    return 0
+}
+
+# Detect HCP topology. Sets IS_HCP=true and exports CONTROL_PLANE_TOPOLOGY.
+# Call once; result is cached for the process.
+detect_topology() {
+    if [[ -n "$CONTROL_PLANE_TOPOLOGY" ]]; then
+        return
+    fi
+    CONTROL_PLANE_TOPOLOGY=$(oc get infrastructure cluster -o jsonpath='{.status.controlPlaneTopology}' 2>/dev/null)
+    export CONTROL_PLANE_TOPOLOGY
+    if [[ "$CONTROL_PLANE_TOPOLOGY" == "External" ]]; then
+        IS_HCP=true
+    else
+        IS_HCP=false
+    fi
+    export IS_HCP
+}

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source /usr/bin/gather_common
+
 IFS=$'\n'
 
 BASE_COLLECTION_PATH="/must-gather"
@@ -41,32 +43,27 @@ for operator in "${operators[@]}"; do
     done
 done
 
-# mcps
-mcps=()
-#  description of the following mcps
-#  - master
-#  - worker
-#  - kata-oc
-mcps+=(master)
-mcps+=(worker)
-mcps+=(kata-oc)
+# mcps — skip on HCP hosted clusters where MachineConfigPools do not exist
+detect_topology
+if [[ "$IS_HCP" == "true" ]]; then
+    echo "HCP hosted cluster detected, skipping MachineConfigPool collection"
+else
+    mcps=()
+    mcps+=(master)
+    mcps+=(worker)
+    mcps+=(kata-oc)
 
-MCP_PATH=${OSC_PATH}/mcps
-mkdir -p ${MCP_PATH}
+    MCP_PATH=${OSC_PATH}/mcps
+    mkdir -p ${MCP_PATH}
 
-for mcp in "${mcps[@]}"; do
-    if oc get mcp "${mcp}" &>/dev/null; then
-        oc describe mcp "${mcp}" > "${MCP_PATH}/${mcp}_description"
-    fi
-done
+    for mcp in "${mcps[@]}"; do
+        if oc get mcp "${mcp}" &>/dev/null; then
+            oc describe mcp "${mcp}" > "${MCP_PATH}/${mcp}_description"
+        fi
+    done
+fi
 
-# installplans
-INSTALLPLAN_NS=${NAMESPACE_PATH}/openshift-sandboxed-containers-operator
-mkdir -p ${INSTALLPLAN_NS}
-
-for installplan in $(oc get installplans -n openshift-sandboxed-containers-operator -o'custom-columns=name:metadata.name' --no-headers); do
-    oc describe installplan ${installplan} -n openshift-sandboxed-containers-operator > "${INSTALLPLAN_NS}/${installplan}_description"
-done
+# installplans — YAML collected in the OLM diagnostics section below
 
 # marketplace
 MARKETPLACE_NS=${NAMESPACE_PATH}/openshift-marketplace
@@ -99,3 +96,72 @@ for deploymentUnit in "${deploymentUnits[@]}"; do
 	oc get $deploymentUnit -A -o json | jq -r '.items[] | select(.spec.runtimeClassName | test("kata")).metadata.name' 2>/dev/null > ${DEPLOYMENT_UNIT_PATH}/${deploymentUnit}
 
 done
+
+# peer-pods resources
+PEERPODS_PATH=${OSC_PATH}/peer-pods
+mkdir -p ${PEERPODS_PATH}
+
+echo "Collecting peer-pods resources..."
+
+OSC_NS="openshift-sandboxed-containers-operator"
+
+collect_resource "Collecting peer-pods-cm ConfigMap" \
+    "${PEERPODS_PATH}/peer-pods-cm.yaml" \
+    oc get configmap peer-pods-cm -n "${OSC_NS}" -o yaml
+
+# peer-pods-secret — key names only (not values) for security
+if oc get secret peer-pods-secret -n "${OSC_NS}" &>/dev/null; then
+    collect_resource "Collecting peer-pods-secret key names" \
+        "${PEERPODS_PATH}/peer-pods-secret-keys.txt" \
+        oc get secret peer-pods-secret -n "${OSC_NS}" -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'
+fi
+
+collect_resource "Collecting peerpodconfig CR" \
+    "${PEERPODS_PATH}/peerpodconfig.yaml" \
+    oc get peerpodconfig -n "${OSC_NS}" -o yaml
+
+# PodVMImageJob resources — status, conditions
+for podvmimagejob in $(oc get podvmimagejob -n "${OSC_NS}" -o'custom-columns=name:metadata.name' --no-headers 2>/dev/null); do
+    collect_resource "Collecting PodVMImageJob ${podvmimagejob}" \
+        "${PEERPODS_PATH}/${podvmimagejob}.yaml" \
+        oc get podvmimagejob "${podvmimagejob}" -n "${OSC_NS}" -o yaml
+    collect_resource "Describing PodVMImageJob ${podvmimagejob}" \
+        "${PEERPODS_PATH}/${podvmimagejob}_description" \
+        oc describe podvmimagejob "${podvmimagejob}" -n "${OSC_NS}"
+done
+
+# cloud-credentials secret structure (key names only)
+if oc get secret cloud-credentials -n "${OSC_NS}" &>/dev/null; then
+    collect_resource "Collecting cloud-credentials key names" \
+        "${PEERPODS_PATH}/cloud-credentials-keys.txt" \
+        oc get secret cloud-credentials -n "${OSC_NS}" -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'
+fi
+
+# OLM diagnostics
+OLM_PATH=${OSC_PATH}/olm
+mkdir -p ${OLM_PATH}
+
+echo "Collecting OLM diagnostics..."
+
+collect_resource "Collecting CatalogSources" \
+    "${OLM_PATH}/catalogsources.yaml" \
+    oc get catalogsource -n openshift-marketplace -o yaml
+
+collect_resource "Collecting OperatorGroup" \
+    "${OLM_PATH}/operatorgroup.yaml" \
+    oc get operatorgroup -n "${OSC_NS}" -o yaml
+
+# InstallPlan — collect both YAML and description in a single loop
+for installplan in $(oc get installplans -n "${OSC_NS}" -o'custom-columns=name:metadata.name' --no-headers 2>/dev/null); do
+    collect_resource "Collecting InstallPlan ${installplan}" \
+        "${OLM_PATH}/${installplan}.yaml" \
+        oc get installplan "${installplan}" -n "${OSC_NS}" -o yaml
+done
+
+collect_resource "Collecting CredentialsRequests" \
+    "${OLM_PATH}/credentialsrequests.yaml" \
+    oc get credentialsrequest -n "${OSC_NS}" -o yaml
+
+collect_resource "Collecting controller manager deployments" \
+    "${OLM_PATH}/deployments.yaml" \
+    oc get deployment -n "${OSC_NS}" -o yaml

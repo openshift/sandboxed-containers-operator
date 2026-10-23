@@ -1,0 +1,75 @@
+#!/bin/bash
+
+source /usr/bin/gather_common
+
+IFS=$'\n'
+
+BASE_COLLECTION_PATH="/must-gather"
+HCP_PATH=${BASE_COLLECTION_PATH}/hcp
+OSC_NS="openshift-sandboxed-containers-operator"
+
+# Detect HCP topology via the shared function
+detect_topology
+
+if [[ "$IS_HCP" != "true" ]]; then
+    echo "Cluster is not HCP (controlPlaneTopology=${CONTROL_PLANE_TOPOLOGY:-unknown}), skipping HCP-specific collection"
+    exit 0
+fi
+
+echo "HCP hosted cluster detected (controlPlaneTopology=External)"
+mkdir -p "${HCP_PATH}"
+
+# Record the topology detection result
+echo "controlPlaneTopology: ${CONTROL_PLANE_TOPOLOGY}" > "${HCP_PATH}/topology"
+
+collect_resource "Collecting cluster infrastructure" \
+    "${HCP_PATH}/infrastructure.yaml" \
+    oc get infrastructure cluster -o yaml
+
+collect_resource "Collecting ClusterVersion" \
+    "${HCP_PATH}/clusterversion.yaml" \
+    oc get clusterversion version -o yaml
+
+collect_resource "Collecting DNS operator config" \
+    "${HCP_PATH}/dns-operator.yaml" \
+    oc get dns.operator.openshift.io default -o yaml
+
+collect_resource "Collecting IngressController status" \
+    "${HCP_PATH}/ingresscontrollers.yaml" \
+    oc get ingresscontroller -n openshift-ingress-operator -o yaml
+
+collect_resource "Collecting kubernetes service endpoints" \
+    "${HCP_PATH}/endpoints-kubernetes.yaml" \
+    oc get endpoints kubernetes -n default -o yaml
+
+collect_resource "Collecting RuntimeClasses" \
+    "${HCP_PATH}/runtimeclasses.yaml" \
+    oc get runtimeclass -o yaml
+
+collect_resource "Collecting events in ${OSC_NS}" \
+    "${HCP_PATH}/events-osc-operator.txt" \
+    oc get events -n "${OSC_NS}" --sort-by='.lastTimestamp'
+
+collect_resource "Collecting events in openshift-marketplace" \
+    "${HCP_PATH}/events-marketplace.txt" \
+    oc get events -n openshift-marketplace --sort-by='.lastTimestamp'
+
+collect_resource "Collecting node labels" \
+    "${HCP_PATH}/node-labels.txt" \
+    oc get nodes -o custom-columns='NAME:.metadata.name,LABELS:.metadata.labels' --no-headers
+
+# Note for support engineers
+cat > "${HCP_PATH}/README" <<'EOF'
+This directory contains HCP (HyperShift) hosted-cluster-specific data.
+
+Management cluster resources (HostedCluster, HostedControlPlane, NodePool,
+HyperShift operator, MCE operator) are NOT collected here because must-gather
+runs in the hosted cluster context. To collect management cluster data, run
+must-gather separately against the management cluster:
+
+  oc adm must-gather --kubeconfig=<management-kubeconfig> \
+    --image=registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9:latest
+EOF
+
+echo "HCP-specific collection complete"
+exit 0
