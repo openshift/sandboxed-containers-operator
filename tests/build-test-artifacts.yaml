@@ -153,7 +153,13 @@ spec:
                     local REDHAT_BASE="registry.redhat.io/openshift-sandboxed-containers"
                     local QUAY_URL="$1"
                     case "$QUAY_URL" in
-                        *osc-operator-bundle*|*osc-test-fbc*)
+                        # osc-dm-verity-image-<arch> is a per-arch build variant that
+                        # shares a prefix with the canonical multi-arch component. This
+                        # arm precedes the osc-dm-verity-image mapping below, so the
+                        # variant is skipped (no mapping) instead of being mapped onto
+                        # osc-dm-verity-image and overwriting the CSV digest with an
+                        # arch-specific manifest.
+                        *osc-operator-bundle*|*osc-test-fbc*|*osc-dm-verity-image-*)
                             ;;
                         *osc-caa-webhook*)
                             echo "$REDHAT_BASE/osc-cloud-api-adaptor-webhook-rhel9"
