@@ -164,6 +164,12 @@ spec:
                         *osc-operator*)
                             echo "$REDHAT_BASE/osc-rhel9-operator"
                             ;;
+                        # Must precede *osc-dm-verity-image*, which would otherwise
+                        # match the s390x variant and overwrite the multi-arch
+                        # osc-dm-verity-image digest in the CSV.
+                        *osc-dm-verity-image-s390x*)
+                            echo "$REDHAT_BASE/osc-dm-verity-image-s390x"
+                            ;;
                         *osc-dm-verity-image*)
                             echo "$REDHAT_BASE/osc-dm-verity-image"
                             ;;
