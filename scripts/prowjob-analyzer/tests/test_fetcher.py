@@ -11,14 +11,15 @@ from lib.fetcher import (
     clear_artifact_cache,
     configure_artifact_source,
     fetch_artifact,
-    gcs_uri_from_gcsweb_https,
+    gcs_uri_from_public_storage_https,
     get_step_directories,
     go_duration_to_seconds,
+    prow_url_to_public_storage_base,
     write_job_artifacts_tarball,
     parse_build_log_duration_fallback,
     parse_ginkgo_failed_durations_max,
     parse_test_step_duration_from_build_log,
-    summarize_openshift_extended_test_build_log,
+    summarize_test_step_build_log,
 )
 
 
@@ -55,9 +56,9 @@ class TestGoDurationToSeconds(unittest.TestCase):
         self.assertEqual(go_duration_to_seconds("3h1m37s"), 3 * 3600 + 60 + 37)
 
 
-class TestSummarizeOpenshiftExtendedTestBuildLog(unittest.TestCase):
+class TestSummarizeTestStepBuildLog(unittest.TestCase):
     def test_empty_returns_none(self) -> None:
-        self.assertIsNone(summarize_openshift_extended_test_build_log(""))
+        self.assertIsNone(summarize_test_step_build_log(""))
 
     def test_error_summary_last_match(self) -> None:
         log = """\
@@ -66,7 +67,7 @@ error: 1 fail, 10 pass, 2 skip
 ERROR: 3 fail, 5 pass, 0 skip
 """
         self.assertEqual(
-            summarize_openshift_extended_test_build_log(log),
+            summarize_test_step_build_log(log),
             "3 fail, 5 pass, 0 skip",
         )
 
@@ -76,7 +77,7 @@ started: (0/1/100)
 started: (2/40/200)
 """
         self.assertEqual(
-            summarize_openshift_extended_test_build_log(log),
+            summarize_test_step_build_log(log),
             "(2/40/200)",
         )
 
@@ -86,13 +87,13 @@ started: (9/9/9)
 error: 1 fail, 2 pass, 3 skip
 """
         self.assertEqual(
-            summarize_openshift_extended_test_build_log(log),
+            summarize_test_step_build_log(log),
             "1 fail, 2 pass, 3 skip",
         )
 
     def test_no_matching_lines_returns_none(self) -> None:
         self.assertIsNone(
-            summarize_openshift_extended_test_build_log("just some build output\n"),
+            summarize_test_step_build_log("just some build output\n"),
         )
 
 
@@ -194,19 +195,58 @@ tail (15m)
         self.assertIsNone(parse_build_log_duration_fallback(log))
 
 
-class TestGcsUriFromGcsweb(unittest.TestCase):
-    def test_gcsweb_https_to_gs(self) -> None:
-        url = 'https://gcsweb.example/gcs/test-platform-results/logs/job-name/12345'
+class TestProwUrlToPublicStorageBase(unittest.TestCase):
+    def test_maps_known_bucket_to_public_mirror(self) -> None:
+        url = (
+            'https://prow.ci.openshift.org/view/gs/test-platform-results/logs/'
+            'periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-'
+            'candidate422-azure-ipi-kata/2110522354772742144'
+        )
         self.assertEqual(
-            gcs_uri_from_gcsweb_https(url),
-            'gs://test-platform-results/logs/job-name/12345',
+            prow_url_to_public_storage_base(url),
+            'https://storage.googleapis.com/test-platform-results-public/logs/'
+            'periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-'
+            'candidate422-azure-ipi-kata/2110522354772742144',
+        )
+
+    def test_presubmit_pr_logs_path(self) -> None:
+        url = (
+            'https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/'
+            'pull/openshift_release/72608/rehearse-72608-some-job/2001012534630420480'
+        )
+        self.assertEqual(
+            prow_url_to_public_storage_base(url),
+            'https://storage.googleapis.com/test-platform-results-public/pr-logs/'
+            'pull/openshift_release/72608/rehearse-72608-some-job/2001012534630420480',
+        )
+
+    def test_unknown_bucket_passes_through_unchanged(self) -> None:
+        url = 'https://prow.ci.openshift.org/view/gs/some-other-bucket/logs/job/1'
+        self.assertEqual(
+            prow_url_to_public_storage_base(url),
+            'https://storage.googleapis.com/some-other-bucket/logs/job/1',
+        )
+
+    def test_non_prow_url_returns_none(self) -> None:
+        self.assertIsNone(prow_url_to_public_storage_base('https://example.com/foo'))
+
+
+class TestGcsUriFromPublicStorage(unittest.TestCase):
+    def test_storage_https_to_gs(self) -> None:
+        url = 'https://storage.googleapis.com/test-platform-results-public/logs/job-name/12345'
+        self.assertEqual(
+            gcs_uri_from_public_storage_https(url),
+            'gs://test-platform-results-public/logs/job-name/12345',
         )
 
     def test_already_gs_uri(self) -> None:
         self.assertEqual(
-            gcs_uri_from_gcsweb_https('gs://b/prefix'),
+            gcs_uri_from_public_storage_https('gs://b/prefix'),
             'gs://b/prefix',
         )
+
+    def test_non_storage_url_returns_none(self) -> None:
+        self.assertIsNone(gcs_uri_from_public_storage_https('https://example.com/foo'))
 
 
 class TestArtifactCacheAndLocal(unittest.TestCase):
