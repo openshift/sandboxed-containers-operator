@@ -1,10 +1,14 @@
 """
 Parser Module
 
-Handles parsing of prowjob.json and test-results.yaml files.
+Handles parsing of prowjob.json, JUnit XML (the current
+sandboxed-containers-operator-testsuites chain's result format), and the
+retired OTP test-results.yaml (kept only for dig_failed_tests_report.py /
+test_report.py, which still analyze historical OTP-era artifact bundles).
 """
 
 import logging
+import xml.etree.ElementTree as ET
 from typing import Dict, Optional, List
 from datetime import datetime
 
@@ -105,140 +109,184 @@ def parse_test_results(test_results_content: bytes) -> Optional[Dict]:
         return None
 
 
-def _count_int(value, default: int = 0) -> int:
+def _safe_int(value, default: int = 0) -> int:
     try:
         return int(value)
     except (TypeError, ValueError):
         return default
 
 
-def _oet_finished_json_has_timestamp(fin: Dict) -> bool:
-    """True if openshift-extended-test ``finished.json`` has a pod-utils timestamp."""
-    t = fin.get('timestamp')
-    if t is None:
-        return False
+def _safe_float(value, default: float = 0.0) -> float:
     try:
-        return int(float(t)) > 0
+        return float(value)
     except (TypeError, ValueError):
-        return False
+        return default
 
 
-def _job_status_from_test_results(test_results: Optional[Dict]) -> Optional[str]:
+def parse_junit_xml(content: bytes) -> Optional[Dict]:
     """
-    Derive ``success`` / ``failure`` from test-results.yaml body when possible.
+    Parse a JUnit XML artifact into a generic structure, independent of
+    which suite/tool wrote it.
 
-    Handles junit-style ``failures``/``errors``, ``failingScenarios``, per-test ``tests``,
-    a top-level ``failed`` count, or ``total``/``passed``/``skipped``.
+    Replaces reliance on the retired OTP test-results.yaml: every current
+    sandboxed-containers-operator-testsuites-chain suite
+    (osc/kata-upstream/caa) writes plain JUnit XML instead (confirmed live;
+    see the prowjob-analyzer plan). Accepts either a ``<testsuites>`` root
+    wrapping one or more ``<testsuite>`` elements, or a bare ``<testsuite>``
+    root (the shape OSC's own Ginkgo v2 suite writes).
+
+    Returns:
+        ``{'tests', 'failures', 'errors', 'skipped', 'time', 'testsuites': [
+            {'name', 'tests', 'failures', 'errors', 'skipped', 'time',
+             'testcases': [
+                {'name', 'classname', 'time', 'status', 'failure_message',
+                 'failure_text'},
+                ...
+             ]},
+            ...
+        ]}``, or ``None`` if ``content`` isn't parseable JUnit XML.
     """
-    if not test_results or not isinstance(test_results, dict):
+    if not content:
+        return None
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError as e:
+        logger.debug(f"Failed to parse JUnit XML: {e}")
         return None
 
-    if 'failures' in test_results or 'errors' in test_results:
-        failures = _count_int(test_results.get('failures', 0))
-        errors = _count_int(test_results.get('errors', 0))
-        return 'success' if failures == 0 and errors == 0 else 'failure'
+    if root.tag == 'testsuite':
+        suite_elems = [root]
+    elif root.tag == 'testsuites':
+        suite_elems = list(root.findall('testsuite'))
+    else:
+        logger.debug(f"Unexpected JUnit XML root element: {root.tag!r}")
+        return None
 
-    failing_scenarios = test_results.get('failingScenarios') or []
-    if failing_scenarios:
-        return 'failure'
+    testsuites = []
+    total = {'tests': 0, 'failures': 0, 'errors': 0, 'skipped': 0, 'time': 0.0}
 
-    tests = test_results.get('tests')
-    if isinstance(tests, list) and len(tests) > 0:
-        for t in tests:
-            if not isinstance(t, dict):
-                continue
-            if t.get('state') == 'failed' or t.get('failed') is True:
-                return 'failure'
-        return 'success'
+    for suite in suite_elems:
+        testcases = []
+        for tc in suite.findall('testcase'):
+            status = 'passed'
+            failure_message = ''
+            failure_text = ''
 
-    if 'failed' in test_results:
-        failed = _count_int(test_results.get('failed'))
-        return 'success' if failed == 0 else 'failure'
+            failure_elem = tc.find('failure')
+            error_elem = tc.find('error')
+            skipped_elem = tc.find('skipped')
+            explicit_status = (tc.get('status') or '').lower()
 
-    if 'total' in test_results and 'passed' in test_results:
-        total = _count_int(test_results.get('total'))
-        passed = _count_int(test_results.get('passed'))
-        skipped = _count_int(test_results.get('skipped', 0))
-        if total > 0:
-            failed = total - passed - skipped
-            return 'success' if failed <= 0 else 'failure'
+            if failure_elem is not None:
+                status = 'failed'
+                failure_message = failure_elem.get('message', '') or ''
+                failure_text = (failure_elem.text or '').strip()
+            elif error_elem is not None:
+                status = 'error'
+                failure_message = error_elem.get('message', '') or ''
+                failure_text = (error_elem.text or '').strip()
+            elif skipped_elem is not None:
+                status = 'skipped'
+            elif explicit_status in ('failed', 'error', 'skipped'):
+                status = explicit_status
 
-    return None
+            testcases.append({
+                'name': tc.get('name', ''),
+                'classname': tc.get('classname', ''),
+                'time': _safe_float(tc.get('time')),
+                'status': status,
+                'failure_message': failure_message,
+                'failure_text': failure_text,
+            })
+
+        suite_info = {
+            'name': suite.get('name', ''),
+            'tests': _safe_int(suite.get('tests')),
+            'failures': _safe_int(suite.get('failures')),
+            'errors': _safe_int(suite.get('errors')),
+            'skipped': _safe_int(suite.get('skipped')),
+            'time': _safe_float(suite.get('time')),
+            'testcases': testcases,
+        }
+        testsuites.append(suite_info)
+        for key in ('tests', 'failures', 'errors', 'skipped'):
+            total[key] += suite_info[key]
+        total['time'] += suite_info['time']
+
+    return {**total, 'testsuites': testsuites}
 
 
-def get_job_status(
-    prowjob_data: Dict,
-    test_results: Optional[Dict] = None,
-    extended_test_finished: Optional[Dict] = None,
-) -> str:
+def extract_failing_testcases_from_junit(junit: Optional[Dict]) -> List[Dict]:
+    """Flatten failed/error testcases out of a parsed JUnit dict (see parse_junit_xml)."""
+    out: List[Dict] = []
+    for suite in (junit or {}).get('testsuites', []):
+        for tc in suite.get('testcases', []):
+            if tc['status'] in ('failed', 'error'):
+                out.append({**tc, 'suite_name': suite.get('name', '')})
+    return out
+
+
+def parse_osc_suite_test_case_info(test_name: str) -> Dict:
     """
-    Determine overall job status.
+    Parse case ID/description out of a ``testsuites-osc`` Ginkgo test name.
 
-    Priority for openshift-extended-test outcomes:
-    1. ``artifacts/.../openshift-extended-test/artifacts/test-results.yaml`` when the
-       body supports a clear outcome (failures/errors, ``failingScenarios``, ``tests``,
-       ``failed`` count, or ``total``/``passed``/``skipped``).
-    2. ``artifacts/.../openshift-extended-test/finished.json`` — ``result`` and/or a
-       ``timestamp`` proving the step finished (avoids ``pending`` when Prow job state
-       lags later ci-operator steps).
-    3. Top-level ``prowjob.json`` ``status.state`` when the above are inconclusive.
+    Confirmed real shape (live):
+    ``[It] [sig-kata] Kata C#####-description [Serial] [Serial]`` -- no
+    ``Author:``/priority token, and a ``Kata`` prefix before the case ID.
+    This is a different shape from the retired OTP suite's
+    ``Author:user-Priority-C#####-description`` naming (see
+    :func:`parse_test_case_info`) -- don't reuse that pattern here.
+
+    Args:
+        test_name: Full Ginkgo test name/description.
+
+    Returns:
+        Dictionary with ``test_case_number`` (e.g. ``"C00367"``, or ``""``
+        if not found) and ``description``.
+    """
+    import re
+
+    info = {'test_case_number': '', 'description': ''}
+
+    case_match = re.search(r'\bC(\d+)-', test_name)
+    if case_match:
+        info['test_case_number'] = f"C{case_match.group(1)}"
+
+    desc_match = re.search(r'C\d+-(.*?)(?:\s*\[|$)', test_name)
+    if desc_match:
+        info['description'] = desc_match.group(1).strip()
+    else:
+        info['description'] = test_name
+
+    return info
+
+
+def get_job_status(prowjob_data: Dict) -> str:
+    """
+    Determine overall job status from Prow's own ``status.state``.
+
+    The retired OTP (``openshift-extended-test``) step needed cross-checks
+    against ``test-results.yaml``/its own ``finished.json`` because its
+    reported result could disagree with the real test outcome. The current
+    sandboxed-containers-operator-testsuites-chain architecture doesn't have
+    that problem -- each step's own ``finished.json`` is accurate on its own
+    (confirmed live; see the prowjob-analyzer plan) -- and neither does
+    Prow's top-level job state, so this reads it directly instead of layering
+    step-result overrides on top of it.
 
     Args:
         prowjob_data: Parsed prowjob.json (raw dict)
-        test_results: Parsed test-results.yaml from openshift-extended-test (optional)
-        extended_test_finished: Parsed openshift-extended-test/finished.json (optional)
 
     Returns:
-        Status string: 'success', 'failure', 'timeout', 'error', 'aborted', 'pending',
+        Status string: 'success', 'failure', 'aborted', 'error', 'pending',
         'unknown'
     """
-    tr_status = _job_status_from_test_results(test_results)
-    if tr_status is not None:
-        return tr_status
-
-    if extended_test_finished is not None and isinstance(extended_test_finished, dict):
-        result = extended_test_finished.get('result')
-        r = str(result).strip().upper() if result is not None else ''
-        if r:
-            if r in ('SUCCESS', 'PASS', 'PASSED', 'SUCCEEDED'):
-                return 'success'
-            if r in ('FAILURE', 'FAILED', 'FAIL'):
-                return 'failure'
-            if r in ('TIMEOUT', 'TIMEDOUT'):
-                return 'timeout'
-            if r in ('ABORTED', 'INTERRUPTED'):
-                return 'aborted'
-            if r == 'ERROR':
-                return 'error'
-            return 'unknown'
-
-        if _oet_finished_json_has_timestamp(extended_test_finished):
-            return 'unknown'
-
     status = prowjob_data.get('status', {})
     state = (status.get('state') or '').lower()
 
-    if state == 'success':
-        if test_results and (
-            _count_int(test_results.get('failures', 0)) > 0
-            or _count_int(test_results.get('errors', 0)) > 0
-        ):
-            return 'failure'
-        return 'success'
-    elif state == 'failure':
-        return 'failure'
-    elif state == 'aborted':
-        return 'aborted'
-    elif state == 'pending':
-        if extended_test_finished is not None and isinstance(
-            extended_test_finished, dict
-        ) and _oet_finished_json_has_timestamp(extended_test_finished):
-            return 'unknown'
-        return 'pending'
-    elif state == 'error':
-        return 'error'
-    else:
-        return 'unknown'
+    if state in ('success', 'failure', 'aborted', 'error', 'pending'):
+        return state
+    return 'unknown'
 
 
 def parse_test_case_info(test_name: str) -> Dict:

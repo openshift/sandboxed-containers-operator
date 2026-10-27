@@ -11,9 +11,29 @@ import logging
 from typing import Dict, List, Optional
 from datetime import datetime
 from .parser import format_hours_minutes
-from .fetcher import get_artifact_url, artifact_dir_for_failed_step_label
+from .fetcher import get_artifact_url
 
 logger = logging.getLogger(__name__)
+
+# Human-readable labels for the three-way testsuites-chain failure
+# classification (see the prowjob-analyzer plan, Workstreams C/E).
+_FAILURE_KIND_LABELS = {
+    'blocking_phase_failure': (
+        'Blocking phase failure — the pre/test phase failed before the '
+        'testsuites chain could run (or its own gate step failed). None of '
+        'the suite results below reflect real test coverage for this run.'
+    ),
+    'best_effort_suite_failure': (
+        'Best-effort suite failure — one or more testsuites-chain suites '
+        'failed. `best_effort: true` means a failing suite does not block '
+        'the others (see Test Suites below for which ones actually failed).'
+    ),
+    'unrelated_post_step_failure': (
+        'Unrelated post-step failure — the testsuites chain itself looks '
+        'clean; a different post-phase step (e.g. must-gather, deprovision) '
+        'failed independently.'
+    ),
+}
 
 
 def format_status_emoji(status: str) -> str:
@@ -30,57 +50,80 @@ def format_status_emoji(status: str) -> str:
     return status_emojis.get(status.lower(), '❓')
 
 
-def generate_test_results_section(test_results: Dict, failure_analysis: Dict) -> str:
-    """Generate test results section for report."""
-    if not test_results:
-        return "\n## Test Results\n\nNo test results available.\n"
+def generate_testsuites_section(suite_summaries: Optional[Dict], failure_kind: Optional[str]) -> str:
+    """
+    Per-step breakdown of the sandboxed-containers-operator-testsuites chain
+    (the test:-phase gate, plus the post:-phase osc/kata-upstream/caa
+    suites), shown independently of overall job status -- useful context
+    even on a passing job (e.g. "caa produced no JUnit, likely disabled"),
+    not just when something failed (see the prowjob-analyzer plan,
+    Workstream E). Each step reports its own elapsed time and status in
+    addition to (not instead of) the chain-wide `test_elapsed_time`/
+    classification summary shown elsewhere in the report.
+    """
+    if not suite_summaries:
+        return ""
 
-    # Handle different test results formats
-    total = test_results.get('total', 0)
-    if total == 0:
-        # Fallback to 'tests' field or count of test list
-        total = test_results.get('tests', 0) if isinstance(test_results.get('tests'), int) else len(test_results.get('tests', []))
-    failures = test_results.get('failures', 0)
-    passed = total - failures
-    skipped = test_results.get('skipped', 0)
+    section = "\n## Test Suites\n\n"
 
-    section = "\n## Test Results\n\n"
-    section += f"- **Total Tests**: {total}\n"
-    section += f"- **Passed**: {passed} ✅\n"
-    section += f"- **Failed**: {failures} {'❌' if failures > 0 else ''}\n"
-    section += f"- **Skipped**: {skipped}\n"
+    status_emoji = {'SUCCESS': '✅', 'FAILURE': '❌', None: '❓'}
 
-    # Add failing tests breakdown if any
-    if failures > 0:
-        failing_tests_by_cat = failure_analysis.get('failing_tests_by_category', {})
-        if failing_tests_by_cat:
-            section += "\n### Failed Tests\n\n"
-            for category, tests in sorted(failing_tests_by_cat.items()):
-                section += f"#### {category.replace('_', ' ').title()} ({len(tests)} tests)\n\n"
-                for test in tests:
-                    test_case_num = test.get('test_case_number', '')
-                    description = test.get('description', '')
-                    test_name = test.get('name', 'Unknown')
-                    execution_order = test.get('execution_order')
+    for suite_key in ('gate', 'osc', 'kata-upstream', 'caa'):
+        info = suite_summaries.get(suite_key)
+        if not info:
+            continue
+        emoji = status_emoji.get(info.get('status'), '❓')
+        section += f"### {emoji} `{info['step_name']}`\n\n"
 
-                    # Display test case number and description if available
-                    if test_case_num and description:
-                        section += f"- **{test_case_num}**: {description}\n"
-                        # Add execution order, priority and author if available
-                        if execution_order:
-                            section += f"  - Execution Order: {execution_order}\n"
-                        if test.get('priority'):
-                            section += f"  - Priority: {test['priority']}\n"
-                        if test.get('author'):
-                            section += f"  - Author: {test['author']}\n"
-                    else:
-                        # Fallback to showing test name
-                        if len(test_name) > 100:
-                            test_name = test_name[:97] + "..."
-                        section += f"- `{test_name}`\n"
-                        if execution_order:
-                            section += f"  - Execution Order: {execution_order}\n"
-                section += "\n"
+        if not info.get('step_exists'):
+            section += "Did not run.\n\n"
+            continue
+
+        elapsed = info.get('elapsed_time') or 'unknown'
+
+        if suite_key == 'gate':
+            section += f"Status: **{info.get('status') or 'unknown'}** — elapsed {elapsed}\n\n"
+            continue
+
+        if not info.get('had_junit'):
+            section += (
+                f"Status: **{info.get('status') or 'unknown'}** — elapsed {elapsed} — "
+                "produced no JUnit XML.\n\n"
+            )
+        else:
+            section += (
+                f"Status: **{info.get('status') or 'unknown'}** — elapsed {elapsed} — "
+                f"{info.get('tests', 0)} tests, {info.get('passed', 0)} passed, "
+                f"{info.get('failures', 0)} failed, {info.get('errors', 0)} errors, "
+                f"{info.get('skipped', 0)} skipped\n\n"
+            )
+            if info.get('tests', 0) == 0:
+                section += (
+                    "(Zero tests reported — likely disabled via "
+                    f"`TESTS_{suite_key.upper().replace('-', '_')}_ENABLE=false`, "
+                    "or self-skipped because the testsuites-gate marker was missing.)\n\n"
+                )
+
+        failing_tests = info.get('failing_tests') or []
+        if failing_tests:
+            section += "**Failing tests:**\n\n"
+            for test in failing_tests:
+                case = test.get('test_case_number')
+                desc = test.get('description') or test.get('name', 'Unknown')
+                label = f"**{case}**: {desc}" if case else f"`{test.get('name', 'Unknown')}`"
+                section += f"- {label}\n"
+                if test.get('failure_message'):
+                    msg = test['failure_message'].strip().splitlines()[0][:200]
+                    section += f"  - {msg}\n"
+            section += "\n"
+        elif info.get('no_results'):
+            section += (
+                "Step failed and produced no JUnit at all — no per-test detail "
+                "available; inspect its build-log.txt directly.\n\n"
+            )
+
+    if failure_kind in _FAILURE_KIND_LABELS:
+        section += f"> {_FAILURE_KIND_LABELS[failure_kind]}\n\n"
 
     return section
 
@@ -92,17 +135,20 @@ def generate_failure_analysis_section(failure_analysis: Dict, base_url: str, var
 
     section = "\n## Failure Analysis\n\n"
 
+    failure_kind = failure_analysis.get('failure_kind')
+    if failure_kind in _FAILURE_KIND_LABELS:
+        section += f"**Classification**: {_FAILURE_KIND_LABELS[failure_kind]}\n\n"
+
     # Failure location (now shows actual step name(s))
     location = failure_analysis.get('failure_location', 'unknown')
     section += f"**Failed Step(s)**: `{location}`\n\n"
 
-    # Add context based on special statuses
+    # Add context based on special statuses (only reachable via the
+    # variant-unknown fallback path in analyze_failure -- see identify_failure_location)
     if location == 'timeout':
         section += "The job exceeded its execution timeout.\n\n"
     elif location == 'infrastructure':
         section += "The job failed due to infrastructure issues.\n\n"
-    elif location == 'tests':
-        section += "The job failed during the test phase (test-results.yaml available).\n\n"
     elif location == 'unknown':
         section += "Could not determine which step failed.\n\n"
 
@@ -151,44 +197,13 @@ def generate_failure_analysis_section(failure_analysis: Dict, base_url: str, var
     return section
 
 
-def generate_post_test_prow_pipeline_section(
-    failure_analysis: Dict, base_url: str, variant: str
+def generate_artifacts_section(
+    base_url: str,
+    variant: str,
+    test_results_available: bool,
+    analyzed_files: List[Dict] = None,
+    suite_summaries: Optional[Dict] = None,
 ) -> str:
-    """Section when tests passed but a later Prow step failed."""
-    section = "\n## Prow pipeline issue (not a test failure)\n\n"
-    steps = failure_analysis.get('post_test_failed_steps') or []
-    loc = failure_analysis.get('failure_location', 'unknown')
-    if steps:
-        step_list = ', '.join(f'`{s}`' for s in steps)
-        section += f"**Failed Prow step(s) after tests**: {step_list}\n\n"
-    else:
-        section += (
-            f"**Failed step(s)**: could not be listed from artifacts "
-            f"(location hint: `{loc}`).\n\n"
-        )
-    note = failure_analysis.get('summary_note', '')
-    if note:
-        section += f"{note}\n\n"
-    root_cause = failure_analysis.get('root_cause', {})
-    if root_cause.get('likely_cause'):
-        section += f"**Details**: {root_cause['likely_cause']}\n\n"
-    suggested = root_cause.get('suggested_actions', [])
-    if suggested:
-        section += "**Suggested actions**:\n"
-        for action in suggested:
-            section += f"- {action}\n"
-        section += "\n"
-    if variant and variant != 'unknown' and steps:
-        section += "### Step artifact links\n\n"
-        for step in steps:
-            step_dir = artifact_dir_for_failed_step_label(step)
-            prefix = f"artifacts/{variant}/{step_dir}/"
-            section += f"- [`{step}`]({get_artifact_url(base_url, prefix)})\n"
-        section += "\n"
-    return section
-
-
-def generate_artifacts_section(base_url: str, variant: str, test_results_available: bool, analyzed_files: List[Dict] = None) -> str:
     """Generate artifacts links section."""
     section = "\n## Artifacts\n\n"
 
@@ -198,8 +213,20 @@ def generate_artifacts_section(base_url: str, variant: str, test_results_availab
     section += f"- [finished.json]({get_artifact_url(base_url, 'finished.json')})\n"
 
     if variant and variant != 'unknown':
-        section += f"- [Test Results]({get_artifact_url(base_url, f'artifacts/{variant}/openshift-extended-test/artifacts/test-results.yaml')})\n"
-        section += f"- [Extended Test Logs]({get_artifact_url(base_url, f'artifacts/{variant}/openshift-extended-test/artifacts/extended.log')})\n"
+        if suite_summaries:
+            for suite_key in ('osc', 'kata-upstream', 'caa'):
+                info = suite_summaries.get(suite_key)
+                if not info or not info.get('step_exists'):
+                    continue
+                step_name = info['step_name']
+                section += (
+                    f"- [{step_name} build-log.txt]"
+                    f"({get_artifact_url(base_url, f'artifacts/{variant}/{step_name}/build-log.txt')})\n"
+                )
+                section += (
+                    f"- [{step_name} artifacts/]"
+                    f"({get_artifact_url(base_url, f'artifacts/{variant}/{step_name}/artifacts/')})\n"
+                )
         section += f"- [Must-Gather]({get_artifact_url(base_url, f'artifacts/{variant}/sandboxed-containers-operator-gather-must-gather/artifacts/')})\n"
 
     # Add section for files analyzed for pattern detection
@@ -227,6 +254,7 @@ def build_report_data(
     failure_analysis: Optional[Dict],
     base_url: str,
     test_elapsed_time: str = '',
+    suite_summaries: Optional[Dict] = None,
 ) -> Dict:
     """
     Build the canonical report dict (single source of truth).
@@ -299,6 +327,10 @@ def build_report_data(
                     'author': test.get('author', ''),
                     'duration': test.get('duration', 0),
                     'execution_order': test.get('execution_order'),
+                    # Additive (Workstream E): which testsuites-chain suite/JUnit
+                    # file this failing test came from.
+                    'suite': test.get('suite', ''),
+                    'junit_file': test.get('junit_file', ''),
                 }
                 for test in failing_tests
             ],
@@ -308,11 +340,35 @@ def build_report_data(
             'root_cause': failure_analysis.get('root_cause', {}),
         }
 
-    if failure_analysis and failure_analysis.get('failure_kind') == 'prow_pipeline_after_tests':
-        report['prow_pipeline_issue'] = {
-            'failed_steps': failure_analysis.get('post_test_failed_steps') or [],
-            'failure_location': failure_analysis.get('failure_location', ''),
-            'summary': failure_analysis.get('summary_note', ''),
+    # Additive (Workstream E): per-step breakdown (gate + each suite),
+    # independent of overall status -- each with its own elapsed_time/status.
+    if suite_summaries:
+        report['testsuites'] = {
+            suite_key: {
+                'step_name': info['step_name'],
+                'step_exists': info['step_exists'],
+                'status': info['status'],
+                'elapsed_time': info.get('elapsed_time') or 'unknown',
+                'had_junit': info.get('had_junit', False),
+                'tests': info.get('tests', 0),
+                'passed': info.get('passed', 0),
+                'failures': info.get('failures', 0),
+                'errors': info.get('errors', 0),
+                'skipped': info.get('skipped', 0),
+                'no_results': info.get('no_results', False),
+                'failing_tests': [
+                    {
+                        'name': test.get('name', ''),
+                        'test_case_number': test.get('test_case_number', ''),
+                        'description': test.get('description', ''),
+                        'duration': test.get('duration', 0),
+                        'failure_message': test.get('failure_message', ''),
+                        'junit_file': test.get('junit_file', ''),
+                    }
+                    for test in (info.get('failing_tests') or [])
+                ],
+            }
+            for suite_key, info in suite_summaries.items()
         }
 
     # Artifacts
@@ -321,10 +377,17 @@ def build_report_data(
         'prowjob_json': get_artifact_url(base_url, 'prowjob.json'),
         'finished_json': get_artifact_url(base_url, 'finished.json'),
     }
-    if variant and variant != 'unknown':
-        report['artifacts']['test_results'] = get_artifact_url(base_url, f'artifacts/{variant}/openshift-extended-test/artifacts/test-results.yaml')
-        report['artifacts']['extended_log'] = get_artifact_url(base_url, f'artifacts/{variant}/openshift-extended-test/artifacts/extended.log')
-        report['artifacts']['must_gather'] = get_artifact_url(base_url, f'artifacts/{variant}/sandboxed-containers-operator-gather-must-gather/artifacts/')
+    if variant and variant != 'unknown' and suite_summaries:
+        for suite_key, info in suite_summaries.items():
+            if not info.get('step_exists'):
+                continue
+            step_name = info['step_name']
+            report['artifacts'][f'{suite_key}_build_log'] = get_artifact_url(
+                base_url, f'artifacts/{variant}/{step_name}/build-log.txt'
+            )
+        report['artifacts']['must_gather'] = get_artifact_url(
+            base_url, f'artifacts/{variant}/sandboxed-containers-operator-gather-must-gather/artifacts/'
+        )
 
     # Full root_cause dict at top level of canonical report
     report['root_cause'] = (failure_analysis.get('root_cause', {}) if failure_analysis else {})
@@ -394,18 +457,14 @@ def generate_human_report(report_data: Dict) -> str:
     status = prowjob['status']
     test_results = report_data.get('test_results')
     failure_analysis = report_data.get('failure_analysis')
+    suite_summaries = report_data.get('testsuites')
     base_url = prowjob['url']
 
     report = "# Prow Job Analysis Report\n\n"
 
-    # Status (tests can be SUCCESS while Prow still reports a later pipeline failure)
+    # Status
     status_emoji = format_status_emoji(status)
     report += f"## Status: {status_emoji} {status.upper()}\n\n"
-    if report_data.get('prow_pipeline_issue'):
-        report += (
-            "> **Note:** Extended tests passed. Prow reported a failure in a **later pipeline step** "
-            "(not a failing test case). See [Prow pipeline issue](#prow-pipeline-issue-not-a-test-failure) below.\n\n"
-        )
 
     # Job Overview (job_name, build_id, trigger live in prowjob in canonical report)
     report += "## Job Overview\n\n"
@@ -423,7 +482,7 @@ def generate_human_report(report_data: Dict) -> str:
     report += f"- **URL**: {base_url}\n"
 
     report += f"- **test_elapsed_time**: {report_data.get('test_elapsed_time', 'unknown')} "
-    report += "(openshift-extended-test step, start to finish or interruption)\n"
+    report += "(sandboxed-containers-operator-testsuites chain: gate + osc/kata-upstream/caa)\n"
     report += f"- **prowjob_elapsed_time**: {report_data.get('prowjob_elapsed_time', 'unknown')} "
     report += "(entire Prow job wall time)\n"
 
@@ -472,18 +531,15 @@ def generate_human_report(report_data: Dict) -> str:
     else:
         report += f"- **Expected Operator Version**: (not set)\n"
 
-    if test_results:
-        report += generate_test_results_section(test_results, failure_analysis or {})
-
     fa_kind = (failure_analysis or {}).get('failure_kind')
-    if failure_analysis and fa_kind == 'prow_pipeline_after_tests':
-        report += generate_post_test_prow_pipeline_section(
-            failure_analysis, base_url, metadata.get('variant', '')
-        )
-    elif status != 'success' and failure_analysis:
+    report += generate_testsuites_section(suite_summaries, fa_kind)
+
+    if status != 'success' and failure_analysis:
         report += generate_failure_analysis_section(failure_analysis, base_url, metadata.get('variant', ''))
 
     analyzed_files = failure_analysis.get('analyzed_files', []) if failure_analysis else []
-    report += generate_artifacts_section(base_url, metadata.get('variant', ''), test_results is not None, analyzed_files)
+    report += generate_artifacts_section(
+        base_url, metadata.get('variant', ''), test_results is not None, analyzed_files, suite_summaries
+    )
 
     return report

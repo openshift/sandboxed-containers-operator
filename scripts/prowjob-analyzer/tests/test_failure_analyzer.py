@@ -3,11 +3,39 @@
 import unittest
 
 from lib.failure_analyzer import (
+    check_log_for_patterns,
     determine_root_cause,
     detect_kata_rpm_install_context,
     extract_failed_case_ids_from_extended_build_log,
     extract_kata_rpm_dependency_detail,
 )
+
+
+class TestOlmTrusteePatterns(unittest.TestCase):
+    """FAILURE_PATTERNS categories migrated from the osc-step-debug skill (Workstream I)."""
+
+    def test_catalogsource_not_ready(self) -> None:
+        patterns = check_log_for_patterns("CatalogSource brew-catalog is not READY", "build-log.txt")
+        self.assertIn('catalogsource', [p['pattern'] for p in patterns])
+
+    def test_olm_subscription_no_installplan(self) -> None:
+        patterns = check_log_for_patterns(
+            "Subscription osc-operator has no InstallPlan reference", "build-log.txt"
+        )
+        self.assertIn('olm_subscription', [p['pattern'] for p in patterns])
+
+    def test_kbs_auth_failure(self) -> None:
+        patterns = check_log_for_patterns(
+            "kbs-client: Authenticating with KBS failed: connection refused", "build-log.txt"
+        )
+        self.assertIn('kbs_auth', [p['pattern'] for p in patterns])
+
+    def test_unrelated_log_matches_nothing_new(self) -> None:
+        patterns = check_log_for_patterns("everything is fine here", "build-log.txt")
+        names = [p['pattern'] for p in patterns]
+        self.assertNotIn('catalogsource', names)
+        self.assertNotIn('olm_subscription', names)
+        self.assertNotIn('kbs_auth', names)
 
 
 class TestExtractFailedCaseIdsFromExtendedBuildLog(unittest.TestCase):

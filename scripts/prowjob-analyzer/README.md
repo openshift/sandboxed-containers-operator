@@ -161,6 +161,40 @@ You might need to adjust alignment, etc.  If you're doing lots of analysis/sorti
 Now you should have a list of SUCCESS/FAILURE runs.  There can be an initial RCA for failed jobs.
 You can choose the prowjob URLs for further investigation
 
+### Job History Batch Workflow
+
+`job_history.py` extracts Prow job view URLs directly from a job's
+[job-history page](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-kata)
+(no browser/Konflux UI needed) and is meant to feed `dig.py`, the same way
+the Konflux workflow above does:
+
+```bash
+cd scripts/prowjob-analyzer
+
+# One page (~20 most recent runs) of a job, as URLs:
+./job_history.py periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-kata
+
+# Only FAILUREs, following pagination until 50 are found:
+./job_history.py <job-name> --result FAILURE --limit 50
+
+# Everything since a date, structured JSON instead of plain URLs:
+./job_history.py <job-name> --since 2026-10-01 --all --json > builds.json
+
+# Feed straight into dig.py, same CSV pattern as the Konflux workflow:
+echo '' > output.csv
+for URL in $(./job_history.py <job-name> --result FAILURE); do
+    ./dig.py "$URL" --csv --no-header --no-wait >> output.csv
+done
+```
+
+A bare job name builds the default `gs/test-platform-results/logs/<job-name>`
+job-history URL; a full job-history URL (including one with an existing
+`?buildId=` cursor) is used as-is. Accepts both `--since`/`--until` date
+filters and `--result {SUCCESS,FAILURE,ALL}`; `--limit` (default 20) counts
+*filtered* results and keeps paginating via the page's "Older Runs" link
+until it's satisfied, so `--result FAILURE --limit 50` doesn't stop after
+the first mostly-SUCCESS page. Standalone — no local `release` clone needed.
+
 ### Direct CLI Usage
 
 You can also run the dig scripts directly:

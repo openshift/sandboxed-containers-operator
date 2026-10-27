@@ -18,10 +18,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'lib'))
 from lib.fetcher import (
     parse_prow_url,
     fetch_json_artifact,
-    fetch_artifact,
     wait_for_artifacts,
     extract_variant_from_job_name,
-    compute_openshift_extended_test_elapsed_display,
+    compute_testsuites_phase_elapsed_display,
     configure_artifact_source,
     download_job_artifacts,
     write_job_artifacts_tarball,
@@ -29,11 +28,10 @@ from lib.fetcher import (
 )
 from lib.parser import (
     parse_prowjob,
-    parse_test_results,
     get_job_status,
 )
 from lib.metadata_extractor import extract_metadata
-from lib.failure_analyzer import analyze_failure, analyze_post_test_prow_failure
+from lib.failure_analyzer import analyze_failure, classify_testsuites_result, summarize_all_suites
 from lib.report_generator import build_report_data, generate_csv_report, generate_human_report, generate_json_report
 
 # Configure logging
@@ -139,73 +137,55 @@ def analyze_prowjob(
     metadata = extract_metadata(prowjob_data, base_url)
     logger.info(f"Provider: {metadata['provider']}, OCP: {metadata['ocp_version']}, Workload: {metadata['workload_type']}")
 
-    # Fetch test results if available
-    logger.info("Fetching test results...")
-    test_results = None
     variant = metadata.get('variant')
 
-    extended_finished = None
-    if variant and variant != 'unknown':
-        prefix = f"artifacts/{variant}/openshift-extended-test"
-        test_results_path = f"{prefix}/artifacts/test-results.yaml"
-        test_results_content = fetch_artifact(base_url, test_results_path)
-
-        if test_results_content:
-            test_results = parse_test_results(test_results_content)
-            if test_results:
-                logger.info(f"Test results found: {test_results.get('failures', 0)} failures")
-        else:
-            logger.warning("test-results.yaml not found (might be a prow step failure)")
-
-        finished_path = f"{prefix}/finished.json"
-        extended_finished = fetch_json_artifact(base_url, finished_path)
-        if extended_finished:
-            logger.info(
-                f"openshift-extended-test finished.json: result={extended_finished.get('result')!r}"
-            )
-
+    # How long the sandboxed-containers-operator-testsuites chain (test:-phase
+    # gate + post:-phase osc/kata-upstream/caa suites) took. Replaces the
+    # retired single openshift-extended-test step's elapsed-time metric (see
+    # the prowjob-analyzer plan).
     test_elapsed_time = 'unknown'
     if variant and variant != 'unknown':
-        test_elapsed_time = compute_openshift_extended_test_elapsed_display(
-            base_url, variant, extended_finished
-        )
+        test_elapsed_time = compute_testsuites_phase_elapsed_display(base_url, variant)
         if not test_elapsed_time:
             test_elapsed_time = 'unknown'
         logger.info(f"test_elapsed_time: {test_elapsed_time}")
 
-    # Determine job status (test-results primary, then finished.json, then prowjob.json)
-    status = get_job_status(prowjob_json, test_results, extended_finished)
+    # Determine job status. Prow's own job state is authoritative for the
+    # testsuites-chain architecture: unlike the retired OTP
+    # openshift-extended-test step, no step here is known to under-report its
+    # own failures (confirmed live; see the prowjob-analyzer plan), so there's
+    # no override layer needed on top of status.state anymore.
+    status = get_job_status(prowjob_json)
     logger.info(f"Job status: {status}")
 
-    # Analyze failures if tests/job failed (test failures)
+    # Classify the testsuites chain and summarize each suite (osc/kata-upstream/caa)
+    # unconditionally -- useful context even on a passing job (e.g. "caa disabled"),
+    # not just when something failed.
+    testsuites_result = None
+    suite_summaries = None
+    if variant and variant != 'unknown':
+        testsuites_result = classify_testsuites_result(base_url, variant)
+        suite_summaries = summarize_all_suites(base_url, variant, testsuites_result)
+
+    # Analyze failures if the job failed
     failure_analysis = None
     if status != 'success':
         logger.info("Analyzing failure...")
-        failure_analysis = analyze_failure(prowjob_data, base_url, test_results, metadata)
+        failure_analysis = analyze_failure(prowjob_data, base_url, metadata, testsuites_result)
         logger.info(f"Failed step(s): {failure_analysis.get('failure_location')}")
         logger.info(f"Failing tests: {len(failure_analysis.get('failing_tests', []))}")
         logger.info(f"Detected patterns: {failure_analysis.get('detected_patterns')}")
-
-    # Tests passed but overall Prow job failed (e.g. later step) — not a test failure
-    if status == 'success':
-        prow_state = (prowjob_json.get('status') or {}).get('state', '').lower()
-        if prow_state not in ('success', 'pending', ''):
-            post = analyze_post_test_prow_failure(prowjob_json, base_url, metadata)
-            if post:
-                failure_analysis = post
-                logger.info(
-                    "Prow reported non-success after successful tests; "
-                    f"post-test step issue: {post.get('failure_location')}"
-                )
 
     return {
         'prowjob_data': prowjob_data,
         'metadata': metadata,
         'status': status,
-        'test_results': test_results,
+        'test_results': None,
         'failure_analysis': failure_analysis,
         'base_url': base_url,
         'test_elapsed_time': test_elapsed_time,
+        'testsuites_result': testsuites_result,
+        'suite_summaries': suite_summaries,
     }
 
 
@@ -398,6 +378,7 @@ Artifact layout:
         results['failure_analysis'],
         results['base_url'],
         results.get('test_elapsed_time', ''),
+        results.get('suite_summaries'),
     )
     if args.json:
         logger.info("Generating JSON report...")

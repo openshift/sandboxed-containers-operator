@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
 """
-Failed Tests Report Script
+Failed Tests Report Script (Level 2 analysis)
 
-Generates detailed reports for failed tests from a Prow job, including
-full test logs and failure summaries extracted from build-log.txt.
+Generates detailed per-test failure reports for a Prow job's
+sandboxed-containers-operator-testsuites chain (osc/kata-upstream/caa).
+
+Unlike the retired OTP (openshift-extended-test) version of this script,
+per-test failure detail comes straight from each suite's own JUnit XML
+<failure>/<error> text -- confirmed live to already contain the full Ginkgo
+assertion/stack-trace output for osc, and the full bats debug output
+(including kata-shim logs) for kata-upstream, so there is no shared
+build-log.txt to grep a log window out of anymore (each suite has its own,
+separate build-log.txt). When a suite step failed but produced no JUnit at
+all (the no-results case the prowjob-analyzer plan documents for
+osc/kata-upstream), this falls back to a tail of that suite's own
+build-log.txt labeled as suite-level, not test-level, detail.
 
 Usage:
     python3 dig_failed_tests_report.py <PROW_JOB_URL> [TEST_NAME1 TEST_NAME2 ...]
@@ -14,8 +25,7 @@ import sys
 import argparse
 import logging
 import json
-import re
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 # Add lib to path
 import os
@@ -26,14 +36,8 @@ from lib.fetcher import (
     fetch_artifact,
     extract_variant_from_job_name,
 )
-from lib.parser import (
-    parse_prowjob,
-    parse_test_results,
-    extract_failing_tests,
-    parse_test_case_info,
-    categorize_test_by_name,
-    extract_test_execution_order,
-)
+from lib.parser import categorize_test_by_name
+from lib.failure_analyzer import classify_testsuites_result, analyze_suite_failure
 
 # Configure logging
 logging.basicConfig(
@@ -42,327 +46,186 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+_BUILD_LOG_FALLBACK_TAIL_CHARS = 8000
 
-def extract_test_logs_from_build_log(build_log_content: str, test_name: str) -> Optional[Dict]:
+
+def collect_all_failing_tests(base_url: str, variant: str) -> List[Dict]:
     """
-    Extract full test logs and failure summary for a specific test from build-log.txt.
+    Gather JUnit-derived failing-test detail from every FAILED suite in the
+    sandboxed-containers-operator-testsuites chain.
 
-    Args:
-        build_log_content: Content of build-log.txt
-        test_name: Name of the test to extract
-
-    Returns:
-        Dictionary with full_logs and failure_summary, or None if not found
+    Each entry already carries its own failure_message/system_err (the
+    JUnit <failure>/<error> message and full text) -- see
+    lib.failure_analyzer.analyze_suite_failure -- plus a suite-level
+    build-log.txt tail fallback entry when a suite failed without writing
+    any JUnit at all.
     """
-    lines = build_log_content.split('\n')
-    
-    # Escape special regex characters in test name
-    escaped_test = re.escape(test_name)
-    
-    # Find start: started: ({stats}) "{test name}"
-    start_pattern = rf'started:.*"{escaped_test}"'
-    # Find end: failed: ({elapsed time}) {date} "{test name}"
-    end_pattern = rf'failed:.*"{escaped_test}"'
-    
-    start_idx = None
-    end_idx = None
-    
-    for i, line in enumerate(lines):
-        if start_idx is None and re.search(start_pattern, line, re.IGNORECASE):
-            start_idx = i
-            logger.debug(f"Found test start at line {i}: {line[:80]}")
-        elif start_idx is not None and re.search(end_pattern, line, re.IGNORECASE):
-            end_idx = i
-            logger.debug(f"Found test end at line {i}: {line[:80]}")
-            break
-    
-    if start_idx is None:
-        logger.warning(f"Could not find start of test logs for: {test_name}")
-        return None
-    
-    if end_idx is None:
-        logger.warning(f"Could not find end of test logs for: {test_name}")
-        # Use remaining content if we found the start
-        end_idx = len(lines) - 1
+    classification = classify_testsuites_result(base_url, variant)
+    all_failing: List[Dict] = []
 
-    # Extract elapsed time from the failed line
-    # Pattern: failed: (10m13s) 2025-11-11T00:01:49 "{test name}"
-    elapsed_time = "unknown"
-    if end_idx is not None and end_idx < len(lines):
-        end_line = lines[end_idx]
-        elapsed_match = re.search(r'failed:\s*\(([^)]+)\)', end_line, re.IGNORECASE)
-        if elapsed_match:
-            elapsed_time = elapsed_match.group(1)
-
-    # Extract full test logs
-    full_logs_lines = lines[start_idx:end_idx + 1]
-    full_logs = '\n'.join(full_logs_lines)
-
-    # Extract failure summary from full logs
-    # Find "Summarizing {N} Failure" and extract until end, excluding timestamp lines
-    failure_summary_lines = []
-    in_summary = False
-
-    for line in full_logs_lines:
-        if re.search(r'Summarizing \d+ Failure', line):
-            in_summary = True
+    for suite_key, info in classification.get('suites', {}).items():
+        if info['status'] != 'FAILURE':
             continue
 
-        if in_summary:
-            # Skip lines that start with timestamp pattern (e.g., "Dec 08 15:20:36.914")
-            if re.match(r'^[A-Z][a-z]{2} \d{2} \d{2}:\d{2}:\d{2}\.\d{3}', line):
-                continue
-            failure_summary_lines.append(line)
+        suite_result = analyze_suite_failure(base_url, variant, suite_key, info['step_name'])
 
-    failure_summary = '\n'.join(failure_summary_lines).strip()
+        for idx, test in enumerate(suite_result['failing_tests'], 1):
+            entry = dict(test)
+            entry['suite_order'] = idx
+            entry['category'] = categorize_test_by_name(entry.get('name', ''))
+            all_failing.append(entry)
 
-    return {
-        'full_logs': full_logs,
-        'failure_summary': failure_summary,
-        'elapsed_time': elapsed_time
-    }
+        if suite_result['no_results']:
+            logger.info(
+                f"{info['step_name']} failed with no JUnit at all; "
+                "falling back to its build-log.txt tail"
+            )
+            bl = fetch_artifact(base_url, f"artifacts/{variant}/{info['step_name']}/build-log.txt")
+            tail = ''
+            if bl:
+                text = bl.decode('utf-8', errors='ignore')
+                tail = text[-_BUILD_LOG_FALLBACK_TAIL_CHARS:] if len(text) > _BUILD_LOG_FALLBACK_TAIL_CHARS else text
+            all_failing.append({
+                'name': f"({info['step_name']}: no JUnit produced)",
+                'suite': suite_key,
+                'junit_file': None,
+                'duration': 0,
+                'failure_message': 'Suite step failed and produced no JUnit XML at all.',
+                'system_out': '',
+                'system_err': tail,
+                'test_case_number': '',
+                'description': f"{info['step_name']} build-log.txt tail (suite-level fallback, not test-level)",
+                'priority': '',
+                'author': '',
+                'category': 'suite_error',
+                'suite_order': None,
+            })
 
-
-def analyze_failed_tests(
-    base_url: str,
-    variant: str,
-    test_names: Optional[List[str]] = None
-) -> List[Dict]:
-    """
-    Analyze failed tests and generate detailed reports.
-
-    Args:
-        base_url: Base URL of the Prow job
-        variant: Job variant
-        test_names: Optional list of specific test names to analyze (None = all failed tests)
-
-    Returns:
-        List of dictionaries with detailed test information
-    """
-    results = []
-    
-    # Fetch test-results.yaml to get list of failed tests
-    logger.info("Fetching test results...")
-    test_results_path = f"artifacts/{variant}/openshift-extended-test/artifacts/test-results.yaml"
-    test_results_content = fetch_artifact(base_url, test_results_path)
-    
-    if not test_results_content:
-        logger.error("Could not fetch test-results.yaml")
-        return results
-    
-    test_results = parse_test_results(test_results_content)
-    if not test_results:
-        logger.error("Could not parse test-results.yaml")
-        return results
-    
-    # Get list of failed tests
-    all_failed_tests = extract_failing_tests(test_results)
-    
-    if not all_failed_tests:
-        logger.info("No failed tests found in test-results.yaml")
-        return results
-    
-    # Filter to specific tests if requested
-    if test_names:
-        # Match by full name or by test case ID (C#####)
-        tests_to_analyze = []
-        for test in all_failed_tests:
-            test_name = test['name']
-            test_case_id = test.get('test_case_number', '')
-            
-            # Check if this test matches any of the requested names/IDs
-            for requested in test_names:
-                if requested in test_name or (test_case_id and requested in test_case_id):
-                    tests_to_analyze.append(test)
-                    break
-        
-        if not tests_to_analyze:
-            logger.warning(f"None of the requested tests found in failed tests list")
-            logger.info(f"Available failed tests: {[t['name'] for t in all_failed_tests]}")
-            return results
-    else:
-        tests_to_analyze = all_failed_tests
-    
-    logger.info(f"Analyzing {len(tests_to_analyze)} failed test(s)...")
-    
-    # Fetch build-log.txt
-    build_log_path = f"artifacts/{variant}/openshift-extended-test/build-log.txt"
-    logger.info(f"Fetching build log from {build_log_path}...")
-    
-    build_log_content = fetch_artifact(base_url, build_log_path)
-    if not build_log_content:
-        logger.error("Could not fetch build-log.txt")
-        return results
-    
-    build_log_text = build_log_content.decode('utf-8', errors='ignore')
-    logger.info(f"Build log size: {len(build_log_text)} characters")
-    
-    # Process each test
-    for test in tests_to_analyze:
-        test_name = test['name']
-        logger.info(f"Processing test: {test_name}")
-        
-        # Extract test logs
-        test_logs = extract_test_logs_from_build_log(build_log_text, test_name)
-
-        if not test_logs:
-            logger.warning(f"Could not extract logs for test: {test_name}")
-            test_logs = {'full_logs': '', 'failure_summary': '', 'elapsed_time': 'unknown'}
-
-        # Parse test case info (already done in extract_failing_tests, but get it again)
-        test_info = parse_test_case_info(test_name)
-        category = categorize_test_by_name(test_name)
-
-        result = {
-            'test_name': test_name,
-            'test_case_number': test_info['test_case_number'],
-            'elapsed_time': test_logs['elapsed_time'],
-            'category': category,
-            'author': test_info['author'],
-            'priority': test_info['priority'],
-            'failure_summary': test_logs['failure_summary'],
-            'full_logs': test_logs['full_logs'],
-            'execution_order': None,  # Will be set below
-        }
-
-        results.append(result)
-
-    # Add execution order to each test and sort by it
-    # This is critical for root cause analysis - the first test often contains the real error
-    execution_order = extract_test_execution_order(build_log_text)
-    if execution_order:
-        # Create a mapping of test name to execution order number (1-based)
-        order_map = {test_name: idx + 1 for idx, test_name in enumerate(execution_order)}
-
-        # Add execution order to each result
-        for result in results:
-            result['execution_order'] = order_map.get(result['test_name'])
-
-        # Sort results based on execution order
-        results.sort(key=lambda r: r['execution_order'] if r['execution_order'] else float('inf'))
-        logger.info("Added execution order and sorted test results")
-    else:
-        logger.warning("Could not extract execution order, tests shown in original order")
-
-    return results
+    return all_failing
 
 
-def generate_markdown_report(test_results: List[Dict], base_url: str) -> str:
-    """
-    Generate markdown report for failed tests.
+def filter_tests(all_failing: List[Dict], requested: List[str]) -> List[Dict]:
+    """Match requested names/IDs against a failing test's name or test_case_number."""
+    if not requested:
+        return all_failing
+    matched = []
+    for test in all_failing:
+        name = test.get('name', '')
+        cid = test.get('test_case_number', '')
+        for r in requested:
+            if r in name or (cid and r in cid):
+                matched.append(test)
+                break
+    return matched
 
-    Args:
-        test_results: List of test analysis results
-        base_url: Base URL of the Prow job
 
-    Returns:
-        Markdown formatted report
-    """
+def generate_markdown_report(tests: List[Dict], base_url: str) -> str:
+    """Generate markdown report for the given failing tests."""
     report = "# Failed Tests Report\n\n"
     report += f"**Job URL**: {base_url}\n\n"
-    report += f"**Tests Analyzed**: {len(test_results)}\n\n"
+    report += f"**Tests Analyzed**: {len(tests)}\n\n"
     report += "---\n\n"
-    
-    for idx, test in enumerate(test_results, 1):
-        report += f"## Test {idx}: {test['test_name']}\n\n"
-        
-        # Metadata
-        if test['test_case_number']:
+
+    for idx, test in enumerate(tests, 1):
+        report += f"## Test {idx}: {test.get('name', 'Unknown')}\n\n"
+
+        if test.get('test_case_number'):
             report += f"- **Test Case ID**: {test['test_case_number']}\n"
-        if test.get('execution_order'):
-            report += f"- **Execution Order**: {test['execution_order']}\n"
-        report += f"- **Elapsed Time**: {test['elapsed_time']}\n"
-        report += f"- **Category**: {test['category']}\n"
-        if test['author']:
-            report += f"- **Author**: {test['author']}\n"
-        if test['priority']:
-            report += f"- **Priority**: {test['priority']}\n"
-        report += "\n"
-        
-        # Failure summary
-        if test['failure_summary']:
-            report += "### Failure Summary\n\n"
-            report += "```\n"
-            report += test['failure_summary']
-            report += "\n```\n\n"
-        
-        # Full logs
-        if test['full_logs']:
-            report += "### Full Test Logs\n\n"
-            report += "```\n"
-            report += test['full_logs']
-            report += "\n```\n\n"
-        
+        report += f"- **Suite**: {test.get('suite', 'unknown')}\n"
+        if test.get('junit_file'):
+            report += f"- **JUnit File**: `{test['junit_file']}`\n"
+        if test.get('suite_order'):
+            report += f"- **Order in Suite's JUnit**: {test['suite_order']}\n"
+
+        duration = test.get('duration') or 0
+        if isinstance(duration, (int, float)):
+            report += f"- **Duration**: {duration:.1f}s\n"
+        else:
+            report += f"- **Duration**: {duration}\n"
+        report += f"- **Category**: {test.get('category', 'other')}\n\n"
+
+        if test.get('failure_message'):
+            report += "### Failure Summary\n\n```\n" + test['failure_message'] + "\n```\n\n"
+
+        if test.get('system_err'):
+            heading = (
+                "### Suite build-log.txt Tail (fallback, not test-specific)"
+                if test.get('category') == 'suite_error'
+                else "### Full Failure Detail"
+            )
+            report += f"{heading}\n\n```\n" + test['system_err'] + "\n```\n\n"
+
         report += "---\n\n"
-    
+
     return report
 
 
-def generate_json_report(test_results: List[Dict], base_url: str) -> str:
-    """
-    Generate JSON report for failed tests.
-
-    Args:
-        test_results: List of test analysis results
-        base_url: Base URL of the Prow job
-
-    Returns:
-        JSON formatted report
-    """
-    report = {
-        'job_url': base_url,
-        'tests_analyzed': len(test_results),
-        'failed_tests': test_results,
-    }
-    
-    return json.dumps(report, indent=2)
+def generate_json_report(tests: List[Dict], base_url: str) -> str:
+    """Generate JSON report for the given failing tests."""
+    return json.dumps(
+        {'job_url': base_url, 'tests_analyzed': len(tests), 'failed_tests': tests},
+        indent=2,
+    )
 
 
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='Generate detailed report for failed tests from a Prow job'
+        description=(
+            'Generate a detailed per-test failure report for the '
+            'sandboxed-containers-operator-testsuites chain (osc/kata-upstream/caa)'
+        )
     )
     parser.add_argument('url', help='Prow job URL')
-    parser.add_argument('tests', nargs='*', help='Test names or IDs to analyze (omit to analyze all failed tests)')
+    parser.add_argument(
+        'tests', nargs='*',
+        help='Test names or IDs to analyze (omit to analyze all failed tests)',
+    )
     parser.add_argument('--json', action='store_true', help='Output JSON format instead of markdown')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
-    
+
     args = parser.parse_args()
-    
+
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
-    
+
     try:
-        # Parse Prow URL
         logger.info("Parsing Prow job URL...")
         base_url, job_name, build_id = parse_prow_url(args.url)
         logger.info(f"Job: {job_name}")
         logger.info(f"Build ID: {build_id}")
-        
-        # Extract variant from job name
+
         variant = extract_variant_from_job_name(job_name)
         if not variant:
             logger.error("Could not determine job variant from job name")
             sys.exit(1)
-        
         logger.info(f"Variant: {variant}")
-        
-        # Analyze failed tests
-        test_results = analyze_failed_tests(base_url, variant, args.tests if args.tests else None)
-        
-        if not test_results:
-            logger.error("No test results could be analyzed")
+
+        logger.info("Collecting failing tests from the testsuites chain...")
+        all_failing = collect_all_failing_tests(base_url, variant)
+
+        if not all_failing:
+            logger.info(
+                "No failing tests found (suites passed, or the testsuites chain "
+                "never ran -- see dig.py for the overall classification)"
+            )
             sys.exit(1)
-        
-        # Generate report
+
+        tests_to_report = filter_tests(all_failing, args.tests)
+        if args.tests and not tests_to_report:
+            logger.warning("None of the requested tests found in the failing tests list")
+            logger.info(f"Available failed tests: {[t.get('name') for t in all_failing]}")
+            sys.exit(1)
+
+        logger.info(f"Reporting on {len(tests_to_report)} test(s)...")
+
         if args.json:
-            report = generate_json_report(test_results, base_url)
+            report = generate_json_report(tests_to_report, base_url)
         else:
-            report = generate_markdown_report(test_results, base_url)
-        
+            report = generate_markdown_report(tests_to_report, base_url)
+
         print(report)
-    
+
     except KeyboardInterrupt:
         logger.info("\nInterrupted by user")
         sys.exit(1)

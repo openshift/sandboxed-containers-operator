@@ -17,6 +17,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Dict, Optional, Tuple, List
+from urllib.parse import quote
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError, URLError
 
@@ -121,107 +122,142 @@ def extract_variant_from_job_name(job_name: str) -> Optional[str]:
     return None
 
 
-_GCSWEB_BASE = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com"
+# The sandboxed-containers-operator-testsuites chain (replaces the retired
+# OTP openshift-extended-test step; see the prowjob-analyzer plan). ``gate``
+# is a test:-phase stub step that only touches a marker file; the three
+# suites run in post:-phase, independently, with best_effort: true (a
+# failing suite doesn't block the others). Confirmed live against real
+# builds: all four exist as sibling artifact directories under
+# ``artifacts/<variant>/``, and the top-level job result is FAILURE whenever
+# any suite fails even though the others passed independently.
+TESTSUITES_GATE_STEP = 'sandboxed-containers-operator-testsuites-gate'
+TESTSUITES_SUITE_STEPS = {
+    'osc': 'sandboxed-containers-operator-testsuites-osc',
+    'kata-upstream': 'sandboxed-containers-operator-testsuites-kata-upstream',
+    'caa': 'sandboxed-containers-operator-testsuites-caa',
+}
+ALL_TESTSUITES_STEPS = [TESTSUITES_GATE_STEP] + list(TESTSUITES_SUITE_STEPS.values())
+
+
+_STORAGE_BASE = "https://storage.googleapis.com"
+_STORAGE_API_BASE = "https://storage.googleapis.com/storage/v1/b"
 _PROW_VIEW_GS_PREFIX = "https://prow.ci.openshift.org/view/gs/"
 
+# Buckets Prow writes job artifacts to that now deny anonymous GCS reads
+# (confirmed live: a direct anonymous request to test-platform-results
+# returns "403 AccessDenied: Anonymous caller does not have
+# storage.objects.get access", and even an authenticated-but-ungranted
+# Red Hat account gets the same denial by name -- this is an IAM grant
+# restricted to specific identities, not a login problem). OpenShift CI
+# publishes a "-public" mirror bucket with the same object layout and
+# anonymous read access for exactly this kind of tooling; map to it here.
+# The old approach of routing through the gcsweb-ci web UI
+# (gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com) no longer works either: that
+# host now redirects to gcs.ci.openshift.org, which 404s for this bucket
+# while serving the "-public" bucket fine -- i.e. the proxy itself has been
+# reconfigured to only route the public mirror, so there is no reason to
+# depend on it at all; fetch the public mirror directly.
+_PUBLIC_BUCKET_MIRRORS = {
+    'test-platform-results': 'test-platform-results-public',
+}
 
-def _prow_url_to_gcsweb(prow_url: str) -> Optional[str]:
-    """Convert a Prow ``/view/gs/BUCKET/path`` URL to a gcsweb URL."""
-    if prow_url.startswith(_PROW_VIEW_GS_PREFIX):
-        gcs_path = prow_url[len(_PROW_VIEW_GS_PREFIX):]
-        return f"{_GCSWEB_BASE}/gcs/{gcs_path}"
-    return None
+
+def _public_bucket_name(bucket: str) -> str:
+    """Map a Prow GCS bucket to its anonymously-readable public mirror, if any."""
+    return _PUBLIC_BUCKET_MIRRORS.get(bucket, bucket)
 
 
-def discover_gcs_url_from_prow(prow_url: str) -> Optional[str]:
+def prow_url_to_public_storage_base(prow_url: str) -> Optional[str]:
     """
-    Discover the actual GCS web URL for a Prow artifact.
+    Convert a Prow ``/view/gs/BUCKET/path`` URL into the equivalent, directly
+    fetchable ``storage.googleapis.com`` URL on the anonymous-read public
+    mirror bucket.
 
-    Prefers a direct URL conversion (no HTTP round-trip) when the URL
-    matches the ``/view/gs/`` pattern, falling back to HTML scraping.
+    This is a pure string transform (no HTTP request): Prow's Deck UI is a
+    client-rendered SPA, so fetching a ``/view/gs/...`` URL over plain HTTP
+    returns an HTML shell rather than artifact bytes, and there is nothing to
+    discover by scraping it. See the module-level comment on
+    ``_PUBLIC_BUCKET_MIRRORS`` for why the bucket name itself is remapped.
 
-    Args:
-        prow_url: Prow view URL that may return HTML
-
-    Returns:
-        Discovered GCS web URL, or None if not found
+    Returns ``None`` if ``prow_url`` doesn't match the expected
+    ``https://prow.ci.openshift.org/view/gs/...`` shape.
     """
-    # Fast path: derive the exact artifact URL from the Prow URL structure
-    direct = _prow_url_to_gcsweb(prow_url)
-    if direct:
-        return direct
-
-    try:
-        req = Request(prow_url, headers={'User-Agent': 'prowjob-analyzer/1.0'})
-        with urlopen(req, timeout=30) as response:
-            content_type = response.headers.get('Content-Type', '')
-
-            if 'text/html' in content_type:
-                html = response.read().decode('utf-8', errors='ignore')
-                # Look for gcsweb URL in the HTML
-                match = re.search(r'https://[^"\s]*gcsweb[^"\s]*', html)
-                if match:
-                    gcs_url = match.group(0).rstrip('/')
-                    logger.debug(f"Discovered GCS URL: {gcs_url}")
-                    return gcs_url
-                # Spyglass pages embed the GCS path in a JS variable
-                match = re.search(r'var\s+src\s*=\s*"gs/([^"]+)"', html)
-                if match:
-                    gcs_url = f"{_GCSWEB_BASE}/gcs/{match.group(1)}"
-                    logger.debug(f"Discovered GCS URL from Spyglass src: {gcs_url}")
-                    return gcs_url
-
-    except Exception as e:
-        logger.debug(f"Failed to discover GCS URL from {prow_url}: {e}")
-
-    return None
+    if not prow_url.startswith(_PROW_VIEW_GS_PREFIX):
+        return None
+    rest = prow_url[len(_PROW_VIEW_GS_PREFIX):]
+    if '/' not in rest:
+        return None
+    bucket, path = rest.split('/', 1)
+    if not bucket or not path:
+        return None
+    return f"{_STORAGE_BASE}/{_public_bucket_name(bucket)}/{path}"
 
 
-def gcs_uri_from_gcsweb_https(https_url: str) -> Optional[str]:
+def _split_storage_url(storage_url: str) -> Tuple[Optional[str], Optional[str]]:
+    """Split a ``https://storage.googleapis.com/BUCKET/path`` URL into ``(bucket, path)``."""
+    prefix = f"{_STORAGE_BASE}/"
+    if not storage_url.lower().startswith(prefix.lower()):
+        return None, None
+    rest = storage_url[len(prefix):].strip('/')
+    if not rest:
+        return None, None
+    if '/' not in rest:
+        return rest, ''
+    bucket, path = rest.split('/', 1)
+    return bucket, path
+
+
+def _resolve_fetch_base_url(base_url: str) -> str:
     """
-    Convert a gcsweb HTTPS URL (``.../gcs/BUCKET/path``) to ``gs://BUCKET/path``.
+    Resolve the URL to actually fetch artifact bytes/listings from.
+
+    ``base_url`` is normally a Prow UI URL
+    (``https://prow.ci.openshift.org/view/gs/...``); convert it once to the
+    equivalent public-mirror ``storage.googleapis.com`` URL (see
+    :func:`prow_url_to_public_storage_base`). If it doesn't match that shape
+    (e.g. a direct storage URL passed in tests), use it unchanged.
+    """
+    public = prow_url_to_public_storage_base(base_url)
+    return public or base_url
+
+
+def gcs_uri_from_public_storage_https(https_url: str) -> Optional[str]:
+    """
+    Convert a ``https://storage.googleapis.com/BUCKET/path`` URL to ``gs://BUCKET/path``.
 
     If ``https_url`` is already ``gs://``, return it unchanged.
     """
     u = https_url.strip()
     if u.lower().startswith('gs://'):
         return u.rstrip('/')
-    base = u.split('?')[0].split('#')[0].rstrip('/')
-    idx = base.find('/gcs/')
-    if idx == -1:
+    bucket, path = _split_storage_url(u.split('?')[0].split('#')[0])
+    if not bucket:
         return None
-    rest = base[idx + len('/gcs/') :].strip('/')
-    if not rest:
-        return None
-    if '/' in rest:
-        bucket, path = rest.split('/', 1)
-        return f'gs://{bucket}/{path}'
-    return f'gs://{rest}'
+    return f'gs://{bucket}/{path}' if path else f'gs://{bucket}'
 
 
 def gcs_uri_for_job_artifacts(prow_job_base_url: str) -> str:
     """
     Resolve the ``gs://`` prefix for the job artifact tree (same object prefix as on
-    the Prow Artifacts page / ``gsutil`` examples).
+    the Prow Artifacts page / ``gsutil`` examples), on the anonymously-readable
+    public mirror bucket (see :func:`prow_url_to_public_storage_base`).
     """
     u = prow_job_base_url.strip().rstrip('/')
     if u.lower().startswith('gs://'):
         return u
     https = u
-    if 'gcsweb' not in u.lower():
-        gcs = discover_gcs_url_from_prow(u)
-        if not gcs:
+    if not u.lower().startswith(_STORAGE_BASE.lower()):
+        public = prow_url_to_public_storage_base(u)
+        if not public:
             raise ValueError(
-                'Could not discover a gcsweb URL from this Prow page. Open the job '
-                'Artifacts tab, run the gsutil command shown there, then pass the '
-                'downloaded directory with --artifacts.'
+                'Could not derive a storage.googleapis.com URL from this Prow page. '
+                'Expected a https://prow.ci.openshift.org/view/gs/... URL.'
             )
-        https = gcs
-    uri = gcs_uri_from_gcsweb_https(https)
+        https = public
+    uri = gcs_uri_from_public_storage_https(https)
     if not uri:
         raise ValueError(
-            'Could not convert the artifact URL to a gs:// URI. Use gsutil from the '
-            'Prow Artifacts page and --artifacts with the local directory.'
+            'Could not convert the artifact URL to a gs:// URI.'
         )
     return uri
 
@@ -385,7 +421,7 @@ def _read_local_artifact(artifact_path: str) -> Optional[bytes]:
 
 def _fetch_artifact_http(base_url: str, artifact_path: str, max_retries: int = 3) -> Optional[bytes]:
     """HTTP(S) fetch only (no cache)."""
-    url = f"{base_url}/{artifact_path}"
+    url = f"{_resolve_fetch_base_url(base_url)}/{artifact_path}"
 
     for attempt in range(max_retries):
         try:
@@ -396,34 +432,12 @@ def _fetch_artifact_http(base_url: str, artifact_path: str, max_retries: int = 3
                 content_type = response.headers.get('Content-Type', '')
                 content = response.read()
 
-                # Check if we got HTML instead of the actual artifact
-                if 'text/html' in content_type and attempt == 0:
-                    logger.debug(f"Got HTML response, discovering GCS URL...")
-                    # Try to discover the actual GCS URL from the HTML
-                    gcs_url = discover_gcs_url_from_prow(url)
-                    if gcs_url:
-                        # Retry with the discovered GCS URL
-                        logger.debug(f"Retrying with discovered GCS URL: {gcs_url}")
-                        req = Request(gcs_url, headers={'User-Agent': 'prowjob-analyzer/1.0'})
-                        with urlopen(req, timeout=30) as gcs_response:
-                            gcs_content_type = gcs_response.headers.get('Content-Type', '')
-                            content = gcs_response.read()
-
-                            # If we still got HTML from GCS, the file doesn't exist
-                            if 'text/html' in gcs_content_type:
-                                logger.debug(f"GCS also returned HTML - artifact not found")
-                                return None
-
-                            logger.debug(f"Successfully fetched from GCS ({len(content)} bytes)")
-                            return content
-                    else:
-                        # Could not discover GCS URL and got HTML - file doesn't exist
-                        logger.debug(f"Could not discover GCS URL - artifact not found")
-                        return None
-
-                # If we got HTML after retry or without Prow redirect, file doesn't exist
+                # A stray HTML response means we ended up at a URL that isn't
+                # the raw artifact (e.g. base_url wasn't a recognized Prow/
+                # storage shape) -- treat as not found rather than returning
+                # a page of markup as if it were the artifact.
                 if 'text/html' in content_type:
-                    logger.debug(f"Got HTML response - artifact not found")
+                    logger.debug(f"Got HTML response - artifact not found: {url}")
                     return None
 
                 logger.debug(f"Successfully fetched {url} ({len(content)} bytes)")
@@ -619,53 +633,113 @@ def get_step_directories(base_url: str, variant: str) -> List[str]:
         logger.debug(f"Found {len(step_dirs)} local step directories in {variant}")
         return step_dirs
 
-    artifacts_url = f"{base_url}/artifacts/{variant}/"
+    storage_base = _resolve_fetch_base_url(base_url)
+    bucket, root_path = _split_storage_url(storage_base)
+    if not bucket:
+        logger.warning(
+            f"Could not resolve a storage.googleapis.com URL for step listing: {base_url}"
+        )
+        return []
+
+    list_prefix = f"{root_path}/artifacts/{variant}/"
+    list_url = (
+        f"{_STORAGE_API_BASE}/{bucket}/o"
+        f"?prefix={quote(list_prefix, safe='/')}&delimiter=/"
+    )
 
     try:
-        logger.debug(f"Fetching step directories from {artifacts_url}")
-        req = Request(artifacts_url, headers={'User-Agent': 'prowjob-analyzer/1.0'})
+        logger.debug(f"Listing step directories via GCS API: {list_url}")
+        req = Request(list_url, headers={'User-Agent': 'prowjob-analyzer/1.0'})
         with urlopen(req, timeout=30) as response:
-            content_type = response.headers.get('Content-Type', '')
-            html_content = response.read().decode('utf-8', errors='ignore')
-            logger.debug(f"Fetched {len(html_content)} bytes, content-type: {content_type}")
+            data = json.loads(response.read().decode('utf-8'))
 
-            # Check if we got HTML redirect page instead of directory listing
-            if 'text/html' in content_type and 'gcsweb' not in html_content[:1000]:
-                logger.debug("Got Prow HTML page, discovering GCS URL...")
-                gcs_url = discover_gcs_url_from_prow(artifacts_url)
-                if gcs_url:
-                    logger.debug(f"Retrying with GCS URL: {gcs_url}")
-                    req = Request(gcs_url, headers={'User-Agent': 'prowjob-analyzer/1.0'})
-                    with urlopen(req, timeout=30) as gcs_response:
-                        html_content = gcs_response.read().decode('utf-8', errors='ignore')
-                        logger.debug(f"Fetched {len(html_content)} bytes from GCS")
+        # The GCS JSON list API returns subdirectory-like prefixes directly
+        # when delimiter=/ is set -- no HTML to scrape.
+        step_dirs = []
+        for prefix in data.get('prefixes', []):
+            if not prefix.startswith(list_prefix):
+                continue
+            name = prefix[len(list_prefix):].rstrip('/')
+            if name and name not in ('.', '..', 'artifacts'):
+                step_dirs.append(name)
 
-            # Extract directory names from HTML listing
-            # Pattern: href="/gcs/.../artifacts/{variant}/STEP_NAME/"
-            # We want to extract just the STEP_NAME part
-            pattern = rf'href="[^"]*/{variant}/([a-z0-9-]+)/"'
-            matches = re.findall(pattern, html_content)
-            logger.debug(f"Regex pattern matched {len(matches)} times")
-
-            # Remove duplicates and filter out parent directory references
-            step_dirs = []
-            seen = set()
-            for m in matches:
-                if m not in seen and m not in ['..', 'artifacts']:
-                    step_dirs.append(m)
-                    seen.add(m)
-
-            logger.debug(f"Found {len(step_dirs)} step directories in {variant}: {step_dirs[:5]}")
-            return step_dirs
+        logger.debug(f"Found {len(step_dirs)} step directories in {variant}: {step_dirs[:5]}")
+        return sorted(step_dirs)
 
     except Exception as e:
-        logger.warning(f"Failed to get step directories from {artifacts_url}: {e}")
+        logger.warning(f"Failed to get step directories from {list_url}: {e}")
         return []
 
 
-def summarize_openshift_extended_test_build_log(log_text: str) -> Optional[str]:
+def list_artifact_files(base_url: str, dir_path: str, name_prefix: str = '') -> List[str]:
     """
-    Build a short label for openshift-extended-test from build-log.txt.
+    List artifact file names (not subdirectories) directly under ``dir_path``
+    (relative to the job root), optionally filtered to names starting with
+    ``name_prefix``.
+
+    Used for suites that write a variable number of JUnit files per run (e.g.
+    ``sandboxed-containers-operator-testsuites-kata-upstream`` writes one
+    ``junit_kata_upstream_<bats-file>.xml`` per bats suite, and
+    ``...-testsuites-caa`` writes one or more ``junit_caa_*.xml``) --
+    directory listing is unavoidable there, unlike the single, fixed
+    ``junit_osc.xml``/``junit_osc_skip.xml`` names.
+    """
+    if _local_artifacts_root:
+        base = os.path.join(_local_artifacts_root, dir_path.replace('/', os.sep))
+        if not os.path.isdir(base):
+            return []
+        try:
+            return sorted(
+                n for n in os.listdir(base)
+                if n.startswith(name_prefix) and os.path.isfile(os.path.join(base, n))
+            )
+        except OSError as e:
+            logger.warning(f"Failed to list local artifact files {base}: {e}")
+            return []
+
+    storage_base = _resolve_fetch_base_url(base_url)
+    bucket, root_path = _split_storage_url(storage_base)
+    if not bucket:
+        logger.warning(
+            f"Could not resolve a storage.googleapis.com URL for file listing: {base_url}"
+        )
+        return []
+
+    list_prefix = f"{root_path}/{dir_path}/".replace('//', '/')
+    list_url = (
+        f"{_STORAGE_API_BASE}/{bucket}/o"
+        f"?prefix={quote(list_prefix, safe='/')}&delimiter=/"
+    )
+
+    try:
+        logger.debug(f"Listing artifact files via GCS API: {list_url}")
+        req = Request(list_url, headers={'User-Agent': 'prowjob-analyzer/1.0'})
+        with urlopen(req, timeout=30) as response:
+            data = json.loads(response.read().decode('utf-8'))
+
+        names = []
+        for item in data.get('items', []):
+            full_name = item.get('name', '')
+            if not full_name.startswith(list_prefix):
+                continue
+            rel = full_name[len(list_prefix):]
+            if not rel or '/' in rel:
+                continue  # nested or empty, not a direct child file
+            if rel.startswith(name_prefix):
+                names.append(rel)
+        return sorted(names)
+
+    except Exception as e:
+        logger.warning(f"Failed to list artifact files from {list_url}: {e}")
+        return []
+
+
+def summarize_test_step_build_log(log_text: str) -> Optional[str]:
+    """
+    Build a short label for a test step from its build-log.txt. Generic --
+    not specific to any one step (originally written for the retired OTP
+    openshift-extended-test step; kept for any step whose runner emits the
+    same ``openshift-tests``-style summary line).
 
     - If the step finished with a test failure: ``error: X fail, V pass, W skip`` →
       ``"X fail, V pass, W skip"``.
@@ -694,42 +768,22 @@ def summarize_openshift_extended_test_build_log(log_text: str) -> Optional[str]:
     return None
 
 
-def is_openshift_extended_test_failure_label(step_label: str) -> bool:
-    """
-    True if this string is the openshift-extended-test step or a build-log summary
-    derived from that step (instead of the bare directory name).
-    """
-    if step_label == 'openshift-extended-test':
-        return True
-    if re.fullmatch(r'\d+ fail, \d+ pass, \d+ skip', step_label):
-        return True
-    if re.fullmatch(r'\(\d+/\d+/\d+\)', step_label):
-        return True
-    return False
-
-
-def artifact_dir_for_failed_step_label(step_label: str) -> str:
-    """Directory under artifacts/{variant}/ for linking (summaries map to openshift-extended-test)."""
-    if is_openshift_extended_test_failure_label(step_label):
-        return 'openshift-extended-test'
-    return step_label
-
-
 def get_failed_steps(base_url: str, variant: str) -> List[str]:
     """
-    Identify which steps failed by checking their finished.json files.
+    Identify which steps failed by checking each one's own finished.json.
 
-    Special handling for openshift-extended-test: Also checks test-results.yaml
-    since this step may report as passed even when tests failed.
+    Each step's finished.json is authoritative on its own in the current
+    (testsuites-chain) architecture. The retired OTP openshift-extended-test
+    step needed a test-results.yaml cross-check because it could report
+    "passed" even when its own tests failed; no step here is known to have
+    that mismatch, so no cross-check is needed.
 
     Args:
         base_url: Base URL of the Prow job
         variant: Job variant (e.g., "aws-ipi-peerpods")
 
     Returns:
-        List of failed step labels. For openshift-extended-test, this may be a summary
-        from build-log.txt (e.g. ``3 fail, 10 pass, 2 skip`` or ``(0/5/40)``) instead of
-        the bare step name.
+        List of failed step directory names.
     """
     step_dirs = get_step_directories(base_url, variant)
     failed_steps = []
@@ -739,51 +793,13 @@ def get_failed_steps(base_url: str, variant: str) -> List[str]:
         finished_data = fetch_json_artifact(base_url, finished_path)
 
         if finished_data:
-            # Check if step failed according to finished.json
             passed = finished_data.get('passed', True)
-            result = finished_data.get('result', '').upper()
-
+            result = (finished_data.get('result') or '').upper()
             step_failed = not passed or result == 'FAILURE'
 
-            # Special case: openshift-extended-test may report as passed
-            # even when tests failed. Check test-results.yaml to be sure.
-            if step == 'openshift-extended-test' and not step_failed:
-                test_results_path = f"artifacts/{variant}/{step}/artifacts/test-results.yaml"
-                test_results_content = fetch_artifact(base_url, test_results_path)
-
-                if test_results_content:
-                    # Import here to avoid circular dependency
-                    from .parser import parse_test_results
-
-                    test_results = parse_test_results(test_results_content)
-                    if test_results:
-                        failures = test_results.get('failures', 0)
-                        errors = test_results.get('errors', 0)
-
-                        if failures > 0 or errors > 0:
-                            step_failed = True
-                            logger.debug(f"Step {step} has test failures: failures={failures}, errors={errors}")
-
             if step_failed:
-                if step == 'openshift-extended-test':
-                    label: Optional[str] = None
-                    bl_path = f"artifacts/{variant}/{step}/build-log.txt"
-                    bl_content = fetch_artifact(base_url, bl_path)
-                    if bl_content:
-                        try:
-                            label = summarize_openshift_extended_test_build_log(
-                                bl_content.decode('utf-8', errors='ignore')
-                            )
-                        except Exception as e:
-                            logger.debug(f"Could not summarize openshift-extended-test build-log: {e}")
-                    failed_steps.append(label or step)
-                    logger.debug(
-                        "Step %s failed: passed=%s, result=%s, label=%s",
-                        step, passed, result, label or step,
-                    )
-                else:
-                    failed_steps.append(step)
-                    logger.debug(f"Step {step} failed: passed={passed}, result={result}")
+                failed_steps.append(step)
+                logger.debug(f"Step {step} failed: passed={passed}, result={result}")
 
     logger.debug(f"Found {len(failed_steps)} failed steps: {failed_steps}")
     return failed_steps
@@ -901,18 +917,18 @@ def _step_started_timestamp(base_url: str, variant: str, step_name: str) -> Opti
     return _podutils_json_timestamp(data)
 
 
-def _duration_openshift_extended_test_via_next_step(
-    base_url: str, variant: str,
+def _duration_step_via_next_step(
+    base_url: str, variant: str, step_name: str,
 ) -> Optional[int]:
     """
-    Duration = start time of the next pipeline step minus openshift-extended-test start.
+    Duration = start time of the next pipeline step minus ``step_name``'s start.
 
     Steps are ordered by ``started.json`` timestamp (sequential ci-operator steps). The
-    step immediately after openshift-extended-test in that order is used when this step's
+    step immediately after ``step_name`` in that order is used when this step's
     ``finished.json`` is missing or unreliable (e.g. timeout).
     """
     step_dirs = get_step_directories(base_url, variant)
-    if not step_dirs or 'openshift-extended-test' not in step_dirs:
+    if not step_dirs or step_name not in step_dirs:
         return None
 
     entries: List[Tuple[int, str]] = []
@@ -927,11 +943,11 @@ def _duration_openshift_extended_test_via_next_step(
     entries.sort(key=lambda x: (x[0], x[1]))
 
     for i in range(len(entries) - 1):
-        if entries[i][1] == 'openshift-extended-test':
-            t_oet = entries[i][0]
+        if entries[i][1] == step_name:
+            t_this = entries[i][0]
             t_next = entries[i + 1][0]
-            if t_next > t_oet:
-                return t_next - t_oet
+            if t_next > t_this:
+                return t_next - t_this
             return None
 
     return None
@@ -949,7 +965,7 @@ def _build_log_shows_test_step_finished(text: Optional[str]) -> bool:
     )
 
 
-def _oet_step_has_finished(
+def _step_has_finished(
     ts: Optional[int],
     tf: Optional[int],
     finished_json: Optional[Dict],
@@ -1010,7 +1026,7 @@ def _merge_wall_and_log_seconds(
     return w
 
 
-def _oet_step_ended(
+def _step_ended(
     ts: Optional[int],
     tf: Optional[int],
     fin_json: Optional[Dict],
@@ -1021,20 +1037,26 @@ def _oet_step_ended(
     True if the step is no longer running: Prow finished, test summary in log, or the
     next ci-operator step has started (interrupt/timeout without a clean finished.json).
     """
-    if _oet_step_has_finished(ts, tf, fin_json, build_log_text):
+    if _step_has_finished(ts, tf, fin_json, build_log_text):
         return True
     if ts is not None and sec_next is not None and sec_next > 0:
         return True
     return False
 
 
-def compute_openshift_extended_test_elapsed_display(
+def compute_step_elapsed_display(
     base_url: str,
     variant: str,
-    extended_finished_json: Optional[Dict] = None,
+    step_name: str,
+    step_finished_json: Optional[Dict] = None,
 ) -> str:
     """
-    How long the openshift-extended-test step ran, as ``HH:MM``.
+    How long a given step ran, as ``HH:MM``.
+
+    Generalized from the retired OTP openshift-extended-test step's elapsed-time
+    computation -- now takes the step name as a parameter instead of hardcoding
+    it, so it works for any ``sandboxed-containers-operator-testsuites-*`` step
+    (or any other step).
 
     ``00:00`` only when the step never started or is still running (no finish artifact/log).
 
@@ -1048,11 +1070,11 @@ def compute_openshift_extended_test_elapsed_display(
 
     from .parser import format_hours_minutes_test_step_display
 
-    prefix = f"artifacts/{variant}/openshift-extended-test"
+    prefix = f"artifacts/{variant}/{step_name}"
     started = fetch_json_artifact(base_url, f"{prefix}/started.json")
     ts = _podutils_json_timestamp(started)
 
-    fin_json = extended_finished_json
+    fin_json = step_finished_json
     if fin_json is None:
         fin_json = fetch_json_artifact(base_url, f"{prefix}/finished.json")
 
@@ -1064,14 +1086,14 @@ def compute_openshift_extended_test_elapsed_display(
         try:
             build_log_text = bl.decode('utf-8', errors='ignore')
         except Exception as e:
-            logger.debug(f"Could not decode openshift-extended-test build-log.txt: {e}")
+            logger.debug(f"Could not decode {step_name} build-log.txt: {e}")
 
     sec_next: Optional[int] = None
     if ts is not None:
-        sec_next = _duration_openshift_extended_test_via_next_step(base_url, variant)
+        sec_next = _duration_step_via_next_step(base_url, variant, step_name)
 
-    ended = _oet_step_ended(ts, tf, fin_json, build_log_text, sec_next)
-    finished_prow = _oet_step_has_finished(ts, tf, fin_json, build_log_text)
+    ended = _step_ended(ts, tf, fin_json, build_log_text, sec_next)
+    finished_prow = _step_has_finished(ts, tf, fin_json, build_log_text)
     not_started = ts is None and not finished_prow
     running = ts is not None and not ended
 
@@ -1080,7 +1102,7 @@ def compute_openshift_extended_test_elapsed_display(
     if not_started or running:
         return '00:00'
 
-    # Ended: prefer positive finished.json wall delta; else next-step start − OET start.
+    # Ended: prefer positive finished.json wall delta; else next-step start − this step's start.
     sec_wall: Optional[int] = None
     if ts is not None and tf is not None and tf >= ts:
         d = tf - ts
@@ -1095,3 +1117,47 @@ def compute_openshift_extended_test_elapsed_display(
         return 'unknown'
 
     return format_hours_minutes_test_step_display(secs)
+
+
+def compute_testsuites_phase_elapsed_display(base_url: str, variant: str) -> str:
+    """
+    Wall-clock time spent in the sandboxed-containers-operator-testsuites chain
+    (the test:-phase gate step plus the post:-phase osc/kata-upstream/caa
+    suites), replacing the retired single openshift-extended-test step's
+    elapsed-time metric.
+
+    None of these steps write a ``started.json`` (confirmed live -- every
+    one of the four returns 404 for it, even when ``finished.json`` exists),
+    so unlike :func:`compute_step_elapsed_display` this can't use a
+    started/finished wall-clock delta. Instead, sums each step's own
+    build-log.txt-derived duration (see :func:`_parse_build_log_duration_seconds`)
+    -- steps in a ``chain:`` run sequentially, so the sum approximates total
+    chain wall time. Returns ``'unknown'`` when no step yields any duration
+    signal (e.g. the job hasn't reached this chain yet).
+    """
+    if not variant or variant == 'unknown':
+        return ''
+
+    from .parser import format_hours_minutes_test_step_display
+
+    total_secs = 0
+    have_signal = False
+
+    for step_name in ALL_TESTSUITES_STEPS:
+        bl = fetch_artifact(base_url, f"artifacts/{variant}/{step_name}/build-log.txt")
+        if not bl:
+            continue
+        try:
+            text = bl.decode('utf-8', errors='ignore')
+        except Exception as e:
+            logger.debug(f"Could not decode {step_name} build-log.txt: {e}")
+            continue
+        secs = _parse_build_log_duration_seconds(text)
+        if secs and secs > 0:
+            total_secs += secs
+            have_signal = True
+
+    if not have_signal or total_secs <= 0:
+        return 'unknown'
+
+    return format_hours_minutes_test_step_display(total_secs)

@@ -16,7 +16,7 @@ from .fetcher import (
     is_local_artifact_mode,
     download_job_artifacts,
     write_job_artifacts_tarball,
-    gcs_uri_from_gcsweb_https,
+    gcs_uri_from_public_storage_https,
     gcs_uri_for_job_artifacts,
 )
 from .parser import parse_prowjob, parse_test_results, get_job_status
@@ -33,7 +33,7 @@ __all__ = [
     "is_local_artifact_mode",
     "download_job_artifacts",
     "write_job_artifacts_tarball",
-    "gcs_uri_from_gcsweb_https",
+    "gcs_uri_from_public_storage_https",
     "gcs_uri_for_job_artifacts",
     "parse_prowjob",
     "parse_test_results",

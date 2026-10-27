@@ -8,8 +8,24 @@ import re
 import logging
 from typing import Dict, List, Optional
 from collections import defaultdict
-from .parser import categorize_test_by_name, extract_failing_tests, add_execution_order_to_tests
-from .fetcher import fetch_artifact, get_failed_steps
+from .parser import (
+    categorize_test_by_name,
+    extract_failing_testcases_from_junit,
+    parse_junit_xml,
+    parse_osc_suite_test_case_info,
+)
+from .fetcher import (
+    ALL_TESTSUITES_STEPS,
+    TESTSUITES_GATE_STEP,
+    TESTSUITES_SUITE_STEPS,
+    _podutils_json_timestamp,
+    compute_step_elapsed_display,
+    fetch_artifact,
+    fetch_json_artifact,
+    get_failed_steps,
+    get_step_directories,
+    list_artifact_files,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,26 +96,49 @@ FAILURE_PATTERNS = {
         r'error:.*Deployment is already in unlocked state',
         r'error:.*ostree.*unlocked state',
     ],
+    # Migrated from the osc-step-debug skill's documented "Common Error
+    # Patterns" (~/go/src/github.com/tbuskey/skills-marketplace,
+    # plugins/skills/osc-step-debug/skills/osc-step-debug/SKILL.md) -- that
+    # skill's own analysis is supposed to be a thin wrapper around this tool
+    # (see analyze-prowjob.sh), so these patterns belong here, not
+    # re-implemented in its bash. Relevant mostly to install-osc-operator/
+    # install-trustee-operator (pre-phase) failures, which matter more now
+    # that the test: phase is a thin gate (see the prowjob-analyzer plan).
+    'catalogsource': [
+        r'CatalogSource.*not.*READY',
+        r'CatalogSource.*not\s+found',
+        r'failed to get catalogsource',
+    ],
+    'olm_subscription': [
+        r'Subscription.*has no InstallPlan',
+        r'ConstraintsNotSatisfiable',
+        r'no operators found (in|matching)',
+        r'InstallPlan.*failed',
+    ],
+    'kbs_auth': [
+        # Trustee/KBS attestation failures (confidential-containers workloads).
+        # Version note: trustee 1.1.x pairs with kbs-client v0.17.0, trustee
+        # 1.11.x with kbs-client v0.19.0 -- a mismatch here is a common cause
+        # of auth failures that look identical to a real KBS outage.
+        r'kbs-client.*Authenticating.*failed',
+        r'404.*(?:kbs|resource).*not\s+found',
+        r'KbsConfig.*not\s+found',
+        r'attestation.*failed',
+    ],
 }
 
 
 def identify_failure_location(
     prowjob_data: Dict,
-    test_results: Optional[Dict],
     base_url: str,
-    variant: str
+    variant: str,
 ) -> str:
     """
-    Identify which step(s) failed in the job.
-
-    Logic:
-    - If test-results.yaml doesn't exist: tests didn't run, job failed before tests
-    - If test-results.yaml exists with failures > 0: job failed at test execution
-    - We rely on finished.json in each step's artifacts to determine which steps failed
+    Identify which step(s) failed in the job, for the variant-unknown fallback path
+    (see :func:`classify_testsuites_result` for the normal, variant-known path).
 
     Args:
         prowjob_data: Parsed prowjob data
-        test_results: Parsed test results (if available)
         base_url: Base URL of Prow job
         variant: Job variant
 
@@ -108,101 +147,329 @@ def identify_failure_location(
     """
     state = prowjob_data.get('state', '').lower()
 
-    # Check if job timed out
     if 'timeout' in state or state == 'aborted':
         return 'timeout'
 
-    # Check if it's a Prow infrastructure failure
     if state in ['error', 'errored']:
         return 'infrastructure'
 
-    # Get actual failed steps from artifacts by checking each step's finished.json
     if variant and variant != 'unknown':
         failed_steps = get_failed_steps(base_url, variant)
-
         if failed_steps:
-            # Return only the steps that actually failed
             return ', '.join(failed_steps)
-        else:
-            # No failed steps detected from artifacts
-            # This can happen if we can't parse the artifacts properly
-            if state == 'failure':
-                logger.warning("Job failed but couldn't detect failed steps from artifacts")
-                return 'unknown'
+        if state == 'failure':
+            logger.warning("Job failed but couldn't detect failed steps from artifacts")
+            return 'unknown'
 
-    # If variant is unknown, we can't check step artifacts
     return 'unknown'
 
 
-def analyze_post_test_prow_failure(
-    prowjob_raw: Dict,
-    base_url: str,
-    metadata: Dict,
-) -> Optional[Dict]:
-    """
-    When openshift-extended-test succeeded (caller already set status to success)
-    but the overall Prow job did not succeed, summarize failed steps from artifacts.
-
-    Typically these are later pipeline steps or infrastructure; the list can still include
-    openshift-extended-test (or its build-log label) when step-level state disagrees with junit.
-    """
-    status_block = prowjob_raw.get('status') or {}
-    prow_state = (status_block.get('state') or '').lower()
-    if prow_state in ('success', 'pending', ''):
+def _step_result(finished_json: Optional[Dict]) -> Optional[str]:
+    """'SUCCESS'/'FAILURE'/None (missing or inconclusive) from a step's finished.json."""
+    if not isinstance(finished_json, dict):
         return None
+    result = (finished_json.get('result') or '').upper()
+    if result:
+        return result
+    passed = finished_json.get('passed')
+    if passed is True:
+        return 'SUCCESS'
+    if passed is False:
+        return 'FAILURE'
+    return None
 
-    variant = metadata.get('variant') or ''
-    failed_steps: List[str] = []
-    if variant and variant != 'unknown':
-        failed_steps = get_failed_steps(base_url, variant)
 
-    summary_note = (
-        'Overall Prow state is not success while the extended test phase was treated as successful '
-        'from test-results/finished.json. Failed steps may include openshift-extended-test or its '
-        'build-log summary when step-level artifacts disagree with junit; other entries are typically '
-        'later pipeline steps. This is not necessarily a failing test case in the junit report.'
-    )
+def classify_testsuites_result(base_url: str, variant: str) -> Dict:
+    """
+    Classify the sandboxed-containers-operator-testsuites chain's outcome into the
+    three cases the prowjob-analyzer plan documents:
 
-    if not failed_steps:
-        return {
-            'failure_kind': 'prow_pipeline_after_tests',
-            'failure_location': 'prowjob',
-            'post_test_failed_steps': [],
-            'failing_tests': [],
-            'failing_tests_by_category': {},
-            'detected_patterns': [],
-            'analyzed_files': [],
-            'root_cause': {
-                'likely_cause': (
-                    f'Prow job state is {prow_state!r} while the extended test phase reported success. '
-                    'A later pipeline step may have failed, or step-level artifacts could not be enumerated.'
-                ),
-                'confidence': 'medium',
-                'suggested_actions': [
-                    'Review the Prow UI step timeline and build-log.txt for the failing step.',
-                    'Confirm whether a post-test step (e.g. gather, teardown) failed.',
-                ],
-            },
-            'summary_note': summary_note,
+    1. **Blocking phase failure** -- the test:-phase gate step never ran (pre
+       failed, so ci-operator skipped the whole test: phase) or the gate step
+       itself failed. Root cause is upstream of testing entirely.
+    2. **Best-effort suite failure** -- gate succeeded, but one or more of the
+       independent testsuites-{osc,kata-upstream,caa} steps failed on its own
+       finished.json. The job is still FAILURE overall even though the other
+       suites/post steps ran fine (best_effort: true only means a failing
+       suite doesn't block its siblings).
+    3. **Unrelated post-step failure** -- the whole testsuites chain looks
+       clean, but some other step (gather-must-gather, deprovision,
+       cucushift-installer-wait, ...) failed independently.
+
+    Returns:
+        {
+          'gate_step_exists': bool, 'gate_status': 'SUCCESS'|'FAILURE'|None,
+          'suites': {suite_key: {'step_name', 'step_exists', 'status'}, ...},
+          'other_failed_steps': [...],  # failed steps outside the testsuites chain
+          'latest_finished_json': dict or None,  # furthest-progressed step's finished.json
+          'failure_kind': 'blocking_phase_failure' | 'best_effort_suite_failure' |
+                           'unrelated_post_step_failure' | None,
+        }
+    """
+    step_dirs = set(get_step_directories(base_url, variant))
+
+    result: Dict = {
+        'gate_step_exists': TESTSUITES_GATE_STEP in step_dirs,
+        'gate_status': None,
+        'suites': {},
+        'other_failed_steps': [],
+        'latest_finished_json': None,
+    }
+
+    latest_ts = -1
+
+    def _consider_latest(finished_json: Optional[Dict]) -> None:
+        nonlocal latest_ts
+        ts = _podutils_json_timestamp(finished_json)
+        if ts is not None and ts > latest_ts:
+            latest_ts = ts
+            result['latest_finished_json'] = finished_json
+
+    if result['gate_step_exists']:
+        gate_finished = fetch_json_artifact(
+            base_url, f"artifacts/{variant}/{TESTSUITES_GATE_STEP}/finished.json"
+        )
+        result['gate_status'] = _step_result(gate_finished)
+        _consider_latest(gate_finished)
+
+    for suite_key, step_name in TESTSUITES_SUITE_STEPS.items():
+        exists = step_name in step_dirs
+        status = None
+        if exists:
+            finished = fetch_json_artifact(base_url, f"artifacts/{variant}/{step_name}/finished.json")
+            status = _step_result(finished)
+            _consider_latest(finished)
+        result['suites'][suite_key] = {
+            'step_name': step_name,
+            'step_exists': exists,
+            'status': status,
         }
 
-    return {
-        'failure_kind': 'prow_pipeline_after_tests',
-        'failure_location': ', '.join(failed_steps),
-        'post_test_failed_steps': failed_steps,
+    known_steps = set(ALL_TESTSUITES_STEPS)
+    result['other_failed_steps'] = [
+        s for s in get_failed_steps(base_url, variant) if s not in known_steps
+    ]
+
+    if not result['gate_step_exists'] or result['gate_status'] == 'FAILURE':
+        result['failure_kind'] = 'blocking_phase_failure'
+    elif any(s['status'] == 'FAILURE' for s in result['suites'].values()):
+        result['failure_kind'] = 'best_effort_suite_failure'
+    elif result['other_failed_steps']:
+        result['failure_kind'] = 'unrelated_post_step_failure'
+    else:
+        result['failure_kind'] = None
+
+    return result
+
+
+def _junit_totals(reports: List[Dict]) -> Dict[str, int]:
+    """Sum tests/failures/errors/skipped across every JUnit report for one suite."""
+    totals = {'tests': 0, 'failures': 0, 'errors': 0, 'skipped': 0}
+    for report in reports:
+        j = report['junit']
+        for key in totals:
+            totals[key] += j.get(key, 0)
+    totals['passed'] = max(0, totals['tests'] - totals['failures'] - totals['errors'] - totals['skipped'])
+    return totals
+
+
+def _sum_junit_elapsed_display(reports: List[Dict]) -> Optional[str]:
+    """
+    Sum each JUnit report's own top-level ``time`` (seconds) across every file
+    for a suite (e.g. kata-upstream writes one file per bats suite, run
+    sequentially), formatted as ``HH:MM``. ``None`` if there's no JUnit at all
+    or none report a positive time.
+    """
+    if not reports:
+        return None
+    total_secs = sum((r['junit'].get('time') or 0.0) for r in reports)
+    if total_secs <= 0:
+        return None
+    from .parser import format_hours_minutes_test_step_display
+    return format_hours_minutes_test_step_display(int(round(total_secs)))
+
+
+def summarize_gate(
+    base_url: str,
+    variant: str,
+    step_exists: bool,
+    status: Optional[str],
+) -> Dict:
+    """
+    Summary for the test:-phase gate step: unlike the three post-phase
+    suites, it writes no JUnit (just a touch marker), so this is status +
+    elapsed time only. Included alongside the suites so a reader can see
+    *every* testsuites-chain step's own pass/fail and duration, not just the
+    aggregate `test_elapsed_time` for the whole chain.
+    """
+    base: Dict = {
+        'suite': 'gate',
+        'step_name': TESTSUITES_GATE_STEP,
+        'step_exists': step_exists,
+        'status': status,
+        'elapsed_time': '',
+    }
+    if step_exists:
+        base['elapsed_time'] = compute_step_elapsed_display(base_url, variant, TESTSUITES_GATE_STEP)
+    return base
+
+
+def summarize_suite(
+    base_url: str,
+    variant: str,
+    suite_key: str,
+    step_name: str,
+    step_exists: bool,
+    status: Optional[str],
+) -> Dict:
+    """
+    Per-suite summary for reporting: elapsed time, pass/fail status, and
+    JUnit-derived test counts for every suite (whether it passed, failed, or
+    self-skipped), plus real failing-test detail when it failed. Used to
+    show each of osc/kata-upstream/caa independently (see the
+    prowjob-analyzer plan, Workstream E) instead of only surfacing detail
+    for whichever suite happened to fail.
+    """
+    base: Dict = {
+        'suite': suite_key,
+        'step_name': step_name,
+        'step_exists': step_exists,
+        'status': status,
+        'elapsed_time': '',
+        'tests': 0, 'passed': 0, 'failures': 0, 'errors': 0, 'skipped': 0,
+        'had_junit': False,
         'failing_tests': [],
-        'failing_tests_by_category': {},
         'detected_patterns': [],
-        'analyzed_files': [],
-        'root_cause': {
-            'likely_cause': summary_note,
-            'confidence': 'high',
-            'suggested_actions': [
-                f'Inspect finished.json and logs under artifacts for: {", ".join(failed_steps)}.',
-                "If openshift-extended-test appears, compare test-results.yaml with that step's build-log and finished.json.",
-            ],
-        },
-        'summary_note': summary_note,
+    }
+
+    if not step_exists:
+        return base
+
+    reports = _collect_suite_junit_reports(base_url, variant, suite_key, step_name)
+    base['had_junit'] = bool(reports)
+    base.update(_junit_totals(reports))
+
+    # None of these steps write started.json (confirmed live), so
+    # compute_step_elapsed_display's wall-clock path never applies here and
+    # it falls back to scraping build-log.txt for a duration-shaped string
+    # -- which only works for osc (openshift-tests/Ginkgo-style output);
+    # kata-upstream (bats) and caa don't match those patterns. JUnit's own
+    # <testsuites>/<testsuite> time= attribute is a more reliable source
+    # when any JUnit exists at all, so prefer it first.
+    base['elapsed_time'] = _sum_junit_elapsed_display(reports) or compute_step_elapsed_display(
+        base_url, variant, step_name
+    )
+
+    if status == 'FAILURE':
+        suite_result = analyze_suite_failure(base_url, variant, suite_key, step_name)
+        base['failing_tests'] = suite_result['failing_tests']
+        base['detected_patterns'] = suite_result['detected_patterns']
+        base['no_results'] = suite_result['no_results']
+        base['synthetic_no_results'] = suite_result['synthetic_no_results']
+
+    return base
+
+
+def summarize_all_suites(base_url: str, variant: str, classification: Dict) -> Dict[str, Dict]:
+    """
+    Per-step summaries (see :func:`summarize_gate`/:func:`summarize_suite`) for
+    the test:-phase gate plus every post:-phase suite in the testsuites chain --
+    each with its own elapsed time and status, in addition to (not instead of)
+    the chain-wide aggregate `test_elapsed_time`/`failure_kind` summary.
+    """
+    summaries = {
+        'gate': summarize_gate(
+            base_url, variant,
+            classification.get('gate_step_exists', False),
+            classification.get('gate_status'),
+        ),
+    }
+    for suite_key, info in classification.get('suites', {}).items():
+        summaries[suite_key] = summarize_suite(
+            base_url, variant, suite_key, info['step_name'], info['step_exists'], info['status']
+        )
+    return summaries
+
+
+def _collect_suite_junit_reports(
+    base_url: str, variant: str, suite_key: str, step_name: str
+) -> List[Dict]:
+    """Fetch+parse every JUnit XML artifact a testsuites-chain suite wrote for this run."""
+    artifacts_dir = f"artifacts/{variant}/{step_name}/artifacts"
+    name_prefix = {
+        'osc': 'junit_osc',
+        'kata-upstream': 'junit_kata_upstream_',
+        'caa': 'junit_caa',
+    }.get(suite_key, 'junit_')
+
+    filenames = list_artifact_files(base_url, artifacts_dir, name_prefix=name_prefix)
+
+    reports = []
+    for name in filenames:
+        content = fetch_artifact(base_url, f"{artifacts_dir}/{name}")
+        if not content:
+            continue
+        parsed = parse_junit_xml(content)
+        if parsed:
+            reports.append({'file': name, 'junit': parsed})
+    return reports
+
+
+def analyze_suite_failure(base_url: str, variant: str, suite_key: str, step_name: str) -> Dict:
+    """
+    Detailed analysis for one failed testsuites-chain suite.
+
+    Uses real JUnit-derived failing tests when the suite wrote any JUnit XML,
+    falling back to the suite's own build-log.txt pattern scan when it didn't
+    (the plan's documented osc/kata-upstream "exited non-zero, no JUnit at
+    all" asymmetry vs. caa's synthetic junit_caa_noresults.xml).
+    """
+    reports = _collect_suite_junit_reports(base_url, variant, suite_key, step_name)
+    had_junit = bool(reports)
+    synthetic_no_results = any(r['file'] == 'junit_caa_noresults.xml' for r in reports)
+
+    failing_tests: List[Dict] = []
+    for report in reports:
+        for tc in extract_failing_testcases_from_junit(report['junit']):
+            if suite_key == 'osc':
+                case_info = parse_osc_suite_test_case_info(tc['name'])
+            else:
+                case_info = {'test_case_number': '', 'description': tc['name']}
+            failing_tests.append({
+                'name': tc['name'],
+                'suite': suite_key,
+                'junit_file': report['file'],
+                'duration': tc.get('time', 0),
+                'failure_message': tc.get('failure_message', ''),
+                'system_out': '',
+                'system_err': tc.get('failure_text', ''),
+                'test_case_number': case_info.get('test_case_number', ''),
+                'description': case_info.get('description') or tc['name'],
+                'priority': '',
+                'author': '',
+            })
+
+    build_log_path = f"artifacts/{variant}/{step_name}/build-log.txt"
+    build_log_content = fetch_artifact(base_url, build_log_path)
+    detected_patterns: List[Dict] = []
+    if build_log_content:
+        build_log_text = build_log_content.decode('utf-8', errors='ignore')
+        detected_patterns = check_log_for_patterns(build_log_text, f"{step_name}/build-log.txt")
+
+    # The step failed, wrote no JUnit at all, and nothing recognizable in its
+    # log either: a bare "suite errored, no per-test detail available" case
+    # (distinct from caa's synthetic no-results JUnit, which at least shows up
+    # as a real failing testcase above).
+    no_results = (not had_junit) and not detected_patterns
+
+    return {
+        'suite': suite_key,
+        'step_name': step_name,
+        'failing_tests': failing_tests,
+        'detected_patterns': detected_patterns,
+        'had_junit': had_junit,
+        'synthetic_no_results': synthetic_no_results,
+        'no_results': no_results,
     }
 
 
@@ -338,26 +605,6 @@ def check_log_for_patterns(log_content: str, source_name: str = "unknown") -> Li
                 break  # Only add each pattern once
 
     return detected_patterns
-
-
-def categorize_failing_tests(test_results: Dict) -> Dict[str, List[Dict]]:
-    """
-    Group failing tests by category.
-
-    Args:
-        test_results: Parsed test results
-
-    Returns:
-        Dictionary mapping category to list of failing tests
-    """
-    failing_tests = extract_failing_tests(test_results)
-    categorized = defaultdict(list)
-
-    for test in failing_tests:
-        category = categorize_test_by_name(test['name'])
-        categorized[category].append(test)
-
-    return dict(categorized)
 
 
 def categorize_test_list(failing_tests: List[Dict]) -> Dict[str, List[Dict]]:
@@ -506,7 +753,7 @@ def determine_root_cause(
                     'dependencies for kata-containers'
                 )
             root_cause['suggested_actions'] = [
-                'Use the first test block in openshift-extended-test/build-log.txt only; later tests '
+                'Use the first spec block in the relevant step\'s build-log.txt only; later specs '
                 'repeat the same RPM install failure',
                 'Resolve the dependency shown under StdOut from oc debug (e.g. qemu-kvm-core)',
                 'Verify RHCOS layer and kata-containers RPM versions match test expectations',
@@ -525,8 +772,8 @@ def determine_root_cause(
             )
             root_cause['suggested_actions'] = [
                 'Open the file listed in pattern_source and locate the failing rpm/dnf line',
-                'If the failure is openshift-extended-test installing kata on a worker, confirm '
-                'oc debug node/…worker… + kata-containers in openshift-extended-test/build-log.txt',
+                'If the failure is a worker RPM install, confirm oc debug node/…worker… + '
+                'kata-containers in that step\'s own build-log.txt',
             ]
             if 'rpm_cascading' in pattern_names:
                 root_cause['cascading_errors'] = ['rpm_cascading']
@@ -657,18 +904,17 @@ def determine_root_cause(
             root_cause['failed_test_case_numbers_from_build_log'] = only_from_log
         case_part = f"Failed test case(s): {', '.join(merged_ids)}."
         if only_from_log:
-            case_part += " (includes IDs from openshift-extended-test/build-log.txt)."
+            case_part += " (includes IDs found via build-log.txt)."
     elif failing_tests:
         root_cause['failed_test_case_numbers'] = []
         case_part = (
-            f"openshift-extended-test: {len(failing_tests)} failing test(s) "
-            "(no C##### id in test names or build-log.txt)."
+            f"{len(failing_tests)} failing test(s) (no C##### id in test names or build-log.txt)."
         )
     elif extended_build_log_case_ids is not None:
         root_cause['failed_test_case_numbers'] = []
         case_part = (
-            "openshift-extended-test: step failed or interrupted; "
-            "no C##### ids found in openshift-extended-test/build-log.txt (inspect artifact manually)."
+            "Step failed or interrupted; no C##### ids found in its build-log.txt "
+            "(inspect artifact manually)."
         )
     else:
         return root_cause
@@ -684,160 +930,119 @@ def determine_root_cause(
 def analyze_failure(
     prowjob_data: Dict,
     base_url: str,
-    test_results: Optional[Dict],
-    metadata: Dict
+    metadata: Dict,
+    classification: Optional[Dict] = None,
 ) -> Dict:
     """
-    Comprehensive failure analysis.
+    Comprehensive failure analysis for the sandboxed-containers-operator-testsuites
+    chain architecture (see the prowjob-analyzer plan, Workstream C).
+
+    Classifies the failure via :func:`classify_testsuites_result` (blocking
+    phase failure vs. best-effort suite failure vs. unrelated post-step
+    failure), pulls real per-test detail from JUnit XML for any failed suite
+    (:func:`analyze_suite_failure`), and still scans the top-level
+    build-log.txt for infra-level patterns (timeouts, Azure quota, etc.)
+    regardless of which case applies.
 
     Args:
         prowjob_data: Parsed prowjob data
         base_url: Base URL for fetching artifacts
-        test_results: Parsed test results
         metadata: Extracted metadata
+        classification: Precomputed :func:`classify_testsuites_result` output,
+            when the caller already has one (e.g. dig.py computes it once for
+            both the status check and the per-suite report section). Computed
+            internally when omitted; artifact fetches are cached either way,
+            so passing it in only saves the step-directory listing call.
 
     Returns:
         Dictionary with complete failure analysis
     """
-    analysis = {
+    analysis: Dict = {
+        'failure_kind': None,
         'failure_location': 'unknown',
         'failing_tests': [],
         'failing_tests_by_category': {},
         'detected_patterns': [],
+        'analyzed_files': [],
         'root_cause': {},
+        'testsuites': None,
     }
 
-    # Identify failure location (actual step name(s))
     variant = metadata.get('variant', '')
-    analysis['failure_location'] = identify_failure_location(
-        prowjob_data,
-        test_results,
-        base_url,
-        variant
-    )
+    if not variant or variant == 'unknown':
+        analysis['failure_location'] = identify_failure_location(prowjob_data, base_url, variant)
+        analysis['root_cause'] = determine_root_cause([], [], metadata)
+        return analysis
 
-    # Get failing tests if available
-    if test_results:
-        failing_tests = extract_failing_tests(test_results)
-        analysis['failing_tests'] = failing_tests
-        analysis['failing_tests_by_category'] = categorize_failing_tests(test_results)
+    if classification is None:
+        classification = classify_testsuites_result(base_url, variant)
+    analysis['testsuites'] = classification
+    analysis['failure_kind'] = classification['failure_kind']
 
-    # Fetch and analyze logs for patterns
-    detected_patterns = []
-    build_log_text = None
-    build_log_text_full = None  # Keep full log for execution order extraction
-    analyzed_files = []
-    extended_build_log_case_ids: Optional[List[str]] = None
-    oet_first_test_prefix: Optional[str] = None
+    detected_patterns: List[Dict] = []
+    analyzed_files: List[Dict] = []
+    failing_tests: List[Dict] = []
+    location_parts: List[str] = []
 
-    # First check the main build log for infrastructure-level failures (e.g., Azure quota)
+    # Infra-level patterns (Azure quota, etc.) live in the top-level build-log.txt
+    # (ci-operator's own orchestration log) regardless of which case below applies.
+    build_log_text: Optional[str] = None
     build_log_content = fetch_artifact(base_url, "build-log.txt")
     if build_log_content:
         try:
-            build_log_text_full = build_log_content.decode('utf-8', errors='ignore')
-            # Use truncated version for pattern matching (performance)
-            build_log_text = build_log_text_full
-            if len(build_log_text) > 100000:
-                build_log_text = build_log_text[-100000:]
-            patterns_from_build_log = check_log_for_patterns(build_log_text, "build-log.txt")
-            detected_patterns.extend(patterns_from_build_log)
+            build_log_text = build_log_content.decode('utf-8', errors='ignore')
+            scan_text = build_log_text[-100000:] if len(build_log_text) > 100000 else build_log_text
+            top_patterns = check_log_for_patterns(scan_text, "build-log.txt")
+            detected_patterns.extend(top_patterns)
             analyzed_files.append({
                 'name': 'build-log.txt',
                 'path': 'build-log.txt',
-                'patterns_found': len(patterns_from_build_log)
+                'patterns_found': len(top_patterns),
             })
-            logger.debug(f"Patterns found in build-log.txt: {[p['pattern'] for p in patterns_from_build_log]}")
         except Exception as e:
-            logger.warning(f"Failed to analyze build log: {e}")
+            logger.warning(f"Failed to analyze build-log.txt: {e}")
 
-    # Also check extended test log if available
-    variant = metadata.get('variant', '')
-    if variant:
-        # Try to fetch extended test log
-        extended_log_path = f"artifacts/{variant}/openshift-extended-test/artifacts/extended.log"
-        log_content = fetch_artifact(base_url, extended_log_path)
+    if classification['failure_kind'] == 'blocking_phase_failure':
+        location_parts = classification['other_failed_steps'] or [
+            'pre/test phase (testsuites-gate did not run or failed)'
+        ]
+    elif classification['failure_kind'] == 'best_effort_suite_failure':
+        for suite_key, info in classification['suites'].items():
+            if info['status'] != 'FAILURE':
+                continue
+            suite_result = analyze_suite_failure(base_url, variant, suite_key, info['step_name'])
+            classification['suites'][suite_key]['analysis'] = suite_result
+            location_parts.append(info['step_name'])
+            failing_tests.extend(suite_result['failing_tests'])
+            detected_patterns.extend(suite_result['detected_patterns'])
+            analyzed_files.append({
+                'name': f"{info['step_name']}/build-log.txt",
+                'path': f"artifacts/{variant}/{info['step_name']}/build-log.txt",
+                'patterns_found': len(suite_result['detected_patterns']),
+            })
+        location_parts.extend(classification['other_failed_steps'])
+    elif classification['failure_kind'] == 'unrelated_post_step_failure':
+        location_parts = classification['other_failed_steps']
+    else:
+        # Classifier found nothing wrong in/around the testsuites chain; fall back to a
+        # generic failed-step scan (covers edge cases this classifier doesn't model).
+        location_parts = get_failed_steps(base_url, variant) or ['unknown']
 
-        if log_content:
-            try:
-                log_text = log_content.decode('utf-8', errors='ignore')
-                # Limit to last 100KB to avoid processing huge logs
-                if len(log_text) > 100000:
-                    log_text = log_text[-100000:]
-                patterns_from_extended_log = check_log_for_patterns(log_text, "extended.log")
-                detected_patterns.extend(patterns_from_extended_log)
-                analyzed_files.append({
-                    'name': 'extended.log',
-                    'path': extended_log_path,
-                    'patterns_found': len(patterns_from_extended_log)
-                })
-                logger.debug(f"Additional patterns found in extended.log: {[p['pattern'] for p in patterns_from_extended_log]}")
-            except Exception as e:
-                logger.warning(f"Failed to analyze extended log: {e}")
-
-        # openshift-extended-test/build-log.txt — C##### when test-results is incomplete or step interrupted
-        ext_step_build_path = f"artifacts/{variant}/openshift-extended-test/build-log.txt"
-        ext_step_build = fetch_artifact(base_url, ext_step_build_path)
-        if ext_step_build:
-            try:
-                ext_bl_text = ext_step_build.decode('utf-8', errors='ignore')
-                extended_build_log_case_ids = extract_failed_case_ids_from_extended_build_log(ext_bl_text)
-                # Patterns (timeout/OOM/network/…): scan full step log so later specs are visible.
-                patterns_oet_full = check_log_for_patterns(
-                    ext_bl_text,
-                    'openshift-extended-test/build-log.txt',
-                )
-                detected_patterns.extend(patterns_oet_full)
-                # RPM install in BeforeEach: composite detection uses first-spec prefix only.
-                oet_first_test_prefix = extended_build_log_first_test_prefix(ext_bl_text)
-                oet_src = 'openshift-extended-test/build-log.txt (first test)'
-                oet_pf = len(patterns_oet_full)
-                composite_rpm = detect_kata_rpm_install_context(oet_first_test_prefix)
-                if composite_rpm:
-                    have = {p['pattern'] for p in detected_patterns}
-                    if 'rpm_install' not in have:
-                        detected_patterns.append({
-                            'pattern': 'rpm_install',
-                            'source': f'{oet_src}, composite',
-                        })
-                        oet_pf += 1
-                analyzed_files.append({
-                    'name': 'openshift-extended-test/build-log.txt',
-                    'path': ext_step_build_path,
-                    'patterns_found': oet_pf,
-                })
-                logger.debug(
-                    "Case IDs from openshift-extended-test/build-log.txt: %s",
-                    extended_build_log_case_ids,
-                )
-                logger.debug(
-                    "Patterns from openshift-extended-test/build-log (full): %s",
-                    [p['pattern'] for p in patterns_oet_full],
-                )
-            except Exception as e:
-                logger.warning(f"Failed to parse openshift-extended-test/build-log.txt: {e}")
-                extended_build_log_case_ids = []
-
-    # Store detected patterns with sources and analyzed files info
+    analysis['failure_location'] = ', '.join(location_parts) if location_parts else 'unknown'
+    analysis['failing_tests'] = failing_tests
+    analysis['failing_tests_by_category'] = categorize_test_list(failing_tests)
     analysis['detected_patterns'] = detected_patterns
     analysis['analyzed_files'] = analyzed_files
 
-    # Add execution order to failing tests
-    if analysis['failing_tests'] and build_log_text_full:
-        analysis['failing_tests'] = add_execution_order_to_tests(
-            analysis['failing_tests'],
-            build_log_text_full
-        )
-        # Re-categorize with execution order included
-        analysis['failing_tests_by_category'] = categorize_test_list(analysis['failing_tests'])
-
-    # Determine root cause
+    # Determine root cause. failing_tests now comes from real per-suite JUnit
+    # (Workstream D) rather than log-scraped case IDs, so there's no
+    # extended_build_log_case_ids/oet_build_log_first_test to pass anymore --
+    # determine_root_cause() already treats both as optional.
     analysis['root_cause'] = determine_root_cause(
         analysis['failing_tests'],
         analysis['detected_patterns'],
         metadata,
         build_log_text,
-        extended_build_log_case_ids,
-        oet_build_log_first_test=oet_first_test_prefix,
     )
 
     return analysis
