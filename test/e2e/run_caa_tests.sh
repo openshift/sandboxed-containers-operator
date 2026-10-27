@@ -43,7 +43,7 @@ Options:
                             one from peer-pods-cm/peer-pods-secret
   --tests-repo URL|DIR      CAA repo URL or local directory
                             (default: https://github.com/openshift/cloud-api-adaptor)
-  --tests-repo-ref REF      Git ref to checkout (default: osc-release)
+  --tests-repo-ref REF      Git ref to checkout (default: osc-release-tests-1.14)
   --preserve-tests-repo     Do not delete the cloned test repo after execution
   --timeout DURATION        go test -timeout value (default: 90m)
   --trustee-url URL         Trustee/KBS HTTP(S) endpoint
@@ -57,7 +57,7 @@ PROFILE="full"
 PEERPODS_NAMESPACE="openshift-sandboxed-containers-operator"
 PROVISION_FILE=""
 TESTS_REPO="https://github.com/openshift/cloud-api-adaptor"
-TESTS_REPO_REF="osc-release"
+TESTS_REPO_REF="osc-release-tests-1.14"
 PRESERVE_TESTS_REPO=false
 TIMEOUT="90m"
 TRUSTEE_URL=""
