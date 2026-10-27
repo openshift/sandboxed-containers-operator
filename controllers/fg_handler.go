@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -14,18 +15,21 @@ const (
 	ConfidentialFeatureGate = "confidential"
 	LayeredImageDeployment  = "layeredImageDeployment"
 	DeploymentModeConfig    = "deploymentMode"
+	CAAUpdateStrategyConfig = "caaUpdateStrategy"
 )
 
 var DefaultFeatureGates = FeatureGateStatus{
 	Confidential:           false,
 	LayeredImageDeployment: false,
 	DeploymentModeOption:   DaemonSetFallbackOption,
+	CAAUpdateStrategy:      appsv1.RollingUpdateDaemonSetStrategyType,
 }
 
 type FeatureGateStatus struct {
 	Confidential           bool
 	LayeredImageDeployment bool
 	DeploymentModeOption   DeploymentModeOption
+	CAAUpdateStrategy      appsv1.DaemonSetUpdateStrategyType
 }
 
 // Create enum to represent the state of the feature gates
@@ -48,6 +52,7 @@ func (r *KataConfigOpenShiftReconciler) NewFeatureGateStatus() (*FeatureGateStat
 		Confidential:           DefaultFeatureGates.Confidential,
 		LayeredImageDeployment: DefaultFeatureGates.LayeredImageDeployment,
 		DeploymentModeOption:   DefaultFeatureGates.DeploymentModeOption,
+		CAAUpdateStrategy:      DefaultFeatureGates.CAAUpdateStrategy,
 	}
 
 	cfgMap := &corev1.ConfigMap{}
@@ -76,6 +81,14 @@ func (r *KataConfigOpenShiftReconciler) NewFeatureGateStatus() (*FeatureGateStat
 				r.Log.Info("Couldn't parse deploymentMode status, using default value", "default", DefaultFeatureGates.DeploymentModeOption, "error", err)
 			} else {
 				fgStatus.DeploymentModeOption = mode
+			}
+		}
+		if value, ok := cfgMap.Data[CAAUpdateStrategyConfig]; ok {
+			strategy, err := ParseCAAUpdateStrategy(value)
+			if err != nil {
+				r.Log.Info("Couldn't parse caaUpdateStrategy status, using default value", "default", DefaultFeatureGates.CAAUpdateStrategy, "error", err)
+			} else {
+				fgStatus.CAAUpdateStrategy = strategy
 			}
 		}
 	}
@@ -107,6 +120,11 @@ func (r *KataConfigOpenShiftReconciler) processFeatureGates() error {
 		r.Log.Info("There were errors in getting feature gate status.", "err", err)
 		return err
 	}
+
+	// The cloud-api-adaptor daemonset is reconciled later in the loop,
+	// keep the requested update strategy around until then.
+	r.Log.Info("Feature gate", "featuregate", CAAUpdateStrategyConfig, "state", fgStatus.CAAUpdateStrategy)
+	r.CAAUpdateStrategy = fgStatus.CAAUpdateStrategy
 
 	// Check which feature gates are enabled in the FG ConfigMap and
 	// perform the necessary actions
