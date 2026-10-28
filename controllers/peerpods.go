@@ -104,24 +104,23 @@ func (r *KataConfigOpenShiftReconciler) configureCAA(ds *appsv1.DaemonSet, cmVer
 						},
 						Command: []string{"/usr/local/bin/entrypoint.sh"},
 						// Add proxy environment variables to the CAA container if they are set
-						Env: append(getProxyEnvVars(), []corev1.EnvVar{
-							{
+						Env: func() []corev1.EnvVar {
+							vars := append(getProxyEnvVars(), corev1.EnvVar{
 								Name: "NODE_NAME",
 								ValueFrom: &corev1.EnvVarSource{
 									FieldRef: &corev1.ObjectFieldSelector{
 										FieldPath: "spec.nodeName",
 									},
 								},
-							},
-							{
-								Name:  "TLS_MIN_VERSION",
-								Value: string(r.TLSProfileSpec.MinTLSVersion),
-							},
-							{
-								Name:  "TLS_CIPHER_SUITES",
-								Value: r.tlsCipherSuitesEnvValue(r.TLSProfileSpec),
-							},
-						}...),
+							})
+							if r.HonorTLSProfile {
+								vars = append(vars,
+									corev1.EnvVar{Name: "TLS_MIN_VERSION", Value: string(r.TLSProfileSpec.MinTLSVersion)},
+									corev1.EnvVar{Name: "TLS_CIPHER_SUITES", Value: r.tlsCipherSuitesEnvValue(r.TLSProfileSpec)},
+								)
+							}
+							return vars
+						}(),
 						EnvFrom: []corev1.EnvFromSource{
 							{
 								SecretRef: &corev1.SecretEnvSource{
