@@ -4,8 +4,10 @@
 # Source this file at the top of each gather_* script:
 #   source /usr/bin/gather_common
 
+BASE_COLLECTION_PATH="/must-gather"
+
 # Error tracking
-ERROR_LOG="/must-gather/must-gather-errors.log"
+ERROR_LOG="${BASE_COLLECTION_PATH}/must-gather-errors.log"
 ERROR_COUNT=0
 
 # Initialize error log (only once — check if already initialized)

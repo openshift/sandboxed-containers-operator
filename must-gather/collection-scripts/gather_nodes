@@ -19,7 +19,6 @@ check_node_gather_pods_ready() {
 
 IFS=$'\n'
 
-BASE_COLLECTION_PATH="/must-gather"
 NODES_PATH=${BASE_COLLECTION_PATH}/nodes
 mkdir -p ${NODES_PATH}
 CRD_MANIFEST="/etc/node-gather-crd.yaml"

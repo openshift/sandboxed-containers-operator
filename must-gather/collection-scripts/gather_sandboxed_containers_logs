@@ -4,8 +4,6 @@ source /usr/bin/gather_common
 
 IFS=$'\n'
 
-BASE_COLLECTION_PATH="/must-gather"
-
 OSC_PATH=${BASE_COLLECTION_PATH}/sandboxed-containers
 mkdir -p ${OSC_PATH}
 

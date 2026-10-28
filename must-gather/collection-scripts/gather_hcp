@@ -4,7 +4,6 @@ source /usr/bin/gather_common
 
 IFS=$'\n'
 
-BASE_COLLECTION_PATH="/must-gather"
 HCP_PATH=${BASE_COLLECTION_PATH}/hcp
 OSC_NS="openshift-sandboxed-containers-operator"
 
