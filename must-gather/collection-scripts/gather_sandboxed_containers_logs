@@ -154,6 +154,9 @@ for installplan in $(oc get installplans -n "${OSC_NS}" -o'custom-columns=name:m
     collect_resource "Collecting InstallPlan ${installplan}" \
         "${OLM_PATH}/${installplan}.yaml" \
         oc get installplan "${installplan}" -n "${OSC_NS}" -o yaml
+    collect_resource "Describing InstallPlan ${installplan}" \
+        "${NAMESPACE_PATH}/openshift-sandboxed-containers-operator/${installplan}_description" \
+        oc describe installplan "${installplan}" -n "${OSC_NS}"
 done
 
 collect_resource "Collecting CredentialsRequests" \
