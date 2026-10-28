@@ -133,18 +133,23 @@ collect_resource() {
     return 0
 }
 
-# Detect HCP topology. Sets IS_HCP=true and exports CONTROL_PLANE_TOPOLOGY.
-# Call once; result is cached for the process.
+# Detect HCP topology. Sets CONTROL_PLANE_TOPOLOGY and IS_HCP.
+# On query failure, defaults to IS_HCP=true so HCP diagnostics are still
+# collected rather than silently skipped.
 detect_topology() {
     if [[ -n "$CONTROL_PLANE_TOPOLOGY" ]]; then
         return
     fi
-    CONTROL_PLANE_TOPOLOGY=$(oc get infrastructure cluster -o jsonpath='{.status.controlPlaneTopology}' 2>/dev/null)
-    export CONTROL_PLANE_TOPOLOGY
+    local topology
+    if ! topology=$(exec_with_retry oc get infrastructure cluster -o jsonpath='{.status.controlPlaneTopology}'); then
+        CONTROL_PLANE_TOPOLOGY=""
+        IS_HCP=true
+        return 0
+    fi
+    CONTROL_PLANE_TOPOLOGY="$topology"
     if [[ "$CONTROL_PLANE_TOPOLOGY" == "External" ]]; then
         IS_HCP=true
     else
         IS_HCP=false
     fi
-    export IS_HCP
 }
