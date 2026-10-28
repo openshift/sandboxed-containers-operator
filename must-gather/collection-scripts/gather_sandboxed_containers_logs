@@ -102,6 +102,7 @@ mkdir -p ${PEERPODS_PATH}
 echo "Collecting peer-pods resources..."
 
 OSC_NS="openshift-sandboxed-containers-operator"
+CCO_NS="openshift-cloud-credential-operator"
 
 collect_resource "Collecting peer-pods-cm ConfigMap" \
     "${PEERPODS_PATH}/peer-pods-cm.yaml" \
@@ -161,7 +162,7 @@ done
 
 collect_resource "Collecting CredentialsRequests" \
     "${OLM_PATH}/credentialsrequests.yaml" \
-    oc get credentialsrequest -n "${OSC_NS}" -o yaml
+    oc get credentialsrequest -n "${CCO_NS}" -o yaml
 
 collect_resource "Collecting controller manager deployments" \
     "${OLM_PATH}/deployments.yaml" \
