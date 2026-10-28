@@ -176,8 +176,8 @@ func main() {
 		displayName string
 		imageEnvVar string
 	}{
-		{"osc-openshift-console-plugin", "OpenShift Sandboxed Containers", "RELATED_IMAGE_OSC_CONSOLE_PLUGIN"},
-		{"coco-openshift-console-plugin", "Confidential Containers", "RELATED_IMAGE_COCO_CONSOLE_PLUGIN"},
+		{"osc-openshift-console-plugin", "OpenShift Sandboxed Containers", "TP_IMAGE_OSC_CONSOLE_PLUGIN"},
+		{"coco-openshift-console-plugin", "Confidential Containers", "TP_IMAGE_COCO_CONSOLE_PLUGIN"},
 	}
 
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
