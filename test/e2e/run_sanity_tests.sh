@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run the OpenShift sandboxed containers sanity tests.
-# Requires: bats, oc, envsubst
+# Requires: bats, oc, envsubst, skopeo
 set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,7 +19,7 @@ results directory.
 The cluster is not inspected: pass the workload and the RuntimeClass the
 cluster was installed with.
 
-Requires: bats, oc, envsubst
+Requires: bats, oc, envsubst, skopeo
 
 Options:
   -w, --workload TYPE       Workload to check: kata, peer-pods, coco
@@ -70,7 +70,7 @@ done
 
 export KUBECONFIG="${KUBECONFIG:?KUBECONFIG must be set}"
 
-for cmd in bats oc envsubst; do
+for cmd in bats oc envsubst skopeo; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: $cmd is required but not found in PATH" >&2
         exit 1
@@ -114,15 +114,21 @@ if [[ -n "$INITDATA_FILE" ]]; then
 fi
 export SANITY_INITDATA="${SANITY_INITDATA:-}"
 
-if ! oc get runtimeclass "$RUNTIME_CLASS" &>/dev/null; then
-    echo "ERROR: RuntimeClass $RUNTIME_CLASS does not exist in the cluster" >&2
+export SANITY_IMAGE="${SANITY_IMAGE:-registry.access.redhat.com/ubi9/ubi-minimal:latest}"
+if ! skopeo_output=$(skopeo inspect "docker://${SANITY_IMAGE}" 2>&1); then
+    echo "ERROR: image ${SANITY_IMAGE} is not accessible:" >&2
+    echo "$skopeo_output" >&2
+    exit 1
+fi
+
+if ! oc_output=$(oc get runtimeclass "$RUNTIME_CLASS" 2>&1); then
+    echo "$oc_output" >&2
     exit 1
 fi
 
 export SANITY_WORKLOAD="$WORKLOAD"
 export SANITY_RUNTIME_CLASS="$RUNTIME_CLASS"
 export SANITY_TIMEOUT="$TIMEOUT"
-export SANITY_IMAGE="${SANITY_IMAGE:-registry.access.redhat.com/ubi9/ubi-minimal:latest}"
 export SANITY_NAMESPACE="${SANITY_NAMESPACE:-osc-sanity}"
 export SANITY_TRUSTEE_NS="${SANITY_TRUSTEE_NS:-trustee-operator-system}"
 export SANITY_KBS_RESOURCE="${SANITY_KBS_RESOURCE:-default/kbsres1/key1}"
