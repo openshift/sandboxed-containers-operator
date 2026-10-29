@@ -55,7 +55,14 @@ log_error() {
     } >> "$ERROR_LOG"
 }
 
-# Execute oc command with retry logic.
+# Wrapper for oc: logs the command with a timestamp, provides a single
+# place to inject additional arguments (e.g. --request-timeout).
+run_oc() {
+    echo "$(date '+%H:%M:%S') oc $*" >&2
+    oc "$@"
+}
+
+# Execute a command with retry logic.
 # Stdout and stderr are kept separate: only stdout is returned on success,
 # so command warnings do not contaminate collected output files.
 exec_with_retry() {
@@ -141,7 +148,7 @@ detect_topology() {
         return
     fi
     local topology
-    if ! topology=$(exec_with_retry oc get infrastructure cluster -o jsonpath='{.status.controlPlaneTopology}'); then
+    if ! topology=$(exec_with_retry run_oc get infrastructure cluster -o jsonpath='{.status.controlPlaneTopology}'); then
         CONTROL_PLANE_TOPOLOGY=""
         IS_HCP=true
         return 0

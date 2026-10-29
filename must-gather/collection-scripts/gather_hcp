@@ -23,39 +23,39 @@ echo "controlPlaneTopology: ${CONTROL_PLANE_TOPOLOGY}" > "${HCP_PATH}/topology"
 
 collect_resource "Collecting cluster infrastructure" \
     "${HCP_PATH}/infrastructure.yaml" \
-    oc get infrastructure cluster -o yaml
+    run_oc get infrastructure cluster -o yaml
 
 collect_resource "Collecting ClusterVersion" \
     "${HCP_PATH}/clusterversion.yaml" \
-    oc get clusterversion version -o yaml
+    run_oc get clusterversion version -o yaml
 
 collect_resource "Collecting DNS operator config" \
     "${HCP_PATH}/dns-operator.yaml" \
-    oc get dns.operator.openshift.io default -o yaml
+    run_oc get dns.operator.openshift.io default -o yaml
 
 collect_resource "Collecting IngressController status" \
     "${HCP_PATH}/ingresscontrollers.yaml" \
-    oc get ingresscontroller -n openshift-ingress-operator -o yaml
+    run_oc get ingresscontroller -n openshift-ingress-operator -o yaml
 
 collect_resource "Collecting kubernetes service endpoints" \
     "${HCP_PATH}/endpoints-kubernetes.yaml" \
-    oc get endpoints kubernetes -n default -o yaml
+    run_oc get endpoints kubernetes -n default -o yaml
 
 collect_resource "Collecting RuntimeClasses" \
     "${HCP_PATH}/runtimeclasses.yaml" \
-    oc get runtimeclass -o yaml
+    run_oc get runtimeclass -o yaml
 
 collect_resource "Collecting events in ${OSC_NS}" \
     "${HCP_PATH}/events-osc-operator.txt" \
-    oc get events -n "${OSC_NS}" --sort-by='.lastTimestamp'
+    run_oc get events -n "${OSC_NS}" --sort-by='.lastTimestamp'
 
 collect_resource "Collecting events in openshift-marketplace" \
     "${HCP_PATH}/events-marketplace.txt" \
-    oc get events -n openshift-marketplace --sort-by='.lastTimestamp'
+    run_oc get events -n openshift-marketplace --sort-by='.lastTimestamp'
 
 collect_resource "Collecting node labels" \
     "${HCP_PATH}/node-labels.txt" \
-    oc get nodes -o custom-columns='NAME:.metadata.name,LABELS:.metadata.labels' --no-headers
+    run_oc get nodes -o custom-columns='NAME:.metadata.name,LABELS:.metadata.labels' --no-headers
 
 # Note for support engineers
 cat > "${HCP_PATH}/README" <<'EOF'

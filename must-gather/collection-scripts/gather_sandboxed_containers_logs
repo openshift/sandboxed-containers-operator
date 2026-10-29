@@ -106,34 +106,34 @@ CCO_NS="openshift-cloud-credential-operator"
 
 collect_resource "Collecting peer-pods-cm ConfigMap" \
     "${PEERPODS_PATH}/peer-pods-cm.yaml" \
-    oc get configmap peer-pods-cm -n "${OSC_NS}" -o yaml
+    run_oc get configmap peer-pods-cm -n "${OSC_NS}" -o yaml
 
 # peer-pods-secret — key names only (not values) for security
 if oc get secret peer-pods-secret -n "${OSC_NS}" &>/dev/null; then
     collect_resource "Collecting peer-pods-secret key names" \
         "${PEERPODS_PATH}/peer-pods-secret-keys.txt" \
-        oc get secret peer-pods-secret -n "${OSC_NS}" -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'
+        run_oc get secret peer-pods-secret -n "${OSC_NS}" -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'
 fi
 
 collect_resource "Collecting peerpodconfig CR" \
     "${PEERPODS_PATH}/peerpodconfig.yaml" \
-    oc get peerpodconfig -n "${OSC_NS}" -o yaml
+    run_oc get peerpodconfig -n "${OSC_NS}" -o yaml
 
 # PodVMImageJob resources — status, conditions
 for podvmimagejob in $(oc get podvmimagejob -n "${OSC_NS}" -o'custom-columns=name:metadata.name' --no-headers 2>/dev/null); do
     collect_resource "Collecting PodVMImageJob ${podvmimagejob}" \
         "${PEERPODS_PATH}/${podvmimagejob}.yaml" \
-        oc get podvmimagejob "${podvmimagejob}" -n "${OSC_NS}" -o yaml
+        run_oc get podvmimagejob "${podvmimagejob}" -n "${OSC_NS}" -o yaml
     collect_resource "Describing PodVMImageJob ${podvmimagejob}" \
         "${PEERPODS_PATH}/${podvmimagejob}_description" \
-        oc describe podvmimagejob "${podvmimagejob}" -n "${OSC_NS}"
+        run_oc describe podvmimagejob "${podvmimagejob}" -n "${OSC_NS}"
 done
 
 # cloud-credentials secret structure (key names only)
 if oc get secret cloud-credentials -n "${OSC_NS}" &>/dev/null; then
     collect_resource "Collecting cloud-credentials key names" \
         "${PEERPODS_PATH}/cloud-credentials-keys.txt" \
-        oc get secret cloud-credentials -n "${OSC_NS}" -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'
+        run_oc get secret cloud-credentials -n "${OSC_NS}" -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'
 fi
 
 # OLM diagnostics
@@ -144,26 +144,26 @@ echo "Collecting OLM diagnostics..."
 
 collect_resource "Collecting CatalogSources" \
     "${OLM_PATH}/catalogsources.yaml" \
-    oc get catalogsource -n openshift-marketplace -o yaml
+    run_oc get catalogsource -n openshift-marketplace -o yaml
 
 collect_resource "Collecting OperatorGroup" \
     "${OLM_PATH}/operatorgroup.yaml" \
-    oc get operatorgroup -n "${OSC_NS}" -o yaml
+    run_oc get operatorgroup -n "${OSC_NS}" -o yaml
 
 # InstallPlan — collect both YAML and description in a single loop
 for installplan in $(oc get installplans -n "${OSC_NS}" -o'custom-columns=name:metadata.name' --no-headers 2>/dev/null); do
     collect_resource "Collecting InstallPlan ${installplan}" \
         "${OLM_PATH}/${installplan}.yaml" \
-        oc get installplan "${installplan}" -n "${OSC_NS}" -o yaml
+        run_oc get installplan "${installplan}" -n "${OSC_NS}" -o yaml
     collect_resource "Describing InstallPlan ${installplan}" \
         "${NAMESPACE_PATH}/openshift-sandboxed-containers-operator/${installplan}_description" \
-        oc describe installplan "${installplan}" -n "${OSC_NS}"
+        run_oc describe installplan "${installplan}" -n "${OSC_NS}"
 done
 
 collect_resource "Collecting CredentialsRequests" \
     "${OLM_PATH}/credentialsrequests.yaml" \
-    oc get credentialsrequest -n "${CCO_NS}" -o yaml
+    run_oc get credentialsrequest -n "${CCO_NS}" -o yaml
 
 collect_resource "Collecting controller manager deployments" \
     "${OLM_PATH}/deployments.yaml" \
-    oc get deployment -n "${OSC_NS}" -o yaml
+    run_oc get deployment -n "${OSC_NS}" -o yaml
