@@ -90,3 +90,38 @@ func TestBuildGCPWIFCredentials(t *testing.T) {
 		t.Errorf("expected impersonation URL %q, got %q", want, creds.ServiceAccountImpersonationURL)
 	}
 }
+
+func TestBuildGCPWIFCredentialsValidation(t *testing.T) {
+	t.Parallel()
+
+	const (
+		validAudience = "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov"
+		validSA       = "caa@my-project.iam.gserviceaccount.com"
+		validToken    = "/var/run/secrets/openshift/serviceaccount/token"
+	)
+
+	cases := []struct {
+		name                string
+		audience, sa, token string
+		wantErr             bool
+	}{
+		{"valid", validAudience, validSA, validToken, false},
+		{"empty audience", "", validSA, validToken, true},
+		{"empty service account", validAudience, "", validToken, true},
+		{"empty token path", validAudience, validSA, "", true},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := buildGCPWIFCredentials(tc.audience, tc.sa, tc.token)
+			if tc.wantErr && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}

@@ -518,6 +518,18 @@ func (kh *KataConfigHandler) trySetupCredentialsFromEnv(ctx context.Context) (bo
 // The credential_source file points to the projected service account token so GCP STS
 // can exchange it for an access token that impersonates the given service account.
 func buildGCPWIFCredentials(audience, serviceAccountEmail, tokenPath string) ([]byte, error) {
+	// Reject empty values up front; json.Marshal below accepts any string, so an
+	// empty one would fail obscurely inside cloud-api-adaptor instead of here.
+	// TODO: also validate the format of each value (e.g. serviceAccountEmail).
+	if audience == "" {
+		return nil, fmt.Errorf("GCP WIF audience is empty")
+	}
+	if serviceAccountEmail == "" {
+		return nil, fmt.Errorf("GCP WIF service account email is empty")
+	}
+	if tokenPath == "" {
+		return nil, fmt.Errorf("GCP WIF token path is empty")
+	}
 	creds := map[string]interface{}{
 		"type":               "external_account",
 		"audience":           audience,
