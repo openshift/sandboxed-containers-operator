@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run the OpenShift sandboxed containers sanity tests.
-# Requires: bats, oc, envsubst, skopeo
+# Requires: bats, oc, envsubst
 set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,7 +19,7 @@ results directory.
 The cluster is not inspected: pass the workload and the RuntimeClass the
 cluster was installed with.
 
-Requires: bats, oc, envsubst, skopeo
+Requires: bats, oc, envsubst
 
 Options:
   -w, --workload TYPE       Workload to check: kata, peer-pods, coco
@@ -70,7 +70,7 @@ done
 
 export KUBECONFIG="${KUBECONFIG:?KUBECONFIG must be set}"
 
-for cmd in bats oc envsubst skopeo; do
+for cmd in bats oc envsubst; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: $cmd is required but not found in PATH" >&2
         exit 1
@@ -115,9 +115,11 @@ fi
 export SANITY_INITDATA="${SANITY_INITDATA:-}"
 
 export SANITY_IMAGE="${SANITY_IMAGE:-registry.access.redhat.com/ubi9/ubi-minimal:latest}"
-if ! skopeo_output=$(skopeo inspect --raw "docker://${SANITY_IMAGE}" 2>&1); then
+node_arch=$(oc get nodes -o jsonpath='{.items[0].status.nodeInfo.architecture}' 2>/dev/null) || node_arch="amd64"
+echo "Checking image ${SANITY_IMAGE} for linux/${node_arch}"
+if ! ocinfo_output=$(oc image info --filter-by-os  "linux/${node_arch}" "${SANITY_IMAGE}" 2>&1); then
     echo "ERROR: image ${SANITY_IMAGE} is not accessible:" >&2
-    echo "$skopeo_output" >&2
+    echo "$ocinfo_output" >&2
     exit 1
 fi
 
