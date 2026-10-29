@@ -23,3 +23,14 @@ spec:
         purpose: "alive_signal"
       annotations:
         summary: "Kata instance alive signal"
+
+  - name: telemetry.rules
+    rules:
+    - record: cluster:osc_setup_info:max
+      expr: max(osc_setup_info) by (setup_type, cloud_provider, tee_type)
+
+    - record: cluster:osc_kata_pods:sum
+      expr: sum(osc_kata_pods) by (runtimeclass)
+
+    - record: cluster:osc_active:max
+      expr: vector(1)
