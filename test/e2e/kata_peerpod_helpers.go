@@ -1,10 +1,13 @@
 package kata
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/tidwall/gjson"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -202,4 +205,39 @@ func getPeerPodMetadataTags(oc *CLI, namespace, podName, cloudPlatform string) (
 	podCmd := []string{"-n", namespace, podName, "--", "curl", "-s", "--max-time", "30"}
 	msg, err := oc.WithoutNamespace().AsAdmin().Run("exec").Args(append(podCmd, args...)...).Output()
 	return msg, err
+}
+
+func waitForCAARollout(oc *CLI, caaDsName string, caaGenStart string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(_ context.Context) (bool, error) {
+		caaDSJSON, getErr := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"daemonset", caaDsName, "-n", opNamespace,
+			"-o=json",
+		).Output()
+		if getErr != nil {
+			Logf("CAA daemonset not found yet, waiting...")
+			return false, nil
+		}
+		if gjson.Get(caaDSJSON, "status.observedGeneration").String() == caaGenStart {
+			Logf("CAA daemonset has not been recreated yet, waiting...")
+			return false, nil
+		}
+		desired := gjson.Get(caaDSJSON, "status.desiredNumberScheduled").Int()
+		if gjson.Get(caaDSJSON, "status.numberReady").Int() != desired ||
+			gjson.Get(caaDSJSON, "status.updatedNumberScheduled").Int() != desired ||
+			gjson.Get(caaDSJSON, "status.numberUnavailable").Int() != 0 {
+			Logf("CAA daemonset is not ready yet, waiting...")
+			return false, nil
+		}
+		Logf("CAA daemonset has been recreated and is ready")
+
+		// update the generation to the latest
+		caaGenStart = gjson.Get(caaDSJSON, "status.observedGeneration").String()
+		return true, nil
+	})
+	cancel()
+	if err != nil {
+		return caaGenStart, fmt.Errorf("failed to wait for caa rollout: %w", err)
+	}
+	return caaGenStart, nil
 }
