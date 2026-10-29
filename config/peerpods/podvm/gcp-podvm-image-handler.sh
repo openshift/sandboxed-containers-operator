@@ -30,9 +30,6 @@ function verify_vars() {
     "INSTALL_PACKAGES"
     "DISABLE_CLOUD_CONFIG"
 
-    # From peer-pods-secret:
-    "GCP_CREDENTIALS"
-
     # From lib.sh:
     "CAA_SRC_DIR"
   )
@@ -40,6 +37,16 @@ function verify_vars() {
   for var in "${required_vars[@]}"; do
     [[ -z "${!var}" ]] && error_exit "$var is not set or empty"
   done
+
+  # From peer-pods-secret: support both static credentials and
+  # Workload Identity Federation (WIF)
+  if [[ -n "${GCP_CREDENTIALS}" ]]; then
+    echo "Verified static GCP credentials"
+  elif [[ -n "${GCP_WIF_CREDENTIALS}" ]]; then
+    echo "Verified GCP Workload Identity Federation (WIF) credentials"
+  else
+    error_exit "Neither static credentials (GCP_CREDENTIALS) nor Workload Identity Federation credentials (GCP_WIF_CREDENTIALS) are set"
+  fi
 }
 
 # function to download and install gcloud cli
@@ -162,7 +169,7 @@ function create_image_from_prebuilt_artifact() {
   export GCP_BUCKET_NAME="peerpods-bucket-${GCP_PROJECT_ID}"
   export GCP_REGION="${GCP_ZONE%-*}"
 
-  gcloud config set project "${GCP_PROJECT_ID}"
+  # Project is already selected in login_to_gcp.
 
   echo "Creating the bucket ${GCP_BUCKET_NAME}"
   if ! gsutil ls -p $GCP_PROJECT_ID | grep "/${GCP_BUCKET_NAME}/" &>/dev/null; then
@@ -212,12 +219,40 @@ function login_to_gcp() {
   echo "Logging in to GCP"
 
   creds_file="/tmp/gcp-credentials.json"
-  echo "${GCP_CREDENTIALS}" >${creds_file}
 
-  gcloud auth activate-service-account --key-file=${creds_file} ||
-    error_exit "Failed to login to GCP"
+  if [[ -n "${GCP_WIF_CREDENTIALS}" ]]; then
+    # Workload Identity Federation: the external_account config references a
+    # projected service account token that GCP STS exchanges for an access token.
+    echo "Logging in to GCP using Workload Identity Federation"
+    # gcloud reads --cred-file as YAML, which (unlike JSON) forbids literal tabs
+    # for indentation. Convert any tabs to spaces so a tab-indented credential
+    # still parses; tabs inside JSON string values are escaped as \t, so this is
+    # lossless.
+    printf '%s' "${GCP_WIF_CREDENTIALS}" | tr '\t' ' ' >${creds_file} ||
+      error_exit "Failed to write WIF credentials to ${creds_file}"
 
-  rm -Rf ${creds_file}
+    gcloud auth login --cred-file=${creds_file} ||
+      error_exit "Failed to login to GCP using Workload Identity Federation"
+
+    # Point the Google SDK / gsutil at the external account credentials. The file
+    # is kept because the credentials are re-read when the token is refreshed.
+    export GOOGLE_APPLICATION_CREDENTIALS=${creds_file}
+  else
+    # Traditional static service account key
+    echo "Logging in to GCP using static service account credentials"
+    echo "${GCP_CREDENTIALS}" >${creds_file}
+
+    gcloud auth activate-service-account --key-file=${creds_file} ||
+      error_exit "Failed to login to GCP"
+
+    rm -Rf ${creds_file}
+  fi
+
+  # Explicitly select the project. Workload Identity Federation (external_account)
+  # credentials carry no project, so without this any subsequent gcloud call that
+  # needs one (e.g. image deletion) fails with "property [project] is not set".
+  gcloud config set project "${GCP_PROJECT_ID}" ||
+    error_exit "Failed to set GCP project to ${GCP_PROJECT_ID}"
 
   echo "Logged in to GCP successfully"
 }

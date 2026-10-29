@@ -77,7 +77,7 @@ CONTAINER_TOOL ?= docker
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
-BUILTIN_CLOUD_PROVIDERS ?= aws azure
+BUILTIN_CLOUD_PROVIDERS ?= aws azure gcp
 # Build tags required to build cloud-api-adaptor are derived from BUILTIN_CLOUD_PROVIDERS.
 space := $() $()
 comma := ,

@@ -257,23 +257,13 @@ func (r *KataConfigOpenShiftReconciler) configureCAAProvider(ds *appsv1.DaemonSe
 		}
 
 		return ds, nil
-	case AzureProvider:
-		// Only add bound-sa-token volume if cluster is in token-based auth mode (Azure WIF)
+	case AWSProvider, AzureProvider, GCPProvider:
+		// Only add bound-sa-token volume if cluster is in token-based auth mode
+		// (AWS STS/IRSA, Azure WIF, GCP WIF). All three use the same projected
+		// service account token flow.
 		isTokenBased, err := isClusterInTokenBasedAuthMode(r.Client)
 		if err != nil {
-			r.Log.Error(err, "Failed to determine token-based auth mode for Azure")
-			// Don't fail the whole operation, but log the issue
-		}
-		if isTokenBased {
-			r.addBoundSATokenVolume(ds)
-		}
-
-		return ds, nil
-	case AWSProvider:
-		// Only add bound-sa-token volume if cluster is in token-based auth mode (AWS STS/IRSA)
-		isTokenBased, err := isClusterInTokenBasedAuthMode(r.Client)
-		if err != nil {
-			r.Log.Error(err, "Failed to determine token-based auth mode for AWS")
+			r.Log.Error(err, "Failed to determine token-based auth mode", "provider", provider)
 			// Don't fail the whole operation, but log the issue
 		}
 		if isTokenBased {
