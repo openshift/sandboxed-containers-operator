@@ -115,7 +115,7 @@ fi
 export SANITY_INITDATA="${SANITY_INITDATA:-}"
 
 export SANITY_IMAGE="${SANITY_IMAGE:-registry.access.redhat.com/ubi9/ubi-minimal:latest}"
-if ! skopeo_output=$(skopeo inspect "docker://${SANITY_IMAGE}" 2>&1); then
+if ! skopeo_output=$(skopeo inspect --raw "docker://${SANITY_IMAGE}" 2>&1); then
     echo "ERROR: image ${SANITY_IMAGE} is not accessible:" >&2
     echo "$skopeo_output" >&2
     exit 1
