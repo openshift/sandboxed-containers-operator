@@ -195,6 +195,51 @@ filters and `--result {SUCCESS,FAILURE,ALL}`; `--limit` (default 20) counts
 until it's satisfied, so `--result FAILURE --limit 50` doesn't stop after
 the first mostly-SUCCESS page. Standalone — no local `release` clone needed.
 
+### Job History Matrix Batch Workflow
+
+`batch_job_history.py` wraps `job_history.py` to fetch the whole OSC test
+matrix in one shot: every combination of OCP version, cloud provider, and
+workload, since a given date. Each combination maps to one job name:
+
+```
+periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate<version>-<provider>-ipi-<workload>
+```
+
+```bash
+cd scripts/prowjob-analyzer
+
+# Default matrix: 420/421/422 x azure/aws/aro x kata/peerpods/coco, since a date:
+./batch_job_history.py --since 2026-10-01
+
+# Narrow the matrix:
+./batch_job_history.py --since 2026-10-01 --versions 422 --providers azure,aro --workloads peerpods
+
+# Only FAILUREs, structured JSON (includes version/provider/workload/job_name per record):
+./batch_job_history.py --since 2026-10-01 --result FAILURE --json > builds.json
+
+# One file per job under a directory, instead of stdout:
+./batch_job_history.py --since 2026-10-01 --output-dir ./history
+
+# Feed straight into dig.py, same CSV pattern as the Konflux/job-history workflows above:
+echo '' > output.csv
+for URL in $(./batch_job_history.py --since 2026-10-01 --result FAILURE --no-group-headers); do
+    ./dig.py "$URL" --csv --no-header --no-wait >> output.csv
+done
+```
+
+A job's job-history page lists every run of that job regardless of how it
+was triggered, so this already covers both the scheduled/automated periodic
+runs *and* the Konflux-triggered ones (Konflux invokes the same job name via
+the gangway API) — there's nothing extra to pass to get both. Not every
+(version, provider, workload) combination exists on Prow (e.g. ARO currently
+only has a 4.22 `peerpods` job, and AWS only has `peerpods` jobs); missing
+combinations are logged and skipped rather than aborting the batch, and a
+summary of matched/empty/skipped jobs is printed at the end. `--versions`
+accepts either `420` or `4.20` style input. Plain-text output groups each
+job's URLs under a `# <job-name> (...)` comment line (filterable the same
+way as the Konflux log with `grep ^https`); pass `--no-group-headers` for a
+flat list.
+
 ### Direct CLI Usage
 
 You can also run the dig scripts directly:
