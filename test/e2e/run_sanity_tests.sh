@@ -114,15 +114,23 @@ if [[ -n "$INITDATA_FILE" ]]; then
 fi
 export SANITY_INITDATA="${SANITY_INITDATA:-}"
 
-if ! oc get runtimeclass "$RUNTIME_CLASS" &>/dev/null; then
-    echo "ERROR: RuntimeClass $RUNTIME_CLASS does not exist in the cluster" >&2
+export SANITY_IMAGE="${SANITY_IMAGE:-registry.access.redhat.com/ubi9/ubi-minimal:latest}"
+node_arch=$(oc get nodes -o jsonpath='{.items[0].status.nodeInfo.architecture}' 2>/dev/null) || node_arch="amd64"
+echo "Checking image ${SANITY_IMAGE} for linux/${node_arch}"
+if ! ocinfo_output=$(oc image info --filter-by-os  "linux/${node_arch}" "${SANITY_IMAGE}" 2>&1); then
+    echo "ERROR: image ${SANITY_IMAGE} is not accessible:" >&2
+    echo "$ocinfo_output" >&2
+    exit 1
+fi
+
+if ! oc_output=$(oc get runtimeclass "$RUNTIME_CLASS" 2>&1); then
+    echo "$oc_output" >&2
     exit 1
 fi
 
 export SANITY_WORKLOAD="$WORKLOAD"
 export SANITY_RUNTIME_CLASS="$RUNTIME_CLASS"
 export SANITY_TIMEOUT="$TIMEOUT"
-export SANITY_IMAGE="${SANITY_IMAGE:-registry.access.redhat.com/ubi9/ubi-minimal:latest}"
 export SANITY_NAMESPACE="${SANITY_NAMESPACE:-osc-sanity}"
 export SANITY_TRUSTEE_NS="${SANITY_TRUSTEE_NS:-trustee-operator-system}"
 export SANITY_KBS_RESOURCE="${SANITY_KBS_RESOURCE:-default/kbsres1/key1}"
