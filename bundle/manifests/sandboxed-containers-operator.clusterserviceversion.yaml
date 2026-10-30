@@ -13,7 +13,8 @@ metadata:
         }
       ]
     capabilities: Seamless Upgrades
-    createdAt: "2026-10-01T05:11:16Z"
+    console.openshift.io/plugins: '["osc-openshift-console-plugin","coco-openshift-console-plugin"]'
+    createdAt: "2026-10-21T11:32:33Z"
     features.operators.openshift.io/cnf: "false"
     features.operators.openshift.io/cni: "false"
     features.operators.openshift.io/csi: "false"
@@ -312,6 +313,25 @@ spec:
           - list
           - watch
         - apiGroups:
+          - console.openshift.io
+          resources:
+          - consoleplugins
+          verbs:
+          - create
+          - list
+          - watch
+        - apiGroups:
+          - console.openshift.io
+          resourceNames:
+          - coco-openshift-console-plugin
+          - osc-openshift-console-plugin
+          resources:
+          - consoleplugins
+          verbs:
+          - delete
+          - get
+          - update
+        - apiGroups:
           - kataconfiguration.openshift.io
           resources:
           - kataconfigs
@@ -361,6 +381,29 @@ spec:
           - cloudcredentials
           verbs:
           - get
+          - list
+          - watch
+        - apiGroups:
+          - operator.openshift.io
+          resources:
+          - consoles
+          verbs:
+          - list
+          - watch
+        - apiGroups:
+          - operator.openshift.io
+          resourceNames:
+          - cluster
+          resources:
+          - consoles
+          verbs:
+          - get
+          - update
+        - apiGroups:
+          - operators.coreos.com
+          resources:
+          - clusterserviceversions
+          verbs:
           - list
           - watch
         - apiGroups:
@@ -435,6 +478,10 @@ spec:
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:0a53ddea4f160df8bd24c751dbaea92e494d362ccce7f94d31be6d46cc39c923
                 - name: RELATED_IMAGE_STORAGE_HELPER
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:0fb895d79477f0789b9130875f0ce39b40d0d4db7273a2a7d1e979f445927a94
+                - name: TP_IMAGE_OSC_CONSOLE_PLUGIN
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-console-plugin@sha256:964ab84d0d06f4c16390571ac30899ec615d4f72313d75efb32f840f7562f680
+                - name: TP_IMAGE_COCO_CONSOLE_PLUGIN
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/coco-console-plugin@sha256:e2bcfc4fa1e87c17ade635aff7d29fee9d420306022b3d74506296aa9bc817ee
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -586,6 +633,10 @@ spec:
     name: must-gather
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:0fb895d79477f0789b9130875f0ce39b40d0d4db7273a2a7d1e979f445927a94
     name: storage-helper
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-console-plugin@sha256:964ab84d0d06f4c16390571ac30899ec615d4f72313d75efb32f840f7562f680
+    name: osc-console-plugin
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/coco-console-plugin@sha256:e2bcfc4fa1e87c17ade635aff7d29fee9d420306022b3d74506296aa9bc817ee
+    name: coco-console-plugin
   replaces: sandboxed-containers-operator.v1.13.1
   version: 1.14.0
   webhookdefinitions:

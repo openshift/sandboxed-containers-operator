@@ -177,6 +177,25 @@ rules:
   - list
   - watch
 - apiGroups:
+  - console.openshift.io
+  resources:
+  - consoleplugins
+  verbs:
+  - create
+  - list
+  - watch
+- apiGroups:
+  - console.openshift.io
+  resourceNames:
+  - coco-openshift-console-plugin
+  - osc-openshift-console-plugin
+  resources:
+  - consoleplugins
+  verbs:
+  - delete
+  - get
+  - update
+- apiGroups:
   - kataconfiguration.openshift.io
   resources:
   - kataconfigs
@@ -246,6 +265,29 @@ rules:
   - cloudcredentials
   verbs:
   - get
+  - list
+  - watch
+- apiGroups:
+  - operator.openshift.io
+  resources:
+  - consoles
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - operator.openshift.io
+  resourceNames:
+  - cluster
+  resources:
+  - consoles
+  verbs:
+  - get
+  - update
+- apiGroups:
+  - operators.coreos.com
+  resources:
+  - clusterserviceversions
+  verbs:
   - list
   - watch
 - apiGroups:
