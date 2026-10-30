@@ -496,8 +496,11 @@ Output for rehearsal jobs includes the PR context:
 The analyzer is tailored for OSC jobs with special handling for:
 
 - **Workload Types**: Recognizes kata, peerpods, and confidential-containers (coco) workloads
-- **Kata RPM Version**: Extracts RPM version from job artifacts or identifies node-default usage
-- **Catalog Information**: Extracts catalog source image, version, and build date
+- **Kata RPM Version**: Extracts RPM version and catalog source/version/build date primarily from the
+  `sandboxed-containers-operator-record-metadata` step's `test-metadata.csv` (written after the catalog's
+  `:latest` tag is resolved and the RPM install step runs), falling back to prowjob.json env vars /
+  per-step build logs for older jobs that predate that step
+- **Catalog Information**: Extracts catalog source image, version, and build date (see above)
 - **Test Categorization**: Groups failing tests by OSC-relevant categories (operator lifecycle, workload deployment, peerpods-specific, coco-specific, etc.)
 - **Test Metadata Parsing**: Extracts test case IDs (C#####), authors, and priorities from test names
 - **Step-Level Detection**: Identifies which actual Prow step failed (e.g., `ipi-install-install`, `sandboxed-containers-operator-create-kataconfig`, `openshift-extended-test`)

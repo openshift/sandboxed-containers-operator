@@ -4,6 +4,8 @@ Metadata Extractor Module
 Extracts job metadata from prowjob.json and related artifacts.
 """
 
+import csv
+import io
 import re
 import json
 import logging
@@ -14,6 +16,21 @@ from typing import Dict, Optional
 from .fetcher import fetch_artifact, extract_variant_from_job_name
 
 logger = logging.getLogger(__name__)
+
+# ``sandboxed-containers-operator-pre`` chain order (see the `release` repo's
+# sandboxed-containers-operator-pre-chain.yaml): install-osc-operator (resolves
+# a ``:latest`` CATALOG_SOURCE_IMAGE tag to the real build tag) runs *before*
+# update-kata-rpm (installs the RPM, if requested), which runs *before*
+# record-metadata (writes a single CSV with the already-resolved catalog tag,
+# a Quay-queried build time, and the RPM version). record-metadata is the
+# authoritative, purpose-built source for both fields this module used to
+# struggle with (KATA-6339); the older per-field extractors below are kept
+# only as a fallback for jobs that predate this step.
+RECORD_METADATA_STEP = 'sandboxed-containers-operator-record-metadata'
+RECORD_METADATA_CSV_PATH = 'test-metadata.csv'
+# NOT "sandboxed-containers-operator-get-kata-rpm" -- that step name never
+# existed in the `release` step-registry; this is the real one.
+UPDATE_KATA_RPM_STEP = 'sandboxed-containers-operator-update-kata-rpm'
 
 
 def extract_provider(job_name: str) -> str:
@@ -206,9 +223,10 @@ def fetch_build_date_from_quay(catalog_image: str) -> str:
     return 'quay-not-found'
 
 
-def parse_catalog_tag(catalog_image: str) -> Dict:
+def _parse_tag_version_info(tag: str) -> Dict:
     """
-    Parse catalog image tag to extract version and timestamp.
+    Parse a bare image tag (no registry/repo, no leading ``:``) into
+    base_version/timestamp/catalog_build_date.
 
     Handles multiple tag formats:
     - version-timestamp: 1.11.1-1765791442
@@ -216,10 +234,95 @@ def parse_catalog_tag(catalog_image: str) -> Dict:
     - plain version: 1.11.1
     - latest: latest
     - git SHA: abc123def456
-    - sha256 digest: sha256:... (build_date from Quay API when quay.io)
+
+    Shared by ``parse_catalog_tag`` (prowjob.json env var path) and the
+    record-metadata CSV path (``parse_record_metadata_csv``), since both end
+    up with a bare tag string to classify the same way.
+
+    Args:
+        tag: Bare tag string (e.g. "1.11.1-1765791442", "latest")
+
+    Returns:
+        Dictionary with 'base_version', 'timestamp', 'catalog_build_date'
+    """
+    info = {'base_version': '', 'timestamp': '', 'catalog_build_date': ''}
+
+    # sha256 digest tag (e.g. from record-metadata's CSV for a digest-pinned
+    # CATALOG_SOURCE_IMAGE): strip the algorithm prefix, like parse_catalog_tag
+    # does for the "@sha256:..." form. No build_date here -- the caller
+    # supplies that separately (Quay digest lookup).
+    if tag.startswith('sha256:'):
+        info['base_version'] = tag[len('sha256:'):]
+        info['catalog_build_date'] = 'unknown'
+        return info
+
+    # Try version-timestamp format (e.g., "1.11.1-1765791442")
+    match = re.match(r'^([\d.]+)-(\d+)$', tag)
+    if match:
+        info['base_version'] = match.group(1)
+        info['timestamp'] = match.group(2)
+
+        # Convert timestamp to UTC datetime
+        ts_raw = match.group(2)
+        try:
+            timestamp_int = int(ts_raw)
+            dt = datetime.fromtimestamp(timestamp_int, tz=timezone.utc)
+            info['catalog_build_date'] = dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+        except (ValueError, OSError) as e:
+            logger.debug(f"Failed to convert timestamp {ts_raw}: {e}")
+            info['catalog_build_date'] = f'invalid-timestamp-{ts_raw}'
+        return info
+
+    # Try version with v prefix (e.g., "v1.11.1")
+    match = re.match(r'^v([\d.]+)$', tag)
+    if match:
+        info['base_version'] = match.group(1)
+        info['catalog_build_date'] = 'unknown'
+        return info
+
+    # Try plain version (e.g., "1.11.1")
+    match = re.match(r'^[\d.]+$', tag)
+    if match:
+        info['base_version'] = tag
+        info['catalog_build_date'] = 'unknown'
+        return info
+
+    # Check for "latest"
+    if tag == 'latest':
+        info['base_version'] = 'latest'
+        info['catalog_build_date'] = 'unknown'
+        return info
+
+    # Check for git SHA (40 hex characters for full SHA, or shorter for abbreviated)
+    if re.match(r'^[0-9a-f]{7,40}$', tag):
+        info['base_version'] = tag
+        info['catalog_build_date'] = 'unknown'
+        return info
+
+    # Default: unknown format, keep as-is
+    info['base_version'] = tag
+    info['catalog_build_date'] = 'unknown'
+    return info
+
+
+def parse_catalog_tag(catalog_image: str) -> Dict:
+    """
+    Parse catalog image tag to extract version and timestamp.
+
+    Handles multiple tag formats (see ``_parse_tag_version_info``) plus the
+    sha256 digest form (build_date from Quay API when quay.io).
 
     Problem values for build_date: "not set", "invalid-timestamp", "quay-unavailable",
     "quay-not-found", "unknown".
+
+    Note: for jobs with the ``sandboxed-containers-operator-record-metadata``
+    step (see ``fetch_record_metadata``), ``catalog_image`` here is usually
+    the *unresolved* value from prowjob.json's env vars (e.g. a literal
+    ``...osc-test-fbc:latest``, since ci-operator configs set it statically) --
+    not the real tag actually pulled at runtime, which install-osc-operator
+    only resolves and records on the live cluster. ``extract_metadata``
+    prefers the record-metadata CSV's already-resolved tag when available and
+    only falls back to this function's output otherwise.
 
     Args:
         catalog_image: Full catalog image string (e.g., quay.io/.../osc-test-fbc:1.11.1-1765791442)
@@ -258,55 +361,78 @@ def parse_catalog_tag(catalog_image: str) -> Dict:
     # Extract tag from image
     tag = catalog_image.split(':')[-1]
     catalog_info['full_tag'] = tag
-
-    # Try version-timestamp format (e.g., "1.11.1-1765791442")
-    match = re.match(r'^([\d.]+)-(\d+)$', tag)
-    if match:
-        catalog_info['base_version'] = match.group(1)
-        catalog_info['timestamp'] = match.group(2)
-
-        # Convert timestamp to UTC datetime
-        ts_raw = match.group(2)
-        try:
-            timestamp_int = int(ts_raw)
-            dt = datetime.fromtimestamp(timestamp_int, tz=timezone.utc)
-            catalog_info['catalog_build_date'] = dt.strftime('%Y-%m-%d %H:%M:%S UTC')
-        except (ValueError, OSError) as e:
-            logger.debug(f"Failed to convert timestamp {ts_raw}: {e}")
-            catalog_info['catalog_build_date'] = f'invalid-timestamp-{ts_raw}'
-        return catalog_info
-
-    # Try version with v prefix (e.g., "v1.11.1")
-    match = re.match(r'^v([\d.]+)$', tag)
-    if match:
-        catalog_info['base_version'] = match.group(1)
-        catalog_info['catalog_build_date'] = 'unknown'
-        return catalog_info
-
-    # Try plain version (e.g., "1.11.1")
-    match = re.match(r'^[\d.]+$', tag)
-    if match:
-        catalog_info['base_version'] = tag
-        catalog_info['catalog_build_date'] = 'unknown'
-        return catalog_info
-
-    # Check for "latest"
-    if tag == 'latest':
-        catalog_info['base_version'] = 'latest'
-        catalog_info['catalog_build_date'] = 'unknown'
-        return catalog_info
-
-    # Check for git SHA (40 hex characters for full SHA, or shorter for abbreviated)
-    if re.match(r'^[0-9a-f]{7,40}$', tag):
-        catalog_info['base_version'] = tag
-        catalog_info['catalog_build_date'] = 'unknown'
-        return catalog_info
-
-    # Default: unknown format, keep as-is
-    catalog_info['base_version'] = tag
-    catalog_info['catalog_build_date'] = 'unknown'
-
+    catalog_info.update(_parse_tag_version_info(tag))
     return catalog_info
+
+
+# CSV field values that mean "this wasn't actually captured", written by
+# sandboxed-containers-operator-record-metadata-commands.sh itself.
+_RECORD_METADATA_PROBLEM_VALUES = {
+    '', 'image not set', 'cannot be found', 'cannot be found (no kubeconfig)', '<not set>',
+}
+
+
+def parse_record_metadata_csv(content: bytes) -> Optional[Dict[str, str]]:
+    """
+    Parse the ``test-metadata.csv`` artifact written by the
+    sandboxed-containers-operator-record-metadata step.
+
+    Expected columns (single data row): timestamp, catalog_tag, build_time,
+    cloud_provider, ocp_version, prow_job_url, workload_to_test,
+    kata_rpm_version.
+
+    Args:
+        content: Raw bytes of test-metadata.csv
+
+    Returns:
+        Dict of column -> value for the first data row, or None if the
+        content is missing/HTML/empty/unparseable.
+    """
+    if not content:
+        return None
+    try:
+        text = content.decode('utf-8', errors='ignore')
+    except Exception as e:
+        logger.debug(f"Failed to decode test-metadata.csv: {e}")
+        return None
+
+    if text.strip().startswith('<!doctype') or text.strip().startswith('<html'):
+        logger.debug("Got HTML instead of test-metadata.csv, file doesn't exist")
+        return None
+
+    try:
+        reader = csv.DictReader(io.StringIO(text))
+        row = next(reader, None)
+    except csv.Error as e:
+        logger.debug(f"Failed to parse test-metadata.csv: {e}")
+        return None
+
+    if not row:
+        return None
+
+    return {k: (v or '').strip() for k, v in row.items() if k}
+
+
+def fetch_record_metadata(base_url: str, variant: str) -> Optional[Dict[str, str]]:
+    """
+    Fetch and parse the record-metadata step's test-metadata.csv artifact.
+
+    Args:
+        base_url: Base URL of the Prow job
+        variant: Job variant for artifact path
+
+    Returns:
+        Parsed CSV row dict, or None if the step/artifact isn't present
+        (e.g. older jobs predating this step).
+    """
+    path = f"artifacts/{variant}/{RECORD_METADATA_STEP}/artifacts/{RECORD_METADATA_CSV_PATH}"
+    content = fetch_artifact(base_url, path)
+    row = parse_record_metadata_csv(content) if content else None
+    if row:
+        logger.debug(f"Found record-metadata CSV: {row}")
+    else:
+        logger.debug("record-metadata test-metadata.csv not found or unparseable")
+    return row
 
 
 def extract_build_info(prowjob_data: Dict) -> Dict:
@@ -387,7 +513,15 @@ def extract_trigger_source(prowjob_data: Dict) -> str:
 
 def extract_kata_rpm_version(base_url: str, variant: str) -> Optional[str]:
     """
-    Extract Kata RPM version from job artifacts.
+    Extract Kata RPM version from job artifacts (legacy fallback).
+
+    Prefer ``fetch_record_metadata``'s ``kata_rpm_version`` column -- it's
+    captured straight from the KATA_RPM_VERSION env var by the
+    record-metadata step, after the RPM install actually ran. This function
+    is kept for jobs that predate that step: it parses this step's own
+    build-log.txt (step name is "update-kata-rpm", not "get-kata-rpm" --
+    that name never existed in the `release` step-registry, and this step
+    never wrote a separate kata-rpm-version.txt file either).
 
     Args:
         base_url: Base URL of the Prow job
@@ -396,26 +530,7 @@ def extract_kata_rpm_version(base_url: str, variant: str) -> Optional[str]:
     Returns:
         Kata RPM version string or None if not found
     """
-    # Try to fetch kata-rpm-version.txt
-    rpm_version_path = f"artifacts/{variant}/sandboxed-containers-operator-get-kata-rpm/artifacts/kata-rpm-version.txt"
-    content = fetch_artifact(base_url, rpm_version_path)
-
-    if content:
-        try:
-            # Check if we got HTML (directory listing) instead of text
-            content_str = content.decode('utf-8', errors='ignore')
-            if content_str.strip().startswith('<!doctype') or content_str.strip().startswith('<html'):
-                logger.debug("Got HTML instead of kata-rpm-version.txt, file doesn't exist")
-            else:
-                version = content_str.strip()
-                if version and len(version) < 200:  # Sanity check - version shouldn't be too long
-                    logger.debug(f"Found Kata RPM version: {version}")
-                    return version
-        except Exception as e:
-            logger.debug(f"Failed to parse kata-rpm-version.txt: {e}")
-
-    # Alternative: parse from build log
-    build_log_path = f"artifacts/{variant}/sandboxed-containers-operator-get-kata-rpm/artifacts/build-log.txt"
+    build_log_path = f"artifacts/{variant}/{UPDATE_KATA_RPM_STEP}/build-log.txt"
     content = fetch_artifact(base_url, build_log_path)
 
     if content:
@@ -423,8 +538,10 @@ def extract_kata_rpm_version(base_url: str, variant: str) -> Optional[str]:
             log_text = content.decode('utf-8', errors='ignore')
             # Don't try to parse if it's HTML
             if not (log_text.strip().startswith('<!doctype') or log_text.strip().startswith('<html')):
-                # Look for RPM version patterns
-                match = re.search(r'kata[a-z-]*\s+(\d+\.\d+\.\d+-\d+\..*)', log_text)
+                # update-kata-rpm-commands.sh: echo "Target RPM: ${target_version}"
+                # where target_version=$(rpm -qp ./kata-containers.rpm), e.g.
+                # "kata-containers-3.17.0-3.rhaos4.19.el9.x86_64"
+                match = re.search(r'Target RPM:\s+(\S+)', log_text)
                 if match:
                     version = match.group(1)
                     logger.debug(f"Extracted Kata RPM version from log: {version}")
@@ -432,13 +549,22 @@ def extract_kata_rpm_version(base_url: str, variant: str) -> Optional[str]:
         except Exception as e:
             logger.debug(f"Failed to parse build log: {e}")
 
-    logger.debug("Kata RPM version not found (may be using node default)")
+    logger.debug("Kata RPM version not found (may be using node default, or INSTALL_KATA_RPM=false)")
     return None
 
 
 def extract_catalog_from_extended_log(base_url: str, variant: str) -> Optional[str]:
     """
-    Extract catalog source image from extended.log.
+    Extract catalog source image from extended.log (legacy fallback).
+
+    ``openshift-extended-test`` (OTP) was removed from the downstream-candidate
+    Prow matrix's `test:` phase around 2026-10 (see
+    wiki/concepts/osc-job-result-analysis.md in the osc-LLM-wiki and
+    wiki/concepts/ci-testing-flow.md's correction note) and replaced by the
+    `sandboxed-containers-operator-testsuites` chain, which never writes an
+    extended.log. For any current job this will simply find nothing and
+    return None -- it's kept only in case older job artifacts are analyzed.
+    Prefer ``fetch_record_metadata`` for current jobs.
 
     Args:
         base_url: Base URL of the Prow job
@@ -528,10 +654,14 @@ def extract_metadata(prowjob_data: Dict, base_url: str) -> Dict:
         'build_id': prowjob_data.get('build_id', 'unknown'),
     }
 
-    # Extract build information
+    # Extract build information from prowjob.json env vars. Note this is
+    # usually the *unresolved* CATALOG_SOURCE_IMAGE (e.g. a static "...:latest"
+    # from the ci-operator config), not the real tag actually pulled at
+    # runtime -- see fetch_record_metadata below for that.
     build_info = extract_build_info(prowjob_data)
 
-    # If catalog source not in env vars, try to extract from extended.log
+    # If catalog source not in env vars, try the legacy extended.log fallback
+    # (dead for any post-OTP-removal job; see extract_catalog_from_extended_log).
     if not build_info.get('catalog_source_image') and variant:
         catalog_from_log = extract_catalog_from_extended_log(base_url, variant)
         if catalog_from_log:
@@ -540,9 +670,12 @@ def extract_metadata(prowjob_data: Dict, base_url: str) -> Dict:
             catalog_info = parse_catalog_tag(catalog_from_log)
             build_info.update(catalog_info)
 
+    build_info['catalog_build_date_source'] = 'prowjob-env' if build_info.get('catalog_source_image') else 'not set'
+
     metadata.update(build_info)
 
-    # Extract Kata RPM version if variant is known
+    # Extract Kata RPM version if variant is known (legacy per-step fallback;
+    # may be overridden below by record-metadata, the authoritative source).
     if variant:
         kata_rpm_version = extract_kata_rpm_version(base_url, variant)
         if kata_rpm_version:
@@ -554,6 +687,30 @@ def extract_metadata(prowjob_data: Dict, base_url: str) -> Dict:
     else:
         metadata['kata_rpm_version'] = 'unknown'
         metadata['kata_rpm_source'] = 'unknown'
+
+    # Prefer the sandboxed-containers-operator-record-metadata step's CSV: it
+    # runs after install-osc-operator resolved ":latest" to the real tag and
+    # after update-kata-rpm actually installed the RPM, and it queries Quay
+    # itself for build_time. This is what fixes KATA-6339 ("catalog isn't
+    # always extracted and translated to a date" / "rpm version isn't always
+    # captured") -- those legacy extractors above either read the unresolved
+    # env var or a step path/name that no longer (or never) existed.
+    if variant:
+        record_metadata = fetch_record_metadata(base_url, variant)
+        if record_metadata:
+            catalog_tag = record_metadata.get('catalog_tag', '')
+            build_time = record_metadata.get('build_time', '')
+            if catalog_tag not in _RECORD_METADATA_PROBLEM_VALUES:
+                metadata['full_tag'] = catalog_tag
+                metadata.update(_parse_tag_version_info(catalog_tag))
+                metadata['catalog_build_date_source'] = 'record-metadata'
+                if build_time not in _RECORD_METADATA_PROBLEM_VALUES:
+                    metadata['catalog_build_date'] = build_time
+
+            kata_rpm_version = record_metadata.get('kata_rpm_version', '')
+            if kata_rpm_version not in _RECORD_METADATA_PROBLEM_VALUES:
+                metadata['kata_rpm_version'] = kata_rpm_version
+                metadata['kata_rpm_source'] = 'record-metadata'
 
     # Extract OCP channel if variant is known
     if variant:
