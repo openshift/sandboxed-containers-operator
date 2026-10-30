@@ -47,5 +47,77 @@ See also the [Official 1.5 documentation](https://access.redhat.com/documentatio
   - sandboxed-containers/validatingwebhookconfigurations_description
 - apiservices/v1.kataconfiguration.openshift.io.yaml
 - cluster-scoped-resources/apiextensions.k8s.io/customresourcedefinitions/kataconfigs.kataconfiguration.openshift.io.yaml
+- cluster-scoped-resources/kataconfig/kataconfig-events.txt
+- cluster-scoped-resources/kataconfig/controller-manager-status.txt
+
+
+### Peer Pods
+Data collected for peer-pods (cloud-API-adaptor) deployments.
+
+#### Gathered Data
+- `peer-pods-cm` ConfigMap (VPC, subnet, security group, AMI/image ID, region)
+- `peer-pods-secret` Secret key names (not values — security redacted)
+- `cloud-credentials` Secret key names (not values)
+- `peerpodconfig` custom resource status
+- PodVMImageJob resources (status, conditions)
+
+#### Locations
+- sandboxed-containers/peer-pods/peer-pods-cm.yaml
+- sandboxed-containers/peer-pods/peer-pods-secret-keys.txt
+- sandboxed-containers/peer-pods/cloud-credentials-keys.txt
+- sandboxed-containers/peer-pods/peerpodconfig.yaml
+- sandboxed-containers/peer-pods/**_podvmimagejob_**.yaml
+- sandboxed-containers/peer-pods/**_podvmimagejob_**\_description
+
+
+### OLM Diagnostics
+Additional OLM data beyond subscription and CSV descriptions.
+
+#### Gathered Data
+- CatalogSource resources (full YAML)
+- OperatorGroup configuration
+- InstallPlan resources with conditions
+- CredentialsRequest resources
+- Controller manager deployment status
+
+#### Locations
+- sandboxed-containers/olm/catalogsources.yaml
+- sandboxed-containers/olm/operatorgroup.yaml
+- sandboxed-containers/olm/**_installplan_**.yaml
+- sandboxed-containers/olm/credentialsrequests.yaml
+- sandboxed-containers/olm/deployments.yaml
+
+
+### HCP (HyperShift) Hosted Clusters
+When running on an HCP hosted cluster (`controlPlaneTopology: External`), additional
+data is collected automatically. MachineConfigPool collection is skipped (MCPs do not
+exist on hosted clusters).
+
+**Note:** Management cluster resources (HostedCluster, HostedControlPlane, NodePool,
+HyperShift operator, MCE operator) are not collected because must-gather runs in the
+hosted cluster context. Run must-gather separately on the management cluster for those.
+
+#### Gathered Data
+- Cluster infrastructure object
+- ClusterVersion status and conditions
+- DNS operator configuration
+- IngressController status
+- Kubernetes service endpoints
+- RuntimeClass definitions
+- Events in OSC operator and marketplace namespaces
+- Node labels (topology region, nodePool annotations)
+
+#### Locations
+- hcp/topology
+- hcp/infrastructure.yaml
+- hcp/clusterversion.yaml
+- hcp/dns-operator.yaml
+- hcp/ingresscontrollers.yaml
+- hcp/endpoints-kubernetes.yaml
+- hcp/runtimeclasses.yaml
+- hcp/events-osc-operator.txt
+- hcp/events-marketplace.txt
+- hcp/node-labels.txt
+- hcp/README
 
 
