@@ -172,6 +172,7 @@ rules:
   - authentications
   - clusterversions
   - infrastructures
+  - proxies
   verbs:
   - get
   - list
