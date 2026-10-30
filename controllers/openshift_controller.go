@@ -248,16 +248,21 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 			err = fmt.Errorf("unknown deployment mode: %d", r.DeploymentMode)
 		}
 
-		if err != nil {
-			return res, err
-		}
-
+		// Persist status before returning any reconcile error. This
+		// ensures node counts (kataNodes.installed, readyNodeCount) are
+		// written even when a post-install step such as peer-pods
+		// validation fails, preventing the last node from being
+		// permanently stuck in "installing" (KATA-6226).
 		if r.IsKataConfigStatusChanged(oldObjStatus, &r.kataConfig.Status) {
 			r.Log.Info("KataConfig's status changed, updating...")
 			updateErr := r.Client.Status().Update(context.TODO(), r.kataConfig)
 			if updateErr != nil {
 				return ctrl.Result{}, updateErr
 			}
+		}
+
+		if err != nil {
+			return res, err
 		}
 
 		cMap := r.processDashboardConfigMap()
