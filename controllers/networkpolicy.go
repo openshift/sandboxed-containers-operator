@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"maps"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -19,7 +20,15 @@ func (r *KataConfigOpenShiftReconciler) ensureNetworkPolicy(ctx context.Context,
 		},
 	}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, np, func() error {
-		np.Annotations = annotations
+		// Merge the desired annotations into whatever is already on the object.
+		// Replacing the map would wipe annotations added by OLM, GitOps tools
+		// or admission webhooks on every reconcile.
+		if len(annotations) > 0 {
+			if np.Annotations == nil {
+				np.Annotations = make(map[string]string, len(annotations))
+			}
+			maps.Copy(np.Annotations, annotations)
+		}
 		np.Spec = spec
 		return controllerutil.SetControllerReference(r.kataConfig, np, r.Scheme)
 	})
