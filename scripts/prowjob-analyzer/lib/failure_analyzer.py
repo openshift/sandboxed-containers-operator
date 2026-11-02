@@ -11,6 +11,7 @@ from collections import defaultdict
 from .parser import (
     categorize_test_by_name,
     extract_failing_testcases_from_junit,
+    format_hours_minutes_test_step_display,
     parse_junit_xml,
     parse_osc_suite_test_case_info,
 )
@@ -20,10 +21,12 @@ from .fetcher import (
     TESTSUITES_SUITE_STEPS,
     _podutils_json_timestamp,
     compute_step_elapsed_display,
+    compute_step_elapsed_seconds,
     fetch_artifact,
     fetch_json_artifact,
     get_failed_steps,
     get_step_directories,
+    is_cleanup_step,
     list_artifact_files,
 )
 
@@ -262,6 +265,76 @@ def classify_testsuites_result(base_url: str, variant: str) -> Dict:
     return result
 
 
+def classify_infra_steps(base_url: str, variant: str) -> Dict:
+    """
+    Split a job's step directories outside the testsuites chain
+    (``ALL_TESTSUITES_STEPS``) into "infra" (pre-phase/misc) and "cleanup"
+    (gather/deprovision) steps, each with its own currently-failed subset.
+    See the prowjob-analyzer plan's result-categories design: ``infra``'s
+    status/time only count the former; ``cleanup_failed_steps`` feeds
+    ``overall``'s catch-all when a cleanup step is what actually failed.
+
+    Returns:
+        {
+          'step_dirs': [...],            # every step directory for this variant
+          'infra_steps': [...],
+          'infra_failed_steps': [...],
+          'cleanup_steps': [...],
+          'cleanup_failed_steps': [...],
+        }
+    """
+    step_dirs = get_step_directories(base_url, variant)
+    failed_steps = set(get_failed_steps(base_url, variant))
+    known_steps = set(ALL_TESTSUITES_STEPS)
+
+    infra_steps: List[str] = []
+    cleanup_steps: List[str] = []
+    for step in step_dirs:
+        if step in known_steps:
+            continue
+        if is_cleanup_step(step):
+            cleanup_steps.append(step)
+        else:
+            infra_steps.append(step)
+
+    return {
+        'step_dirs': step_dirs,
+        'infra_steps': infra_steps,
+        'infra_failed_steps': [s for s in infra_steps if s in failed_steps],
+        'cleanup_steps': cleanup_steps,
+        'cleanup_failed_steps': [s for s in cleanup_steps if s in failed_steps],
+    }
+
+
+def analyze_steps_failure(base_url: str, variant: str, step_names: List[str]) -> Dict:
+    """
+    Generalizes :func:`analyze_suite_failure` for arbitrary non-suite steps
+    (``infra``'s failed pre-phase steps, or ``overall``'s cleanup-step
+    catch-all): fetches each step's own ``build-log.txt``, scans it for
+    ``FAILURE_PATTERNS``, and combines every step's detected patterns and
+    (truncated) log text into one result for :func:`determine_root_cause`.
+
+    Returns:
+        {'detected_patterns': [...], 'build_log_text': '...'}
+    """
+    combined_patterns: List[Dict] = []
+    combined_text_parts: List[str] = []
+
+    for step_name in step_names:
+        build_log_path = f"artifacts/{variant}/{step_name}/build-log.txt"
+        content = fetch_artifact(base_url, build_log_path)
+        if not content:
+            continue
+        text = content.decode('utf-8', errors='ignore')
+        combined_patterns.extend(check_log_for_patterns(text, f"{step_name}/build-log.txt"))
+        combined_text_parts.append(text[-100_000:] if len(text) > 100_000 else text)
+
+    return {
+        'detected_patterns': combined_patterns,
+        'build_log_text': '\n'.join(combined_text_parts),
+    }
+
+
 def _junit_totals(reports: List[Dict]) -> Dict[str, int]:
     """Sum tests/failures/errors/skipped across every JUnit report for one suite."""
     totals = {'tests': 0, 'failures': 0, 'errors': 0, 'skipped': 0}
@@ -271,6 +344,33 @@ def _junit_totals(reports: List[Dict]) -> Dict[str, int]:
             totals[key] += j.get(key, 0)
     totals['passed'] = max(0, totals['tests'] - totals['failures'] - totals['errors'] - totals['skipped'])
     return totals
+
+
+def is_self_skipped_suite(summary: Dict) -> bool:
+    """
+    True when a testsuites-chain suite step (osc/kata-upstream/caa) exited
+    SUCCESS but its own JUnit shows it never ran a real test: disabled via
+    ``TESTS_<SUITE>_ENABLE=false``, or self-skipped because
+    ``${SHARED_DIR}/testsuites_gate`` was missing (see
+    ``ci-operator/step-registry/sandboxed-containers-operator/testsuites/AGENTS.md``
+    conventions 2/3/3b in the ``prow`` repo). Every one of those commands.sh
+    paths writes a ``<skipped>`` JUnit testcase and ``exit 0`` -- the step's
+    own ``finished.json`` always says SUCCESS in this case (required so
+    `best_effort` doesn't block its siblings) -- but that must never be
+    reported as a test "pass". ``summarize_suite``'s own JUnit totals
+    (``tests``/``skipped``/``failures``/``errors``) are the only signal
+    ``prowjob-analyzer`` trusts for this -- never the raw step status alone.
+    """
+    if not summary.get('had_junit'):
+        return False
+    tests = summary.get('tests', 0)
+    if tests <= 0:
+        return False
+    return (
+        summary.get('skipped', 0) == tests
+        and summary.get('failures', 0) == 0
+        and summary.get('errors', 0) == 0
+    )
 
 
 def _sum_junit_elapsed_display(reports: List[Dict]) -> Optional[str]:
@@ -1012,6 +1112,20 @@ def analyze_failure(
                 continue
             suite_result = analyze_suite_failure(base_url, variant, suite_key, info['step_name'])
             classification['suites'][suite_key]['analysis'] = suite_result
+            # Additive (prowjob-analyzer plan, result-categories): each
+            # failing suite also gets its own real root-cause dict, rather
+            # than only contributing to the pooled call below -- this is
+            # what lets a future per-suite consumer see e.g. "osc failed
+            # because of X" independently of "kata-upstream failed because
+            # of Y" instead of one blended answer for the whole job. The
+            # pooled failing_tests/detected_patterns/root_cause computed
+            # below are unchanged, for backward compatibility of today's
+            # failure_analysis.root_cause JSON key.
+            classification['suites'][suite_key]['root_cause'] = determine_root_cause(
+                suite_result['failing_tests'],
+                suite_result['detected_patterns'],
+                metadata,
+            )
             location_parts.append(info['step_name'])
             failing_tests.extend(suite_result['failing_tests'])
             detected_patterns.extend(suite_result['detected_patterns'])
@@ -1046,3 +1160,256 @@ def analyze_failure(
     )
 
     return analysis
+
+
+# Every result-categories entry (see build_result_categories()) is this
+# same shape, blank fields by default -- a category only fills in
+# failed_steps/primary_pattern/confidence/root_cause when it actually
+# failed (see the prowjob-analyzer plan, §2's blank-vs-"not run" rule).
+_EMPTY_CATEGORY: Dict = {
+    'status': '',
+    'time': '',
+    'failed_steps': '',
+    'primary_pattern': '',
+    'confidence': '',
+    'root_cause': '',
+}
+
+
+def _new_category() -> Dict:
+    return dict(_EMPTY_CATEGORY)
+
+
+def _build_infra_category(base_url: str, variant: str, metadata: Dict, infra_info: Dict) -> Dict:
+    """``infra``: pre-phase/misc steps outside the testsuites chain, excluding cleanup."""
+    cat = _new_category()
+    step_dirs = infra_info.get('step_dirs') or []
+
+    if not variant or variant == 'unknown' or not step_dirs:
+        cat['status'] = 'not run'
+        return cat
+
+    infra_steps = infra_info.get('infra_steps') or []
+    infra_failed = infra_info.get('infra_failed_steps') or []
+
+    cat['status'] = 'FAILURE' if infra_failed else 'SUCCESS'
+
+    total_secs = 0
+    for step in infra_steps:
+        secs = compute_step_elapsed_seconds(base_url, variant, step)
+        if secs:
+            total_secs += secs
+    cat['time'] = format_hours_minutes_test_step_display(total_secs)
+
+    if infra_failed:
+        cat['failed_steps'] = ', '.join(infra_failed)
+        steps_result = analyze_steps_failure(base_url, variant, infra_failed)
+        rc = determine_root_cause(
+            [], steps_result['detected_patterns'], metadata, steps_result['build_log_text']
+        )
+        cat['primary_pattern'] = rc.get('primary_pattern') or ''
+        cat['confidence'] = rc.get('confidence') or ''
+        cat['root_cause'] = rc.get('likely_cause') or ''
+
+    return cat
+
+
+def _build_overall_category(
+    prowjob_data: Dict,
+    base_url: str,
+    variant: str,
+    metadata: Dict,
+    status: str,
+    prowjob_elapsed_time: str,
+    infra_info: Dict,
+) -> Dict:
+    """``overall``: the whole Prow job's own verdict (today's ``prowjob_status``)."""
+    cat = _new_category()
+    cat['status'] = (status or '').upper()
+    cat['time'] = prowjob_elapsed_time or ''
+
+    if cat['status'] == 'SUCCESS':
+        return cat
+
+    state = (prowjob_data.get('state') or '').lower()
+
+    if state == 'aborted':
+        cat['failed_steps'] = 'aborted'
+        cat['root_cause'] = 'The job was aborted.'
+    elif 'timeout' in state:
+        cat['failed_steps'] = 'timeout'
+        cat['root_cause'] = 'The job exceeded its execution timeout.'
+    elif state in ('error', 'errored'):
+        cat['failed_steps'] = 'infrastructure'
+        cat['root_cause'] = 'The job failed due to infrastructure issues.'
+    elif state == 'failure':
+        cleanup_failed = infra_info.get('cleanup_failed_steps') or []
+        if cleanup_failed and variant and variant != 'unknown':
+            cat['failed_steps'] = ', '.join(cleanup_failed)
+            steps_result = analyze_steps_failure(base_url, variant, cleanup_failed)
+            rc = determine_root_cause(
+                [], steps_result['detected_patterns'], metadata, steps_result['build_log_text']
+            )
+            cat['primary_pattern'] = rc.get('primary_pattern') or ''
+            cat['confidence'] = rc.get('confidence') or ''
+            cat['root_cause'] = rc.get('likely_cause') or ''
+        else:
+            cat['root_cause'] = 'unknown'
+    else:
+        cat['root_cause'] = 'unknown'
+
+    return cat
+
+
+def _build_smoke_category(
+    base_url: str, variant: str, metadata: Dict, classification: Dict, suite_summaries: Dict,
+) -> Dict:
+    """``smoke``: the ``sandboxed-containers-operator-testsuites-gate`` step."""
+    cat = _new_category()
+    gate_exists = classification.get('gate_step_exists', False)
+
+    if not gate_exists:
+        cat['status'] = 'not run'
+        return cat
+
+    cat['status'] = classification.get('gate_status') or ''
+    gate_summary = (suite_summaries or {}).get('gate') or {}
+    cat['time'] = gate_summary.get('elapsed_time') or ''
+
+    if cat['status'] == 'FAILURE' and variant and variant != 'unknown':
+        cat['failed_steps'] = TESTSUITES_GATE_STEP
+        content = fetch_artifact(base_url, f"artifacts/{variant}/{TESTSUITES_GATE_STEP}/build-log.txt")
+        patterns: List[Dict] = []
+        log_text = ''
+        if content:
+            text = content.decode('utf-8', errors='ignore')
+            patterns = check_log_for_patterns(text, f"{TESTSUITES_GATE_STEP}/build-log.txt")
+            log_text = text[-100_000:] if len(text) > 100_000 else text
+        rc = determine_root_cause([], patterns, metadata, log_text)
+        cat['primary_pattern'] = rc.get('primary_pattern') or ''
+        cat['confidence'] = rc.get('confidence') or ''
+        cat['root_cause'] = rc.get('likely_cause') or ''
+
+    return cat
+
+
+def _build_suite_category(
+    metadata: Dict,
+    suite_key: str,
+    step_name: str,
+    classification: Dict,
+    suite_summaries: Dict,
+) -> Dict:
+    """One block per :data:`TESTSUITES_SUITE_STEPS` entry (today: osc/kata-upstream/caa)."""
+    cat = _new_category()
+    info = (classification.get('suites') or {}).get(suite_key) or {}
+    step_exists = info.get('step_exists', False)
+
+    if not step_exists:
+        cat['status'] = 'not run'
+        return cat
+
+    cat['status'] = info.get('status') or ''
+    summary = (suite_summaries or {}).get(suite_key) or {}
+    cat['time'] = summary.get('elapsed_time') or ''
+
+    if cat['status'] == 'SUCCESS' and is_self_skipped_suite(summary):
+        # The step itself exited 0 (required for best_effort), but its JUnit
+        # shows zero real tests ran -- a disabled or self-skipped suite must
+        # never be reported as SUCCESS (see is_self_skipped_suite).
+        cat['status'] = 'skipped'
+    elif cat['status'] == 'FAILURE':
+        cat['failed_steps'] = step_name
+        rc = determine_root_cause(
+            summary.get('failing_tests') or [],
+            summary.get('detected_patterns') or [],
+            metadata,
+        )
+        cat['primary_pattern'] = rc.get('primary_pattern') or ''
+        cat['confidence'] = rc.get('confidence') or ''
+        cat['root_cause'] = rc.get('likely_cause') or ''
+
+    return cat
+
+
+def build_result_categories(
+    prowjob_data: Dict,
+    base_url: str,
+    metadata: Dict,
+    status: str,
+    prowjob_elapsed_time: str,
+    classification: Optional[Dict],
+    suite_summaries: Optional[Dict],
+) -> Dict[str, Dict]:
+    """
+    Top-level orchestrator for the per-category SUCCESS/FAILURE breakdown
+    described in the prowjob-analyzer plan: ``infra``, ``overall``,
+    ``smoke``, then one entry per :data:`TESTSUITES_SUITE_STEPS` key (today
+    ``osc``/``kata_upstream``/``caa``), in that fixed order -- always, for
+    every job, regardless of which categories passed, failed, or are "not
+    run"/"skipped" (see the plan's §6.2 fixed-layout requirement). Each
+    entry is a plain dict: ``{status, time, failed_steps, primary_pattern,
+    confidence, root_cause}``.
+
+    When ``infra``'s own status is ``FAILURE``, every other category is
+    reported as ``'skipped'`` rather than its own independent result:
+    ci-operator skips the test:-phase gate step whenever the pre: phase
+    fails, and in practice the post:-phase testsuites chain doesn't produce
+    a meaningful result either in that case -- so once infra itself is
+    broken, ``overall``/``smoke``/every suite are treated as skipped instead
+    of evaluating (and fetching build-logs for) whatever each one's own
+    ``finished.json`` happens to say.
+
+    Reuses ``classification``/``suite_summaries`` (already computed once by
+    dig.py via :func:`classify_testsuites_result`/:func:`summarize_all_suites`)
+    rather than re-fetching; only ``infra``/``overall``/``smoke`` perform any
+    *new* fetching here (one ``build-log.txt`` per failed non-suite step),
+    and none of that fetching happens at all once infra has already failed.
+
+    This is the single source of truth for "what happened in this job,
+    categorized" -- ``lib.report_generator.build_report_data`` stores this
+    return value verbatim as ``report_data['result_categories']``, and every
+    output format (JSON/CSV/markdown) reads from that one dict rather than
+    recomputing anything (see the plan's §6.1).
+    """
+    classification = classification or {}
+    suite_summaries = suite_summaries or {}
+    variant = metadata.get('variant') or ''
+
+    if variant and variant != 'unknown':
+        infra_info = classify_infra_steps(base_url, variant)
+    else:
+        infra_info = {
+            'step_dirs': [], 'infra_steps': [], 'infra_failed_steps': [],
+            'cleanup_steps': [], 'cleanup_failed_steps': [],
+        }
+
+    categories: Dict[str, Dict] = {}
+    categories['infra'] = _build_infra_category(base_url, variant, metadata, infra_info)
+
+    if categories['infra']['status'] == 'FAILURE':
+        skipped = _new_category()
+        skipped['status'] = 'skipped'
+        categories['overall'] = dict(skipped)
+        categories['smoke'] = dict(skipped)
+        for suite_key in TESTSUITES_SUITE_STEPS:
+            categories[suite_key.replace('-', '_')] = dict(skipped)
+        return categories
+
+    categories['overall'] = _build_overall_category(
+        prowjob_data, base_url, variant, metadata, status, prowjob_elapsed_time, infra_info
+    )
+    categories['smoke'] = _build_smoke_category(
+        base_url, variant, metadata, classification, suite_summaries
+    )
+
+    # One entry per TESTSUITES_SUITE_STEPS, in its (append-only) insertion
+    # order -- never hardcoded osc/kata_upstream/caa names -- so adding a
+    # suite there is a one-line config change (see the plan, §2.1).
+    for suite_key, step_name in TESTSUITES_SUITE_STEPS.items():
+        field = suite_key.replace('-', '_')
+        categories[field] = _build_suite_category(
+            metadata, suite_key, step_name, classification, suite_summaries
+        )
+
+    return categories

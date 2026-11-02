@@ -14,8 +14,9 @@ The Prow Job Analyzer provides comprehensive analysis of Prow job runs, extracti
 - **Metadata Extraction**: Automatically extracts provider, OCP version, workload type, Kata RPM version, and build information
 - **Status Determination**: Accurately determines if a job passed, failed, timed out, or encountered errors
 - **Failed Step Detection**: Identifies which actual Prow step(s) failed by checking each step's finished.json
+- **Per-Category Result Breakdown**: Independent SUCCESS/FAILURE status for `infra`, `overall`, `smoke`, and each testsuites-chain suite (today: `osc`/`kata-upstream`/`caa`) -- e.g. a passing `osc` suite is reported as such even when `smoke` or another suite failed. The one exception: when `infra` itself fails, `overall`/`smoke`/every suite are reported as `skipped` rather than independently evaluated, since ci-operator skips the test:-phase gate (and the post:-phase testsuites chain doesn't produce a meaningful result either) whenever the pre: phase fails. Available as a fixed-layout CSV column block, a `result_categories` JSON key, and a markdown "Result Categories" section (see [CSV Reports](#csv-reports)/[JSON Reports](#json-reports) below)
 - **Test Summary**: Lists failing tests if tests executed
-- **Multiple Output Formats**: Generates both human-readable markdown and machine-parsable JSON reports
+- **Multiple Output Formats**: Generates human-readable markdown, machine-parsable JSON, and CSV reports
 - **In-Progress Job Handling**: Can wait for running jobs to complete before analysis
 - **Local or Remote Artifacts**: Analyze from a Prow URL, from a local directory or a `.tar.gz` that matches the job artifact tree (`prowjob.json` at the job root). A tarball or directory can be used **without** a URL; report links prefer `status.url` from `prowjob.json` when present
 
@@ -293,7 +294,7 @@ You can also run the dig scripts directly:
 - `--download-artifacts [PARENT_DIR]`: With a URL, run `gsutil` to copy the GCS prefix into `PARENT_DIR/<build-id>` (default parent: current directory). Requires `gsutil` on `PATH`.
 - `--tar-artifacts`: With `--download-artifacts`, also write `PARENT_DIR/<build-id>.tar.gz` beside the downloaded directory.
 - `--json`: Output machine-readable JSON instead of human-readable markdown
-- `--csv`: Output one CSV row from the canonical report (see Konflux batch example above)
+- `--csv`: Output one CSV row from the canonical report (see Konflux batch example above; see [CSV Reports](#csv-reports) below for the full column list)
 - `--no-header`: With `--csv`, omit the header row
 - `--verbose, -v`: Enable verbose logging for debugging
 - `--wait SECONDS`: Timeout for waiting on in-progress **remote** jobs (default: 300; use `0` or `--no-wait` to disable). Not used when analyzing only from `--artifacts` or a tree produced by `--download-artifacts`.
@@ -310,6 +311,7 @@ You can also run the dig scripts directly:
 The default output is a comprehensive markdown report including:
 
 - **Job Status**: Overall success/failure with emoji indicators
+- **Result Categories**: Fixed-layout dashboard -- one line per category (`infra`/`overall`/`smoke`/each testsuites-chain suite), always all of them, whether they passed, failed, didn't run, or were skipped (because `infra` itself failed, or because the suite was disabled/self-skipped -- see "Skipped suites never report SUCCESS" below), mirroring the CSV/JSON `result_categories` breakdown
 - **Job Overview**: Job name, build ID, duration, trigger source
 - **Environment**: Provider, OCP version, workload type, Kata RPM version, build information
 - **Test Results**: Total, passed, failed, and skipped test counts with categorized failure breakdown
@@ -327,6 +329,103 @@ Per-test detailed analysis including:
 - **Full Test Logs**: Complete test execution logs from start to failure
 - Supports analyzing all failed tests or specific tests by name/ID
 
+### CSV Reports
+
+`dig.py --csv` emits one row per job from the same canonical report JSON
+dumps (`generate_json_report()`) also serializes — CSV is a *view* of that
+data, not a separate computation, so a CSV cell and the equivalent JSON
+field for the same job never disagree.
+
+Columns A-I ("cluster state") are unchanged from the original 15-column
+CSV:
+
+| # | Column |
+|---|---|
+| A | `trigger` |
+| B | `start_time` |
+| C | `catalog_full_tag` |
+| D | `catalog_build_date` |
+| E | `provider` |
+| F | `ocp_version` |
+| G | `prowjob_url` |
+| H | `workload_type` |
+| I | `kata_rpm_version` |
+
+Columns J onward are a fixed **status block** (one `<category>_status`
+column per result category, always `SUCCESS`/`FAILURE`/`not run`/`skipped`)
+followed by a fixed **detail block** (five columns per category:
+`<category>_time`/`_failed_steps`/`_primary_pattern`/`_confidence`/
+`_root_cause`), covering **infra** (everything outside the testsuites chain,
+excluding gather/deprovision cleanup), **overall** (the whole Prow job's own
+verdict), **smoke** (the `testsuites-gate` step), and one block per
+testsuites-chain suite (today: **osc**, **kata-upstream**, **caa**):
+
+| Col | Name | Col | Name |
+|---|---|---|---|
+| J | `infra_status` | P | `infra_time` |
+| K | `overall_status` | Q | `infra_failed_steps` |
+| L | `smoke_status` | R | `infra_primary_pattern` |
+| M | `osc_status` | S | `infra_confidence` |
+| N | `kata_upstream_status` | T | `infra_root_cause` |
+| O | `caa_status` | U-Y | `overall_*` (same 5 fields) |
+| | | Z-AD | `smoke_*` |
+| | | AE-AI | `osc_*` |
+| | | AJ-AN | `kata_upstream_*` |
+| | | AO-AS | `caa_*` |
+
+45 columns total today. `not run` appears only in a status cell, when that
+category's step(s) never existed for this job at all (e.g. the variant
+couldn't be determined), as distinct from `skipped` below; every other cell
+is blank unless the category actually `FAILURE`d (`<category>_time` is the
+one exception -- populated whenever the step ran, pass or fail).
+
+**When `infra_status` is `FAILURE`, every other category's status is
+`skipped`** (`overall`, `smoke`, and every suite) rather than each one's own
+independent result: ci-operator skips the test:-phase gate step whenever the
+pre: phase fails, and the post:-phase testsuites chain doesn't produce a
+meaningful result either in that case, so there's no point reporting
+(or scanning build-logs for) whatever each one's own `finished.json` happens
+to say. All detail cells for a `skipped` category are blank, the same as
+`not run`.
+
+#### Skipped suites never report SUCCESS
+
+A single testsuites-chain suite (`osc`/`kata-upstream`/`caa`) can also be
+`skipped` on its own, independent of `infra_status` entirely: when it is
+disabled via `TESTS_<SUITE>_ENABLE=false` (skip-by-default), or when it
+self-skips because `${SHARED_DIR}/testsuites_gate` is missing (see
+`ci-operator/step-registry/sandboxed-containers-operator/testsuites/AGENTS.md`
+in the `prow`/`openshift-release` repo). In both cases the suite's
+`commands.sh` writes a `<skipped>` JUnit testcase and `exit 0` -- its own
+`finished.json` always says `SUCCESS`, because `exit 0` is required so
+`best_effort: true` doesn't block its siblings.
+
+**prowjob-analyzer never reports that raw step status as the suite's
+result.** `lib/failure_analyzer.py`'s `is_self_skipped_suite()` detects this
+shape from the suite's own JUnit totals (`tests > 0`, `skipped == tests`,
+`failures == 0`, `errors == 0`) and overrides the status to `skipped` --
+in the CSV/JSON `result_categories` block, in the markdown "Result
+Categories" dashboard, and in the per-step "Test Suites" section. A suite
+must never be indistinguishable from a real pass just because its container
+exited 0. If you touch the skip-JUnit shape any of osc/kata-upstream/caa
+write, or add a new suite, keep this detector (and its tests in
+`tests/test_failure_analyzer.py::TestIsSelfSkippedSuite` and
+`tests/test_report_generator.py::TestGenerateTestsuitesSection`) in sync.
+
+Every job's CSV row has the **same column count and order**, regardless of
+outcome -- a passing job and a failing job differ only in cell values, never
+in which columns are present.
+
+**Adding a testsuites-chain suite in the future** (beyond today's
+osc/kata-upstream/caa) is a one-line addition to `TESTSUITES_SUITE_STEPS` in
+`lib/fetcher.py` -- no `report_generator.py` changes needed -- but it grows
+the row by 6 columns (one status + a 5-column detail block, appended after
+`caa`'s block in the status/detail blocks respectively). **The destination
+Google Sheet needs its own manual column insertion when that happens**;
+existing column-letter references (e.g. a formula reading column `AS`) will
+need updating since everything from the new suite's status column onward
+shifts right by one slot.
+
 ### JSON Reports
 
 Both scripts support `--json` flag for structured output suitable for automation:
@@ -343,9 +442,27 @@ Both scripts support `--json` flag for structured output suitable for automation
     "failed_steps": "openshift-extended-test",
     "failing_tests": [...]
   },
+  "testsuites": {...},
+  "result_categories": {
+    "infra":         {"status": "...", "time": "...", "failed_steps": "...", "primary_pattern": "...", "confidence": "...", "root_cause": "..."},
+    "overall":       {"...": "..."},
+    "smoke":         {"...": "..."},
+    "osc":           {"...": "..."},
+    "kata_upstream": {"...": "..."},
+    "caa":           {"...": "..."}
+  },
   "artifacts": {...}
 }
 ```
+
+`result_categories` is the canonical, single source of truth for the
+per-category breakdown -- the CSV's J-onward columns and the markdown
+report's "Result Categories" section are both just different renderings of
+this same dict. Its keys are always in this fixed order (`infra`,
+`overall`, `smoke`, then one entry per testsuites-chain suite), regardless
+of which categories passed, failed, or didn't run for a given job. A future
+testsuites-chain suite shows up here as an additional sibling key
+automatically -- no JSON schema version bump needed.
 
 **dig_failed_tests_report.py JSON:**
 ```json
