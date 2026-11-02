@@ -526,7 +526,10 @@ spec:
                 runAsNonRoot: true
                 seccompProfile:
                   type: RuntimeDefault
-              terminationGracePeriodSeconds: 10
+              # Must exceed the manager graceful shutdown plus the uninstall
+              # check and console plugin cleanup, so the cluster-scoped
+              # ConsolePlugin CRs are deleted before SIGKILL.
+              terminationGracePeriodSeconds: 60
               tolerations:
               - effect: NoSchedule
                 key: node-role.kubernetes.io/master

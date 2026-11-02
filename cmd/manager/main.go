@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"time"
 
 	provider "github.com/confidential-containers/cloud-api-adaptor/src/cloud-providers"
 	peerpodcontrollers "github.com/confidential-containers/cloud-api-adaptor/src/peerpod-ctrl/controllers"
@@ -42,6 +43,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -194,6 +196,10 @@ func main() {
 		}),
 		LeaderElection:   enableLeaderElection,
 		LeaderElectionID: "290f4947.kataconfiguration.openshift.io",
+		// Console plugin uninstall cleanup runs after the manager has stopped
+		// and needs room before the pod's terminationGracePeriodSeconds expires
+		// (see CleanupConsolePluginsOnUninstall).
+		GracefulShutdownTimeout: ptr.To(10 * time.Second),
 		// The controller runtime can end up caching all objects in the cluster and cause OOM.
 		Cache: cache.Options{
 			ByObject: map[client.Object]cache.ByObject{
@@ -301,9 +307,18 @@ func main() {
 			setupLog.Error(err, "unable to detect OpenShift version, console plugin controllers will not be registered")
 		} else if controllers.IsConsolePluginSupported(ocpVersion) {
 			setupLog.Info("Detected OCP version for console plugins", "version", ocpVersion)
+			// Uninstall cleanup runs after the manager has started shutting
+			// down, when the cached client can no longer serve reads, so it
+			// gets a direct client of its own.
+			cleanupClient, err := client.New(cfg, client.Options{Scheme: scheme})
+			if err != nil {
+				setupLog.Error(err, "unable to create console plugin cleanup client")
+				os.Exit(1)
+			}
 			for _, cp := range consolePlugins {
 				if err = (&controllers.ConsolePluginReconciler{
 					Client:            mgr.GetClient(),
+					CleanupClient:     cleanupClient,
 					Scheme:            mgr.GetScheme(),
 					PluginName:        cp.name,
 					DisplayName:       cp.displayName,

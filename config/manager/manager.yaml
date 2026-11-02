@@ -125,4 +125,8 @@ spec:
             capabilities:
               drop:
                 - ALL
-      terminationGracePeriodSeconds: 10
+      # 60s = manager graceful shutdown (10s) + uninstall check (15s) + console
+      # plugin cleanup (10s per plugin) with margin. OLM sends SIGTERM and then
+      # SIGKILL at the end of this period; the cluster-scoped ConsolePlugin CRs
+      # are deleted during that window, so it must not be cut short.
+      terminationGracePeriodSeconds: 60

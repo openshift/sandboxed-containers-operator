@@ -60,6 +60,11 @@ import (
 const (
 	consolePluginPort = 9443
 
+	// consolePluginCleanupTimeout bounds uninstall cleanup. The cleanup runs
+	// while the pod is shutting down, so it must fit in the manager's graceful
+	// shutdown window plus the pod's terminationGracePeriodSeconds.
+	consolePluginCleanupTimeout = 10 * time.Second
+
 	// enabledMarkerPrefix is the prefix of an annotation key on the Console
 	// operator CR (operator.openshift.io/v1, name "cluster") recording that an
 	// administrator has enabled the plugin. Enablement in OpenShift 4.22 is the
@@ -77,7 +82,11 @@ const (
 // is modified or deleted. Each instance manages one plugin (osc or coco).
 type ConsolePluginReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	// CleanupClient, when set, is a direct (uncached) client used for
+	// uninstall cleanup. The manager's cached client stops serving reads once
+	// shutdown begins, and uninstall cleanup runs exactly then.
+	CleanupClient client.Client
+	Scheme        *runtime.Scheme
 
 	PluginName        string
 	DisplayName       string
@@ -118,9 +127,11 @@ func (r *ConsolePluginReconciler) Reconcile(ctx context.Context, _ ctrl.Request)
 	if csv != nil && csv.GetDeletionTimestamp() != nil {
 		// No finalizer is set on the CSV: OLM deletes the operator Deployment
 		// as soon as the CSV starts terminating, so blocking the CSV on code
-		// running in this pod deadlocks the uninstall. Cleanup of resources
-		// that OLM cannot garbage collect is done on shutdown, see
-		// CleanupConsolePluginsOnUninstall.
+		// running in this pod deadlocks the uninstall. Clean up right away with
+		// the direct client, because the manager's cache and this reconcile
+		// context are torn down by the same shutdown. The shutdown hook in
+		// CleanupConsolePluginsOnUninstall covers the case where this pod is
+		// killed before it gets here.
 		r.log.Info("Operator CSV is being deleted, cleaning up console plugin resources")
 		return ctrl.Result{}, r.deleteResources(ctx)
 	}
@@ -176,13 +187,41 @@ func (r *ConsolePluginReconciler) Reconcile(ctx context.Context, _ ctrl.Request)
 	return ctrl.Result{}, nil
 }
 
+// cleanupClient returns the client used for cleanup. Prefer the direct client:
+// uninstall cleanup runs while the manager shuts down and the cache stops
+// serving reads at that point.
+func (r *ConsolePluginReconciler) cleanupClient() client.Client {
+	if r.CleanupClient != nil {
+		return r.CleanupClient
+	}
+	return r.Client
+}
+
 // deleteResources removes all resources managed by this console plugin instance.
 func (r *ConsolePluginReconciler) deleteResources(ctx context.Context) error {
+	// Detach from the caller's cancellation: cleanup is triggered by the very
+	// event that shuts the operator down (the CSV deletion), and a cancelled
+	// reconcile context would abort before the resources OLM cannot remove are
+	// deleted. The timeout keeps the detached work bounded.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), consolePluginCleanupTimeout)
+	defer cancel()
+
+	cl := r.cleanupClient()
+
 	// Keep going after the first failure: on uninstall RBAC may already be
-	// going away, and the cluster-scoped ConsolePlugin CR is the resource that
-	// nothing else will remove, so it must still be attempted.
+	// going away. The cluster-scoped ConsolePlugin CR is the resource nothing
+	// else removes, so it is deleted first.
 	var errs []error
-	if err := r.disableConsolePlugin(ctx); err != nil {
+	deleted := false
+	consolePlugin := &consolev1.ConsolePlugin{ObjectMeta: metav1.ObjectMeta{Name: r.PluginName}}
+	if err := cl.Delete(ctx, consolePlugin); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			errs = append(errs, fmt.Errorf("deleting ConsolePlugin %s: %w", r.PluginName, err))
+		}
+	} else {
+		deleted = true
+	}
+	if err := r.disableConsolePlugin(ctx, cl); err != nil {
 		errs = append(errs, fmt.Errorf("disabling console plugin: %w", err))
 	}
 	namespaced := []client.Object{
@@ -191,12 +230,8 @@ func (r *ConsolePluginReconciler) deleteResources(ctx context.Context) error {
 		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: r.PluginName, Namespace: r.namespace}},
 		&networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: r.networkPolicyName(), Namespace: r.namespace}},
 	}
-	clusterScoped := []client.Object{
-		&consolev1.ConsolePlugin{ObjectMeta: metav1.ObjectMeta{Name: r.PluginName}},
-	}
-	deleted := false
-	for _, obj := range append(namespaced, clusterScoped...) {
-		if err := r.Delete(ctx, obj); err != nil {
+	for _, obj := range namespaced {
+		if err := cl.Delete(ctx, obj); err != nil {
 			if !k8serrors.IsNotFound(err) {
 				errs = append(errs, fmt.Errorf("deleting %T %s: %w", obj, obj.GetName(), err))
 			}
@@ -213,14 +248,14 @@ func (r *ConsolePluginReconciler) deleteResources(ctx context.Context) error {
 	return nil
 }
 
-func (r *ConsolePluginReconciler) disableConsolePlugin(ctx context.Context) error {
+func (r *ConsolePluginReconciler) disableConsolePlugin(ctx context.Context, cl client.Client) error {
 	// changed records whether the Console CR was actually modified, so that a
 	// cleanup run over already-absent resources does not report a removal.
 	changed := false
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		changed = false
 		console := &operatorv1.Console{}
-		if err := r.Get(ctx, client.ObjectKey{Name: "cluster"}, console); err != nil {
+		if err := cl.Get(ctx, client.ObjectKey{Name: "cluster"}, console); err != nil {
 			if k8serrors.IsNotFound(err) {
 				return nil
 			}
@@ -241,7 +276,7 @@ func (r *ConsolePluginReconciler) disableConsolePlugin(ctx context.Context) erro
 		// Drop the marker too: removal leaves the plugin disabled, and a
 		// reinstall must not carry a stale enabled marker.
 		delete(console.Annotations, markerKey)
-		if err := r.Update(ctx, console); err != nil {
+		if err := cl.Update(ctx, console); err != nil {
 			return err
 		}
 		changed = true
@@ -312,10 +347,13 @@ func CleanupConsolePluginsOnUninstall(cfg *rest.Config, scheme *runtime.Scheme, 
 		return fmt.Errorf("creating client: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	uninstalling, err := operatorUninstallInProgress(ctx, cl, namespace, csvPrefix, deploymentName)
+	// The uninstall check gets its own deadline. Cleanup below must not share
+	// it: reusing this context would cut cleanup off before both plugins are
+	// processed, and the check plus the per-plugin budgets together are what
+	// the pod's terminationGracePeriodSeconds has to cover.
+	checkCtx, cancelCheck := context.WithTimeout(context.Background(), 15*time.Second)
+	uninstalling, err := operatorUninstallInProgress(checkCtx, cl, namespace, csvPrefix, deploymentName)
+	cancelCheck()
 	if err != nil {
 		return err
 	}
@@ -335,7 +373,10 @@ func CleanupConsolePluginsOnUninstall(cfg *rest.Config, scheme *runtime.Scheme, 
 			namespace:  namespace,
 			log:        log.WithValues("plugin", name),
 		}
-		if err := r.deleteResources(ctx); err != nil {
+		// Neither the manager's cancelled context nor the check context is
+		// reused: each cleanup runs after mgr.Start returned and gets a fresh
+		// bounded context.
+		if err := r.deleteResources(context.Background()); err != nil {
 			errs = append(errs, fmt.Errorf("cleaning up console plugin %s: %w", name, err))
 		}
 	}

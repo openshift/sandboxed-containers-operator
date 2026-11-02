@@ -7,8 +7,12 @@ import (
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
+	consolev1 "github.com/openshift/api/console/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -16,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func newConsolePluginTestReconciler(t *testing.T, objs ...client.Object) (*ConsolePluginReconciler, client.Client) {
@@ -29,6 +34,15 @@ func newConsolePluginTestReconciler(t *testing.T, objs ...client.Object) (*Conso
 		t.Fatal(err)
 	}
 	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := networkingv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := consolev1.Install(scheme); err != nil {
 		t.Fatal(err)
 	}
 
@@ -159,7 +173,7 @@ func TestDisableConsolePluginRemovesMarker(t *testing.T) {
 	}
 	r, cl := newConsolePluginTestReconciler(t, console)
 
-	if err := r.disableConsolePlugin(context.Background()); err != nil {
+	if err := r.disableConsolePlugin(context.Background(), cl); err != nil {
 		t.Fatalf("disableConsolePlugin: %v", err)
 	}
 
@@ -648,5 +662,156 @@ func TestOperatorUninstallInProgress(t *testing.T) {
 				t.Errorf("operatorUninstallInProgress = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+const cleanupTestPluginName = "osc-openshift-console-plugin"
+
+// newCleanupTestClient builds a fake client whose requests fail if their
+// context is already cancelled, like an API call issued through a reconcile
+// context that SIGTERM has cancelled.
+func newCleanupTestClient(t *testing.T, objs ...client.Object) client.Client {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	if err := operatorv1.Install(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := networkingv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := consolev1.Install(scheme); err != nil {
+		t.Fatal(err)
+	}
+
+	cancelledContext := func(ctx context.Context) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return nil
+	}
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if err := cancelledContext(ctx); err != nil {
+					return err
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+			Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+				if err := cancelledContext(ctx); err != nil {
+					return err
+				}
+				return c.Update(ctx, obj, opts...)
+			},
+			Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+				if err := cancelledContext(ctx); err != nil {
+					return err
+				}
+				return c.Delete(ctx, obj, opts...)
+			},
+		}).
+		Build()
+}
+
+func cleanupTestObjects() []client.Object {
+	return []client.Object{
+		&operatorv1.Console{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "cluster",
+				Annotations: map[string]string{enabledMarkerPrefix + cleanupTestPluginName: "true"},
+			},
+			Spec: operatorv1.ConsoleSpec{Plugins: []string{cleanupTestPluginName}},
+		},
+		&consolev1.ConsolePlugin{ObjectMeta: metav1.ObjectMeta{Name: cleanupTestPluginName}},
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: cleanupTestPluginName, Namespace: "test-ns"}},
+		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: cleanupTestPluginName, Namespace: "test-ns"}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cleanupTestPluginName, Namespace: "test-ns"}},
+		&networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: "allow-" + cleanupTestPluginName, Namespace: "test-ns"}},
+	}
+}
+
+func TestDeleteResourcesSurvivesCancelledShutdownContext(t *testing.T) {
+	// OLM starts deleting the operator Deployment as soon as the CSV is marked
+	// for deletion, which cancels the reconcile that runs the cleanup. The
+	// cluster-scoped ConsolePlugin is not owned by anything and would leak,
+	// so cleanup must ignore that cancellation.
+	cl := newCleanupTestClient(t, cleanupTestObjects()...)
+	r := &ConsolePluginReconciler{
+		Client:     cl,
+		PluginName: cleanupTestPluginName,
+		namespace:  "test-ns",
+		log:        logr.Discard(),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := r.deleteResources(ctx); err != nil {
+		t.Fatalf("deleteResources with cancelled context: %v", err)
+	}
+
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: cleanupTestPluginName}, &consolev1.ConsolePlugin{}); !k8serrors.IsNotFound(err) {
+		t.Fatalf("ConsolePlugin %s still exists after cleanup, err=%v", cleanupTestPluginName, err)
+	}
+	if err := cl.Get(context.Background(), client.ObjectKey{Namespace: "test-ns", Name: cleanupTestPluginName}, &appsv1.Deployment{}); !k8serrors.IsNotFound(err) {
+		t.Fatalf("Deployment still exists after cleanup, err=%v", err)
+	}
+	console := consoleOperatorConfig(t, cl)
+	if hasPlugin(console, cleanupTestPluginName) {
+		t.Fatalf("plugin %q still in spec.plugins after cleanup: %v", cleanupTestPluginName, console.Spec.Plugins)
+	}
+	if _, ok := console.Annotations[r.enabledMarkerKey()]; ok {
+		t.Fatalf("marker annotation %q still present after cleanup", r.enabledMarkerKey())
+	}
+}
+
+func TestDeleteResourcesDeletesConsolePluginWhenDisableFails(t *testing.T) {
+	// The Console operator CR is cluster state too, but the ConsolePlugin is
+	// the resource nothing else removes: a failure to update on the way (for
+	// example RBAC already being torn down) must not skip its deletion.
+	scheme := runtime.NewScheme()
+	if err := operatorv1.Install(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := networkingv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := consolev1.Install(scheme); err != nil {
+		t.Fatal(err)
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cleanupTestObjects()...).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Update: func(context.Context, client.WithWatch, client.Object, ...client.UpdateOption) error {
+				return k8serrors.NewForbidden(schema.GroupResource{Group: "operator.openshift.io", Resource: "consoles"}, "cluster", nil)
+			},
+		}).
+		Build()
+	r := &ConsolePluginReconciler{
+		Client:     cl,
+		Scheme:     scheme,
+		PluginName: cleanupTestPluginName,
+		namespace:  "test-ns",
+		log:        logr.Discard(),
+	}
+
+	err := r.deleteResources(context.Background())
+	if err == nil {
+		t.Fatal("deleteResources reported success although the Console CR update failed")
+	}
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: cleanupTestPluginName}, &consolev1.ConsolePlugin{}); !k8serrors.IsNotFound(err) {
+		t.Fatalf("ConsolePlugin %s still exists although disabling failed, err=%v", cleanupTestPluginName, err)
 	}
 }
