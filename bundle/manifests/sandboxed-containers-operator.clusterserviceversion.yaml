@@ -482,7 +482,7 @@ spec:
                 - name: TP_IMAGE_OSC_CONSOLE_PLUGIN
                   value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-console-plugin@sha256:a1566e5a3c3c937ca0f3e2c7d3a184761cc0dd122828acce54490bba63849b67
                 - name: TP_IMAGE_COCO_CONSOLE_PLUGIN
-                  value: quay.io/redhat-user-workloads/ose-osc-tenant/coco-console-plugin@sha256:0e596d18c5dfbb6e03785becd648f93f2a20c2b72e47611a0b7fd7b6f85ab8c9
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/coco-console-plugin@sha256:f6f770d6564d22d77d731b629f6e68f972ceef4710c52955d6183397b80d87c7
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -636,7 +636,7 @@ spec:
     name: storage-helper
   - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-console-plugin@sha256:a1566e5a3c3c937ca0f3e2c7d3a184761cc0dd122828acce54490bba63849b67
     name: osc-console-plugin
-  - image: quay.io/redhat-user-workloads/ose-osc-tenant/coco-console-plugin@sha256:0e596d18c5dfbb6e03785becd648f93f2a20c2b72e47611a0b7fd7b6f85ab8c9
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/coco-console-plugin@sha256:f6f770d6564d22d77d731b629f6e68f972ceef4710c52955d6183397b80d87c7
     name: coco-console-plugin
   replaces: sandboxed-containers-operator.v1.13.1
   version: 1.14.0
