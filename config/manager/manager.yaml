@@ -111,7 +111,7 @@ spec:
             - name: TP_IMAGE_OSC_CONSOLE_PLUGIN
               value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-console-plugin@sha256:964ab84d0d06f4c16390571ac30899ec615d4f72313d75efb32f840f7562f680
             - name: TP_IMAGE_COCO_CONSOLE_PLUGIN
-              value: quay.io/redhat-user-workloads/ose-osc-tenant/coco-console-plugin@sha256:e2bcfc4fa1e87c17ade635aff7d29fee9d420306022b3d74506296aa9bc817ee
+              value: quay.io/redhat-user-workloads/ose-osc-tenant/coco-console-plugin@sha256:0e596d18c5dfbb6e03785becd648f93f2a20c2b72e47611a0b7fd7b6f85ab8c9
           imagePullPolicy: Always
           resources:
             limits:
