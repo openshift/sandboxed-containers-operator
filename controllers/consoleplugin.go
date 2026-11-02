@@ -1070,10 +1070,19 @@ func (r *ConsolePluginReconciler) ensureNetworkPolicy(ctx context.Context, csv *
 		},
 	}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, np, func() error {
-		np.Labels = r.consolePluginLabels()
-		np.Annotations = map[string]string{
-			"kubernetes.io/description": "Allows ingress from the OpenShift console to the " + r.PluginName + " backend.",
+		// Merge rather than replace, as ensureDeployment does: OLM and GitOps
+		// tooling label and annotate objects owned by a CSV and restore them
+		// whenever they drift. A blind assignment deletes those keys on every
+		// reconcile, and their repair triggers another reconcile. Only the keys
+		// this controller manages are written; foreign keys are left alone.
+		if np.Labels == nil {
+			np.Labels = map[string]string{}
 		}
+		maps.Copy(np.Labels, r.consolePluginLabels())
+		if np.Annotations == nil {
+			np.Annotations = map[string]string{}
+		}
+		np.Annotations["kubernetes.io/description"] = "Allows ingress from the OpenShift console to the " + r.PluginName + " backend."
 		np.Spec = networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{
 				MatchLabels: r.consolePluginSelectorLabels(),
