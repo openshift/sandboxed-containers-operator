@@ -415,6 +415,87 @@ func TestEnsureNetworkPolicy_UpdateAnnotations(t *testing.T) {
 	}
 }
 
+func TestEnsureNetworkPolicy_PreservesForeignAnnotations(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		desired map[string]string
+	}{
+		// The deny-all policies pass nil.
+		{name: "nil desired annotations", desired: nil},
+		{name: "empty desired annotations", desired: map[string]string{}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			labels := map[string]string{"app": "foreign-annot"}
+			existing := &networkingv1.NetworkPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foreign-annot-np",
+					Namespace: OperatorNamespace,
+					Annotations: map[string]string{
+						"olm.owner":                      "sandboxed-containers-operator.v1.0.0",
+						"argocd.argoproj.io/tracking-id": "app:networking.k8s.io/NetworkPolicy:ns/foreign-annot-np",
+					},
+				},
+				Spec: defaultDenySpec(labels),
+			}
+			r := newTestReconciler(t, existing)
+
+			if err := r.ensureNetworkPolicy(context.TODO(), "foreign-annot-np", tc.desired, defaultDenySpec(labels)); err != nil {
+				t.Fatalf("ensureNetworkPolicy failed: %v", err)
+			}
+
+			np := fetchNetworkPolicy(t, r.Client, "foreign-annot-np")
+			if got := np.Annotations["olm.owner"]; got != "sandboxed-containers-operator.v1.0.0" {
+				t.Errorf("expected olm.owner annotation to be preserved, got %q", got)
+			}
+			if _, ok := np.Annotations["argocd.argoproj.io/tracking-id"]; !ok {
+				t.Error("expected argocd tracking annotation to be preserved")
+			}
+		})
+	}
+}
+
+func TestEnsureNetworkPolicy_MergesAnnotations(t *testing.T) {
+	t.Parallel()
+
+	const hostNetwork = "policy-group.network.openshift.io/host-network"
+
+	labels := map[string]string{"app": "merge-annot"}
+	existing := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "merge-annot-np",
+			Namespace: OperatorNamespace,
+			Annotations: map[string]string{
+				"example.com/added-by-webhook": "yes",
+				hostNetwork:                    "stale",
+			},
+		},
+		Spec: defaultDenySpec(labels),
+	}
+	r := newTestReconciler(t, existing)
+
+	desired := map[string]string{hostNetwork: ""}
+	if err := r.ensureNetworkPolicy(context.TODO(), "merge-annot-np", desired, allowIngressSpec(labels, 8443)); err != nil {
+		t.Fatalf("ensureNetworkPolicy failed: %v", err)
+	}
+
+	np := fetchNetworkPolicy(t, r.Client, "merge-annot-np")
+	if got, ok := np.Annotations[hostNetwork]; !ok || got != "" {
+		t.Errorf("expected desired value %q for %s, got %q (present: %v)", "", hostNetwork, got, ok)
+	}
+	if got := np.Annotations["example.com/added-by-webhook"]; got != "yes" {
+		t.Errorf("expected webhook annotation to be preserved, got %q", got)
+	}
+	if len(desired) != 1 {
+		t.Errorf("expected the caller's annotation map to be left alone, got %v", desired)
+	}
+}
+
 // ---- Tests for deleteNetworkPolicy ----
 
 func TestDeleteNetworkPolicy_Existing(t *testing.T) {
