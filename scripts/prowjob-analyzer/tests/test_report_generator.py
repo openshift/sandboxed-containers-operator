@@ -434,6 +434,46 @@ class TestGenerateTestsuitesSection(unittest.TestCase):
         self.assertIn('❌ `sandboxed-containers-operator-testsuites-caa`', section)
         self.assertIn('Status: **FAILURE**', section)
 
+    def test_build_failure_renders_test_bug_not_failure(self) -> None:
+        """
+        A suite that failed because its own test code doesn't compile (zero
+        JUnit, 'go_build_failure' detected) must render as TEST_BUG, never a
+        plain FAILURE that looks like a product regression -- see
+        is_test_code_build_failure().
+        """
+        summaries = {
+            'osc': _suite_summary(
+                'osc', status='FAILURE', tests=0, passed=0, failures=0, errors=0, skipped=0,
+                had_junit=False,
+                detected_patterns=[{'pattern': 'go_build_failure', 'source': 'build-log.txt'}],
+                build_failure_detail='./kata_test.go:940:8: undefined: compat_otp',
+            ),
+        }
+        section = generate_testsuites_section(summaries, None)
+        self.assertIn('🐛 `sandboxed-containers-operator-testsuites-osc`', section)
+        self.assertIn('Status: **TEST_BUG**', section)
+        self.assertNotIn('Status: **FAILURE**', section)
+        self.assertIn('Test-code build failure', section)
+        self.assertIn('undefined: compat_otp', section)
+
+
+class TestGenerateResultCategoriesSectionTestBug(unittest.TestCase):
+    """TEST_BUG must render with its own emoji and the same detail lines FAILURE gets."""
+
+    def test_test_bug_category_renders_detail_lines(self) -> None:
+        categories = _all_pass_categories()
+        categories['osc'] = _category(
+            status='TEST_BUG', time='00:01',
+            failed_steps='sandboxed-containers-operator-testsuites-osc',
+            primary_pattern='go_build_failure', confidence='high',
+            root_cause='Test code fails to compile (test-infrastructure bug, not a product defect).',
+        )
+        section = generate_result_categories_section(categories)
+        self.assertIn('🐛 **osc**: TEST_BUG', section)
+        self.assertIn('Failed step(s): `sandboxed-containers-operator-testsuites-osc`', section)
+        self.assertIn('Root cause: Test code fails to compile', section)
+        self.assertIn('Primary pattern: go_build_failure (confidence: high)', section)
+
 
 if __name__ == '__main__':
     unittest.main()

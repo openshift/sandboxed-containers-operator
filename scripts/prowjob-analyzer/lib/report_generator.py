@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 from .parser import format_hours_minutes
 from .fetcher import get_artifact_url
-from .failure_analyzer import is_self_skipped_suite
+from .failure_analyzer import is_self_skipped_suite, is_test_code_build_failure
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,9 @@ def generate_testsuites_section(suite_summaries: Optional[Dict], failure_kind: O
 
     section = "\n## Test Suites\n\n"
 
-    status_emoji = {'SUCCESS': '✅', 'FAILURE': '❌', 'skipped': '⏭️', None: '❓'}
+    status_emoji = {
+        'SUCCESS': '✅', 'FAILURE': '❌', 'skipped': '⏭️', 'TEST_BUG': '🐛', None: '❓',
+    }
 
     for suite_key in ('gate', 'osc', 'kata-upstream', 'caa'):
         info = suite_summaries.get(suite_key)
@@ -76,13 +78,19 @@ def generate_testsuites_section(suite_summaries: Optional[Dict], failure_kind: O
 
         # The gate step never self-skips (it either ran its one job -- touch
         # the marker -- or didn't run at all), so only osc/kata-upstream/caa
-        # can be self-skipped. A step that exited SUCCESS but produced zero
-        # real tests (disabled, or skipped because the gate marker was
-        # missing) must be shown as skipped, never SUCCESS -- see
-        # is_self_skipped_suite.
+        # can be self-skipped or a test-code build failure. A step that
+        # exited SUCCESS but produced zero real tests (disabled, or skipped
+        # because the gate marker was missing) must be shown as skipped,
+        # never SUCCESS -- see is_self_skipped_suite. A step that FAILED
+        # because its own test code doesn't compile -- not because a test
+        # ran and failed -- must be shown as TEST_BUG, never a plain FAILURE
+        # that looks like a product regression -- see
+        # is_test_code_build_failure.
         display_status = info.get('status')
         if suite_key != 'gate' and display_status == 'SUCCESS' and is_self_skipped_suite(info):
             display_status = 'skipped'
+        elif suite_key != 'gate' and display_status == 'FAILURE' and is_test_code_build_failure(info):
+            display_status = 'TEST_BUG'
 
         emoji = status_emoji.get(display_status, '❓')
         section += f"### {emoji} `{info['step_name']}`\n\n"
@@ -128,6 +136,11 @@ def generate_testsuites_section(suite_summaries: Optional[Dict], failure_kind: O
                     msg = test['failure_message'].strip().splitlines()[0][:200]
                     section += f"  - {msg}\n"
             section += "\n"
+        elif info.get('build_failure_detail'):
+            section += (
+                "**Test-code build failure** (not a product regression) — "
+                f"compiler output:\n\n```\n{info['build_failure_detail']}\n```\n\n"
+            )
         elif info.get('no_results'):
             section += (
                 "Step failed and produced no JUnit at all — no per-test detail "
@@ -148,7 +161,15 @@ _RESULT_CATEGORY_STATUS_EMOJI = {
     # post:-phase testsuites chain never produces a meaningful result
     # either -- build_result_categories() reports all of those as 'skipped'
     # rather than each one's own (often nonexistent) finished.json result.
+    # 'overall' is also reported 'skipped' when every testsuites-chain suite
+    # contributing to its own raw FAILURE state is a TEST_BUG (see below) --
+    # a TEST_BUG suite doesn't count as a real failure for overall's own
+    # determination, same as a self-skipped suite.
     'skipped': '⏭️',
+    # A suite failed because its own test code didn't compile, not because a
+    # real test ran and failed -- see is_test_code_build_failure(). Distinct
+    # from FAILURE so it isn't mistaken for a product regression.
+    'TEST_BUG': '🐛',
 }
 
 
@@ -175,7 +196,7 @@ def generate_result_categories_section(result_categories: Optional[Dict]) -> str
             line += f" — elapsed {cat['time']}"
         section += line + "\n"
 
-        if cat_status == 'FAILURE':
+        if cat_status in ('FAILURE', 'TEST_BUG'):
             if cat.get('failed_steps'):
                 section += f"  - Failed step(s): `{cat['failed_steps']}`\n"
             if cat.get('root_cause'):
@@ -420,6 +441,14 @@ def build_report_data(
                 'errors': info.get('errors', 0),
                 'skipped': info.get('skipped', 0),
                 'no_results': info.get('no_results', False),
+                'detected_patterns': info.get('detected_patterns', []),
+                # TEST_BUG (see is_test_code_build_failure()): the suite's
+                # own test code failed to compile -- not a product
+                # regression -- so it produced zero JUnit. generate_testsuites_section()
+                # and is_test_code_build_failure() both need these two
+                # fields to render/detect that case from report_data alone.
+                'build_failure_detail': info.get('build_failure_detail'),
+                'is_test_bug': info.get('is_test_bug', False),
                 'failing_tests': [
                     {
                         'name': test.get('name', ''),

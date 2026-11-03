@@ -14,7 +14,7 @@ The Prow Job Analyzer provides comprehensive analysis of Prow job runs, extracti
 - **Metadata Extraction**: Automatically extracts provider, OCP version, workload type, Kata RPM version, and build information
 - **Status Determination**: Accurately determines if a job passed, failed, timed out, or encountered errors
 - **Failed Step Detection**: Identifies which actual Prow step(s) failed by checking each step's finished.json
-- **Per-Category Result Breakdown**: Independent SUCCESS/FAILURE status for `infra`, `overall`, `smoke`, and each testsuites-chain suite (today: `osc`/`kata-upstream`/`caa`) -- e.g. a passing `osc` suite is reported as such even when `smoke` or another suite failed. The one exception: when `infra` itself fails, `overall`/`smoke`/every suite are reported as `skipped` rather than independently evaluated, since ci-operator skips the test:-phase gate (and the post:-phase testsuites chain doesn't produce a meaningful result either) whenever the pre: phase fails. Available as a fixed-layout CSV column block, a `result_categories` JSON key, and a markdown "Result Categories" section (see [CSV Reports](#csv-reports)/[JSON Reports](#json-reports) below)
+- **Per-Category Result Breakdown**: Independent SUCCESS/FAILURE status for `infra`, `overall`, `smoke`, and each testsuites-chain suite (today: `osc`/`kata-upstream`/`caa`) -- e.g. a passing `osc` suite is reported as such even when `smoke` or another suite failed. When `infra` itself fails, `overall`/`smoke`/every suite are reported as `skipped` rather than independently evaluated, since ci-operator skips the test:-phase gate (and the post:-phase testsuites chain doesn't produce a meaningful result either) whenever the pre: phase fails. A suite whose own test code fails to *compile* (not a real test failure) is reported as `TEST_BUG` instead of `FAILURE`; `overall` treats that the same as a skipped suite and becomes `SUCCESS` (if another suite still ran real tests and passed) or `skipped` (only if every suite in the chain produced no real result) instead of `FAILURE` (see [Test-code build failures never report FAILURE](#test-code-build-failures-never-report-failure)). Available as a fixed-layout CSV column block, a `result_categories` JSON key, and a markdown "Result Categories" section (see [CSV Reports](#csv-reports)/[JSON Reports](#json-reports) below)
 - **Test Summary**: Lists failing tests if tests executed
 - **Multiple Output Formats**: Generates human-readable markdown, machine-parsable JSON, and CSV reports
 - **In-Progress Job Handling**: Can wait for running jobs to complete before analysis
@@ -352,7 +352,9 @@ CSV:
 | I | `kata_rpm_version` |
 
 Columns J onward are a fixed **status block** (one `<category>_status`
-column per result category, always `SUCCESS`/`FAILURE`/`not run`/`skipped`)
+column per result category, always `SUCCESS`/`FAILURE`/`TEST_BUG`/`not run`/
+`skipped` -- see [Test-code build failures never report
+FAILURE](#test-code-build-failures-never-report-failure) for `TEST_BUG`)
 followed by a fixed **detail block** (five columns per category:
 `<category>_time`/`_failed_steps`/`_primary_pattern`/`_confidence`/
 `_root_cause`), covering **infra** (everything outside the testsuites chain,
@@ -412,9 +414,46 @@ write, or add a new suite, keep this detector (and its tests in
 `tests/test_failure_analyzer.py::TestIsSelfSkippedSuite` and
 `tests/test_report_generator.py::TestGenerateTestsuitesSection`) in sync.
 
+#### Test-code build failures never report FAILURE
+
+A suite (`osc`/`kata-upstream`/`caa`) can fail because its own **test code
+doesn't compile** -- e.g. a missing import or an undefined symbol in the
+suite's Go source -- rather than because a real test ran and failed. `go
+test`'s own output shows this unambiguously: `FAIL <pkg> [build failed]`,
+with **zero** JUnit written (nothing ever ran). This is a bug in the test
+repository, not evidence the product under test (KataConfig/CAA/Trustee) is
+broken.
+
+**prowjob-analyzer reports this case as its own `TEST_BUG` status, never
+`FAILURE`.** `lib/failure_analyzer.py`'s `is_test_code_build_failure()`
+detects the shape (`had_junit` is false and the `go_build_failure` pattern
+was found in the suite's own `build-log.txt`) and overrides the status to
+`TEST_BUG` -- in the CSV/JSON `result_categories` block, in the markdown
+"Result Categories" dashboard, and in the per-step "Test Suites" section
+(which also shows the extracted compiler error, e.g. ``./kata_test.go:940:8:
+undefined: compat_otp``). **`overall` does not inherit a false `FAILURE`
+verdict from a `TEST_BUG` suite either**: a `TEST_BUG` suite is treated
+exactly like a self-skipped suite for `overall`'s own determination (it
+doesn't count as a real failure). When every testsuites-chain suite
+contributing to the job's own `FAILURE` state is a `TEST_BUG` (and nothing
+else -- `smoke`, a cleanup step -- also failed), `overall` is recomputed:
+if *any* suite in the chain actually ran real tests and passed (e.g. `caa`
+passed cleanly while `osc`'s test code didn't compile), that real signal
+means the job isn't inconclusive and `overall` becomes `SUCCESS`; `overall`
+is only `'skipped'` when **every** suite in the chain is TEST_BUG/
+self-skipped/not run -- no real result anywhere -- and never a `TEST_BUG`
+of its own either way. If anything else genuinely failed alongside it,
+`overall` correctly stays `FAILURE`. If you touch the suite runners' `go
+test` invocation or add a new Go-based suite, keep this detector (and its
+tests in `tests/test_failure_analyzer.py::TestIsTestCodeBuildFailure`/
+`TestBuildResultCategoriesEndToEnd` and
+`tests/test_report_generator.py::TestGenerateTestsuitesSection`/
+`TestGenerateResultCategoriesSectionTestBug`) in sync.
+
 Every job's CSV row has the **same column count and order**, regardless of
 outcome -- a passing job and a failing job differ only in cell values, never
-in which columns are present.
+in which columns are present. `TEST_BUG` is a new possible value for any
+`<category>_status` cell, alongside `SUCCESS`/`FAILURE`/`not run`/`skipped`.
 
 **Adding a testsuites-chain suite in the future** (beyond today's
 osc/kata-upstream/caa) is a one-line addition to `TESTSUITES_SUITE_STEPS` in
