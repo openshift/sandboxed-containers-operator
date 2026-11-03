@@ -9,6 +9,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,6 +30,9 @@ func newConsolePluginTestReconciler(t *testing.T, objs ...client.Object) (*Conso
 		t.Fatal(err)
 	}
 	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := networkingv1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 
@@ -226,6 +230,57 @@ func TestEnsureDeploymentPreservesForeignLabels(t *testing.T) {
 	for k, want := range r.consolePluginLabels() {
 		if got.Labels[k] != want {
 			t.Errorf("managed label %q = %q, want %q (labels: %v)", k, got.Labels[k], want, got.Labels)
+		}
+	}
+}
+
+func TestEnsureNetworkPolicyPreservesForeignMetadata(t *testing.T) {
+	// Same failure mode as the Deployment above, on the NetworkPolicy: OLM and
+	// GitOps tooling label/annotate CSV-owned objects and repair them when they
+	// drift. Replacing either map makes those controllers and this one fight.
+	existing := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "allow-osc-openshift-console-plugin",
+			Namespace: "test-ns",
+			Labels: map[string]string{
+				"olm.managed": "true",
+			},
+			Annotations: map[string]string{
+				"olm.owner":             "sandboxed-containers-operator.v1.14.0",
+				"example.com/unrelated": "keep",
+			},
+		},
+	}
+	r, cl := newConsolePluginTestReconciler(t, existing)
+
+	// Reconcile twice: the second pass must not strip the foreign metadata either.
+	for i := 0; i < 2; i++ {
+		if err := r.ensureNetworkPolicy(context.Background(), nil); err != nil {
+			t.Fatalf("ensureNetworkPolicy: %v", err)
+		}
+	}
+
+	got := &networkingv1.NetworkPolicy{}
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: r.networkPolicyName(), Namespace: r.namespace}, got); err != nil {
+		t.Fatalf("reading NetworkPolicy: %v", err)
+	}
+	wantLabels := map[string]string{"olm.managed": "true"}
+	for k, v := range r.consolePluginLabels() {
+		wantLabels[k] = v
+	}
+	for k, want := range wantLabels {
+		if got.Labels[k] != want {
+			t.Errorf("label %q = %q, want %q (labels: %v)", k, got.Labels[k], want, got.Labels)
+		}
+	}
+	wantAnnotations := map[string]string{
+		"olm.owner":                 "sandboxed-containers-operator.v1.14.0",
+		"example.com/unrelated":     "keep",
+		"kubernetes.io/description": "Allows ingress from the OpenShift console to the " + r.PluginName + " backend.",
+	}
+	for k, want := range wantAnnotations {
+		if got.Annotations[k] != want {
+			t.Errorf("annotation %q = %q, want %q (annotations: %v)", k, got.Annotations[k], want, got.Annotations)
 		}
 	}
 }
