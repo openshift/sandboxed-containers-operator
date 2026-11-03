@@ -111,16 +111,29 @@ spec:
                 exit 0
             fi
 
-            echo "Resolving source from osc-operator-bundle component..."
-            srcURL=$(jq -r '.components[] | select(.name=="osc-operator-bundle") | .source.git.url' <<< "${SNAPSHOT}")
-            srcREV=$(jq -r '.components[] | select(.name=="osc-operator-bundle") | .source.git.revision' <<< "${SNAPSHOT}")
+            # Resolve source revision from a component built from the
+            # sandboxed-containers-operator repo.  In PR snapshots the
+            # osc-operator-bundle component often carries a stale devel
+            # revision, so we pick the most common revision among the
+            # components that live in this repo — the PR-rebuilt ones
+            # share the PR HEAD commit while stale ones each point to
+            # different devel merge commits.
+            OSC_REPO_COMPONENTS='["osc-operator","osc-operator-bundle","osc-daemonset","osc-must-gather","osc-podvm-builder"]'
+            srcURL=$(jq -r --argjson comps "$OSC_REPO_COMPONENTS" \
+                '[.components[] | select(.name as $n | $comps | index($n)) | .source.git.url // empty] | first' \
+                <<< "${SNAPSHOT}")
+            srcREV=$(jq -r --argjson comps "$OSC_REPO_COMPONENTS" \
+                '[.components[] | select(.name as $n | $comps | index($n)) | .source.git.revision // empty] |
+                 group_by(.) | sort_by(-length) | .[0][0]' \
+                <<< "${SNAPSHOT}")
+            echo "Resolved source: srcREV=${srcREV} (from osc-repo components)"
 
             if [ -z "$srcURL" ] || [ "$srcURL" = "null" ]; then
-                echo "ERROR: osc-operator-bundle component not found in snapshot"
+                echo "ERROR: no sandboxed-containers-operator component found in snapshot"
                 exit 1
             fi
             if [ -z "$srcREV" ] || [ "$srcREV" = "null" ]; then
-                echo "ERROR: osc-operator-bundle component has no source.git.revision"
+                echo "ERROR: no source.git.revision found for sandboxed-containers-operator components"
                 exit 1
             fi
             if [[ ! "$srcURL" =~ ^https://[^@]*$ ]]; then
