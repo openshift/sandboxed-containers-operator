@@ -136,10 +136,10 @@ def generate_testsuites_section(suite_summaries: Optional[Dict], failure_kind: O
                     msg = test['failure_message'].strip().splitlines()[0][:200]
                     section += f"  - {msg}\n"
             section += "\n"
-        elif info.get('build_failure_detail'):
+        elif display_status == 'TEST_BUG':
             section += (
-                "**Test-code build failure** (not a product regression) — "
-                f"compiler output:\n\n```\n{info['build_failure_detail']}\n```\n\n"
+                "**Test-code build failure** — inspect the suite's build-log.txt "
+                "for compiler details.\n\n"
             )
         elif info.get('no_results'):
             section += (
@@ -157,14 +157,11 @@ _RESULT_CATEGORY_STATUS_EMOJI = {
     'SUCCESS': '✅',
     'FAILURE': '❌',
     'not run': '⬜',
+    'unknown': '❓',
     # When infra fails, ci-operator skips the test:-phase gate and the
     # post:-phase testsuites chain never produces a meaningful result
     # either -- build_result_categories() reports all of those as 'skipped'
     # rather than each one's own (often nonexistent) finished.json result.
-    # 'overall' is also reported 'skipped' when every testsuites-chain suite
-    # contributing to its own raw FAILURE state is a TEST_BUG (see below) --
-    # a TEST_BUG suite doesn't count as a real failure for overall's own
-    # determination, same as a self-skipped suite.
     'skipped': '⏭️',
     # A suite failed because its own test code didn't compile, not because a
     # real test ran and failed -- see is_test_code_build_failure(). Distinct
@@ -442,12 +439,9 @@ def build_report_data(
                 'skipped': info.get('skipped', 0),
                 'no_results': info.get('no_results', False),
                 'detected_patterns': info.get('detected_patterns', []),
-                # TEST_BUG (see is_test_code_build_failure()): the suite's
-                # own test code failed to compile -- not a product
-                # regression -- so it produced zero JUnit. generate_testsuites_section()
-                # and is_test_code_build_failure() both need these two
-                # fields to render/detect that case from report_data alone.
-                'build_failure_detail': info.get('build_failure_detail'),
+                # Never copy potentially sensitive build-log content into
+                # reports. The suite's artifact link is provided separately.
+                'build_failure_detail': None,
                 'is_test_bug': info.get('is_test_bug', False),
                 'failing_tests': [
                     {
