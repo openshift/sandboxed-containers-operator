@@ -93,7 +93,7 @@ spec:
             - name: RELATED_IMAGE_KATA_DAEMONSET
               value: registry.redhat.io/openshift-sandboxed-containers/osc-daemonset-rhel9@sha256:5063853c7b7f667618b80350a756f1682a8ac66a398a52439695c4b245233434
             - name: RELATED_IMAGE_KATA_MONITOR
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:568e5b7f7606ddeabb5e6a9198521ad83c9f2979ab65f39e6edb1670c6ced41c
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:d957be7c1a2023ae65a3c3be01d3a15d516dcfa40979681e8d256757377df2dc
             - name: RELATED_IMAGE_CAA
               value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:c3336eea878c502814ac6083afabded0fbe827509e6363e629f94a25f6df1015
             - name: RELATED_IMAGE_PEERPODS_WEBHOOK
