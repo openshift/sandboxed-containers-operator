@@ -15,8 +15,10 @@ from lib.failure_analyzer import (
     determine_root_cause,
     detect_kata_rpm_install_context,
     extract_failed_case_ids_from_extended_build_log,
+    extract_go_build_failure_detail,
     extract_kata_rpm_dependency_detail,
     is_self_skipped_suite,
+    is_test_code_build_failure,
     summarize_all_suites,
 )
 from lib.fetcher import TESTSUITES_SUITE_STEPS, clear_artifact_cache, configure_artifact_source
@@ -284,6 +286,123 @@ class TestDetermineRootCauseRpmInstall(unittest.TestCase):
         )
         self.assertEqual(rc['confidence'], 'low')
         self.assertFalse(rc.get('kata_worker_context_verified'))
+
+
+_GO_BUILD_FAILURE_LOG = (
+    "==========================================\n"
+    "OSC testsuites :: osc (golang e2e)\n"
+    "TESTS_OSC_ENABLE=true\n"
+    "==========================================\n"
+    "Fetching test repo (ref devel)\n"
+    "Tests commit: 80108f8a4e21ab10e0339474d66b1d1c63243902\n"
+    "Running go test with timeout=120m\n"
+    "go: downloading k8s.io/apimachinery v0.35.1\n"
+    "# github.com/openshift/sandboxed-containers-operator/test/e2e "
+    "[github.com/openshift/sandboxed-containers-operator/test/e2e.test]\n"
+    "./kata_test.go:940:8: undefined: compat_otp\n"
+    "./kata_test.go:1149:20: undefined: compat_otp\n"
+    "./kata_test.go:1175:20: undefined: compat_otp\n"
+    "FAIL\tgithub.com/openshift/sandboxed-containers-operator/test/e2e [build failed]\n"
+    "ERROR: no JUnit produced at /tmp/osc-results-kuckBD/junit_osc.xml; failing the suite\n"
+    "osc go test exited 1\n"
+)
+
+
+class TestExtractGoBuildFailureDetail(unittest.TestCase):
+    def test_extracts_header_through_fail_line(self) -> None:
+        detail = extract_go_build_failure_detail(_GO_BUILD_FAILURE_LOG)
+        self.assertIsNotNone(detail)
+        self.assertTrue(detail.startswith('# github.com/openshift/sandboxed-containers-operator/test/e2e'))
+        self.assertIn('undefined: compat_otp', detail)
+        self.assertTrue(detail.endswith('[build failed]'))
+
+    def test_fail_line_alone_when_no_header(self) -> None:
+        text = 'some preamble\nFAIL\tsome/pkg [build failed]\n'
+        detail = extract_go_build_failure_detail(text)
+        self.assertEqual(detail, 'FAIL\tsome/pkg [build failed]')
+
+    def test_none_when_neither_marker_present(self) -> None:
+        self.assertIsNone(extract_go_build_failure_detail('all good, nothing to see\n'))
+
+    def test_none_for_empty_text(self) -> None:
+        self.assertIsNone(extract_go_build_failure_detail(''))
+
+    def test_truncates_to_max_chars(self) -> None:
+        detail = extract_go_build_failure_detail(_GO_BUILD_FAILURE_LOG, max_chars=20)
+        self.assertEqual(len(detail), 20)
+
+
+class TestIsTestCodeBuildFailure(unittest.TestCase):
+    """
+    is_test_code_build_failure() must distinguish a suite that failed
+    because its own test code doesn't compile (TEST_BUG) from a suite that
+    failed for any other reason (a real test failure, a runtime panic,
+    etc.) -- only the former should ever be reported as TEST_BUG instead of
+    FAILURE.
+    """
+
+    def test_true_for_build_failure_shape(self) -> None:
+        summary = {
+            'had_junit': False,
+            'detected_patterns': [
+                {'pattern': 'go_build_failure', 'source': 'build-log.txt'},
+            ],
+        }
+        self.assertTrue(is_test_code_build_failure(summary))
+
+    def test_false_when_junit_was_produced(self) -> None:
+        # A suite that actually ran (and wrote JUnit) never gets TEST_BUG,
+        # even if 'go_build_failure' somehow also matched elsewhere in its log.
+        summary = {
+            'had_junit': True,
+            'detected_patterns': [
+                {'pattern': 'go_build_failure', 'source': 'build-log.txt'},
+            ],
+        }
+        self.assertFalse(is_test_code_build_failure(summary))
+
+    def test_false_without_go_build_failure_pattern(self) -> None:
+        summary = {
+            'had_junit': False,
+            'detected_patterns': [{'pattern': 'timeout', 'source': 'build-log.txt'}],
+        }
+        self.assertFalse(is_test_code_build_failure(summary))
+
+    def test_false_with_no_detected_patterns(self) -> None:
+        summary = {'had_junit': False, 'detected_patterns': []}
+        self.assertFalse(is_test_code_build_failure(summary))
+
+
+class TestDetermineRootCauseGoBuildFailure(unittest.TestCase):
+    def test_high_confidence_with_detail(self) -> None:
+        rc = determine_root_cause(
+            [],
+            [{'pattern': 'go_build_failure', 'source': 'build-log.txt'}],
+            {},
+            build_failure_detail='./kata_test.go:940:8: undefined: compat_otp',
+        )
+        self.assertEqual(rc['primary_pattern'], 'go_build_failure')
+        self.assertEqual(rc['confidence'], 'high')
+        self.assertIn('not a product defect', rc['likely_cause'])
+        self.assertIn('undefined: compat_otp', rc['likely_cause'])
+
+    def test_falls_back_to_generic_message_without_detail(self) -> None:
+        rc = determine_root_cause(
+            [], [{'pattern': 'go_build_failure', 'source': 'build-log.txt'}], {},
+        )
+        self.assertEqual(rc['primary_pattern'], 'go_build_failure')
+        self.assertIn('not a product defect', rc['likely_cause'])
+
+    def test_takes_priority_over_other_patterns_in_same_log(self) -> None:
+        rc = determine_root_cause(
+            [],
+            [
+                {'pattern': 'go_build_failure', 'source': 'build-log.txt'},
+                {'pattern': 'timeout', 'source': 'build-log.txt'},
+            ],
+            {},
+        )
+        self.assertEqual(rc['primary_pattern'], 'go_build_failure')
 
 
 _VARIANT = 'aws-ipi-peerpods'
@@ -583,6 +702,141 @@ class TestBuildResultCategoriesEndToEnd(unittest.TestCase):
             self.assertIn('C00349', categories['osc']['root_cause'])
             for key in ('infra', 'smoke', 'kata_upstream', 'caa'):
                 self.assertEqual(categories[key]['status'], 'SUCCESS')
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_suite_build_failure_reports_test_bug_and_overall_is_success_when_a_sibling_really_ran(
+        self,
+    ) -> None:
+        """
+        A suite whose test code fails to compile (go test's own "FAIL <pkg>
+        [build failed]", zero JUnit) must be reported as TEST_BUG, not
+        FAILURE. A TEST_BUG suite doesn't count as a real failure for
+        'overall's own determination -- but 'overall' must not become
+        'skipped' either unless *every* suite in the chain is skipped/
+        TEST_BUG: here kata-upstream and caa both genuinely ran and passed
+        (per _setup_all_pass), so that real signal means the job isn't
+        inconclusive -- 'overall' is SUCCESS, with blank detail fields (see
+        build_result_categories()).
+        """
+        root = tempfile.mkdtemp()
+        try:
+            _setup_all_pass(root)
+            step = 'sandboxed-containers-operator-testsuites-osc'
+            _failing_step(root, step, build_log=_GO_BUILD_FAILURE_LOG)
+            configure_artifact_source(root)
+            classification, summaries = self._classify_and_summarize()
+
+            categories = build_result_categories(
+                {'state': 'failure'}, 'http://x', {'variant': _VARIANT}, 'failure', '01:30',
+                classification, summaries,
+            )
+
+            self.assertEqual(categories['osc']['status'], 'TEST_BUG')
+            self.assertEqual(categories['osc']['failed_steps'], step)
+            self.assertIn('undefined: compat_otp', categories['osc']['root_cause'])
+            self.assertEqual(categories['osc']['primary_pattern'], 'go_build_failure')
+
+            self.assertEqual(categories['overall']['status'], 'SUCCESS')
+            self.assertEqual(categories['overall']['failed_steps'], '')
+            self.assertEqual(categories['overall']['primary_pattern'], '')
+            self.assertEqual(categories['overall']['confidence'], '')
+            self.assertEqual(categories['overall']['root_cause'], '')
+
+            for key in ('infra', 'smoke', 'kata_upstream', 'caa'):
+                self.assertEqual(categories[key]['status'], 'SUCCESS')
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_overall_is_skipped_only_when_every_suite_is_skipped_or_test_bug(self) -> None:
+        """
+        'overall' is 'skipped' only when *every* testsuites-chain suite
+        produced no real result at all (TEST_BUG or self-skipped) -- not
+        merely because the one suite that raw-FAILUREd was a test bug. This
+        is the companion case to the test above: here kata-upstream and caa
+        are both self-skipped (disabled), so there is no real result
+        anywhere in the chain, and 'overall' is 'skipped' too.
+        """
+        root = tempfile.mkdtemp()
+        try:
+            _setup_all_pass(root)
+            osc_step = 'sandboxed-containers-operator-testsuites-osc'
+            _failing_step(root, osc_step, build_log=_GO_BUILD_FAILURE_LOG)
+
+            for suite, step in (
+                ('kata-upstream', 'sandboxed-containers-operator-testsuites-kata-upstream'),
+                ('caa', 'sandboxed-containers-operator-testsuites-caa'),
+            ):
+                artifacts_dir = os.path.join(root, 'artifacts', _VARIANT, step, 'artifacts')
+                os.makedirs(artifacts_dir, exist_ok=True)
+                # Exact skip-shape every suite's commands.sh writes when disabled.
+                junit = (
+                    f'<testsuite name="{suite}" tests="1" failures="0" errors="0" skipped="1">\n'
+                    f'  <testcase name="{suite}" classname="osc.testsuites.{suite}" time="0">\n'
+                    '    <skipped message="disabled"/>\n'
+                    '  </testcase>\n'
+                    '</testsuite>\n'
+                )
+                fname = f"junit_{suite.replace('-', '_')}_skip.xml"
+                _write_text(os.path.join(artifacts_dir, fname), junit)
+
+            configure_artifact_source(root)
+            classification, summaries = self._classify_and_summarize()
+
+            categories = build_result_categories(
+                {'state': 'failure'}, 'http://x', {'variant': _VARIANT}, 'failure', '01:30',
+                classification, summaries,
+            )
+
+            self.assertEqual(categories['osc']['status'], 'TEST_BUG')
+            self.assertEqual(categories['kata_upstream']['status'], 'skipped')
+            self.assertEqual(categories['caa']['status'], 'skipped')
+
+            self.assertEqual(categories['overall']['status'], 'skipped')
+            self.assertEqual(categories['overall']['failed_steps'], '')
+            self.assertEqual(categories['overall']['primary_pattern'], '')
+            self.assertEqual(categories['overall']['confidence'], '')
+            self.assertEqual(categories['overall']['root_cause'], '')
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_suite_build_failure_does_not_mask_a_real_failure_in_a_sibling_suite(self) -> None:
+        """
+        If a sibling suite genuinely failed (a real test assertion failure,
+        not a build failure) alongside a TEST_BUG suite, 'overall' must stay
+        FAILURE -- the downgrade only applies when *every* testsuites-chain
+        suite contributing to the job's FAILURE state is itself a TEST_BUG.
+        """
+        root = tempfile.mkdtemp()
+        try:
+            _setup_all_pass(root)
+            osc_step = 'sandboxed-containers-operator-testsuites-osc'
+            _failing_step(root, osc_step, build_log=_GO_BUILD_FAILURE_LOG)
+
+            kata_upstream_step = 'sandboxed-containers-operator-testsuites-kata-upstream'
+            _failing_step(root, kata_upstream_step)
+            artifacts_dir = os.path.join(root, 'artifacts', _VARIANT, kata_upstream_step, 'artifacts')
+            os.makedirs(artifacts_dir, exist_ok=True)
+            junit = (
+                '<testsuite name="k8s-caps" tests="1" failures="1" errors="0" skipped="0">\n'
+                '  <testcase name="k8s-caps-test" time="1.0">\n'
+                '    <failure message="boom">real assertion failure</failure>\n'
+                '  </testcase>\n'
+                '</testsuite>\n'
+            )
+            _write_text(os.path.join(artifacts_dir, 'junit_kata_upstream_k8s-caps.xml'), junit)
+
+            configure_artifact_source(root)
+            classification, summaries = self._classify_and_summarize()
+
+            categories = build_result_categories(
+                {'state': 'failure'}, 'http://x', {'variant': _VARIANT}, 'failure', '01:30',
+                classification, summaries,
+            )
+
+            self.assertEqual(categories['osc']['status'], 'TEST_BUG')
+            self.assertEqual(categories['kata_upstream']['status'], 'FAILURE')
+            self.assertEqual(categories['overall']['status'], 'FAILURE')
         finally:
             shutil.rmtree(root, ignore_errors=True)
 

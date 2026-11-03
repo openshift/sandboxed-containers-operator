@@ -99,6 +99,15 @@ FAILURE_PATTERNS = {
         r'error:.*Deployment is already in unlocked state',
         r'error:.*ostree.*unlocked state',
     ],
+    'go_build_failure': [
+        # `go test`'s own output when the package under test fails to
+        # *compile* -- distinct from a real test assertion failure. Any
+        # testsuites-chain suite backed by `go test` (today: osc, caa) can
+        # hit this; it means the suite wrote zero JUnit because nothing ever
+        # ran, not that a test executed and failed. See
+        # is_test_code_build_failure()/TEST_BUG status below.
+        r'FAIL\s+\S+\s+\[build failed\]',
+    ],
     # Migrated from the osc-step-debug skill's documented "Common Error
     # Patterns" (~/go/src/github.com/tbuskey/skills-marketplace,
     # plugins/skills/osc-step-debug/skills/osc-step-debug/SKILL.md) -- that
@@ -373,6 +382,50 @@ def is_self_skipped_suite(summary: Dict) -> bool:
     )
 
 
+def is_test_code_build_failure(summary: Dict) -> bool:
+    """
+    True when a testsuites-chain suite step (osc/kata-upstream/caa) failed,
+    wrote **zero** JUnit at all, and its own build-log.txt shows the
+    ``go_build_failure`` pattern (``go test``'s ``FAIL <pkg> [build
+    failed]``) -- i.e. the suite's *test code* doesn't compile, rather than
+    any test actually running and failing. This is a bug in the test
+    repository itself (a stale/removed import, a typo, etc.), not evidence
+    the product under test is broken.
+
+    Mirrors :func:`is_self_skipped_suite`'s pattern: a pure function over a
+    suite's own summary dict (``had_junit``/``detected_patterns``, both
+    already populated by :func:`summarize_suite`), not a raw step-status
+    check -- the step's own ``finished.json`` says plain ``FAILURE`` either
+    way, same as any other suite failure. ``prowjob-analyzer`` reports this
+    case as its own ``TEST_BUG`` status instead of ``FAILURE`` everywhere it
+    surfaces a suite's result (result_categories, CSV/JSON, the markdown
+    "Test Suites" section) -- and ``overall`` must not inherit a failing
+    verdict purely from a TEST_BUG suite either, see
+    :func:`build_result_categories`.
+    """
+    if summary.get('had_junit'):
+        return False
+    patterns = summary.get('detected_patterns') or []
+    return any(p.get('pattern') == 'go_build_failure' for p in patterns)
+
+
+def extract_go_build_failure_detail(text: str, max_chars: int = 1000) -> Optional[str]:
+    """
+    Extract the block from the last header before the first build failure.
+    Falls back to the failure line when there is no preceding header. This
+    returns untrusted log content and must not be included in reports.
+    """
+    if not text:
+        return None
+    fail_line = re.search(r'^FAIL\s+\S+\s+\[build failed\]\s*$', text, re.MULTILINE)
+    if not fail_line:
+        return None
+    headers = list(re.finditer(r'^#[ \t]+\S.*$', text[:fail_line.start()], re.MULTILINE))
+    start = headers[-1].start() if headers else fail_line.start()
+    detail = text[start:fail_line.end()].strip()
+    return detail[:max_chars]
+
+
 def _sum_junit_elapsed_display(reports: List[Dict]) -> Optional[str]:
     """
     Sum each JUnit report's own top-level ``time`` (seconds) across every file
@@ -440,6 +493,8 @@ def summarize_suite(
         'had_junit': False,
         'failing_tests': [],
         'detected_patterns': [],
+        'build_failure_detail': None,
+        'is_test_bug': False,
     }
 
     if not step_exists:
@@ -466,6 +521,8 @@ def summarize_suite(
         base['detected_patterns'] = suite_result['detected_patterns']
         base['no_results'] = suite_result['no_results']
         base['synthetic_no_results'] = suite_result['synthetic_no_results']
+        base['build_failure_detail'] = suite_result.get('build_failure_detail')
+        base['is_test_bug'] = is_test_code_build_failure(base)
 
     return base
 
@@ -552,9 +609,12 @@ def analyze_suite_failure(base_url: str, variant: str, suite_key: str, step_name
     build_log_path = f"artifacts/{variant}/{step_name}/build-log.txt"
     build_log_content = fetch_artifact(base_url, build_log_path)
     detected_patterns: List[Dict] = []
+    build_failure_detail: Optional[str] = None
     if build_log_content:
         build_log_text = build_log_content.decode('utf-8', errors='ignore')
         detected_patterns = check_log_for_patterns(build_log_text, f"{step_name}/build-log.txt")
+        # Do not copy raw compiler output to reports: build logs can contain
+        # credentials or other sensitive data. The artifact link is retained.
 
     # The step failed, wrote no JUnit at all, and nothing recognizable in its
     # log either: a bare "suite errored, no per-test detail available" case
@@ -570,6 +630,7 @@ def analyze_suite_failure(base_url: str, variant: str, suite_key: str, step_name
         'had_junit': had_junit,
         'synthetic_no_results': synthetic_no_results,
         'no_results': no_results,
+        'build_failure_detail': build_failure_detail,
     }
 
 
@@ -795,6 +856,8 @@ def determine_root_cause(
     build_log_text: Optional[str] = None,
     extended_build_log_case_ids: Optional[List[str]] = None,
     oet_build_log_first_test: Optional[str] = None,
+    build_failure_detail: Optional[str] = None,
+    test_code_build_failure: bool = False,
 ) -> Dict:
     """
     Attempt to determine root cause of failure.
@@ -807,6 +870,9 @@ def determine_root_cause(
         extended_build_log_case_ids: C##### IDs parsed from openshift-extended-test/build-log.txt
         oet_build_log_first_test: openshift-extended-test/build-log.txt truncated to the first spec
             (used for kata RPM dependency extraction; avoids cascading repeats)
+        build_failure_detail: Deprecated; raw log content is not reported.
+        test_code_build_failure: The caller confirmed a suite compile failure
+            with no JUnit, and there are no other failures being diagnosed.
 
     Returns:
         Dictionary with root cause analysis
@@ -818,6 +884,11 @@ def determine_root_cause(
         'suggested_actions': [],
     }
 
+    # A build-failure string in an aggregate log or a suite with JUnit does
+    # not establish that the failure being diagnosed is a test-code bug.
+    if not test_code_build_failure:
+        detected_patterns = [p for p in detected_patterns if p.get('pattern') != 'go_build_failure']
+
     # Extract just pattern names for easier checking
     pattern_names = [p['pattern'] for p in detected_patterns]
 
@@ -827,6 +898,25 @@ def determine_root_cause(
             if pattern_info['pattern'] == pattern_name:
                 return pattern_info['source']
         return None
+
+    # Only a caller with suite-level evidence may attribute the failure to
+    # test code. Do not reproduce untrusted compiler output in reports.
+    if 'go_build_failure' in pattern_names:
+        root_cause['primary_pattern'] = 'go_build_failure'
+        root_cause['pattern_source'] = find_pattern_source('go_build_failure')
+        root_cause['confidence'] = 'high'
+        root_cause['likely_cause'] = (
+            "Test code fails to compile (test-infrastructure bug, not a "
+            "product defect); see the suite step's build-log.txt for the "
+            "exact compiler error."
+        )
+        root_cause['suggested_actions'] = [
+            "Fix the compile error in the test suite's own source (missing "
+            "import, undefined symbol, etc.)",
+            'This is not a KataConfig/CAA/Trustee product regression -- do '
+            'not file it as one',
+        ]
+        return root_cause
 
     # Analyze patterns (rpm_install before timeout: logs often contain both Prow/step timeouts
     # and the real Kata RPM failure on workers)
@@ -1083,6 +1173,7 @@ def analyze_failure(
     analyzed_files: List[Dict] = []
     failing_tests: List[Dict] = []
     location_parts: List[str] = []
+    failed_suite_results: List[Dict] = []
 
     # Infra-level patterns (Azure quota, etc.) live in the top-level build-log.txt
     # (ci-operator's own orchestration log) regardless of which case below applies.
@@ -1111,6 +1202,7 @@ def analyze_failure(
             if info['status'] != 'FAILURE':
                 continue
             suite_result = analyze_suite_failure(base_url, variant, suite_key, info['step_name'])
+            failed_suite_results.append(suite_result)
             classification['suites'][suite_key]['analysis'] = suite_result
             # Additive (prowjob-analyzer plan, result-categories): each
             # failing suite also gets its own real root-cause dict, rather
@@ -1125,6 +1217,7 @@ def analyze_failure(
                 suite_result['failing_tests'],
                 suite_result['detected_patterns'],
                 metadata,
+                test_code_build_failure=is_test_code_build_failure(suite_result),
             )
             location_parts.append(info['step_name'])
             failing_tests.extend(suite_result['failing_tests'])
@@ -1157,6 +1250,11 @@ def analyze_failure(
         analysis['detected_patterns'],
         metadata,
         build_log_text,
+        test_code_build_failure=(
+            bool(failed_suite_results)
+            and all(is_test_code_build_failure(result) for result in failed_suite_results)
+            and not classification.get('other_failed_steps')
+        ),
     )
 
     return analysis
@@ -1324,10 +1422,18 @@ def _build_suite_category(
             summary.get('failing_tests') or [],
             summary.get('detected_patterns') or [],
             metadata,
+            test_code_build_failure=is_test_code_build_failure(summary),
         )
         cat['primary_pattern'] = rc.get('primary_pattern') or ''
         cat['confidence'] = rc.get('confidence') or ''
         cat['root_cause'] = rc.get('likely_cause') or ''
+        if is_test_code_build_failure(summary):
+            # The suite's test code failed to compile -- a test-infrastructure
+            # bug, not evidence the product under test is broken. Reported as
+            # its own TEST_BUG status instead of FAILURE (see
+            # is_test_code_build_failure()); failed_steps/root_cause above
+            # still describe exactly what failed and why.
+            cat['status'] = 'TEST_BUG'
 
     return cat
 
@@ -1365,6 +1471,20 @@ def build_result_categories(
     rather than re-fetching; only ``infra``/``overall``/``smoke`` perform any
     *new* fetching here (one ``build-log.txt`` per failed non-suite step),
     and none of that fetching happens at all once infra has already failed.
+
+    A suite category's status can also be ``'TEST_BUG'`` instead of
+    ``'FAILURE'``: the suite's own test code failed to *compile* (see
+    :func:`is_test_code_build_failure`), not a real test assertion failure,
+    so it isn't evidence the product under test is broken. ``overall`` must
+    not inherit a false ``FAILURE`` verdict purely from that case either --
+    a ``TEST_BUG`` suite is treated exactly like a self-skipped suite for
+    ``overall``'s own determination (it doesn't count as a real failure).
+    When every testsuites-chain suite contributing to the job's own
+    ``FAILURE`` state is a ``TEST_BUG`` (and nothing else, e.g. ``smoke`` or
+    a cleanup step, also failed), ``overall`` is recomputed: a JUnit-confirmed
+    passing test gives ``'SUCCESS'``; if all suites are TEST_BUG or skipped,
+    it is ``'skipped'``. Missing or inconclusive suite results give
+    ``'unknown'`` rather than being assumed to be skipped or passed.
 
     This is the single source of truth for "what happened in this job,
     categorized" -- ``lib.report_generator.build_report_data`` stores this
@@ -1411,5 +1531,48 @@ def build_result_categories(
         categories[field] = _build_suite_category(
             metadata, suite_key, step_name, classification, suite_summaries
         )
+
+    # overall must not inherit a FAILURE verdict purely from a TEST_BUG suite
+    # (a test-code compile bug, not a product regression -- see
+    # is_test_code_build_failure()). A TEST_BUG suite is treated exactly like
+    # a self-skipped suite for overall's own determination: it doesn't count
+    # as a real failure. Only when every testsuites-chain suite that
+    # raw-FAILUREd is a test bug, and nothing else (smoke, an unrelated
+    # post-step/cleanup step) also contributed to the job's own FAILURE
+    # state, does this apply -- if anything else genuinely failed, overall
+    # correctly stays FAILURE.
+    if (
+        categories['overall']['status'] == 'FAILURE'
+        and classification.get('failure_kind') == 'best_effort_suite_failure'
+        and not classification.get('other_failed_steps')
+        and categories['smoke']['status'] != 'FAILURE'
+    ):
+        failing_suite_keys = [
+            k for k, info in (classification.get('suites') or {}).items()
+            if info.get('status') == 'FAILURE'
+        ]
+        if failing_suite_keys and all(
+            is_test_code_build_failure((suite_summaries or {}).get(k) or {})
+            for k in failing_suite_keys
+        ):
+            # A successful process is not evidence of a passing test when
+            # JUnit is missing, invalid or contains no passing cases.
+            any_real_pass = any(
+                categories[k.replace('-', '_')]['status'] == 'SUCCESS'
+                and (suite_summaries.get(k) or {}).get('had_junit', False)
+                and (suite_summaries.get(k) or {}).get('passed', 0) > 0
+                for k in TESTSUITES_SUITE_STEPS
+            )
+            all_skipped = all(
+                categories[k.replace('-', '_')]['status'] in ('TEST_BUG', 'skipped')
+                for k in TESTSUITES_SUITE_STEPS
+            )
+            categories['overall']['status'] = (
+                'SUCCESS' if any_real_pass else 'skipped' if all_skipped else 'unknown'
+            )
+            categories['overall']['failed_steps'] = ''
+            categories['overall']['primary_pattern'] = ''
+            categories['overall']['confidence'] = ''
+            categories['overall']['root_cause'] = ''
 
     return categories
