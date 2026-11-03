@@ -131,12 +131,29 @@ def extract_variant_from_job_name(job_name: str) -> Optional[str]:
 # ``artifacts/<variant>/``, and the top-level job result is FAILURE whenever
 # any suite fails even though the others passed independently.
 TESTSUITES_GATE_STEP = 'sandboxed-containers-operator-testsuites-gate'
+# APPEND-ONLY: the prowjob-analyzer CSV/JSON/markdown result-categories
+# design (see the prowjob-analyzer plan) derives one status column + one
+# 5-column detail block per entry here, in this dict's insertion order. Add
+# new suites at the *end* only -- never insert in the middle -- so every
+# existing suite's column position stays stable when a new one is added.
 TESTSUITES_SUITE_STEPS = {
     'osc': 'sandboxed-containers-operator-testsuites-osc',
     'kata-upstream': 'sandboxed-containers-operator-testsuites-kata-upstream',
     'caa': 'sandboxed-containers-operator-testsuites-caa',
 }
 ALL_TESTSUITES_STEPS = [TESTSUITES_GATE_STEP] + list(TESTSUITES_SUITE_STEPS.values())
+
+
+def is_cleanup_step(step_name: str) -> bool:
+    """
+    True for a post-phase step that's known cleanup (gather/deprovision),
+    not "infra" -- e.g. ``sandboxed-containers-operator-gather-must-gather``,
+    ``azure-deprovision-sp-and-custom-role``, ``aws-deprovision-users-and-policies``.
+    Case-insensitive substring match so it covers every provider's naming
+    without hardcoding per-provider step names (see the prowjob-analyzer plan).
+    """
+    name = (step_name or '').lower()
+    return 'gather' in name or 'deprovision' in name
 
 
 _STORAGE_BASE = "https://storage.googleapis.com"
@@ -1044,21 +1061,28 @@ def _step_ended(
     return False
 
 
-def compute_step_elapsed_display(
+def compute_step_elapsed_seconds(
     base_url: str,
     variant: str,
     step_name: str,
     step_finished_json: Optional[Dict] = None,
-) -> str:
+) -> Optional[int]:
     """
-    How long a given step ran, as ``HH:MM``.
+    How long a given step ran, in seconds.
 
-    Generalized from the retired OTP openshift-extended-test step's elapsed-time
-    computation -- now takes the step name as a parameter instead of hardcoding
-    it, so it works for any ``sandboxed-containers-operator-testsuites-*`` step
-    (or any other step).
+    Split out of :func:`compute_step_elapsed_display` (which is now a thin
+    HH:MM-formatting wrapper around this) so callers that need to sum
+    several steps' durations before formatting once -- e.g. the
+    prowjob-analyzer plan's ``infra_time``, which totals every pre-phase/misc
+    step's own elapsed time -- don't have to fetch/parse each step twice.
 
-    ``00:00`` only when the step never started or is still running (no finish artifact/log).
+    Returns:
+        ``None`` when the step never started or is still running (no finish
+        artifact/log yet) -- :func:`compute_step_elapsed_display` shows
+        ``'00:00'`` for this case.
+        ``0`` when the step has ended but no duration signal could be found
+        at all -- :func:`compute_step_elapsed_display` shows ``'unknown'``.
+        A positive int otherwise.
 
     When the step has finished, wall duration is ``finished`` minus ``started`` from
     ``finished.json`` / ``started.json`` when that delta is positive; otherwise **next
@@ -1066,9 +1090,7 @@ def compute_step_elapsed_display(
     when wall-clock is missing or sub-minute.
     """
     if not variant or variant == 'unknown':
-        return ''
-
-    from .parser import format_hours_minutes_test_step_display
+        return None
 
     prefix = f"artifacts/{variant}/{step_name}"
     started = fetch_json_artifact(base_url, f"{prefix}/started.json")
@@ -1100,7 +1122,7 @@ def compute_step_elapsed_display(
     sec_log = _parse_build_log_duration_seconds(build_log_text)
 
     if not_started or running:
-        return '00:00'
+        return None
 
     # Ended: prefer positive finished.json wall delta; else next-step start − this step's start.
     sec_wall: Optional[int] = None
@@ -1112,10 +1134,35 @@ def compute_step_elapsed_display(
         sec_wall = sec_next
 
     secs = _merge_wall_and_log_seconds(sec_wall, sec_log)
+    return secs if secs > 0 else 0
 
+
+def compute_step_elapsed_display(
+    base_url: str,
+    variant: str,
+    step_name: str,
+    step_finished_json: Optional[Dict] = None,
+) -> str:
+    """
+    How long a given step ran, as ``HH:MM``.
+
+    Generalized from the retired OTP openshift-extended-test step's elapsed-time
+    computation -- now takes the step name as a parameter instead of hardcoding
+    it, so it works for any ``sandboxed-containers-operator-testsuites-*`` step
+    (or any other step).
+
+    ``00:00`` only when the step never started or is still running (no finish artifact/log).
+    """
+    if not variant or variant == 'unknown':
+        return ''
+
+    from .parser import format_hours_minutes_test_step_display
+
+    secs = compute_step_elapsed_seconds(base_url, variant, step_name, step_finished_json)
+    if secs is None:
+        return '00:00'
     if secs <= 0:
         return 'unknown'
-
     return format_hours_minutes_test_step_display(secs)
 
 

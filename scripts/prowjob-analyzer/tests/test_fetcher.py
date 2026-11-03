@@ -1,5 +1,6 @@
 """Unit tests for fetcher helpers."""
 
+import json
 import os
 import shutil
 import tarfile
@@ -9,11 +10,14 @@ from unittest.mock import patch
 
 from lib.fetcher import (
     clear_artifact_cache,
+    compute_step_elapsed_display,
+    compute_step_elapsed_seconds,
     configure_artifact_source,
     fetch_artifact,
     gcs_uri_from_public_storage_https,
     get_step_directories,
     go_duration_to_seconds,
+    is_cleanup_step,
     prow_url_to_public_storage_base,
     write_job_artifacts_tarball,
     parse_build_log_duration_fallback,
@@ -315,6 +319,122 @@ class TestArtifactCacheAndLocal(unittest.TestCase):
             self.assertTrue(any(n.endswith('prowjob.json') for n in names))
         finally:
             shutil.rmtree(root, ignore_errors=True)
+
+
+class TestIsCleanupStep(unittest.TestCase):
+    def test_gather_substring(self) -> None:
+        self.assertTrue(is_cleanup_step('gather-must-gather'))
+
+    def test_deprovision_substring(self) -> None:
+        self.assertTrue(is_cleanup_step('azure-deprovision-sp-and-custom-role'))
+
+    def test_case_insensitive(self) -> None:
+        self.assertTrue(is_cleanup_step('GATHER-AZURE-CLI'))
+        self.assertTrue(is_cleanup_step('AWS-DEPROVISION-USERS-AND-POLICIES'))
+
+    def test_provider_prefixed_names(self) -> None:
+        self.assertTrue(is_cleanup_step('aws-deprovision-users-and-policies'))
+        self.assertTrue(is_cleanup_step('sandboxed-containers-operator-gather-must-gather'))
+
+    def test_non_cleanup_step_is_false(self) -> None:
+        self.assertFalse(is_cleanup_step('ipi-conf-azure'))
+        self.assertFalse(is_cleanup_step('sandboxed-containers-operator-install-osc-operator'))
+
+    def test_empty_or_none(self) -> None:
+        self.assertFalse(is_cleanup_step(''))
+        self.assertFalse(is_cleanup_step(None))
+
+
+def _make_step_dir(root, variant, step, started=None, finished=None, build_log=None) -> None:
+    step_dir = os.path.join(root, 'artifacts', variant, step)
+    os.makedirs(step_dir, exist_ok=True)
+    if started is not None:
+        with open(os.path.join(step_dir, 'started.json'), 'w', encoding='utf-8') as f:
+            json.dump(started, f)
+    if finished is not None:
+        with open(os.path.join(step_dir, 'finished.json'), 'w', encoding='utf-8') as f:
+            json.dump(finished, f)
+    if build_log is not None:
+        with open(os.path.join(step_dir, 'build-log.txt'), 'w', encoding='utf-8') as f:
+            f.write(build_log)
+
+
+class TestComputeStepElapsedSeconds(unittest.TestCase):
+    """Extracted from compute_step_elapsed_display (see the prowjob-analyzer plan)."""
+
+    def tearDown(self) -> None:
+        configure_artifact_source(None)
+        clear_artifact_cache()
+
+    def test_not_started_returns_none(self) -> None:
+        root = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(root, 'prowjob.json'), 'w', encoding='utf-8') as f:
+                f.write('{}')
+            configure_artifact_source(root)
+            self.assertIsNone(
+                compute_step_elapsed_seconds('http://x', 'aws-ipi-peerpods', 'some-step')
+            )
+            self.assertEqual(
+                compute_step_elapsed_display('http://x', 'aws-ipi-peerpods', 'some-step'), '00:00'
+            )
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_running_step_returns_none(self) -> None:
+        root = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(root, 'prowjob.json'), 'w', encoding='utf-8') as f:
+                f.write('{}')
+            _make_step_dir(root, 'aws-ipi-peerpods', 'running-step', started={'timestamp': 1000})
+            configure_artifact_source(root)
+            self.assertIsNone(
+                compute_step_elapsed_seconds('http://x', 'aws-ipi-peerpods', 'running-step')
+            )
+            self.assertEqual(
+                compute_step_elapsed_display('http://x', 'aws-ipi-peerpods', 'running-step'), '00:00'
+            )
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_ended_with_wall_clock_delta(self) -> None:
+        root = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(root, 'prowjob.json'), 'w', encoding='utf-8') as f:
+                f.write('{}')
+            _make_step_dir(
+                root, 'aws-ipi-peerpods', 'finished-step',
+                started={'timestamp': 1000}, finished={'timestamp': 1090, 'passed': True},
+            )
+            configure_artifact_source(root)
+            self.assertEqual(
+                compute_step_elapsed_seconds('http://x', 'aws-ipi-peerpods', 'finished-step'), 90
+            )
+            self.assertEqual(
+                compute_step_elapsed_display('http://x', 'aws-ipi-peerpods', 'finished-step'), '00:01'
+            )
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_ended_with_no_duration_signal_returns_zero(self) -> None:
+        root = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(root, 'prowjob.json'), 'w', encoding='utf-8') as f:
+                f.write('{}')
+            _make_step_dir(root, 'aws-ipi-peerpods', 'no-signal-step', finished={'passed': True})
+            configure_artifact_source(root)
+            self.assertEqual(
+                compute_step_elapsed_seconds('http://x', 'aws-ipi-peerpods', 'no-signal-step'), 0
+            )
+            self.assertEqual(
+                compute_step_elapsed_display('http://x', 'aws-ipi-peerpods', 'no-signal-step'), 'unknown'
+            )
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_unknown_variant_returns_none_and_empty_display(self) -> None:
+        self.assertIsNone(compute_step_elapsed_seconds('http://x', 'unknown', 'step'))
+        self.assertEqual(compute_step_elapsed_display('http://x', 'unknown', 'step'), '')
 
 
 if __name__ == "__main__":

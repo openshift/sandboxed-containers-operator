@@ -29,9 +29,15 @@ from lib.fetcher import (
 from lib.parser import (
     parse_prowjob,
     get_job_status,
+    format_hours_minutes,
 )
 from lib.metadata_extractor import extract_metadata
-from lib.failure_analyzer import analyze_failure, classify_testsuites_result, summarize_all_suites
+from lib.failure_analyzer import (
+    analyze_failure,
+    build_result_categories,
+    classify_testsuites_result,
+    summarize_all_suites,
+)
 from lib.report_generator import build_report_data, generate_csv_report, generate_human_report, generate_json_report
 
 # Configure logging
@@ -176,6 +182,23 @@ def analyze_prowjob(
         logger.info(f"Failing tests: {len(failure_analysis.get('failing_tests', []))}")
         logger.info(f"Detected patterns: {failure_analysis.get('detected_patterns')}")
 
+    # Per-category (infra/overall/smoke/osc/kata-upstream/caa) SUCCESS/FAILURE
+    # breakdown (see the prowjob-analyzer plan). Computed unconditionally --
+    # like suite_summaries above, it's useful context even on a passing job,
+    # not just when something failed -- and reuses testsuites_result/
+    # suite_summaries rather than re-fetching.
+    prowjob_ds = int(prowjob_data.get('duration_seconds', 0) or 0)
+    prowjob_elapsed_time = format_hours_minutes(prowjob_ds) if prowjob_ds > 0 else 'unknown'
+    result_categories = build_result_categories(
+        prowjob_data,
+        base_url,
+        metadata,
+        status,
+        prowjob_elapsed_time,
+        testsuites_result,
+        suite_summaries,
+    )
+
     return {
         'prowjob_data': prowjob_data,
         'metadata': metadata,
@@ -186,6 +209,7 @@ def analyze_prowjob(
         'test_elapsed_time': test_elapsed_time,
         'testsuites_result': testsuites_result,
         'suite_summaries': suite_summaries,
+        'result_categories': result_categories,
     }
 
 
@@ -379,6 +403,7 @@ Artifact layout:
         results['base_url'],
         results.get('test_elapsed_time', ''),
         results.get('suite_summaries'),
+        results.get('result_categories'),
     )
     if args.json:
         logger.info("Generating JSON report...")

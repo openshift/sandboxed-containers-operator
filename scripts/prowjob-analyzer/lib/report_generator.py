@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 from .parser import format_hours_minutes
 from .fetcher import get_artifact_url
+from .failure_analyzer import is_self_skipped_suite
 
 logger = logging.getLogger(__name__)
 
@@ -66,13 +67,24 @@ def generate_testsuites_section(suite_summaries: Optional[Dict], failure_kind: O
 
     section = "\n## Test Suites\n\n"
 
-    status_emoji = {'SUCCESS': '✅', 'FAILURE': '❌', None: '❓'}
+    status_emoji = {'SUCCESS': '✅', 'FAILURE': '❌', 'skipped': '⏭️', None: '❓'}
 
     for suite_key in ('gate', 'osc', 'kata-upstream', 'caa'):
         info = suite_summaries.get(suite_key)
         if not info:
             continue
-        emoji = status_emoji.get(info.get('status'), '❓')
+
+        # The gate step never self-skips (it either ran its one job -- touch
+        # the marker -- or didn't run at all), so only osc/kata-upstream/caa
+        # can be self-skipped. A step that exited SUCCESS but produced zero
+        # real tests (disabled, or skipped because the gate marker was
+        # missing) must be shown as skipped, never SUCCESS -- see
+        # is_self_skipped_suite.
+        display_status = info.get('status')
+        if suite_key != 'gate' and display_status == 'SUCCESS' and is_self_skipped_suite(info):
+            display_status = 'skipped'
+
+        emoji = status_emoji.get(display_status, '❓')
         section += f"### {emoji} `{info['step_name']}`\n\n"
 
         if not info.get('step_exists'):
@@ -82,17 +94,17 @@ def generate_testsuites_section(suite_summaries: Optional[Dict], failure_kind: O
         elapsed = info.get('elapsed_time') or 'unknown'
 
         if suite_key == 'gate':
-            section += f"Status: **{info.get('status') or 'unknown'}** — elapsed {elapsed}\n\n"
+            section += f"Status: **{display_status or 'unknown'}** — elapsed {elapsed}\n\n"
             continue
 
         if not info.get('had_junit'):
             section += (
-                f"Status: **{info.get('status') or 'unknown'}** — elapsed {elapsed} — "
+                f"Status: **{display_status or 'unknown'}** — elapsed {elapsed} — "
                 "produced no JUnit XML.\n\n"
             )
         else:
             section += (
-                f"Status: **{info.get('status') or 'unknown'}** — elapsed {elapsed} — "
+                f"Status: **{display_status or 'unknown'}** — elapsed {elapsed} — "
                 f"{info.get('tests', 0)} tests, {info.get('passed', 0)} passed, "
                 f"{info.get('failures', 0)} failed, {info.get('errors', 0)} errors, "
                 f"{info.get('skipped', 0)} skipped\n\n"
@@ -125,6 +137,56 @@ def generate_testsuites_section(suite_summaries: Optional[Dict], failure_kind: O
     if failure_kind in _FAILURE_KIND_LABELS:
         section += f"> {_FAILURE_KIND_LABELS[failure_kind]}\n\n"
 
+    return section
+
+
+_RESULT_CATEGORY_STATUS_EMOJI = {
+    'SUCCESS': '✅',
+    'FAILURE': '❌',
+    'not run': '⬜',
+    # When infra fails, ci-operator skips the test:-phase gate and the
+    # post:-phase testsuites chain never produces a meaningful result
+    # either -- build_result_categories() reports all of those as 'skipped'
+    # rather than each one's own (often nonexistent) finished.json result.
+    'skipped': '⏭️',
+}
+
+
+def generate_result_categories_section(result_categories: Optional[Dict]) -> str:
+    """
+    Fixed-layout, quick-scan dashboard: one line per entry in
+    ``report_data['result_categories']`` (``infra``/``overall``/``smoke``,
+    then every testsuites-chain suite), in that dict's own fixed canonical
+    order, every single time -- including categories that passed or are
+    "not run", not just the failing ones (see the prowjob-analyzer plan,
+    §6.2). A pure rendering of that one dict -- computes nothing of its own
+    and must stay that way (plan §6.1).
+    """
+    if not result_categories:
+        return ""
+
+    section = "\n## Result Categories\n\n"
+
+    for key, cat in result_categories.items():
+        cat_status = cat.get('status') or 'unknown'
+        emoji = _RESULT_CATEGORY_STATUS_EMOJI.get(cat_status, '❓')
+        line = f"- {emoji} **{key}**: {cat_status}"
+        if cat.get('time'):
+            line += f" — elapsed {cat['time']}"
+        section += line + "\n"
+
+        if cat_status == 'FAILURE':
+            if cat.get('failed_steps'):
+                section += f"  - Failed step(s): `{cat['failed_steps']}`\n"
+            if cat.get('root_cause'):
+                section += f"  - Root cause: {cat['root_cause']}\n"
+            if cat.get('primary_pattern'):
+                section += (
+                    f"  - Primary pattern: {cat['primary_pattern']} "
+                    f"(confidence: {cat.get('confidence') or 'unknown'})\n"
+                )
+
+    section += "\n"
     return section
 
 
@@ -255,6 +317,7 @@ def build_report_data(
     base_url: str,
     test_elapsed_time: str = '',
     suite_summaries: Optional[Dict] = None,
+    result_categories: Optional[Dict] = None,
 ) -> Dict:
     """
     Build the canonical report dict (single source of truth).
@@ -392,6 +455,16 @@ def build_report_data(
 
     # Full root_cause dict at top level of canonical report
     report['root_cause'] = (failure_analysis.get('root_cause', {}) if failure_analysis else {})
+
+    # Additive: per-category (infra/overall/smoke/<suite>...) SUCCESS/FAILURE
+    # breakdown (see the prowjob-analyzer plan). This is the single point
+    # result_categories is written into the canonical report -- CSV and the
+    # markdown report both read it back out verbatim rather than
+    # recomputing it (plan §6.1). Stored as-is (already in its fixed
+    # canonical key order from build_result_categories()); existing
+    # 'testsuites'/'failure_analysis'/'root_cause' keys above are untouched.
+    report['result_categories'] = result_categories if result_categories is not None else {}
+
     return report
 
 
@@ -400,23 +473,42 @@ def generate_json_report(report_data: Dict) -> str:
     return json.dumps(report_data, indent=2)
 
 
+# Columns A-I ("cluster state"): unchanged from the original 15-column CSV
+# (see the prowjob-analyzer plan, §1). Everything from column J onward is
+# derived generically from report_data['result_categories'] -- see
+# generate_csv_report().
+_CSV_BASE_HEADER = [
+    'trigger', 'start_time', 'catalog_full_tag', 'catalog_build_date',
+    'provider', 'ocp_version', 'prowjob_url', 'workload_type', 'kata_rpm_version',
+]
+
+
 def generate_csv_report(report_data: Dict, header: bool = True) -> str:
     """
     Generate one row of CSV from the canonical report_data.
-    Columns: trigger, start_time, catalog_full_tag, catalog_build_date, provider,
-    ocp_version, prowjob_url, workload_type, kata_rpm_version, prowjob_status,
-    test_elapsed_time, failed_steps, primary_pattern, confidence, root_cause.
+
+    Columns A-I are the unchanged "cluster state" fields. Columns J onward
+    are a fixed status block (one ``<category>_status`` column per entry in
+    ``report_data['result_categories']``) followed by a fixed detail block
+    (``<category>_time``/``_failed_steps``/``_primary_pattern``/
+    ``_confidence``/``_root_cause``, five columns per category) -- see the
+    prowjob-analyzer plan, §2.
+
+    Reads **only** from ``report_data`` (no analysis/fetch calls of its own,
+    per the plan's §6.1): the per-category column names/order are derived
+    from ``report_data['result_categories']``'s own (fixed, insertion-order)
+    keys, so a future testsuites-chain suite's columns appear automatically,
+    appended at the end, without editing this function (plan §2.1).
     """
     prowjob = report_data['prowjob']
     metadata = report_data['metadata']
-    failure_analysis = report_data.get('failure_analysis') or {}
-    root_cause = report_data.get('root_cause') or {}
+    result_categories = report_data.get('result_categories') or {}
 
     catalog_full_tag = (metadata.get('catalog_full_tag') or '').strip()
     if catalog_full_tag.startswith('sha256:'):
         catalog_full_tag = catalog_full_tag[7:]
 
-    row = [
+    base_row = [
         prowjob.get('trigger', ''),
         prowjob.get('start_time', ''),
         catalog_full_tag,
@@ -426,26 +518,39 @@ def generate_csv_report(report_data: Dict, header: bool = True) -> str:
         prowjob.get('url', ''),
         metadata.get('workload_type', ''),
         metadata.get('kata_rpm_version', ''),
-        (prowjob.get('status') or '').upper(),
-        report_data.get('test_elapsed_time', ''),
-        failure_analysis.get('failure_location', ''),
-        root_cause.get('primary_pattern', ''),
-        root_cause.get('confidence', ''),
-        root_cause.get('likely_cause', ''),
     ]
+
+    category_keys = list(result_categories.keys())
+
+    status_header = [f"{key}_status" for key in category_keys]
+    status_row = [result_categories[key].get('status') or '' for key in category_keys]
+
+    detail_header: List[str] = []
+    detail_row: List[str] = []
+    for key in category_keys:
+        cat = result_categories[key]
+        detail_header.extend([
+            f"{key}_time", f"{key}_failed_steps", f"{key}_primary_pattern",
+            f"{key}_confidence", f"{key}_root_cause",
+        ])
+        failed_steps = cat.get('failed_steps') or ''
+        if isinstance(failed_steps, (list, tuple)):
+            failed_steps = ', '.join(failed_steps)
+        detail_row.extend([
+            cat.get('time') or '',
+            failed_steps,
+            cat.get('primary_pattern') or '',
+            cat.get('confidence') or '',
+            cat.get('root_cause') or '',
+        ])
+
     out = io.StringIO()
     # Single \n line endings; strip any stray leading newlines (avoids a blank first line
     # when appending rows with --no-header or odd csv.writer/CRLF combinations).
     writer = csv.writer(out, lineterminator='\n')
     if header:
-        writer.writerow([
-            'trigger', 'start_time', 'catalog_full_tag', 'catalog_build_date',
-            'provider', 'ocp_version', 'prowjob_url', 'workload_type',
-            'kata_rpm_version', 'prowjob_status', 'test_elapsed_time', 'failed_steps',
-            'primary_pattern',
-            'confidence', 'root_cause',
-        ])
-    writer.writerow(row)
+        writer.writerow(_CSV_BASE_HEADER + status_header + detail_header)
+    writer.writerow(base_row + status_row + detail_row)
     return out.getvalue().lstrip('\r\n')
 
 
@@ -466,6 +571,11 @@ def generate_human_report(report_data: Dict) -> str:
     # Status
     status_emoji = format_status_emoji(status)
     report += f"## Status: {status_emoji} {status.upper()}\n\n"
+
+    # Fixed-layout dashboard (plan §6.2): always every category, same order,
+    # every run -- placed right after Status so it reads like a quick-scan
+    # summary mirroring the CSV, before the narrative sections below.
+    report += generate_result_categories_section(report_data.get('result_categories'))
 
     # Job Overview (job_name, build_id, trigger live in prowjob in canonical report)
     report += "## Job Overview\n\n"
