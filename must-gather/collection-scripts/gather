@@ -39,4 +39,7 @@ done
 # Collect sandboxed-containers details
 /usr/bin/gather_sandboxed_containers_logs
 
+# Collect HCP-specific details (no-op on standalone clusters)
+/usr/bin/gather_hcp
+
 exit 0

@@ -1,0 +1,162 @@
+#!/bin/bash
+
+# Shared error handling and utility functions for must-gather collection scripts.
+# Source this file at the top of each gather_* script:
+#   source /usr/bin/gather_common
+
+BASE_COLLECTION_PATH="/must-gather"
+
+# Error tracking
+ERROR_LOG="${BASE_COLLECTION_PATH}/must-gather-errors.log"
+ERROR_COUNT=0
+
+# Initialize error log (only once — check if already initialized)
+if [[ ! -f "$ERROR_LOG" ]]; then
+    echo "Must-gather error log - $(date)" > "$ERROR_LOG"
+    echo "======================================" >> "$ERROR_LOG"
+    echo "" >> "$ERROR_LOG"
+fi
+
+# Log error helper function
+# Redacts node names, pod names, and IP addresses to avoid exposing internal identifiers
+log_error() {
+    local context="$1"
+    local command="$2"
+    local exit_code="$3"
+    local output="$4"
+
+    ((ERROR_COUNT++))
+
+    # Redact node and pod names from context and command
+    local redacted_context=$(echo "$context" | sed -E 's/(node|pod) [a-zA-Z0-9._-]+/\1 <redacted>/g')
+    local redacted_command=$(echo "$command" | sed -E 's/(node|pod)-[a-zA-Z0-9._-]+/<\1-name>/g')
+
+    # Redact sensitive data from output: hostnames, IP addresses, pod/node names
+    local redacted_output=""
+    if [[ -n "$output" ]]; then
+        redacted_output=$(echo "$output" | \
+            sed -E 's/[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/<ipv4-address>/g' | \
+            sed -E 's/([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}/<ipv6-address>/g' | \
+            sed -E 's/(node|pod)-[a-zA-Z0-9._-]+/<\1-name>/g' | \
+            sed -E 's/\.cluster\.local/<cluster-domain>/g')
+    fi
+
+    {
+        echo "ERROR #${ERROR_COUNT} at $(date)"
+        echo "Context: $redacted_context"
+        echo "Command: $redacted_command"
+        echo "Exit Code: $exit_code"
+        if [[ -n "$redacted_output" ]]; then
+            echo "Output (redacted):"
+            echo "$redacted_output"
+        fi
+        echo "---"
+        echo ""
+    } >> "$ERROR_LOG"
+}
+
+# Wrapper for oc: logs the command with a timestamp, provides a single
+# place to inject additional arguments (e.g. --request-timeout).
+run_oc() {
+    echo "$(date '+%H:%M:%S') oc $*" >&2
+    oc "$@"
+}
+
+# Execute a command with retry logic.
+# Stdout and stderr are kept separate: only stdout is returned on success,
+# so command warnings do not contaminate collected output files.
+exec_with_retry() {
+    local max_retries=3
+    local retry_delay=2
+    local timeout_secs=30
+    local attempt=1
+    local output
+    local exit_code
+    local stderr_file
+    stderr_file=$(mktemp 2>/dev/null || echo "/tmp/exec_retry_stderr_$$")
+
+    while [[ $attempt -le $max_retries ]]; do
+        output=$(timeout "$timeout_secs" "$@" 2>"$stderr_file")
+        exit_code=$?
+
+        if [[ $exit_code -eq 0 ]]; then
+            echo "$output"
+            rm -f "$stderr_file"
+            return 0
+        fi
+
+        if [[ $exit_code -eq 124 ]] && [[ $attempt -lt $max_retries ]]; then
+            echo "Timeout on attempt $attempt, retrying..." >&2
+            sleep "$retry_delay"
+            ((attempt++))
+            ((retry_delay *= 2))
+            continue
+        fi
+
+        if [[ $attempt -lt $max_retries ]]; then
+            sleep "$retry_delay"
+            ((attempt++))
+            continue
+        fi
+
+        # All retries exhausted
+        echo "$output"
+        cat "$stderr_file" >&2
+        rm -f "$stderr_file"
+        return "$exit_code"
+    done
+
+    rm -f "$stderr_file"
+    return "$exit_code"
+}
+
+# Run a command, log errors on failure, write output to a file on success.
+# Usage: collect_resource "context description" "output_file" command [args...]
+collect_resource() {
+    local context="$1"
+    local output_file="$2"
+    shift 2
+
+    local output
+    local exit_code
+    local stderr_file
+    stderr_file=$(mktemp 2>/dev/null || echo "/tmp/collect_resource_stderr_$$")
+
+    output=$(exec_with_retry "$@" 2>"$stderr_file")
+    exit_code=$?
+
+    if [[ $exit_code -ne 0 ]]; then
+        local stderr_content
+        stderr_content=$(<"$stderr_file")
+        log_error "$context" "$*" "$exit_code" "${output}${stderr_content:+$'\n'$stderr_content}"
+        rm -f "$stderr_file"
+        return "$exit_code"
+    fi
+
+    rm -f "$stderr_file"
+    if [[ -n "$output" ]]; then
+        echo "$output" > "$output_file"
+    fi
+    return 0
+}
+
+# Detect HCP topology. Sets CONTROL_PLANE_TOPOLOGY and IS_HCP.
+# On query failure, defaults to IS_HCP=true so HCP diagnostics are still
+# collected rather than silently skipped.
+detect_topology() {
+    if [[ -n "$CONTROL_PLANE_TOPOLOGY" ]]; then
+        return
+    fi
+    local topology
+    if ! topology=$(exec_with_retry run_oc get infrastructure cluster -o jsonpath='{.status.controlPlaneTopology}'); then
+        CONTROL_PLANE_TOPOLOGY=""
+        IS_HCP=true
+        return 0
+    fi
+    CONTROL_PLANE_TOPOLOGY="$topology"
+    if [[ "$CONTROL_PLANE_TOPOLOGY" == "External" ]]; then
+        IS_HCP=true
+    else
+        IS_HCP=false
+    fi
+}
