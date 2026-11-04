@@ -153,8 +153,8 @@ In order to control its execution for select PRs, we can also use the labels:
 - `jq`
 - `tkn` (Tekton CLI) with access to the `ose-osc-tenant` namespace on the build cluster
 
-> **TODO**: at this time, both `gh` and `tkn` rely on the user's credentials.
-> We need to modify the scripts to use a separate GitHub and Konflux service account.
+> **Note**: credentials are injected at runtime via environment variables
+> (`GH_TOKEN`, `KUBECONFIG`). See [Container](#container) for details.
 
 ### Run a full processing pass
 
@@ -180,6 +180,50 @@ actually doing anything.
 ```bash
 watch -n 300 ./watcher.sh
 ```
+
+### Container
+
+#### Build
+
+```bash
+podman build -t process-konflux-prs scripts/process-konflux-prs/
+```
+
+#### Credentials
+
+The container expects credentials via environment variables and mounted files:
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `GH_TOKEN` | Yes | GitHub PAT with write access to all repositories in scope. A classic PAT with `repo` scope works. A fine-grained PAT needs: Pull requests (R/W), Contents (R/W), Checks (R), Issues (R/W) — but requires one token per org since repos span `openshift` and `confidential-devhub`. |
+| `KUBECONFIG` | Yes | Path (inside the container) to a mounted kubeconfig file with access to the `ose-osc-tenant` namespace on the build cluster. |
+| `SLACK_WEBHOOK_URL` | No | Slack incoming webhook URL. When set, a report is posted after each run. |
+
+#### Run
+
+```bash
+# Full processing pass
+podman run --rm \
+  -e GH_TOKEN="$GH_TOKEN" \
+  -e SLACK_WEBHOOK_URL="$SLACK_WEBHOOK_URL" \
+  -v "$HOME/.kube/config:/secrets/kubeconfig:ro,Z" \
+  -e KUBECONFIG=/secrets/kubeconfig \
+  -v ./reports:/reports:Z \
+  process-konflux-prs
+
+# Dry run
+podman run --rm \
+  -e GH_TOKEN="$GH_TOKEN" \
+  -v "$HOME/.kube/config:/secrets/kubeconfig:ro,Z" \
+  -e KUBECONFIG=/secrets/kubeconfig \
+  process-konflux-prs --dry-run
+```
+
+> The `:Z` flag is needed on Fedora/RHEL so that SELinux allows the container
+> to access the mounted paths.
+
+Reports are written to `/reports` inside the container. Mount a volume there
+to persist them.
 
 ### Running individual scripts
 
