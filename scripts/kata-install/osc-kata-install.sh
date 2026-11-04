@@ -249,6 +249,103 @@ install_kata() {
 		fi
 	done
 
+	# The repair above only fires when drop-in files are MISSING. A prior
+	# run can also crash between extracting the drop-ins into /etc and the
+	# restart below (osbuilder failure under set -euo pipefail, load_policy
+	# failure, OOM kill, node drain, even the status-label kubectl call).
+	# The node is then left with the drop-ins on disk while the running
+	# CRI-O never loaded the kata handler, and no file-presence check can
+	# see it: packages are installed, the drop-ins are present, the
+	# SELinux module is loaded, so every later run reports "Installation
+	# complete" without restarting CRI-O. The node stays permanently
+	# broken for kata while every health signal is green -- the node label
+	# already says installed (set before the restart, since the restart
+	# kills this pod) and KataConfig derives COMPLETED from that label --
+	# and every kata pod fails with "failed to find runtime handler kata".
+	#
+	# Detect the stale handler from process state instead of file state:
+	# if the running CRI-O started before the newest kata drop-in landed
+	# in /etc, it cannot have the handler loaded, and only a restart
+	# registers it (a reload/SIGHUP re-reads the config struct but does
+	# not rebuild the OCI handler map; see the restart below).
+	#
+	# Use the inode change time (%Z), not the modification time: the
+	# drop-ins are extracted from the RPMs with tar, which preserves the
+	# archive's mtimes, so a drop-in written to /etc this minute can carry
+	# an mtime weeks old (the RPM build date). Comparing that against a
+	# recently restarted CRI-O would miss the stale handler. ctime
+	# reflects when the file actually landed in /etc and cannot be
+	# restored by tar, so it always postdates the extraction. Note that
+	# the boot time in /proc/stat is integer seconds, so the CRI-O start
+	# time anchored to it can be up to one second early. When both
+	# timestamps fall in the same second their order cannot be
+	# established, and the comparison treats a tie as stale: a false
+	# positive costs one extra CRI-O restart (the next run then sees
+	# CRI-O clearly newer and does not restart again), while a false
+	# negative is the permanent handler-not-live state this check exists
+	# to repair.
+	local crio_started dropin_ctime
+	# Which files to check is derived from the RPM manifests rather than
+	# a hardcoded 50-kata* pattern: the RPMs own the drop-in filenames
+	# and could rename them without knowing about this check, which
+	# would silently stop it from matching. This mirrors the /etc
+	# extraction above, which already trusts rpm -qpl. When no extension
+	# RPMs are available (drop-ins left by an earlier run whose RPMs are
+	# gone from the image), fall back to the 50-kata* glob.
+	local crio_dropins=()
+	for package in $PACKAGES; do
+		rpm_path=$(find /usr/share/rpm-ostree/extensions/ -maxdepth 1 -type f -name "${package}-*.rpm" 2>/dev/null | head -n1)
+		[[ -z "$rpm_path" ]] && continue
+		mapfile -t rpm_crio_files < <(rpm -qpl "$rpm_path" | grep '^/etc/crio/')
+		crio_dropins+=("${rpm_crio_files[@]}")
+	done
+	if [[ ${#crio_dropins[@]} -eq 0 ]]; then
+		# shellcheck disable=SC2016  # glob runs on the host, not in this pod
+		mapfile -t crio_dropins < <(chroot /host bash -c \
+			'ls /etc/crio/crio.conf.d/50-kata* 2>/dev/null')
+	fi
+	# shellcheck disable=SC2016  # expansions run on the host, not in this pod
+	if [[ "$needs_crio_restart" != "true" ]] && [[ ${#crio_dropins[@]} -gt 0 ]] \
+		&& dropin_ctime=$(chroot /host bash -c '
+				for f in "$@"; do stat -c %Z "$f" 2>/dev/null; done | sort -n | tail -1
+			' bash "${crio_dropins[@]}" 2>/dev/null) \
+		&& [[ "$dropin_ctime" =~ ^[0-9]+$ ]]; then
+		# Treat an unknown CRI-O start time as handler-not-live: a restart
+		# then starts CRI-O with the drop-ins loaded. The start time is
+		# unknown when CRI-O is not running, when it vanishes between
+		# pgrep and reading /proc, or when a host tool is missing -- pgrep,
+		# getconf, sed and awk are RHCOS base-image binaries (procps-ng,
+		# glibc-common, coreutils, gawk), the same layer as the systemctl,
+		# rpm and tar used elsewhere in this script; any of them absent
+		# makes the inner script exit 1 and land here, so a missing binary
+		# costs one extra restart rather than a missed repair. The outer
+		# guard already skips the whole check when the drop-in ctime itself
+		# cannot be read, so no unreadable state reaches here.
+		if ! crio_started=$(chroot /host bash -c '
+				p=$(pgrep -x crio | head -1)
+				[ -n "$p" ] || exit 1
+				# Kernel-recorded start time: field 22 of /proc/<pid>/stat
+				# is the process start in clock ticks since boot. Anchor it
+				# to the wall clock with the boot time rather than deriving
+				# now-minus-elapsed, which drifts when the clock steps
+				# (NTP) while CRI-O runs.
+				btime=$(sed -n "s/^btime //p" /proc/stat)
+				hz=$(getconf CLK_TCK)
+				# Strip "pid (comm) " first so a comm containing spaces
+				# cannot shift the field count; starttime is then field 20.
+				start_ticks=$(sed "s^.*)^ ^" /proc/$p/stat | awk "{print \$20}")
+				[ -n "$btime" ] && [ -n "$hz" ] && [ -n "$start_ticks" ] || exit 1
+				echo $(( btime + start_ticks / hz ))
+			' 2>/dev/null) \
+			|| [[ ! "$crio_started" =~ ^[0-9]+$ ]]; then
+			echo "CRI-O not running or start time unknown; kata handler not live"
+			needs_crio_restart=true
+		elif [[ "$dropin_ctime" -ge "$crio_started" ]]; then
+			echo "CRI-O did not start after the kata drop-ins were written; kata handler not live"
+			needs_crio_restart=true
+		fi
+	fi
+
 	# Ensure scriptlets have run (SELinux modules). The posttrans
 	# scriptlet installs the osc_monitor SELinux module; if it is absent,
 	# re-run all scriptlets and reload the policy.
