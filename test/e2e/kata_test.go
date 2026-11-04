@@ -937,7 +937,7 @@ var _ = ginkgo.Describe("[sig-kata] Mixed Cluster", ginkgo.Serial, func() {
 	defer ginkgo.GinkgoRecover()
 
 	var (
-		oc = compat_otp.NewCLI("kata-mixed", compat_otp.KubeConfigPath())
+		oc = NewOC("kata-mixed")
 	)
 
 	testrun := TestRunDescription{
@@ -1146,7 +1146,7 @@ var _ = ginkgo.Describe("[sig-kata] Mixed Cluster", ginkgo.Serial, func() {
 		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create kata pod")
 
 		ginkgo.By("Verifying pod landed on kata-capable node")
-		nodeName, err := compat_otp.GetPodNodeName(oc, pod.namespace, pod.name)
+		nodeName, err := GetPodNodeName(oc, pod.namespace, pod.name)
 		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get pod node name")
 
 		nodeLabels, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
@@ -1172,7 +1172,7 @@ var _ = ginkgo.Describe("[sig-kata] Mixed Cluster", ginkgo.Serial, func() {
 		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create kata-remote pod")
 
 		ginkgo.By("Verifying pod landed on virtual node")
-		nodeName, err := compat_otp.GetPodNodeName(oc, pod.namespace, pod.name)
+		nodeName, err := GetPodNodeName(oc, pod.namespace, pod.name)
 		o.Expect(err).NotTo(o.HaveOccurred(), "failed to get pod node name")
 
 		nodeType, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
