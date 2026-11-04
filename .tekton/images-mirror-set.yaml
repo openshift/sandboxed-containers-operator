@@ -47,6 +47,12 @@ spec:
     - mirrors:
         - quay.io/redhat-user-workloads/ose-osc-tenant/osc-daemonset
       source: registry.redhat.io/openshift-sandboxed-containers/osc-daemonset-rhel9
+    - mirrors:
+        - quay.io/redhat-user-workloads/ose-osc-tenant/osc-console-plugin
+      source: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9
+    - mirrors:
+        - quay.io/redhat-user-workloads/ose-osc-tenant/coco-console-plugin
+      source: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9
 ---
 apiVersion: config.openshift.io/v1
 kind: ImageDigestMirrorSet
@@ -97,3 +103,9 @@ spec:
     - mirrors:
         - quay.io/redhat-user-workloads/ose-osc-tenant/osc-daemonset
       source: registry.redhat.io/openshift-sandboxed-containers/osc-daemonset-rhel9
+    - mirrors:
+        - quay.io/redhat-user-workloads/ose-osc-tenant/osc-console-plugin
+      source: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9
+    - mirrors:
+        - quay.io/redhat-user-workloads/ose-osc-tenant/coco-console-plugin
+      source: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9
