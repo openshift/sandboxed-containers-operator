@@ -109,7 +109,7 @@ spec:
             - name: RELATED_IMAGE_STORAGE_HELPER
               value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:c641f95e7618ee988fc25bf4bd3b8544347adaa014353fd4ef604b4a2ea500ec
             - name: TP_IMAGE_OSC_CONSOLE_PLUGIN
-              value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-console-plugin@sha256:878bb88ea84c68cb9ad336b00c1f5c169c349138fb3b0dc60d254d9d0fa9ddb0
+              value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-console-plugin@sha256:4cef594c3f42a741782b0d95f297ed1e14e1bb8eb7ff5678bf550503097a84f3
             - name: TP_IMAGE_COCO_CONSOLE_PLUGIN
               value: quay.io/redhat-user-workloads/ose-osc-tenant/coco-console-plugin@sha256:b09ab171f4fd8fb2fae9db8c91fdd73685a5141b12191df85c772c8ca37daba6
           imagePullPolicy: Always
