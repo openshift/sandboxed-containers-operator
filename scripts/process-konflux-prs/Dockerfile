@@ -29,8 +29,13 @@ WORKDIR /reports
 
 # GH_TOKEN or GITHUB_TOKEN: GitHub personal access token with write access
 #   to the repositories in scope.
-# KUBECONFIG: path to a mounted kubeconfig file for Tekton pipeline checks.
-#   Mount the file and set e.g. KUBECONFIG=/secrets/kubeconfig.
+#
+# Tekton pipeline checks — use ONE of:
+#   Option A: KUBECONFIG pointing to a mounted kubeconfig file.
+#   Option B: KUBE_TOKEN + KUBE_API_URL (service account token).
+#             Optionally set KUBE_CA_CERT to a mounted CA certificate path;
+#             without it, TLS verification is skipped.
+#
 # SLACK_WEBHOOK_URL (optional): Slack incoming webhook URL for posting reports.
 
 ENTRYPOINT ["/app/process-konflux-prs.sh"]

@@ -196,27 +196,50 @@ The container expects credentials via environment variables and mounted files:
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `GH_TOKEN` | Yes | GitHub PAT with write access to all repositories in scope. A classic PAT with `repo` scope works. A fine-grained PAT needs: Pull requests (R/W), Contents (R/W), Checks (R), Issues (R/W) — but requires one token per org since repos span `openshift` and `confidential-devhub`. |
-| `KUBECONFIG` | Yes | Path (inside the container) to a mounted kubeconfig file with access to the `ose-osc-tenant` namespace on the build cluster. |
+| `KUBE_TOKEN` | Yes (or `KUBECONFIG`) | Service account token for the build cluster. |
+| `KUBE_API_URL` | Yes (or `KUBECONFIG`) | Kubernetes API server URL (e.g. `https://api.cluster:6443`). |
+| `KUBE_CA_CERT` | No | Path (inside the container) to the cluster CA certificate. When omitted, TLS verification is skipped. |
+| `KUBECONFIG` | No | Alternative to `KUBE_TOKEN`/`KUBE_API_URL`: path to a mounted kubeconfig file. |
 | `SLACK_WEBHOOK_URL` | No | Slack incoming webhook URL. When set, a report is posted after each run. |
+
+The service account needs read access to `PipelineRun` resources in the
+`ose-osc-tenant` namespace. A `build-failure-analyzer` service account
+exists for this purpose. To generate the credentials:
+
+```bash
+export KUBE_API_URL=$(oc whoami --show-server)
+export KUBE_TOKEN=$(oc create token build-failure-analyzer -n ose-osc-tenant --duration 24h)
+```
+
+> Creating the token requires admin access on the Konflux instance.
+> The token expires after the specified duration and must be regenerated.
 
 #### Run
 
 ```bash
-# Full processing pass
+# Full processing pass (service account token)
 podman run --rm \
   -e GH_TOKEN="$GH_TOKEN" \
+  -e KUBE_TOKEN="$KUBE_TOKEN" \
+  -e KUBE_API_URL="$KUBE_API_URL" \
   -e SLACK_WEBHOOK_URL="$SLACK_WEBHOOK_URL" \
-  -v "$HOME/.kube/config:/secrets/kubeconfig:ro,Z" \
-  -e KUBECONFIG=/secrets/kubeconfig \
   -v ./reports:/reports:Z \
   process-konflux-prs
 
 # Dry run
 podman run --rm \
   -e GH_TOKEN="$GH_TOKEN" \
+  -e KUBE_TOKEN="$KUBE_TOKEN" \
+  -e KUBE_API_URL="$KUBE_API_URL" \
+  process-konflux-prs --dry-run
+
+# With a kubeconfig file instead of a service account token
+podman run --rm \
+  -e GH_TOKEN="$GH_TOKEN" \
   -v "$HOME/.kube/config:/secrets/kubeconfig:ro,Z" \
   -e KUBECONFIG=/secrets/kubeconfig \
-  process-konflux-prs --dry-run
+  -v ./reports:/reports:Z \
+  process-konflux-prs
 ```
 
 > The `:Z` flag is needed on Fedora/RHEL so that SELinux allows the container
