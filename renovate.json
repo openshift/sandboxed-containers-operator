@@ -5,5 +5,26 @@
     ],
     "gomod": {
         "enabled": false
-    }
+    },
+    "packageRules": [
+        {
+            "description": "Group UBI base image updates, excluding go-toolset which needs its own version filtering",
+            "groupName": "ubi base images",
+            "matchManagers": ["dockerfile"],
+            "matchPackageNames": [
+                "/^registry\\.access\\.redhat\\.com\\/ubi[0-9]+\\//",
+                "/^registry\\.redhat\\.io\\/ubi[0-9]+\\//",
+                "/^registry\\.redhat\\.io\\/rhel[0-9]+\\//"
+            ],
+            "excludePackageNames": [
+                "/go-toolset/"
+            ]
+        },
+        {
+            "description": "Only accept go-toolset tags with full Go version (e.g. 1.26.10-xxx), not bare UBI major version tags (e.g. 9, v9)",
+            "matchManagers": ["dockerfile"],
+            "matchPackageNames": ["/go-toolset/"],
+            "allowedVersions": "/^1\\./"
+        }
+    ]
 }
