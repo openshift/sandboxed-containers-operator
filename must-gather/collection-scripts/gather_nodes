@@ -155,12 +155,16 @@ gather_single_pod() {
     IFS=$' '
     for conf_dir in "${config_dirs[@]}"; do
         if exec_with_retry oc exec "$pod" -n node-gather -- [ -d "/host/$conf_dir" ]; then
-            CNI_COFIG_PATH=${NODE_PATH}/$conf_dir
-            mkdir -p "${CNI_COFIG_PATH}"
-            if ! output=$(exec_with_retry oc cp "$pod:/host/$conf_dir" "${CNI_COFIG_PATH}" -n node-gather 2>&1); then
+            CNI_CONFIG_PATH=${NODE_PATH}/$conf_dir
+            mkdir -p "${CNI_CONFIG_PATH}"
+            # Filter on the node to avoid gathering kubeconfig credentials.
+            if output=$(exec_with_retry bash /usr/bin/gather_cni_config "$pod" "$conf_dir" "${CNI_CONFIG_PATH}" 2>&1); then
+                :
+            else
+                exit_code=$?
                 log_error "Copying CNI config from $conf_dir for node $node" \
-                          "oc cp $pod:/host/$conf_dir ${CNI_COFIG_PATH} -n node-gather" \
-                          "$?" \
+                          "gather_cni_config $pod $conf_dir ${CNI_CONFIG_PATH}" \
+                          "$exit_code" \
                           "$output"
             fi
         fi
