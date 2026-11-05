@@ -217,6 +217,33 @@ delete_image_using_id() {
   echo "GCP image deleted successfully"
 }
 
+# Accept only a static key or Workload Identity Federation; reject any other
+# credential type rather than handing it to gcloud.
+function validate_gcp_cred_file() {
+  local creds_file="$1"
+  local cred_type
+
+  cred_type=$(jq -r 'if type == "object" then (.type // "") else "" end' "${creds_file}" 2>/dev/null) ||
+    error_exit "Failed to parse GCP credentials JSON"
+
+  case "${cred_type}" in
+  service_account | external_account) ;;
+  *)
+    error_exit "Unsupported GCP credential type '${cred_type}': only service_account and external_account are supported"
+    ;;
+  esac
+
+  # For external_account, allow only a file-based credential source: its keys
+  # must be a subset of {file, format}, which rejects url (SSRF), executable
+  # (code-exec) and every other source type, mirroring the cloud-api-adaptor.
+  if [[ "${cred_type}" == "external_account" ]]; then
+    jq -e '(.credential_source.file | type == "string") and
+           (.credential_source | keys - ["file", "format"] | length == 0)' \
+      "${creds_file}" >/dev/null 2>&1 ||
+      error_exit "GCP external_account must use a file credential source (url/executable are not allowed)"
+  fi
+}
+
 function login_to_gcp() {
   echo "Logging in to GCP"
 
@@ -233,6 +260,8 @@ function login_to_gcp() {
     printf '%s' "${GCP_WIF_CREDENTIALS}" | tr '\t' ' ' >${creds_file} ||
       error_exit "Failed to write WIF credentials to ${creds_file}"
 
+    validate_gcp_cred_file "${creds_file}"
+
     # gcloud internalizes the external_account config into its credential store
     # and re-reads only the projected SA token (credential_source.file) on each
     # refresh, so the config file is not needed after login.
@@ -242,6 +271,8 @@ function login_to_gcp() {
     # Traditional static service account key
     echo "Logging in to GCP using static service account credentials"
     echo "${GCP_CREDENTIALS}" >${creds_file}
+
+    validate_gcp_cred_file "${creds_file}"
 
     gcloud auth activate-service-account --key-file=${creds_file} ||
       error_exit "Failed to login to GCP"
