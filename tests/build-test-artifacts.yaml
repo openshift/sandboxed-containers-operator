@@ -111,19 +111,20 @@ spec:
                 exit 0
             fi
 
-            # Resolve source revision from a component built from the
-            # sandboxed-containers-operator repo.  In PR snapshots the
-            # osc-operator-bundle component often carries a stale devel
-            # revision, so we pick the most common revision among the
-            # components that live in this repo — the PR-rebuilt ones
-            # share the PR HEAD commit while stale ones each point to
-            # different devel merge commits.
-            OSC_REPO_COMPONENTS='["osc-operator","osc-operator-bundle","osc-daemonset","osc-must-gather","osc-podvm-builder"]'
-            srcURL=$(jq -r --argjson comps "$OSC_REPO_COMPONENTS" \
-                '[.components[] | select(.name as $n | $comps | index($n)) | .source.git.url // empty] | first' \
+            # Resolve source revision from components built from the
+            # sandboxed-containers-operator repo.  We match by source
+            # git URL rather than component name, so this works on any
+            # branch regardless of naming suffixes (e.g. -v1-14).
+            # In PR snapshots the bundle component often carries a stale
+            # devel revision, so we pick the most common revision among
+            # matching components — the PR-rebuilt ones share the PR HEAD
+            # commit while stale ones each point to different devel merges.
+            OSC_REPO_URL="https://github.com/openshift/sandboxed-containers-operator"
+            srcURL=$(jq -r --arg repo "$OSC_REPO_URL" \
+                '[.components[] | select(.source.git.url // "" | startswith($repo)) | .source.git.url] | first' \
                 <<< "${SNAPSHOT}")
-            srcREV=$(jq -r --argjson comps "$OSC_REPO_COMPONENTS" \
-                '[.components[] | select(.name as $n | $comps | index($n)) | .source.git.revision // empty] |
+            srcREV=$(jq -r --arg repo "$OSC_REPO_URL" \
+                '[.components[] | select(.source.git.url // "" | startswith($repo)) | .source.git.revision // empty] |
                  group_by(.) | sort_by(-length) | .[0][0]' \
                 <<< "${SNAPSHOT}")
             echo "Resolved source: srcREV=${srcREV} (from osc-repo components)"
