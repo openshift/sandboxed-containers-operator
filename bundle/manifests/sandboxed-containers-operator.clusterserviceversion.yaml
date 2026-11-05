@@ -480,7 +480,7 @@ spec:
                 - name: RELATED_IMAGE_STORAGE_HELPER
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:c641f95e7618ee988fc25bf4bd3b8544347adaa014353fd4ef604b4a2ea500ec
                 - name: TP_IMAGE_OSC_CONSOLE_PLUGIN
-                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-console-plugin@sha256:4cef594c3f42a741782b0d95f297ed1e14e1bb8eb7ff5678bf550503097a84f3
+                  value: quay.io/redhat-user-workloads/ose-osc-tenant/osc-console-plugin@sha256:7da59d490b3fe8006b11509deca929f92a6534f721206dc731e9919ff5cb54ca
                 - name: TP_IMAGE_COCO_CONSOLE_PLUGIN
                   value: quay.io/redhat-user-workloads/ose-osc-tenant/coco-console-plugin@sha256:b09ab171f4fd8fb2fae9db8c91fdd73685a5141b12191df85c772c8ca37daba6
                 envFrom:
@@ -634,7 +634,7 @@ spec:
     name: must-gather
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:c641f95e7618ee988fc25bf4bd3b8544347adaa014353fd4ef604b4a2ea500ec
     name: storage-helper
-  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-console-plugin@sha256:4cef594c3f42a741782b0d95f297ed1e14e1bb8eb7ff5678bf550503097a84f3
+  - image: quay.io/redhat-user-workloads/ose-osc-tenant/osc-console-plugin@sha256:7da59d490b3fe8006b11509deca929f92a6534f721206dc731e9919ff5cb54ca
     name: osc-console-plugin
   - image: quay.io/redhat-user-workloads/ose-osc-tenant/coco-console-plugin@sha256:b09ab171f4fd8fb2fae9db8c91fdd73685a5141b12191df85c772c8ca37daba6
     name: coco-console-plugin
