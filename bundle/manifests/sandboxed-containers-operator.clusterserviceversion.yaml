@@ -482,7 +482,7 @@ spec:
                 - name: RELATED_IMAGE_OSC_CONSOLE_PLUGIN
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:878bb88ea84c68cb9ad336b00c1f5c169c349138fb3b0dc60d254d9d0fa9ddb0
                 - name: RELATED_IMAGE_COCO_CONSOLE_PLUGIN
-                  value: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:b09ab171f4fd8fb2fae9db8c91fdd73685a5141b12191df85c772c8ca37daba6
+                  value: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:61a55788b47baf3a819416c36729d3b549fe8c2afa63c9942a0c5cd2d7b432f4
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -640,7 +640,7 @@ spec:
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:878bb88ea84c68cb9ad336b00c1f5c169c349138fb3b0dc60d254d9d0fa9ddb0
 >>>>>>> 7c92695b (fix: update konflux to point to the right console plugins)
     name: osc-console-plugin
-  - image: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:b09ab171f4fd8fb2fae9db8c91fdd73685a5141b12191df85c772c8ca37daba6
+  - image: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:61a55788b47baf3a819416c36729d3b549fe8c2afa63c9942a0c5cd2d7b432f4
     name: coco-console-plugin
   replaces: sandboxed-containers-operator.v1.13.1
   version: 1.14.0
