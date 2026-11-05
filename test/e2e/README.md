@@ -107,3 +107,8 @@ export KUBECONFIG=~/path/to/kubeconfig
 
 Options and environment variables are documented in
 `./run_caa_tests.sh --help`.
+
+## CI
+
+These suites also run in OpenShift CI. See [`docs/CI.md`](../../docs/CI.md)
+for how they're wired in.
