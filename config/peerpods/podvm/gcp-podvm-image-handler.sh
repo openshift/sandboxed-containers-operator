@@ -172,12 +172,14 @@ function create_image_from_prebuilt_artifact() {
   # Project is already selected in login_to_gcp.
 
   echo "Creating the bucket ${GCP_BUCKET_NAME}"
-  if ! gsutil ls -p $GCP_PROJECT_ID | grep "/${GCP_BUCKET_NAME}/" &>/dev/null; then
-    gsutil mb -p ${GCP_PROJECT_ID} -l ${GCP_REGION} gs://${GCP_BUCKET_NAME}/
+  if ! gcloud storage buckets describe "gs://${GCP_BUCKET_NAME}" &>/dev/null; then
+    gcloud storage buckets create "gs://${GCP_BUCKET_NAME}" \
+      --project="${GCP_PROJECT_ID}" --location="${GCP_REGION}" ||
+      error_exit "Failed to create the bucket ${GCP_BUCKET_NAME}"
   fi
 
   echo "Uploading the RAW image to GCS"
-  gsutil cp "/tmp/${IMAGE_NAME}.tar.gz" "gs://${GCP_BUCKET_NAME}/${IMAGE_NAME}.tar.gz" ||
+  gcloud storage cp "/tmp/${IMAGE_NAME}.tar.gz" "gs://${GCP_BUCKET_NAME}/${IMAGE_NAME}.tar.gz" ||
     error_exit "Failed to upload the image to GCS"
 
   RAW_URL="gs://${GCP_BUCKET_NAME}/${IMAGE_NAME}.tar.gz"
@@ -231,12 +233,11 @@ function login_to_gcp() {
     printf '%s' "${GCP_WIF_CREDENTIALS}" | tr '\t' ' ' >${creds_file} ||
       error_exit "Failed to write WIF credentials to ${creds_file}"
 
+    # gcloud internalizes the external_account config into its credential store
+    # and re-reads only the projected SA token (credential_source.file) on each
+    # refresh, so the config file is not needed after login.
     gcloud auth login --cred-file=${creds_file} ||
       error_exit "Failed to login to GCP using Workload Identity Federation"
-
-    # Point the Google SDK / gsutil at the external account credentials. The file
-    # is kept because the credentials are re-read when the token is refreshed.
-    export GOOGLE_APPLICATION_CREDENTIALS=${creds_file}
   else
     # Traditional static service account key
     echo "Logging in to GCP using static service account credentials"
@@ -244,9 +245,11 @@ function login_to_gcp() {
 
     gcloud auth activate-service-account --key-file=${creds_file} ||
       error_exit "Failed to login to GCP"
-
-    rm -Rf ${creds_file}
   fi
+
+  # The credential store now holds the active account, so the file is no longer
+  # needed by gcloud (all storage/compute calls go through gcloud, not ADC).
+  rm -Rf ${creds_file}
 
   # Explicitly select the project. Workload Identity Federation (external_account)
   # credentials carry no project, so without this any subsequent gcloud call that
