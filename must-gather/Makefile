@@ -7,6 +7,9 @@ build: podman-build podman-push
 check:
 	shellcheck collection-scripts/*
 
+test:
+	bash tests/gather_cni_config_test.sh
+
 ensure-must-gather-image-is-set:
 ifndef MUST_GATHER_IMAGE
 	$(error MUST_GATHER_IMAGE is not set.)
@@ -18,4 +21,4 @@ podman-build: ensure-must-gather-image-is-set
 podman-push: ensure-must-gather-image-is-set
 	podman push ${IMAGE_REGISTRY}/${MUST_GATHER_IMAGE}:${IMAGE_TAG}
 
-.PHONY: build podman-build podman-push
+.PHONY: build check test podman-build podman-push

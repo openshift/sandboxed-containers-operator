@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Filter on the node before transferring the archive: kubeconfigs can contain
+# credentials, including the Whereabouts service account token.
+set -o pipefail
+
+pod=$1
+conf_dir=$2
+destination=$3
+
+oc exec "$pod" -n node-gather -- \
+    tar -C "/host/$conf_dir" --ignore-case --exclude='*kubeconfig*' -cf - . | \
+    tar -xf - -C "$destination"
