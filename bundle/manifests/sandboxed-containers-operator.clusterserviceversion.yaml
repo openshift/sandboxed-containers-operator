@@ -482,7 +482,7 @@ spec:
                 - name: RELATED_IMAGE_OSC_CONSOLE_PLUGIN
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:5e5120944bce4033cf4913e440d5a60fb901bb93e62fe968d3de2d4d43d4c1f0
                 - name: RELATED_IMAGE_COCO_CONSOLE_PLUGIN
-                  value: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:61a55788b47baf3a819416c36729d3b549fe8c2afa63c9942a0c5cd2d7b432f4
+                  value: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:2be3271970e711842b6866ccdbe6ee22bd3862044b2a32cf3bb4f029563c09d8
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -636,7 +636,7 @@ spec:
     name: storage-helper
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:5e5120944bce4033cf4913e440d5a60fb901bb93e62fe968d3de2d4d43d4c1f0
     name: osc-console-plugin
-  - image: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:61a55788b47baf3a819416c36729d3b549fe8c2afa63c9942a0c5cd2d7b432f4
+  - image: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:2be3271970e711842b6866ccdbe6ee22bd3862044b2a32cf3bb4f029563c09d8
     name: coco-console-plugin
   replaces: sandboxed-containers-operator.v1.13.1
   version: 1.14.0
