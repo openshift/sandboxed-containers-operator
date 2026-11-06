@@ -476,7 +476,7 @@ spec:
                 - name: RELATED_IMAGE_PODVM_OCI
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:bc3869d116cee14da88d88ee014cf43316e610661158076a635faa82a1ea0b96
                 - name: RELATED_IMAGE_MUST_GATHER
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:cd9c1caf5e24d4fd0c2a86de85e01227c4e777739f7bda04ff95b62821024f0c
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:e6c9868d004a6ebd7ef155a2d71194ae7fb252eb0eb83ef5d4d371b228408ed0
                 - name: RELATED_IMAGE_STORAGE_HELPER
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:c641f95e7618ee988fc25bf4bd3b8544347adaa014353fd4ef604b4a2ea500ec
                 - name: RELATED_IMAGE_OSC_CONSOLE_PLUGIN
@@ -630,7 +630,7 @@ spec:
     name: podvm-payload
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:bc3869d116cee14da88d88ee014cf43316e610661158076a635faa82a1ea0b96
     name: podvm-oci
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:cd9c1caf5e24d4fd0c2a86de85e01227c4e777739f7bda04ff95b62821024f0c
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:e6c9868d004a6ebd7ef155a2d71194ae7fb252eb0eb83ef5d4d371b228408ed0
     name: must-gather
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:c641f95e7618ee988fc25bf4bd3b8544347adaa014353fd4ef604b4a2ea500ec
     name: storage-helper
