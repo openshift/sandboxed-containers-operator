@@ -172,12 +172,14 @@ function create_image_from_prebuilt_artifact() {
   # Project is already selected in login_to_gcp.
 
   echo "Creating the bucket ${GCP_BUCKET_NAME}"
-  if ! gsutil ls -p $GCP_PROJECT_ID | grep "/${GCP_BUCKET_NAME}/" &>/dev/null; then
-    gsutil mb -p ${GCP_PROJECT_ID} -l ${GCP_REGION} gs://${GCP_BUCKET_NAME}/
+  if ! gcloud storage buckets describe "gs://${GCP_BUCKET_NAME}" &>/dev/null; then
+    gcloud storage buckets create "gs://${GCP_BUCKET_NAME}" \
+      --project="${GCP_PROJECT_ID}" --location="${GCP_REGION}" ||
+      error_exit "Failed to create the bucket ${GCP_BUCKET_NAME}"
   fi
 
   echo "Uploading the RAW image to GCS"
-  gsutil cp "/tmp/${IMAGE_NAME}.tar.gz" "gs://${GCP_BUCKET_NAME}/${IMAGE_NAME}.tar.gz" ||
+  gcloud storage cp "/tmp/${IMAGE_NAME}.tar.gz" "gs://${GCP_BUCKET_NAME}/${IMAGE_NAME}.tar.gz" ||
     error_exit "Failed to upload the image to GCS"
 
   RAW_URL="gs://${GCP_BUCKET_NAME}/${IMAGE_NAME}.tar.gz"
@@ -215,6 +217,33 @@ delete_image_using_id() {
   echo "GCP image deleted successfully"
 }
 
+# Accept only a static key or Workload Identity Federation; reject any other
+# credential type rather than handing it to gcloud.
+function validate_gcp_cred_file() {
+  local creds_file="$1"
+  local cred_type
+
+  cred_type=$(jq -r 'if type == "object" then (.type // "") else "" end' "${creds_file}" 2>/dev/null) ||
+    error_exit "Failed to parse GCP credentials JSON"
+
+  case "${cred_type}" in
+  service_account | external_account) ;;
+  *)
+    error_exit "Unsupported GCP credential type '${cred_type}': only service_account and external_account are supported"
+    ;;
+  esac
+
+  # For external_account, allow only a file-based credential source: its keys
+  # must be a subset of {file, format}, which rejects url (SSRF), executable
+  # (code-exec) and every other source type, mirroring the cloud-api-adaptor.
+  if [[ "${cred_type}" == "external_account" ]]; then
+    jq -e '(.credential_source.file | type == "string") and
+           (.credential_source | keys - ["file", "format"] | length == 0)' \
+      "${creds_file}" >/dev/null 2>&1 ||
+      error_exit "GCP external_account must use a file credential source (url/executable are not allowed)"
+  fi
+}
+
 function login_to_gcp() {
   echo "Logging in to GCP"
 
@@ -231,22 +260,27 @@ function login_to_gcp() {
     printf '%s' "${GCP_WIF_CREDENTIALS}" | tr '\t' ' ' >${creds_file} ||
       error_exit "Failed to write WIF credentials to ${creds_file}"
 
+    validate_gcp_cred_file "${creds_file}"
+
+    # gcloud internalizes the external_account config into its credential store
+    # and re-reads only the projected SA token (credential_source.file) on each
+    # refresh, so the config file is not needed after login.
     gcloud auth login --cred-file=${creds_file} ||
       error_exit "Failed to login to GCP using Workload Identity Federation"
-
-    # Point the Google SDK / gsutil at the external account credentials. The file
-    # is kept because the credentials are re-read when the token is refreshed.
-    export GOOGLE_APPLICATION_CREDENTIALS=${creds_file}
   else
     # Traditional static service account key
     echo "Logging in to GCP using static service account credentials"
     echo "${GCP_CREDENTIALS}" >${creds_file}
 
+    validate_gcp_cred_file "${creds_file}"
+
     gcloud auth activate-service-account --key-file=${creds_file} ||
       error_exit "Failed to login to GCP"
-
-    rm -Rf ${creds_file}
   fi
+
+  # The credential store now holds the active account, so the file is no longer
+  # needed by gcloud (all storage/compute calls go through gcloud, not ADC).
+  rm -Rf ${creds_file}
 
   # Explicitly select the project. Workload Identity Federation (external_account)
   # credentials carry no project, so without this any subsequent gcloud call that
