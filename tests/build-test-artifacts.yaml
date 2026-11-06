@@ -118,7 +118,7 @@ spec:
             # components that live in this repo — the PR-rebuilt ones
             # share the PR HEAD commit while stale ones each point to
             # different devel merge commits.
-            OSC_REPO_COMPONENTS='["osc-operator","osc-operator-bundle","osc-daemonset","osc-must-gather","osc-podvm-builder"]'
+            OSC_REPO_COMPONENTS='["osc-operator-v1-14","osc-operator-bundle-v1-14","osc-daemonset-v1-14","osc-must-gather-v1-14","osc-podvm-builder-v1-14"]'
             srcURL=$(jq -r --argjson comps "$OSC_REPO_COMPONENTS" \
                 '[.components[] | select(.name as $n | $comps | index($n)) | .source.git.url // empty] | first' \
                 <<< "${SNAPSHOT}")

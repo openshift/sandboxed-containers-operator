@@ -8,13 +8,13 @@ metadata:
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
-      == "devel" && ( "scripts/kata-install/***".pathChanged() || ".tekton/osc-daemonset-push.yaml".pathChanged()
+      == "osc-release-v1.14" && ( "scripts/kata-install/***".pathChanged() || ".tekton/osc-daemonset-push.yaml".pathChanged()
       || ".tekton/build-pipeline.yaml".pathChanged() )
   labels:
-    appstudio.openshift.io/application: openshift-sandboxed-containers
-    appstudio.openshift.io/component: osc-daemonset
+    appstudio.openshift.io/application: openshift-sandboxed-containers-v1-14
+    appstudio.openshift.io/component: osc-daemonset-v1-14
     pipelines.appstudio.openshift.io/type: build
-  name: osc-daemonset-on-push
+  name: osc-daemonset-v1-14-on-push
   namespace: ose-osc-tenant
 spec:
   params:
@@ -35,7 +35,7 @@ spec:
   pipelineRef:
     name: build-pipeline
   taskRunTemplate:
-    serviceAccountName: build-pipeline-osc-daemonset
+    serviceAccountName: build-pipeline-osc-daemonset-v1-14
   workspaces:
   - name: git-auth
     secret:
