@@ -14,10 +14,8 @@
             "matchPackageNames": [
                 "/^registry\\.access\\.redhat\\.com\\/ubi[0-9]+\\//",
                 "/^registry\\.redhat\\.io\\/ubi[0-9]+\\//",
-                "/^registry\\.redhat\\.io\\/rhel[0-9]+\\//"
-            ],
-            "excludePackageNames": [
-                "/go-toolset/"
+                "/^registry\\.redhat\\.io\\/rhel[0-9]+\\//",
+                "!/go-toolset/"
             ]
         },
         {
