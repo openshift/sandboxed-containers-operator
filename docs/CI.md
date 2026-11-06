@@ -25,11 +25,15 @@ Jobs that run on a regular schedule (daily Mon-Fri or weekly on Sunday).
 | [candidate420-azure-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-azure-ipi-peerpods) | peer pods | Peer Pods | 4.20 | azure | |
 | [candidate420-azure-ipi-coco](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-azure-ipi-coco) | CoCo | Peer Pods | 4.20 | azure | |
 | [candidate420-aws-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-aws-ipi-peerpods) | peer pods | Peer Pods | 4.20 | aws | |
+| [candidate420-aro-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-aro-peerpods) | Peer Pods | Peer Pods | 4.20 | azure | ARO |
+| [candidate420-aro-coco](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-aro-coco) | CoCo | Peer Pods | 4.20 | azure | ARO |
 | [candidate421-azure-ipi-kata](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-kata) | kata | local | 4.21 | azure | |
 | [candidate421-azure-ipi-kata-disconnected](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-kata-disconnected) | kata | local | 4.21 | azure | Disconnected network (proxy+mirror) |
 | [candidate421-azure-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-peerpods) | peer pods | Peer Pods | 4.21 | azure | |
 | [candidate421-azure-ipi-coco](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-coco) | CoCo | Peer Pods | 4.21 | azure | |
 | [candidate421-aws-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-aws-ipi-peerpods) | peer pods | Peer Pods | 4.21 | aws | |
+| [candidate421-aro-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-aro-peerpods) | Peer Pods | Peer Pods | 4.21 | azure | ARO |
+| [candidate421-aro-coco](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-aro-coco) | CoCo | Peer Pods | 4.21 | azure | ARO |
 | [candidate422-azure-ipi-kata](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-kata) | kata | local | 4.22 | azure | |
 | [candidate422-azure-ipi-kata-disconnected](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-kata-disconnected) | kata | local | 4.22 | azure | Disconnected network (proxy+mirror) |
 | [candidate422-azure-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-peerpods) | peer pods | Peer Pods | 4.22 | azure | |
@@ -37,9 +41,16 @@ Jobs that run on a regular schedule (daily Mon-Fri or weekly on Sunday).
 | [candidate422-azure-ipi-coco](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-coco) | CoCo | Peer Pods | 4.22 | azure | |
 | [candidate422-aws-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-aws-ipi-peerpods) | peer pods | Peer Pods | 4.22 | aws | |
 | [candidate422-aws-ipi-peerpods-sts](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-aws-ipi-peerpods-sts) | peer pods | Peer Pods | 4.22 | aws | Configured with Security Token Service (STS). Runs weekly on Sunday |
+| [candidate500-azure-ipi-kata](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate500-azure-ipi-kata) | kata | local | 5.0 | azure | |
+| [candidate500-azure-ipi-kata-disconnected](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate500-azure-ipi-kata-disconnected) | kata | local | 5.0 | azure | Disconnected network (proxy+mirror) |
+| [candidate500-azure-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate500-azure-ipi-peerpods) | peer pods | Peer Pods | 5.0 | azure | |
+| [candidate500-azure-ipi-peerpods-sts](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate500-azure-ipi-peerpods-sts) | peer pods | Peer Pods | 5.0 | azure | Configured with workload identity. Runs weekly on Sunday |
+| [candidate500-azure-ipi-coco](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate500-azure-ipi-coco) | CoCo | Peer Pods | 5.0 | azure | |
+| [candidate500-aws-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate500-aws-ipi-peerpods) | peer pods | Peer Pods | 5.0 | aws | |
+| [candidate500-aws-ipi-peerpods-sts](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate500-aws-ipi-peerpods-sts) | peer pods | Peer Pods | 5.0 | aws | Configured with Security Token Service (STS). Runs weekly on Sunday |
 
 **Configuration:**
-- **Pre-GA testing** (candidate420, candidate421, candidate422):
+- **Pre-GA testing** (candidate420, candidate421, candidate422, candidate500):
   - OSC catalog: `quay.io/redhat-user-workloads/ose-osc-tenant/osc-test-fbc:latest`
   - Catalog source name: `brew-catalog`
   - Trustee catalog (CoCo jobs): `quay.io/redhat-user-workloads/ose-osc-tenant/trustee-test-fbc:latest`
@@ -47,6 +58,7 @@ Jobs that run on a regular schedule (daily Mon-Fri or weekly on Sunday).
     - candidate420: `4.2.0-2.rhaos4.20.el9`
     - candidate421: `4.2.0-2.rhaos4.20.el9`
     - candidate422: `4.2.0-2.rhaos4.22.el9`
+    - candidate500: `4.2.0-2.rhaos5.0.el10`
     - **Note:** Disconnected and STS jobs use `INSTALL_KATA_RPM=false` (version from operator)
 - **Test sources:** Test suites from this repository's `test/e2e` directory (default: `devel` branch)
 - **Test images:** 
