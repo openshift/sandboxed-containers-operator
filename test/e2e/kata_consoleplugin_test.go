@@ -29,6 +29,16 @@ var _ = ginkgo.Describe("[sig-kata] ConsolePlugin", ginkgo.Serial, func() {
 		cp := cp
 
 		ginkgo.It(fmt.Sprintf("C00400-verify %s is deployed and available [Serial]", cp.name), func() {
+			// The operator registers the plugin but never enables it: only an
+			// administrator adds it to Console/cluster spec.plugins, and the
+			// backend Deployment is held at 0 replicas until then. The web
+			// console pre-enables a plugin on install only for operators coming
+			// from the redhat-operators catalog source, so a CI install from a
+			// Subscription leaves the plugin disabled and the availability check
+			// below cannot pass. Unskip once CI enables the plugin as part of
+			// deploying the operator.
+			ginkgo.Skip("console plugin enablement in CI is not handled yet")
+
 			clusterVer, _, _, _ := getClusterVersion(oc)
 			v, err := k8sversion.ParseGeneric(clusterVer)
 			o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("cannot parse cluster version %q", clusterVer))
