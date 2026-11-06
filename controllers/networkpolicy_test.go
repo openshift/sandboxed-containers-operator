@@ -2,12 +2,15 @@ package controllers
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/go-logr/logr"
 	kataconfigurationv1 "github.com/openshift/sandboxed-containers-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -599,6 +602,68 @@ func TestDeleteNetworkPolicies_MixedExistence(t *testing.T) {
 	err := r.deleteNetworkPolicies(context.TODO(), []string{"exists-1", "does-not-exist"})
 	if err != nil {
 		t.Fatalf("deleteNetworkPolicies should handle not-found gracefully, got: %v", err)
+	}
+}
+
+// failingDeleteClient wraps a client and fails Delete for the named objects.
+type failingDeleteClient struct {
+	client.Client
+	failFor map[string]error
+}
+
+func (c *failingDeleteClient) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+	if err, ok := c.failFor[obj.GetName()]; ok {
+		return err
+	}
+	return c.Client.Delete(ctx, obj, opts...)
+}
+
+func TestDeleteNetworkPolicies_ContinuesAfterError(t *testing.T) {
+	t.Parallel()
+
+	r := newTestReconciler(t)
+	spec := defaultDenySpec(map[string]string{"app": "partial-delete"})
+
+	names := []string{"np-a", "np-b", "np-c", "np-d"}
+	for _, name := range names {
+		if err := r.ensureNetworkPolicy(context.TODO(), name, nil, spec); err != nil {
+			t.Fatalf("ensureNetworkPolicy(%q) failed: %v", name, err)
+		}
+	}
+
+	errA := errors.New("webhook denied delete of np-a")
+	errC := errors.New("webhook denied delete of np-c")
+	r.Client = &failingDeleteClient{
+		Client:  r.Client,
+		failFor: map[string]error{"np-a": errA, "np-c": errC},
+	}
+
+	err := r.deleteNetworkPolicies(context.TODO(), names)
+	if err == nil {
+		t.Fatal("expected an error when some deletes fail, got nil")
+	}
+	// Every failure is reported, and the policy name is part of the message.
+	if !errors.Is(err, errA) || !errors.Is(err, errC) {
+		t.Errorf("expected both delete errors to be returned, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), `"np-a"`) || !strings.Contains(err.Error(), `"np-c"`) {
+		t.Errorf("expected the failed policy names in the error, got: %v", err)
+	}
+
+	// The policies that could be deleted are gone, even those listed after a failure.
+	for _, name := range []string{"np-b", "np-d"} {
+		np := &networkingv1.NetworkPolicy{}
+		getErr := r.Client.Get(context.TODO(), types.NamespacedName{
+			Name:      name,
+			Namespace: OperatorNamespace,
+		}, np)
+		if !k8serrors.IsNotFound(getErr) {
+			t.Errorf("expected NetworkPolicy %q to be deleted, Get returned: %v", name, getErr)
+		}
+	}
+	// The ones whose delete failed are still there.
+	for _, name := range []string{"np-a", "np-c"} {
+		fetchNetworkPolicy(t, r.Client, name)
 	}
 }
 

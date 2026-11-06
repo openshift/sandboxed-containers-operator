@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"maps"
 
 	corev1 "k8s.io/api/core/v1"
@@ -55,13 +57,18 @@ func (r *KataConfigOpenShiftReconciler) deleteNetworkPolicy(ctx context.Context,
 	return err
 }
 
+// deleteNetworkPolicies tries to delete every policy in names. A failure on one
+// policy does not stop the others from being deleted, so a persistent error
+// cannot leave the remaining policies of an operand behind. The errors, if any,
+// are returned joined together.
 func (r *KataConfigOpenShiftReconciler) deleteNetworkPolicies(ctx context.Context, names []string) error {
+	var errs []error
 	for _, name := range names {
 		if err := r.deleteNetworkPolicy(ctx, name); err != nil {
-			return err
+			errs = append(errs, fmt.Errorf("delete NetworkPolicy %q: %w", name, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // --- NP spec builders ---
