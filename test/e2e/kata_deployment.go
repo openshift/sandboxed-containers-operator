@@ -135,12 +135,38 @@ func waitForDeployment(oc *CLI, deploy *DeploymentDescription) (int, int, error)
 	}
 
 	if readyReplicas != deploy.replicas {
+		logDeploymentDiagnostics(oc, deploy)
 		return readyReplicas, elapsedSeconds, fmt.Errorf(
 			"deployment %v with %v replicas of %v expected is not ready after %v seconds",
 			deploy.name, readyReplicas, deploy.replicas, maxSeconds)
 	}
 
 	return readyReplicas, elapsedSeconds, nil
+}
+
+// logDeploymentDiagnostics dumps the state of a deployment's pods. The ready
+// replica count alone cannot distinguish a stalled container runtime from a
+// genuine workload failure, and the cluster is usually gone by triage time.
+func logDeploymentDiagnostics(oc *CLI, deploy *DeploymentDescription) {
+	selector := "app=" + deploy.name
+
+	out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"pods", "-l", selector, "-n", deploy.namespace, "-o", "wide",
+	).Output()
+	if err != nil {
+		Logf("failed to list pods for deployment %v: %v", deploy.name, err)
+	} else {
+		Logf("pods for deployment %v:\n%v", deploy.name, out)
+	}
+
+	out, err = oc.AsAdmin().WithoutNamespace().Run("describe").Args(
+		"pods", "-l", selector, "-n", deploy.namespace,
+	).Output()
+	if err != nil {
+		Logf("failed to describe pods for deployment %v: %v", deploy.name, err)
+	} else {
+		Logf("describe pods for deployment %v:\n%v", deploy.name, out)
+	}
 }
 
 func scaleDeployment(oc *CLI, deploy *DeploymentDescription, scaleNumber int) error {
