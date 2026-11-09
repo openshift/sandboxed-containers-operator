@@ -122,13 +122,13 @@ func waitForDeployment(oc *CLI, deploy *DeploymentDescription) (int, int, error)
 		).Output()
 		if err != nil {
 			Logf("failed to get readyReplicas for %v: %v", deploy.name, err)
+		} else if msg == "" {
+			// status.readyReplicas is omitempty: an empty result means 0 ready, not a parse failure.
+			readyReplicas = 0
+		} else if parsed, parseErr := strconv.Atoi(msg); parseErr != nil {
+			Logf("could not parse readyReplicas %q: %v", msg, parseErr)
 		} else {
-			parsed, parseErr := strconv.Atoi(msg)
-			if parseErr != nil {
-				Logf("could not parse readyReplicas %q: %v", msg, parseErr)
-			} else {
-				readyReplicas = parsed
-			}
+			readyReplicas = parsed
 		}
 		elapsedSeconds += intervalSeconds
 		time.Sleep(deploy.pollInterval)
