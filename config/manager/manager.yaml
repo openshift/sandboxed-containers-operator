@@ -107,7 +107,7 @@ spec:
             - name: RELATED_IMAGE_MUST_GATHER
               value: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:cd9c1caf5e24d4fd0c2a86de85e01227c4e777739f7bda04ff95b62821024f0c
             - name: RELATED_IMAGE_STORAGE_HELPER
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:c641f95e7618ee988fc25bf4bd3b8544347adaa014353fd4ef604b4a2ea500ec
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:f619458c1d05f6cd807f8d07ad4d4a214f5bbcfa63225264d8c01f51be39bac2
             - name: RELATED_IMAGE_OSC_CONSOLE_PLUGIN
               value: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:5e5120944bce4033cf4913e440d5a60fb901bb93e62fe968d3de2d4d43d4c1f0
             - name: RELATED_IMAGE_COCO_CONSOLE_PLUGIN
