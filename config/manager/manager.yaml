@@ -103,7 +103,7 @@ spec:
             - name: RELATED_IMAGE_MUST_GATHER
               value: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:29b12d1ae20c432faedb66cf8084c0461e0639b5fa626d8d8ce957b97d6f0c26
             - name: RELATED_IMAGE_STORAGE_HELPER
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:9dee95877a12f4248e13fe37d36f0f075ed3a11cc15b87f7628242870ed28097
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:72f2f438dfee8b5e274f801cf946b2c8bfbd5fbdc3cf6fc41dbcd1caafcb8c71
           imagePullPolicy: Always
           resources:
             limits:
