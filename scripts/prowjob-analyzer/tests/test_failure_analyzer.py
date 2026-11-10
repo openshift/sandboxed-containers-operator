@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from lib.failure_analyzer import (
+    _build_suite_category,
     analyze_steps_failure,
     build_result_categories,
     check_log_for_patterns,
@@ -413,6 +414,98 @@ _ALL_TESTSUITES_CHAIN = [
     'sandboxed-containers-operator-testsuites-kata-upstream',
     'sandboxed-containers-operator-testsuites-caa',
 ]
+
+
+class TestKataUpstreamFailedSteps(unittest.TestCase):
+    step = 'sandboxed-containers-operator-testsuites-kata-upstream'
+
+    def _category(self, tests, suite='kata-upstream', status='FAILURE'):
+        step = f'sandboxed-containers-operator-testsuites-{suite}'
+        classification = {'suites': {suite: {'step_exists': True, 'status': status}}}
+        summary = {suite: {'had_junit': True, 'failing_tests': tests}}
+        return _build_suite_category({}, suite, step, classification, summary)
+
+    def test_filename_and_test_name_in_failed_steps(self):
+        tests = [
+            {'name': 'Check capabilities of pod', 'junit_file': 'junit_kata_upstream_k8s-caps.xml'},
+            {'name': 'ConfigMap for a pod', 'junit_file': 'junit_kata_upstream_k8s-configmap.xml'},
+            {'name': 'ConfigMap propagation', 'junit_file': 'junit_kata_upstream_k8s-configmap.bats.xml'},
+        ]
+        result = self._category(tests)
+        self.assertEqual(
+            result['failed_steps'],
+            f'{self.step} (failed tests: k8s-caps.bats: Check capabilities of pod; '
+            'k8s-configmap.bats: ConfigMap for a pod; '
+            'k8s-configmap.bats: ConfigMap propagation)',
+        )
+        self.assertNotIn('k8s-caps.bats', result['root_cause'])
+
+    def test_missing_unrecognized_and_synthetic_filenames(self):
+        for filename in ('', 'other.xml', 'junit_kata_upstream_skip.xml',
+                         'junit_kata_upstream_.xml', 'junit_kata_upstream_foo/bar.xml'):
+            with self.subTest(filename=filename):
+                result = self._category([{'name': 'Test name', 'junit_file': filename}])
+                self.assertEqual(
+                    result['failed_steps'],
+                    f'{self.step} (failed tests: Test name (BATS filename unavailable))',
+                )
+
+    def test_missing_test_name_is_not_invented(self):
+        result = self._category([{'junit_file': 'junit_kata_upstream_k8s-caps.xml'}])
+        self.assertIn('k8s-caps.bats: <unnamed test>', result['failed_steps'])
+
+    def test_no_results_other_suites_and_pass_are_unchanged(self):
+        self.assertEqual(self._category([])['failed_steps'], self.step)
+        tests = [{'name': 'test', 'junit_file': 'junit_kata_upstream_k8s-caps.xml'}]
+        self.assertEqual(
+            self._category(tests, suite='osc')['failed_steps'],
+            'sandboxed-containers-operator-testsuites-osc',
+        )
+        self.assertEqual(self._category(tests, status='SUCCESS')['failed_steps'], '')
+
+
+class TestCaaFailedSteps(unittest.TestCase):
+    step = 'sandboxed-containers-operator-testsuites-caa'
+
+    def _category(self, tests, status='FAILURE', **summary):
+        classification = {'suites': {'caa': {'step_exists': True, 'status': status}}}
+        suite_summary = {'had_junit': True, 'failing_tests': tests, **summary}
+        return _build_suite_category({}, 'caa', self.step, classification, {'caa': suite_summary})
+
+    def test_go_tests_and_subtests_are_shown(self):
+        tests = [
+            {'name': 'TestCreateSimplePodAzure', 'junit_file': 'junit_caa_azure-full.xml'},
+            {'name': 'TestPodOnSpecificTeeAzure/snp', 'junit_file': 'junit_caa_azure-full.xml'},
+        ]
+        result = self._category(tests)
+        self.assertEqual(
+            result['failed_steps'],
+            f'{self.step} (failed tests: TestCreateSimplePodAzure; TestPodOnSpecificTeeAzure/snp)',
+        )
+        self.assertNotIn('TestCreateSimplePodAzure', result['root_cause'])
+
+    def test_synthetic_cases_and_empty_names_are_not_reported_as_tests(self):
+        tests = [
+            {'name': 'caa', 'junit_file': 'junit_caa_noresults.xml'},
+            {'name': 'caa', 'junit_file': 'junit_caa_skip.xml'},
+            {'name': '', 'junit_file': 'junit_caa_azure-full.xml'},
+            {'name': 'TestCreateSimplePodAzure', 'junit_file': 'junit_caa_azure-full.xml'},
+        ]
+        self.assertEqual(
+            self._category(tests)['failed_steps'],
+            f'{self.step} (failed tests: TestCreateSimplePodAzure)',
+        )
+        self.assertEqual(self._category(tests[:3])['failed_steps'], self.step)
+        self.assertEqual(self._category([])['failed_steps'], self.step)
+
+    def test_pass_and_test_bug_do_not_invent_failed_test_names(self):
+        tests = [{'name': 'TestCreateSimplePodAzure', 'junit_file': 'junit_caa_azure-full.xml'}]
+        self.assertEqual(self._category(tests, status='SUCCESS')['failed_steps'], '')
+        result = self._category([], had_junit=False,
+                                detected_patterns=[{'pattern': 'go_build_failure',
+                                                    'source': 'build-log.txt'}])
+        self.assertEqual(result['status'], 'TEST_BUG')
+        self.assertEqual(result['failed_steps'], self.step)
 
 
 def _write_json(path, data) -> None:

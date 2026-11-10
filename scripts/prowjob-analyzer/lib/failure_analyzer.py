@@ -1391,6 +1391,36 @@ def _build_smoke_category(
     return cat
 
 
+def _kata_upstream_failed_tests(failing_tests: List[Dict]) -> List[str]:
+    """Describe failing BATS cases using the runner's per-file JUnit names."""
+    prefix = 'junit_kata_upstream_'
+    identifiers = []
+    for test in failing_tests:
+        name = (test.get('name') or '').strip() or '<unnamed test>'
+        junit_file = test.get('junit_file') or ''
+        if junit_file.startswith(prefix) and junit_file.endswith('.xml'):
+            stem = junit_file[len(prefix):-len('.xml')]
+            # The step also writes a synthetic skip artifact, not a BATS file.
+            if stem and stem != 'skip' and '/' not in stem and '\\' not in stem:
+                bats_file = stem if stem.endswith('.bats') else f'{stem}.bats'
+                identifiers.append(f'{bats_file}: {name}')
+                continue
+        identifiers.append(f'{name} (BATS filename unavailable)')
+    return identifiers
+
+
+def _caa_failed_tests(failing_tests: List[Dict]) -> List[str]:
+    """Return Go test names, excluding synthetic suite-level JUnit cases."""
+    names = []
+    for test in failing_tests:
+        if test.get('junit_file') in ('junit_caa_noresults.xml', 'junit_caa_skip.xml'):
+            continue
+        name = (test.get('name') or '').strip()
+        if name:
+            names.append(name)
+    return names
+
+
 def _build_suite_category(
     metadata: Dict,
     suite_key: str,
@@ -1418,6 +1448,14 @@ def _build_suite_category(
         cat['status'] = 'skipped'
     elif cat['status'] == 'FAILURE':
         cat['failed_steps'] = step_name
+        if suite_key == 'kata-upstream':
+            failed_tests = _kata_upstream_failed_tests(summary.get('failing_tests') or [])
+        elif suite_key == 'caa':
+            failed_tests = _caa_failed_tests(summary.get('failing_tests') or [])
+        else:
+            failed_tests = []
+        if failed_tests:
+            cat['failed_steps'] += f" (failed tests: {'; '.join(failed_tests)})"
         rc = determine_root_cause(
             summary.get('failing_tests') or [],
             summary.get('detected_patterns') or [],
