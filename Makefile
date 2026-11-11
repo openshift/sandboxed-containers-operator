@@ -38,7 +38,9 @@ IMAGE_TAG_BASE ?= quay.io/openshift_sandboxed_containers/openshift-sandboxed-con
 BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
 
 # BUNDLE_GEN_FLAGS are the flags passed to the operator-sdk generate bundle command
-BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+# --overwrite=false keeps the hand-maintained bundle.Dockerfile (Red Hat labels)
+# and bundle/metadata/ untouched; only bundle/manifests/ is regenerated.
+BUNDLE_GEN_FLAGS ?= -q --overwrite=false --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 
 # The image tag for the FBC catalog (e.g. make fbc-catalog-build FBC_CATALOG_IMG=example.com/operator-fbc:v0.1.0).
 FBC_CATALOG_IMG ?= $(IMAGE_TAG_BASE)-fbc-catalog:v$(VERSION)
@@ -288,9 +290,11 @@ endif
 
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
-	$(OPERATOR_SDK) generate kustomize manifests -q
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
+	tmp_dir=$$(mktemp -d .bundle-overlay.XXXXXX); \
+	trap 'rm -rf "$$tmp_dir"' EXIT; \
+	$(OPERATOR_SDK) generate kustomize manifests -q; \
+	printf 'resources:\n- ../config/manifests\npatches:\n- target:\n    kind: Deployment\n    name: controller-manager\n  patch: |-\n    apiVersion: apps/v1\n    kind: Deployment\n    metadata:\n      name: controller-manager\n    spec:\n      template:\n        spec:\n          containers:\n          - name: manager\n            image: %s\n' "$(IMG)" > $$tmp_dir/kustomization.yaml; \
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone $$tmp_dir | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
 	$(OPERATOR_SDK) bundle validate ./bundle
 
 .PHONY: bundle-build
