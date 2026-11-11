@@ -78,6 +78,43 @@ Jobs that run on a regular schedule (daily Mon-Fri or weekly on Sunday).
 - `sandboxed-containers-operator-e2e-aws-sts`: AWS with Security Token Service
 - `sandboxed-containers-operator-e2e-azure-isolation-restricted-proxy-mirror`: Disconnected with proxy and mirror registry
 
+### Job architecture
+
+Jobs execute in three phases:
+
+1. **`pre:`** — Provision OCP cluster, install OSC operator, install Kata RPM (when `INSTALL_KATA_RPM=true`), install Trustee (CoCo jobs), record metadata
+2. **`test:`** — Run sanity check (one pod must start/run/delete; CoCo also verifies Trustee attestation), create gate marker file
+3. **`post:`** — Execute test suites (OSC, kata-upstream, CAA), collect must-gather, deprovision cluster
+
+Test suites run as `best_effort: true` steps — a failing suite doesn't block siblings, but the job still reports `FAILURE` if any suite fails.
+
+**Detailed flow:** https://gitlab.cee.redhat.com/osc/osc-LLM-wiki/-/blob/main/wiki/concepts/ci-testing-flow.md
+
+### Analyzing job results
+
+**Artifacts location:** `https://storage.googleapis.com/test-platform-results-public/logs/<job-name>/<build-id>/`
+
+Each step writes to `artifacts/<job-name>/<step-name>/`:
+- `build-log.txt` — Step execution logs
+- `junit_*.xml` — Test results (when applicable)
+- `finished.json` — Step result (`SUCCESS`, `FAILURE`, `SKIPPED`)
+
+**Recommended:** Use the `prowjob-analyze` Claude skill to parse job results, extract metadata, and identify failures:
+```
+/prowjob-analyze <job-url>
+```
+
+The skill handles Prow-specific quirks (self-skipped suites, test-code build failures, gate semantics) and produces structured reports with per-suite status, failure categories, and artifact links.
+
+**Tooling:** [`scripts/prowjob-analyzer/`](../scripts/prowjob-analyzer/) — Python CLI version of the analysis logic
+
+**Analysis guide:** https://gitlab.cee.redhat.com/osc/osc-LLM-wiki/-/blob/main/wiki/concepts/osc-job-result-analysis.md
+
+### Additional resources
+
+- **Job history:** https://prow.ci.openshift.org/?repo=openshift%2Fsandboxed-containers-operator&type=periodic
+- **Slack notifications:** `#kata-ocp-ci-reports`
+
 ## Bare-metal jobs (Jenkins)
 
 The bare-metal CI runs on dedicated physical hardware with TDX and SNP TEE support, managed through Jenkins.
