@@ -172,6 +172,70 @@ These jobs run weekly on dedicated bare-metal machines, testing both TDX and SNP
 - Test suites: `k8s-gpu` (non-CoCo), `k8s-cc-gpu` (CoCo + GPU)
 - Enabled via: `ENABLE_GPU=true` parameter and selecting virtlab2410
 
+### Job architecture
+
+Jobs execute in sequential phases (controlled via `SKIP` parameter):
+
+1. **Provision** — Install OCP cluster (SNO) on bare-metal hardware via jetlag (~45 min)
+2. **Install** — Install TEE support, OSC operator, Trustee, KataConfig
+3. **Profile** — Configure network profile (default/disconnected/restricted)
+4. **Test** — Run CoCo smoke tests and kata-containers integration tests (`k8s-all` suite)
+5. **Reservation** — Hold machine for debugging (on failure) or release immediately (on success)
+
+Provisioning locks the bastion — other jobs queue until completion. Full run takes ~1.5h.
+
+**Detailed documentation:** https://gitlab.cee.redhat.com/ldoktor/kata-bm/-/blob/main/README.md
+
+### Analyzing job results
+
+**Artifacts location:** Jenkins job artifacts (downloadable from job page)
+
+**Console output patterns:**
+- **Success:** `Release machine or Abort` with network profile active
+- **Warning:** `:warning:` markers — machine usable but review warnings
+- **Failure:** `:error:` markers + `FAILED: Machine ... is reserved for user (debugging)`
+
+Search console for `:error:` and `:warning:` to identify specific issues.
+
+**Bastion access:** After provisioning, SSH to bastion shows login banner with versions and cluster info. Scripts available in `~/.local/bin/`:
+- `osc_versions.sh` — Show installed component versions
+- `osc_simple_test.sh` — Quick CoCo/GPU smoke test
+- `kata-bm-test-runner.sh` — Run kata-containers integration tests
+
+### Manual job triggering
+
+Access Jenkins (requires `rh-kata-dev` rover group) to run jobs manually:
+
+**Reserve machine for debugging:**
+```
+Job: kata-bm-reserve
+Parameters: Set SSH_PUBLIC_KEY (your ~/.ssh/id_rsa.pub content)
+```
+
+**Run tests without reprovisioning:**
+```
+SKIP=provision tee osc attestation trustee kataconfig verification reservation reservation_on_error reservation_on_test_fail
+```
+
+**SSH access only:**
+```
+SKIP=all
+```
+
+**Common parameters:**
+- `SSH_PUBLIC_KEY` — Your public SSH key (required for bastion access)
+- `TEE_TYPE` — `tdx`, `snp`, or `none`
+- `OCP_VERSION` — Target OCP version
+- `SKIP` — Space-separated phase tokens to skip
+
+**Machine availability:** https://jenkins-csb-rhelvirt-kvmqe.dno.corp.redhat.com/lockable-resources/
+
+### Additional resources
+
+- **Job views by OSC version:** https://jenkins-csb-rhelvirt-kvmqe.dno.corp.redhat.com/view/kata-bm-osc-1.14.0/
+- **Machine reservation:** https://jenkins-csb-rhelvirt-kvmqe.dno.corp.redhat.com/job/kata-bm-reserve/
+- **Pipeline source:** https://gitlab.cee.redhat.com/ldoktor/kata-bm
+
 ## Test suites
 
 ### OpenShift CI (Prow) test suites
