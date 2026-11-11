@@ -123,6 +123,28 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+.PHONY: verify
+verify: verify-fmt vet verify-scripts verify-deps ## Run all verification checks.
+
+.PHONY: verify-fmt
+verify-fmt: ## Verify Go source is gofmt-formatted.
+	@files="$$(gofmt -l $$(go list -f '{{.Dir}}' ./...))"; \
+	if [ -n "$$files" ]; then \
+		echo "ERROR: the following files are not gofmt-formatted (run 'make fmt'):"; \
+		echo "$$files"; \
+		exit 1; \
+	fi
+
+.PHONY: verify-scripts
+verify-scripts: ## Run script-based verification checks.
+	hack/verify-deepcopy.sh
+	hack/verify-bundle.sh
+
+.PHONY: verify-deps
+verify-deps: ## Verify Go module dependencies are correct.
+	hack/verify-deps.sh
+
+
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
