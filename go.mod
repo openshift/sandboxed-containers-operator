@@ -22,6 +22,7 @@ require (
 	k8s.io/apimachinery v0.35.2
 	k8s.io/cli-runtime v0.35.2
 	k8s.io/client-go v0.35.2
+	k8s.io/utils v0.0.0-20260507154919-ff6756f316d2
 	sigs.k8s.io/controller-runtime v0.23.3
 )
 
@@ -253,7 +254,6 @@ require (
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
 	k8s.io/kubectl v0.35.2 // indirect
-	k8s.io/utils v0.0.0-20260507154919-ff6756f316d2 // indirect
 	libvirt.org/go/libvirt v1.12007.0 // indirect
 	libvirt.org/go/libvirtxml v1.12007.0 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.2 // indirect
