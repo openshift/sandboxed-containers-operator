@@ -381,6 +381,20 @@ couldn't be determined), as distinct from `skipped` below; detail cells are
 blank unless the category is `FAILURE` or `TEST_BUG` (`<category>_time` is
 the one exception -- populated whenever the step ran, pass or fail).
 
+For a failed `kata-upstream` suite, `kata_upstream_failed_steps` retains the
+step name and appends each failing BATS case as `<file>.bats: <test name>`.
+The filename is derived from the per-file `junit_kata_upstream_<file>.xml`
+artifact; if it cannot be determined, the test name is shown with a filename
+unavailable marker. The corresponding JSON field is
+`result_categories.kata_upstream.failed_steps`. No BATS case identifier is
+invented when the suite fails without JUnit results.
+
+For a failed `caa` suite, `caa_failed_steps` and the corresponding JSON field
+`result_categories.caa.failed_steps` retain the step name and append failed
+Go test names, including subtest paths. The synthetic
+`junit_caa_noresults.xml` failure is not a real test and does not add a test
+name to this field.
+
 **When `infra_status` is `FAILURE`, every other category's status is
 `skipped`** (`overall`, `smoke`, and every suite) rather than each one's own
 independent result: ci-operator skips the test:-phase gate step whenever the
