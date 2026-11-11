@@ -103,8 +103,8 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		}
 
 		err := createKataPodFromDescription(oc, pod)
-		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create pod with initContainer")
 		defer deleteKataResource(oc, "pod", pod.namespace, pod.name)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create pod with initContainer")
 
 		ginkgo.By("Verify initContainer completed successfully")
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -254,8 +254,8 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		ginkgo.By("Create deployment with kata runtime")
 		deploy := NewDeploymentDescription(&testrun, "dep-100-"+getRandomString(), 3)
 		err := createKataDeploymentFromDescription(oc, deploy)
-		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create expose-service deployment")
 		defer deleteKataResource(oc, "deploy", deploy.namespace, deploy.name)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create expose-service deployment")
 
 		ginkgo.By("Expose deployment and its service")
 		defer deleteRouteAndService(oc, deploy.name, deploy.namespace)
@@ -296,8 +296,8 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		ginkgo.By("Create deployment with kata runtime")
 		deploy := NewDeploymentDescription(&testrun, "dep-122-"+getRandomString(), initReplicas)
 		err := createKataDeploymentFromDescription(oc, deploy)
-		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create scale-up deployment")
 		defer deleteKataResource(oc, "deploy", deploy.namespace, deploy.name)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create scale-up deployment")
 
 		if !kataconfig.enablePeerPods {
 			ginkgo.By("Verifying actual number of VM instances")
@@ -340,8 +340,8 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		ginkgo.By("Create deployment with kata runtime")
 		deploy := NewDeploymentDescription(&testrun, "dep-123-"+getRandomString(), initReplicas)
 		err := createKataDeploymentFromDescription(oc, deploy)
-		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create scale-down deployment")
 		defer deleteKataResource(oc, "deploy", deploy.namespace, deploy.name)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create scale-down deployment")
 
 		if !kataconfig.enablePeerPods {
 			ginkgo.By("Verifying actual number of VM instances")
@@ -390,8 +390,8 @@ var _ = ginkgo.Describe("[sig-kata] Kata", ginkgo.Serial, func() {
 		}
 
 		err := createKataDeploymentFromDescription(oc, deploy)
-		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("%v", err))
 		defer deleteKataResource(oc, "deploy", deploy.namespace, deploy.name)
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("%v", err))
 
 		ginkgo.By("Getting pod name from deployment")
 		podName, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
