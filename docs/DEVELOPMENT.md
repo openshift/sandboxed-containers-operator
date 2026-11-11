@@ -49,6 +49,66 @@ make bundle-build
 make bundle-push
 ```
 
+## Regenerating generated files
+
+### Bundle manifests
+
+`make bundle` regenerates `bundle/manifests/` from `config/`. It leaves the
+hand-crafted `bundle.Dockerfile` and `bundle/metadata/` untouched
+(operator-sdk runs with `--overwrite=false`).
+
+Run it whenever anything under `config/` changes: API fields, CRDs, RBAC,
+webhooks or the manager deployment. The bundle CRD and CSV RBAC rules are
+what OLM installs, so regenerating from a stale `config/` ships an outdated
+schema and permissions. Commit the regenerated files with the `config/`
+change.
+
+The operator image written into the CSV comes from `IMG`, which defaults to the
+development image (`$(IMAGE_TAG_BASE):v$(VERSION)`). If you only want to sync
+the manifests with `config/`, pin it to the image already in the bundle:
+
+```
+make bundle IMG="$(yq '.spec.install.spec.deployments[0].spec.template.spec.containers[]
+    | select(.name == "manager").image' \
+    bundle/manifests/sandboxed-containers-operator.clusterserviceversion.yaml)"
+```
+
+operator-sdk stamps `spec.createdAt` in the CSV with the current time, so every
+run produces a diff in that line. `hack/verify-bundle.sh` restores the
+committed value after regenerating, so verification only reports real drift.
+
+### CRDs, RBAC and deepcopy
+
+- `make manifests` regenerates the CRDs in `config/crd/bases` and the RBAC and
+  webhook manifests in `config/rbac` and `config/webhook`.
+- `make generate` regenerates the `zz_generated.deepcopy.go` files.
+- `go mod tidy` (root module) and `go mod tidy -C ./test/e2e` regenerate
+  `go.mod` and `go.sum`.
+
+## Verifying generated files
+
+CI runs the same checks a developer should run before pushing: regenerate the
+files and fail if the committed versions do not match.
+
+```
+make verify
+```
+
+`make verify` requires a clean working tree, because the checks regenerate
+files in place. Pre-existing untracked files are ignored; the checks fail if
+regeneration changes a tracked file or creates a new one. The individual
+checks can also be run directly:
+
+- `make verify-fmt` - checks that the Go sources are gofmt-formatted, without
+  rewriting them.
+- `hack/verify-deepcopy.sh` - runs `make generate`.
+- `hack/verify-bundle.sh` - runs `make bundle` with `IMG` pinned to the image
+  already in the CSV and ignores the `createdAt` restamp.
+- `hack/verify-deps.sh` - runs `go mod tidy` for the root and `test/e2e`
+  modules.
+
+If a check reports a diff, review it with `git diff` and commit the regenerated
+files.
 
 ## Building Catalog image
 ```
@@ -116,22 +176,20 @@ field with `  ## OSC_VERSION`, e.g.
 image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.14.0  ## OSC_VERSION
 ```
 
-Do the same when adding new `RELATED_IMAGE` entries in the environment of the controller
-in `config/manager/manager.yaml`, e.g.
-
-```
-            - name: RELATED_IMAGE_KATA_MONITOR
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9:1.14.0  ## OSC_VERSION
-```
+`RELATED_IMAGE_*` entries in the environment of the controller in
+`config/manager/manager.yaml` are pinned by image digest and refreshed by
+dependency automation, so they do not carry the marker.
 
 This is a best effort to track locations where OSC version bumps should happen.
 
 ### Updating versions
 
 When starting a new version, several locations should be updated with the new version number :
-- all the locations tagged with `  ## OSC_VERSION`
+- all the locations tagged with `  ## OSC_VERSION`; generated files under
+  `bundle/` are not tagged, they pick up the version when `make bundle` runs
+- the `metadata.name` and `spec.version` fields, and the `olm.skipRange`
+  annotation, in `config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml`
 - version labels in `Dockerfile`,  `config/peerpods/podvm/Dockerfile.podvm-builder` and `must-gather/Dockerfile`
-- the `olm.skipRange` annotation in `config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml`
 
 The `spec.replaces` field in `config/manifests/bases/sandboxed-containers-operator.clusterserviceversion.yaml` should
 be updated with the number of the latest officialy released version.
