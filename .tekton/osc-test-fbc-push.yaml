@@ -205,6 +205,7 @@ spec:
         - $(params.build-args[*])
         - "GIT_URL=$(params.git-url)"
         - "GIT_REVISION=$(params.revision)"
+        - "BRANCH_BUILD_SUFFIX=-v1-14"
       - name: SOURCE_ARTIFACT
         value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
       - name: IMAGE_APPEND_PLATFORM
