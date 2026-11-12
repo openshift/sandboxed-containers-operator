@@ -26,6 +26,7 @@ metadata:
     features.operators.openshift.io/token-auth-gcp: "true"
     olm.skipRange: '>=1.1.0 <1.14.0'
     operatorframework.io/suggested-namespace: openshift-sandboxed-containers-operator
+    operators.openshift.io/must-gather-image: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:c27ab47abded7f151ae13d9358c6e8ff24ac4fe5adc97f4a662df13b3bf6210a
     operators.openshift.io/valid-subscription: '["OpenShift Container Platform", "OpenShift
       Platform Plus"]'
     operators.operatorframework.io/builder: operator-sdk-v1.20.1+git
