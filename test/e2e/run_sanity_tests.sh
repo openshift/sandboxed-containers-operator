@@ -80,11 +80,11 @@ done
 case "$WORKLOAD" in
     kata)
         RUNTIME_CLASS="${RUNTIME_CLASS:-kata}"
-        TIMEOUT="${TIMEOUT:-180}"
+        TIMEOUT="${TIMEOUT:-60}"
         ;;
     peer-pods)
         RUNTIME_CLASS="${RUNTIME_CLASS:-kata-remote}"
-        TIMEOUT="${TIMEOUT:-420}"
+        TIMEOUT="${TIMEOUT:-240}"
         ;;
     coco)
         # Both the peer pods and the bare-metal flavour are legitimate, so
@@ -93,7 +93,7 @@ case "$WORKLOAD" in
             echo "ERROR: --runtime_class is required for the coco workload" >&2
             usage
         fi
-        TIMEOUT="${TIMEOUT:-600}"
+        TIMEOUT="${TIMEOUT:-480}"
         ;;
     *)
         echo "Unknown workload: $WORKLOAD"
