@@ -37,12 +37,11 @@ var (
 		"kata_failed_remote_pods",
 		"Total number of kata-remote pods that are not Running or Succeeded.", nil, nil)
 	// setup_type:      baremetal | peerpods | confidential_baremetal | confidential_peerpods
-	// cloud_provider:  aws | azure | gcp | libvirt | ibmcloud | unknown
 	// tee_type:        tdx | snp | se | none (no TEE-capable nodes detected)
 	descSetupInfo = prometheus.NewDesc(
 		"osc_setup_info",
-		"Info-style metric indicating the setup type, cloud provider, and TEE silicon when a KataConfig exists.",
-		[]string{"setup_type", "cloud_provider", "tee_type"}, nil)
+		"Info-style metric indicating the setup type and TEE silicon when a KataConfig exists.",
+		[]string{"setup_type", "tee_type"}, nil)
 	descKataPods = prometheus.NewDesc(
 		"osc_kata_pods",
 		"Number of pods using each kata RuntimeClass.",
@@ -129,9 +128,8 @@ func (c *OscMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 
 		setupType := c.computeSetupType(ctx, &kc)
-		cloudProvider := c.computeCloudProvider(ctx)
 		teeType := c.computeTEEType(ctx)
-		ch <- prometheus.MustNewConstMetric(descSetupInfo, prometheus.GaugeValue, 1.0, setupType, cloudProvider, teeType)
+		ch <- prometheus.MustNewConstMetric(descSetupInfo, prometheus.GaugeValue, 1.0, setupType, teeType)
 
 		for _, rcName := range kataRuntimeClasses {
 			if rcName == kataRemoteRuntimeClass {
@@ -177,22 +175,6 @@ func (c *OscMetricsCollector) computeSetupType(ctx context.Context, kc *kataconf
 		return "confidential_baremetal"
 	default:
 		return "baremetal"
-	}
-}
-
-// computeCloudProvider returns a known provider label for telemetry.
-// The allowlist bounds label cardinality; unsupported platforms are bucketed as "unknown".
-func (c *OscMetricsCollector) computeCloudProvider(ctx context.Context) string {
-	provider, err := getCloudProviderFromInfraWithContext(ctx, c.client)
-	if err != nil {
-		oscMetricsLog.Error(err, "failed to get cloud provider")
-		return "unknown"
-	}
-	switch provider {
-	case "aws", "azure", "gcp", LibvirtProvider, IBMCloudProvider:
-		return provider
-	default:
-		return "unknown"
 	}
 }
 
