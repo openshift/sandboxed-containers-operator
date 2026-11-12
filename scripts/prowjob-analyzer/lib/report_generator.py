@@ -609,9 +609,8 @@ def generate_human_report(report_data: Dict) -> str:
     if prowjob.get('release_stage'):
         report += f"- **Release Stage**: {prowjob['release_stage']}\n"
 
-    start_time = prowjob.get('start_time', '')
-    if start_time:
-        report += f"- **Started**: {start_time}\n"
+    start_time = prowjob.get('start_time') or 'unknown'
+    report += f"- **Started**: {start_time}\n"
 
     report += f"- **URL**: {base_url}\n"
 

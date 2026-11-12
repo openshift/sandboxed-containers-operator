@@ -1,5 +1,9 @@
 # Prow Job Analyzer Implementation Plan
 
+> Historical plan: the command described below has been replaced by
+> `.claude/skills/prowjob-analyzer/SKILL.md`. See
+> `scripts/prowjob-analyzer/README.md` for current usage.
+
 ## Overview
 Create a Claude Code slash command `/prowjob-analyze` that analyzes OSC Prow job results to determine if human intervention is needed, extract metadata, and provide detailed failure analysis.
 
