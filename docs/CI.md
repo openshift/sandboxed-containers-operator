@@ -25,11 +25,15 @@ Jobs that run on a regular schedule (daily Mon-Fri or weekly on Sunday).
 | [candidate420-azure-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-azure-ipi-peerpods) | peer pods | Peer Pods | 4.20 | azure | |
 | [candidate420-azure-ipi-coco](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-azure-ipi-coco) | CoCo | Peer Pods | 4.20 | azure | |
 | [candidate420-aws-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-aws-ipi-peerpods) | peer pods | Peer Pods | 4.20 | aws | |
+| [candidate420-aro-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-aro-peerpods) | Peer Pods | Peer Pods | 4.20 | azure | ARO |
+| [candidate420-aro-coco](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate420-aro-coco) | CoCo | Peer Pods | 4.20 | azure | ARO |
 | [candidate421-azure-ipi-kata](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-kata) | kata | local | 4.21 | azure | |
 | [candidate421-azure-ipi-kata-disconnected](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-kata-disconnected) | kata | local | 4.21 | azure | Disconnected network (proxy+mirror) |
 | [candidate421-azure-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-peerpods) | peer pods | Peer Pods | 4.21 | azure | |
 | [candidate421-azure-ipi-coco](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-azure-ipi-coco) | CoCo | Peer Pods | 4.21 | azure | |
 | [candidate421-aws-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-aws-ipi-peerpods) | peer pods | Peer Pods | 4.21 | aws | |
+| [candidate421-aro-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-aro-peerpods) | Peer Pods | Peer Pods | 4.21 | azure | ARO |
+| [candidate421-aro-coco](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate421-aro-coco) | CoCo | Peer Pods | 4.21 | azure | ARO |
 | [candidate422-azure-ipi-kata](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-kata) | kata | local | 4.22 | azure | |
 | [candidate422-azure-ipi-kata-disconnected](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-kata-disconnected) | kata | local | 4.22 | azure | Disconnected network (proxy+mirror) |
 | [candidate422-azure-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-peerpods) | peer pods | Peer Pods | 4.22 | azure | |
@@ -37,9 +41,16 @@ Jobs that run on a regular schedule (daily Mon-Fri or weekly on Sunday).
 | [candidate422-azure-ipi-coco](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-azure-ipi-coco) | CoCo | Peer Pods | 4.22 | azure | |
 | [candidate422-aws-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-aws-ipi-peerpods) | peer pods | Peer Pods | 4.22 | aws | |
 | [candidate422-aws-ipi-peerpods-sts](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate422-aws-ipi-peerpods-sts) | peer pods | Peer Pods | 4.22 | aws | Configured with Security Token Service (STS). Runs weekly on Sunday |
+| [candidate500-azure-ipi-kata](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate500-azure-ipi-kata) | kata | local | 5.0 | azure | |
+| [candidate500-azure-ipi-kata-disconnected](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate500-azure-ipi-kata-disconnected) | kata | local | 5.0 | azure | Disconnected network (proxy+mirror) |
+| [candidate500-azure-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate500-azure-ipi-peerpods) | peer pods | Peer Pods | 5.0 | azure | |
+| [candidate500-azure-ipi-peerpods-sts](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate500-azure-ipi-peerpods-sts) | peer pods | Peer Pods | 5.0 | azure | Configured with workload identity. Runs weekly on Sunday |
+| [candidate500-azure-ipi-coco](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate500-azure-ipi-coco) | CoCo | Peer Pods | 5.0 | azure | |
+| [candidate500-aws-ipi-peerpods](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate500-aws-ipi-peerpods) | peer pods | Peer Pods | 5.0 | aws | |
+| [candidate500-aws-ipi-peerpods-sts](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate500-aws-ipi-peerpods-sts) | peer pods | Peer Pods | 5.0 | aws | Configured with Security Token Service (STS). Runs weekly on Sunday |
 
 **Configuration:**
-- **Pre-GA testing** (candidate420, candidate421, candidate422):
+- **Pre-GA testing** (candidate420, candidate421, candidate422, candidate500):
   - OSC catalog: `quay.io/redhat-user-workloads/ose-osc-tenant/osc-test-fbc:latest`
   - Catalog source name: `brew-catalog`
   - Trustee catalog (CoCo jobs): `quay.io/redhat-user-workloads/ose-osc-tenant/trustee-test-fbc:latest`
@@ -47,6 +58,7 @@ Jobs that run on a regular schedule (daily Mon-Fri or weekly on Sunday).
     - candidate420: `4.2.0-2.rhaos4.20.el9`
     - candidate421: `4.2.0-2.rhaos4.20.el9`
     - candidate422: `4.2.0-2.rhaos4.22.el9`
+    - candidate500: `4.2.0-2.rhaos5.0.el10`
     - **Note:** Disconnected and STS jobs use `INSTALL_KATA_RPM=false` (version from operator)
 - **Test sources:** Test suites from this repository's `test/e2e` directory (default: `devel` branch)
 - **Test images:** 
@@ -65,6 +77,43 @@ Jobs that run on a regular schedule (daily Mon-Fri or weekly on Sunday).
 - `sandboxed-containers-operator-e2e-aws`: Standard AWS IPI
 - `sandboxed-containers-operator-e2e-aws-sts`: AWS with Security Token Service
 - `sandboxed-containers-operator-e2e-azure-isolation-restricted-proxy-mirror`: Disconnected with proxy and mirror registry
+
+### Job architecture
+
+Jobs execute in three phases:
+
+1. **`pre:`** — Provision OCP cluster, install OSC operator, install Kata RPM (when `INSTALL_KATA_RPM=true`), install Trustee (CoCo jobs), record metadata
+2. **`test:`** — Run sanity check (one pod must start/run/delete; CoCo also verifies Trustee attestation), create gate marker file
+3. **`post:`** — Execute test suites (OSC, kata-upstream, CAA), collect must-gather, deprovision cluster
+
+Test suites run as `best_effort: true` steps — a failing suite doesn't block siblings, but the job still reports `FAILURE` if any suite fails.
+
+**Detailed flow:** https://gitlab.cee.redhat.com/osc/osc-LLM-wiki/-/blob/main/wiki/concepts/ci-testing-flow.md
+
+### Analyzing job results
+
+**Artifacts location:** `https://storage.googleapis.com/test-platform-results-public/logs/<job-name>/<build-id>/`
+
+Each step writes to `artifacts/<job-name>/<step-name>/`:
+- `build-log.txt` — Step execution logs
+- `junit_*.xml` — Test results (when applicable)
+- `finished.json` — Step result (`SUCCESS`, `FAILURE`, `SKIPPED`)
+
+**Recommended:** Use the `prowjob-analyze` Claude skill to parse job results, extract metadata, and identify failures:
+```
+/prowjob-analyze <job-url>
+```
+
+The skill handles Prow-specific quirks (self-skipped suites, test-code build failures, gate semantics) and produces structured reports with per-suite status, failure categories, and artifact links.
+
+**Tooling:** [`scripts/prowjob-analyzer/`](../scripts/prowjob-analyzer/) — Python CLI version of the analysis logic
+
+**Analysis guide:** https://gitlab.cee.redhat.com/osc/osc-LLM-wiki/-/blob/main/wiki/concepts/osc-job-result-analysis.md
+
+### Additional resources
+
+- **Job history:** https://prow.ci.openshift.org/?repo=openshift%2Fsandboxed-containers-operator&type=periodic
+- **Slack notifications:** `#kata-ocp-ci-reports`
 
 ## Bare-metal jobs (Jenkins)
 
@@ -122,6 +171,70 @@ These jobs run weekly on dedicated bare-metal machines, testing both TDX and SNP
 - Machine: virtlab2410 (TDX + NVIDIA H100)
 - Test suites: `k8s-gpu` (non-CoCo), `k8s-cc-gpu` (CoCo + GPU)
 - Enabled via: `ENABLE_GPU=true` parameter and selecting virtlab2410
+
+### Job architecture
+
+Jobs execute in sequential phases (controlled via `SKIP` parameter):
+
+1. **Provision** — Install OCP cluster (SNO) on bare-metal hardware via jetlag (~45 min)
+2. **Install** — Install TEE support, OSC operator, Trustee, KataConfig
+3. **Profile** — Configure network profile (default/disconnected/restricted)
+4. **Test** — Run CoCo smoke tests and kata-containers integration tests (`k8s-all` suite)
+5. **Reservation** — Hold machine for debugging (on failure) or release immediately (on success)
+
+Provisioning locks the bastion — other jobs queue until completion. Full run takes ~1.5h.
+
+**Detailed documentation:** https://gitlab.cee.redhat.com/ldoktor/kata-bm/-/blob/main/README.md
+
+### Analyzing job results
+
+**Artifacts location:** Jenkins job artifacts (downloadable from job page)
+
+**Console output patterns:**
+- **Success:** `Release machine or Abort` with network profile active
+- **Warning:** `:warning:` markers — machine usable but review warnings
+- **Failure:** `:error:` markers + `FAILED: Machine ... is reserved for user (debugging)`
+
+Search console for `:error:` and `:warning:` to identify specific issues.
+
+**Bastion access:** After provisioning, SSH to bastion shows login banner with versions and cluster info. Scripts available in `~/.local/bin/`:
+- `osc_versions.sh` — Show installed component versions
+- `osc_simple_test.sh` — Quick CoCo/GPU smoke test
+- `kata-bm-test-runner.sh` — Run kata-containers integration tests
+
+### Manual job triggering
+
+Access Jenkins (requires `rh-kata-dev` rover group) to run jobs manually:
+
+**Reserve machine for debugging:**
+```
+Job: kata-bm-reserve
+Parameters: Set SSH_PUBLIC_KEY (your ~/.ssh/id_rsa.pub content)
+```
+
+**Run tests without reprovisioning:**
+```
+SKIP=provision tee osc attestation trustee kataconfig verification reservation reservation_on_error reservation_on_test_fail
+```
+
+**SSH access only:**
+```
+SKIP=all
+```
+
+**Common parameters:**
+- `SSH_PUBLIC_KEY` — Your public SSH key (required for bastion access)
+- `TEE_TYPE` — `tdx`, `snp`, or `none`
+- `OCP_VERSION` — Target OCP version
+- `SKIP` — Space-separated phase tokens to skip
+
+**Machine availability:** https://jenkins-csb-rhelvirt-kvmqe.dno.corp.redhat.com/lockable-resources/
+
+### Additional resources
+
+- **Job views by OSC version:** https://jenkins-csb-rhelvirt-kvmqe.dno.corp.redhat.com/view/kata-bm-osc-1.14.0/
+- **Machine reservation:** https://jenkins-csb-rhelvirt-kvmqe.dno.corp.redhat.com/job/kata-bm-reserve/
+- **Pipeline source:** https://gitlab.cee.redhat.com/ldoktor/kata-bm
 
 ## Test suites
 
