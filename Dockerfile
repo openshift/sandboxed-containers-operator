@@ -29,7 +29,7 @@ RUN . ./controller-tools-ver && mv bin/controller-gen bin/controller-gen-$CONTRO
 RUN . ./controller-tools-ver && make build
 
 # Use OpenShift base image
-FROM registry.redhat.io/ubi9/ubi-minimal-pqc:9.8-1793617550
+FROM registry.redhat.io/ubi9/ubi-minimal-pqc:9.9-1794497468
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
 COPY --from=builder /workspace/config/peerpods /config/peerpods
