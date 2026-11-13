@@ -49,6 +49,40 @@ if [[ "$PIPELINE_TYPE" == "on-pull-request" && -z "$PR_ID" ]]; then
     exit 1
 fi
 
+# When KUBE_TOKEN and KUBE_API_URL are set (and no KUBECONFIG), generate a
+# temporary kubeconfig so tkn can authenticate with a service account token.
+if [[ -n "${KUBE_TOKEN:-}" && -n "${KUBE_API_URL:-}" && -z "${KUBECONFIG:-}" ]]; then
+    _kubeconfig=$(mktemp)
+    trap 'rm -f "$_kubeconfig"' EXIT
+
+    _tls_config="insecure-skip-tls-verify: true"
+    if [[ -n "${KUBE_CA_CERT:-}" ]]; then
+        _tls_config="certificate-authority: ${KUBE_CA_CERT}"
+    fi
+
+    cat > "$_kubeconfig" <<KUBEEOF
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: ${KUBE_API_URL}
+    ${_tls_config}
+  name: cluster
+contexts:
+- context:
+    cluster: cluster
+    namespace: ${NAMESPACE}
+    user: sa
+  name: default
+current-context: default
+users:
+- name: sa
+  user:
+    token: ${KUBE_TOKEN}
+KUBEEOF
+    export KUBECONFIG="$_kubeconfig"
+fi
+
 # Construct pipeline name pattern
 if [[ "$PIPELINE_TYPE" == "on-pull-request" ]]; then
     PATTERN="${COMPONENT}-on-pull-request-${PR_ID}"
