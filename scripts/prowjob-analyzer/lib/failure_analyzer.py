@@ -1278,12 +1278,48 @@ def _new_category() -> Dict:
     return dict(_EMPTY_CATEGORY)
 
 
+def _pending_pre_step_from_build_log(base_url: str, variant: str) -> Optional[Dict]:
+    """Recover a pre-step pod that never started and could not write artifacts.
+
+    Require ci-operator's terminal pre-phase failure summary, not an earlier
+    pending event which might have recovered. Only emit fixed descriptions;
+    raw job logs may contain credentials or other sensitive data.
+    """
+    content = fetch_artifact(base_url, 'build-log.txt')
+    if not content:
+        return None
+    text = content.decode('utf-8', errors='replace')
+    escaped_variant = re.escape(variant)
+    pattern = (
+        rf'\*\s+could not run steps:\s+step\s+{escaped_variant}\s+failed:\s*'
+        rf'"{escaped_variant}"\s+pre steps failed:\s*"{escaped_variant}"\s+'
+        rf'pod\s+"{escaped_variant}-(?P<step>[a-z0-9][a-z0-9-]{{0,252}})"\s+'
+        r'failed:\s*pod pending for more than'
+    )
+    match = re.search(pattern, text, re.IGNORECASE)
+    if not match:
+        return None
+    detail = text[match.end():].split('Link to step on registry info site:', 1)[0]
+    if re.search(r'failed to create pod sandbox', detail, re.IGNORECASE):
+        message = 'CI step pod remained pending: pod sandbox creation failed.'
+        primary_pattern = 'ci_pod_sandbox'
+    elif re.search(r'ImagePullBackOff|ErrImagePull|failed to pull image', detail, re.IGNORECASE):
+        message = 'CI step pod remained pending: image pull failed.'
+        if re.search(r'manifest unknown', detail, re.IGNORECASE):
+            message += ' Registry reported manifest unknown.'
+        primary_pattern = 'image_pull'
+    else:
+        message = 'CI step pod remained pending and did not start.'
+        primary_pattern = 'ci_pod_pending'
+    return {'step': match.group('step'), 'message': message, 'pattern': primary_pattern}
+
+
 def _build_infra_category(base_url: str, variant: str, metadata: Dict, infra_info: Dict) -> Dict:
     """``infra``: pre-phase/misc steps outside the testsuites chain, excluding cleanup."""
     cat = _new_category()
     step_dirs = infra_info.get('step_dirs') or []
 
-    if not variant or variant == 'unknown' or not step_dirs:
+    if not variant or variant == 'unknown' or (not step_dirs and not infra_info.get('pending_pre_step')):
         cat['status'] = 'not run'
         return cat
 
@@ -1298,6 +1334,10 @@ def _build_infra_category(base_url: str, variant: str, metadata: Dict, infra_inf
         if secs:
             total_secs += secs
     cat['time'] = format_hours_minutes_test_step_display(total_secs)
+    if infra_info.get('pending_pre_step'):
+        # Its missing step artifacts make the total incomplete; don't present
+        # the partial sum as the entire infrastructure duration.
+        cat['time'] = 'unknown'
 
     if infra_failed:
         cat['failed_steps'] = ', '.join(infra_failed)
@@ -1308,6 +1348,11 @@ def _build_infra_category(base_url: str, variant: str, metadata: Dict, infra_inf
         cat['primary_pattern'] = rc.get('primary_pattern') or ''
         cat['confidence'] = rc.get('confidence') or ''
         cat['root_cause'] = rc.get('likely_cause') or ''
+        pending = infra_info.get('pending_pre_step')
+        if pending:
+            cat['primary_pattern'] = pending['pattern']
+            cat['confidence'] = 'high'
+            cat['root_cause'] = pending['message']
 
     return cat
 
@@ -1421,6 +1466,52 @@ def _caa_failed_tests(failing_tests: List[Dict]) -> List[str]:
     return names
 
 
+def _observed_test_failure(test: Dict) -> str:
+    """Return a safe, specific observation from a failing JUnit testcase.
+
+    Test output is untrusted and can contain credentials. Match known shapes
+    but do not copy arbitrary JUnit text, names, paths, or log lines into RCA.
+    """
+    text = '\n'.join(str(test.get(k) or '') for k in ('failure_message', 'system_err'))
+    replicas = re.search(
+        r'with\s+(\d{1,6})\s+replicas\s+of\s+(\d{1,6})\s+expected\s+'
+        r'is not ready after\s+(\d{1,6})\s+seconds', text, re.IGNORECASE,
+    )
+    if replicas:
+        ready, expected, seconds = replicas.groups()
+        return f'Deployment not ready ({ready}/{expected} replicas after {seconds}s)'
+    if re.search(r'head:\s*/dev/kmsg:\s*Operation not permitted', text, re.IGNORECASE):
+        return 'Reading /dev/kmsg was not permitted'
+    if re.search(r'deployment\s+[^\n]*did not get available replicas in time', text, re.IGNORECASE):
+        return 'Deployment did not obtain available replicas before the deadline'
+    if re.search(r'object is being deleted:.*already exists', text, re.IGNORECASE):
+        return 'Pod creation blocked while a previous pod was being deleted'
+    if re.search(r'waiting for containers in pod', text, re.IGNORECASE) and re.search(
+        r'context deadline exceeded', text, re.IGNORECASE
+    ):
+        if re.search(r'CreateContainerError', text, re.IGNORECASE):
+            return 'Pod container creation did not complete before the deadline'
+        return 'Timed out waiting for pod containers to become ready'
+    if re.search(r'context deadline exceeded', str(test.get('failure_message') or ''), re.IGNORECASE):
+        return 'Test reported a deadline exceeded'
+    return ''
+
+
+def _observed_suite_failures(failing_tests: List[Dict]) -> List[str]:
+    """Deduplicate safe observations, retaining validated OSC case IDs."""
+    observations: List[str] = []
+    for test in failing_tests:
+        observation = _observed_test_failure(test)
+        if not observation:
+            continue
+        case = test.get('test_case_number') or ''
+        if re.fullmatch(r'C\d{1,10}', case):
+            observation = f'{case}: {observation}'
+        if observation not in observations:
+            observations.append(observation)
+    return observations
+
+
 def _build_suite_category(
     metadata: Dict,
     suite_key: str,
@@ -1465,6 +1556,11 @@ def _build_suite_category(
         cat['primary_pattern'] = rc.get('primary_pattern') or ''
         cat['confidence'] = rc.get('confidence') or ''
         cat['root_cause'] = rc.get('likely_cause') or ''
+        if not cat['root_cause']:
+            cat['root_cause'] = 'Suite failed; inspect its JUnit and build-log artifacts.'
+        observations = _observed_suite_failures(summary.get('failing_tests') or [])
+        if observations:
+            cat['root_cause'] += ' Observed: ' + '; '.join(observations) + '.'
         if is_test_code_build_failure(summary):
             # The suite's test code failed to compile -- a test-infrastructure
             # bug, not evidence the product under test is broken. Reported as
@@ -1541,6 +1637,20 @@ def build_result_categories(
             'step_dirs': [], 'infra_steps': [], 'infra_failed_steps': [],
             'cleanup_steps': [], 'cleanup_failed_steps': [],
         }
+
+    # A pod that never started cannot write step artifacts, so it is absent
+    # from get_failed_steps(). Only recover this from the terminal pre-phase
+    # failure summary for a failed job whose gate did not run.
+    if (
+        status == 'failure' and variant and variant != 'unknown'
+        and classification.get('failure_kind') == 'blocking_phase_failure'
+        and not classification.get('gate_step_exists')
+        and not infra_info.get('infra_failed_steps')
+    ):
+        pending = _pending_pre_step_from_build_log(base_url, variant)
+        if pending:
+            infra_info['pending_pre_step'] = pending
+            infra_info['infra_failed_steps'] = [pending['step']]
 
     categories: Dict[str, Dict] = {}
     categories['infra'] = _build_infra_category(base_url, variant, metadata, infra_info)

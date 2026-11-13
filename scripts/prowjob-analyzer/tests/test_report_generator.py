@@ -14,11 +14,12 @@ import io
 import unittest
 from unittest.mock import patch
 
-from lib.failure_analyzer import build_result_categories
+from lib.failure_analyzer import _build_suite_category, build_result_categories
 from lib.fetcher import TESTSUITES_SUITE_STEPS
 from lib.report_generator import (
     build_report_data,
     generate_csv_report,
+    generate_human_report,
     generate_result_categories_section,
     generate_testsuites_section,
 )
@@ -153,6 +154,28 @@ for _cat in ('infra', 'overall', 'smoke', 'osc', 'kata_upstream', 'caa'):
 _EXPECTED_HEADER = _EXPECTED_BASE_HEADER + _EXPECTED_STATUS_HEADER + _EXPECTED_DETAIL_HEADER
 
 
+class TestGenerateHumanReportStartTime(unittest.TestCase):
+    def test_start_time_is_shown_for_each_job_status(self) -> None:
+        for status in ('success', 'failure', 'pending', 'unknown'):
+            with self.subTest(status=status):
+                report_data = _make_report_data(_all_pass_categories(), status=status)
+                report = generate_human_report(report_data)
+                self.assertIn('- **Started**: 2026-01-01T00:00:00Z\n', report)
+
+    def test_missing_start_time_is_shown_as_unknown(self) -> None:
+        for value in ('', None):
+            with self.subTest(value=value):
+                report_data = _make_report_data(_all_pass_categories())
+                report_data['prowjob']['start_time'] = value
+                report = generate_human_report(report_data)
+                self.assertIn('- **Started**: unknown\n', report)
+
+        report_data = _make_report_data(_all_pass_categories())
+        del report_data['prowjob']['start_time']
+        report = generate_human_report(report_data)
+        self.assertIn('- **Started**: unknown\n', report)
+
+
 class TestGenerateCsvReportHeader(unittest.TestCase):
     def test_header_has_45_columns_in_documented_order(self) -> None:
         report_data = _make_report_data(_all_pass_categories())
@@ -163,6 +186,24 @@ class TestGenerateCsvReportHeader(unittest.TestCase):
 
 
 class TestGenerateCsvReportRow(unittest.TestCase):
+    def test_observed_suite_failures_appear_in_existing_rca_column(self) -> None:
+        step = 'sandboxed-containers-operator-testsuites-osc'
+        classification = {'suites': {'osc': {'step_exists': True, 'status': 'FAILURE'}}}
+        summary = {'osc': {'had_junit': True, 'failing_tests': [{
+            'name': 'C00100', 'test_case_number': 'C00100',
+            'failure_message': 'token=secret with 2 replicas of 3 expected is not ready after 600 seconds',
+        }]}}
+        categories = _all_pass_categories()
+        categories['osc'] = _build_suite_category({}, 'osc', step, classification, summary)
+        report_data = _make_report_data(categories, status='failure', state='failure')
+        rows = list(csv.reader(io.StringIO(generate_csv_report(report_data))))
+        record = dict(zip(rows[0], rows[1]))
+
+        self.assertEqual(len(rows[0]), 45)
+        self.assertEqual(record['osc_root_cause'], report_data['result_categories']['osc']['root_cause'])
+        self.assertIn('C00100: Deployment not ready (2/3 replicas after 600s)', record['osc_root_cause'])
+        self.assertNotIn('token=secret', record['osc_root_cause'])
+
     def test_full_row_against_every_category_failing_fixture(self) -> None:
         report_data = _make_report_data(_every_category_failing(), status='failure', state='failure')
         csv_text = generate_csv_report(report_data, header=True)
