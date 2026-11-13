@@ -88,6 +88,10 @@ spec:
     type: array
     default: []
     description: Additional tags to apply to the built image (e.g. pr-<number> for PR builds)
+  - name: add-version-timestamp-tag
+    type: string
+    default: 'false'
+    description: When 'true', adds a version-timestamp tag (e.g. 1.14-1234567890) to the built image
   - name: source-date-epoch
     type: string
     default: ''
@@ -544,6 +548,32 @@ spec:
       - name: kind
         value: task
       resolver: bundles
+  - name: apply-version-tag
+    params:
+    - name: IMAGE_URL
+      value: $(tasks.build-image-index.results.IMAGE_URL)
+    - name: IMAGE_DIGEST
+      value: $(tasks.build-image-index.results.IMAGE_DIGEST)
+    - name: ADDITIONAL_TAGS
+      value:
+      - latest
+      - "$(params.version)-$(tasks.clone-repository.results.commit-timestamp)"
+    runAfter:
+    - build-image-index
+    taskRef:
+      params:
+      - name: name
+        value: apply-tags
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-apply-tags:0.3.2@sha256:610662163505af1af243bd7bea57443e1351c68b05405f7cd343dbc4262dec06
+      - name: kind
+        value: task
+      resolver: bundles
+    when:
+    - input: $(params.add-version-timestamp-tag)
+      operator: in
+      values:
+      - 'true'
   - name: push-dockerfile
     params:
     - name: IMAGE
