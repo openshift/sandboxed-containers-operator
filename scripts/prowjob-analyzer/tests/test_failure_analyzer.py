@@ -8,6 +8,9 @@ from unittest.mock import patch
 
 from lib.failure_analyzer import (
     _build_suite_category,
+    _observed_suite_failures,
+    _observed_test_failure,
+    _pending_pre_step_from_build_log,
     analyze_steps_failure,
     build_result_categories,
     check_log_for_patterns,
@@ -508,6 +511,133 @@ class TestCaaFailedSteps(unittest.TestCase):
         self.assertEqual(result['failed_steps'], self.step)
 
 
+class TestObservedSuiteFailures(unittest.TestCase):
+    def test_known_observations_do_not_copy_untrusted_text(self):
+        tests = [
+            ({'failure_message': 'secret=abc deployment x with 2 replicas of 3 '
+                                 'expected is not ready after 600 seconds'},
+             'Deployment not ready (2/3 replicas after 600s)'),
+            ({'system_err': 'context deadline exceeded\nWaiting for containers in pod: '
+                            'secret-pod\nCreateContainerError'},
+             'Pod container creation did not complete before the deadline'),
+            ({'system_err': 'context deadline exceeded\nWaiting for containers in pod: secret-pod'},
+             'Timed out waiting for pod containers to become ready'),
+            ({'system_err': 'object is being deleted: pods "secret-pod" already exists'},
+             'Pod creation blocked while a previous pod was being deleted'),
+            ({'system_err': 'head: /dev/kmsg: Operation not permitted'},
+             'Reading /dev/kmsg was not permitted'),
+            ({'failure_message': 'Deployment private-name did not get available replicas in time'},
+             'Deployment did not obtain available replicas before the deadline'),
+            ({'failure_message': 'context deadline exceeded, token=secret'},
+             'Test reported a deadline exceeded'),
+        ]
+        for test, expected in tests:
+            with self.subTest(expected=expected):
+                self.assertEqual(_observed_test_failure(test), expected)
+
+    def test_unrecognized_or_generic_failures_do_not_expose_text(self):
+        self.assertEqual(_observed_test_failure({'failure_message': 'Failed'}), '')
+        self.assertEqual(_observed_test_failure({'system_err': 'token=secret\ncontext deadline exceeded'}), '')
+
+    def test_repeated_observations_are_deduplicated_and_case_ids_validated(self):
+        detail = 'with 2 replicas of 3 expected is not ready after 600 seconds'
+        tests = [
+            {'test_case_number': 'C00100', 'failure_message': detail},
+            {'test_case_number': 'C00100', 'failure_message': detail},
+            {'test_case_number': '=secret', 'failure_message': detail},
+        ]
+        self.assertEqual(_observed_suite_failures(tests), [
+            'C00100: Deployment not ready (2/3 replicas after 600s)',
+            'Deployment not ready (2/3 replicas after 600s)',
+        ])
+
+    def test_suite_rca_includes_observation_but_not_raw_detail(self):
+        step = 'sandboxed-containers-operator-testsuites-osc'
+        test = {
+            'name': 'C00100', 'test_case_number': 'C00100',
+            'failure_message': 'token=secret with 2 replicas of 3 expected is not ready after 600 seconds',
+        }
+        classification = {'suites': {'osc': {'step_exists': True, 'status': 'FAILURE'}}}
+        summary = {'osc': {'had_junit': True, 'failing_tests': [test]}}
+        result = _build_suite_category({}, 'osc', step, classification, summary)
+        self.assertIn('C00100: Deployment not ready (2/3 replicas after 600s)', result['root_cause'])
+        self.assertNotIn('token=secret', result['root_cause'])
+
+    def test_no_junit_or_recognized_pattern_still_has_a_description(self):
+        step = 'sandboxed-containers-operator-testsuites-osc'
+        classification = {'suites': {'osc': {'step_exists': True, 'status': 'FAILURE'}}}
+        result = _build_suite_category({}, 'osc', step, classification, {'osc': {'had_junit': False}})
+        self.assertEqual(result['root_cause'], 'Suite failed; inspect its JUnit and build-log artifacts.')
+
+
+class TestPendingPreStepFromBuildLog(unittest.TestCase):
+    @staticmethod
+    def _summary(step, detail, phase='pre'):
+        return (
+            f'* could not run steps: step {_VARIANT} failed: "{_VARIANT}" {phase} steps failed: '
+            f'"{_VARIANT}" pod "{_VARIANT}-{step}" failed: pod pending for more than 1h\n'
+            f'{detail}\nLink to step on registry info site: https://example.invalid\n'
+        ).encode()
+
+    def test_detects_pending_sandbox_failure_without_copying_log(self):
+        log = self._summary('ipi-conf', 'Failed to create pod sandbox: token=secret')
+        with patch('lib.failure_analyzer.fetch_artifact', return_value=log):
+            result = _pending_pre_step_from_build_log('http://x', _VARIANT)
+        self.assertEqual(result, {
+            'step': 'ipi-conf', 'pattern': 'ci_pod_sandbox',
+            'message': 'CI step pod remained pending: pod sandbox creation failed.',
+        })
+
+    def test_detects_image_pull_and_manifest_unknown(self):
+        log = self._summary('aws-region-override', 'ImagePullBackOff: token=secret manifest unknown')
+        with patch('lib.failure_analyzer.fetch_artifact', return_value=log):
+            result = _pending_pre_step_from_build_log('http://x', _VARIANT)
+        self.assertEqual(result['pattern'], 'image_pull')
+        self.assertEqual(result['message'],
+                         'CI step pod remained pending: image pull failed. Registry reported manifest unknown.')
+
+    def test_no_specific_reason_and_missing_or_unrelated_logs(self):
+        log = self._summary('ipi-conf', 'no details')
+        with patch('lib.failure_analyzer.fetch_artifact', return_value=log):
+            self.assertEqual(_pending_pre_step_from_build_log('http://x', _VARIANT)['pattern'], 'ci_pod_pending')
+        for log in (None, b'pod pending for more than 1h', self._summary('ipi-conf', 'detail', phase='post')):
+            with self.subTest(log=log), patch('lib.failure_analyzer.fetch_artifact', return_value=log):
+                self.assertIsNone(_pending_pre_step_from_build_log('http://x', _VARIANT))
+
+    def test_blocking_failure_recovers_step_without_artifacts(self):
+        info = {'step_dirs': [], 'infra_steps': [], 'infra_failed_steps': [],
+                'cleanup_steps': [], 'cleanup_failed_steps': []}
+        log = self._summary('ipi-conf', 'Failed to create pod sandbox: token=secret')
+        classification = {'failure_kind': 'blocking_phase_failure', 'gate_step_exists': False}
+        with patch('lib.failure_analyzer.classify_infra_steps', return_value=info), \
+             patch('lib.failure_analyzer.fetch_artifact', return_value=log):
+            categories = build_result_categories(
+                {'state': 'failure'}, 'http://x', {'variant': _VARIANT}, 'failure', '01:30',
+                classification, {},
+            )
+        self.assertEqual(categories['infra']['status'], 'FAILURE')
+        self.assertEqual(categories['infra']['failed_steps'], 'ipi-conf')
+        self.assertEqual(categories['infra']['time'], 'unknown')
+        self.assertEqual(categories['infra']['root_cause'],
+                         'CI step pod remained pending: pod sandbox creation failed.')
+        self.assertEqual(categories['overall']['status'], 'skipped')
+        self.assertNotIn('token=secret', str(categories))
+
+    def test_success_or_ran_gate_does_not_use_fallback(self):
+        info = {'step_dirs': [], 'infra_steps': [], 'infra_failed_steps': [],
+                'cleanup_steps': [], 'cleanup_failed_steps': []}
+        classification = {'failure_kind': 'blocking_phase_failure', 'gate_step_exists': False}
+        with patch('lib.failure_analyzer.classify_infra_steps', return_value=info), \
+             patch('lib.failure_analyzer._pending_pre_step_from_build_log') as fallback:
+            build_result_categories({'state': 'success'}, 'http://x', {'variant': _VARIANT},
+                                    'success', '01:30', classification, {})
+            fallback.assert_not_called()
+            classification['gate_step_exists'] = True
+            build_result_categories({'state': 'failure'}, 'http://x', {'variant': _VARIANT},
+                                    'failure', '01:30', classification, {})
+            fallback.assert_not_called()
+
+
 def _write_json(path, data) -> None:
     import json
     with open(path, 'w', encoding='utf-8') as f:
@@ -777,7 +907,8 @@ class TestBuildResultCategoriesEndToEnd(unittest.TestCase):
             junit = (
                 '<testsuite name="osc" tests="1" failures="1" errors="0" skipped="0" time="12.5">\n'
                 '  <testcase name="[It] [sig-kata] Kata C00349-some test [Serial]" time="12.5">\n'
-                '    <failure message="boom">panic: boom</failure>\n'
+                '    <failure message="secret=abc with 2 replicas of 3 expected '
+                'is not ready after 600 seconds">panic: boom</failure>\n'
                 '  </testcase>\n'
                 '</testsuite>\n'
             )
@@ -793,6 +924,8 @@ class TestBuildResultCategoriesEndToEnd(unittest.TestCase):
             self.assertEqual(categories['osc']['status'], 'FAILURE')
             self.assertEqual(categories['osc']['failed_steps'], step)
             self.assertIn('C00349', categories['osc']['root_cause'])
+            self.assertIn('Deployment not ready (2/3 replicas after 600s)', categories['osc']['root_cause'])
+            self.assertNotIn('secret=abc', categories['osc']['root_cause'])
             for key in ('infra', 'smoke', 'kata_upstream', 'caa'):
                 self.assertEqual(categories[key]['status'], 'SUCCESS')
         finally:

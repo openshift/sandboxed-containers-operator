@@ -13,6 +13,7 @@ The Prow Job Analyzer provides comprehensive analysis of Prow job runs, extracti
 **Level 1: Overall Job Analysis** (`dig.py`):
 - **Metadata Extraction**: Automatically extracts provider, OCP version, workload type, Kata RPM version, and build information
 - **Status Determination**: Accurately determines if a job passed, failed, timed out, or encountered errors
+- **Start Time**: The human-readable report always shows the job's start time as `Started`, or `unknown` when it is unavailable
 - **Failed Step Detection**: Identifies which actual Prow step(s) failed by checking each step's finished.json
 - **Per-Category Result Breakdown**: Independent SUCCESS/FAILURE status for `infra`, `overall`, `smoke`, and each testsuites-chain suite (today: `osc`/`kata-upstream`/`caa`) -- e.g. a passing `osc` suite is reported as such even when `smoke` or another suite failed. When `infra` itself fails, `overall`/`smoke`/every suite are reported as `skipped` rather than independently evaluated, since ci-operator skips the test:-phase gate (and the post:-phase testsuites chain doesn't produce a meaningful result either) whenever the pre: phase fails. A suite whose own test code fails to *compile* (not a real test failure) is reported as `TEST_BUG` instead of `FAILURE`; `overall` treats that like a skipped suite and reports `SUCCESS` for a confirmed sibling pass, `skipped` if all suites were skipped or `TEST_BUG`, or `unknown` if results are incomplete (see [Test-code build failures never report FAILURE](#test-code-build-failures-never-report-failure)). Available as a fixed-layout CSV column block, a `result_categories` JSON key, and a markdown "Result Categories" section (see [CSV Reports](#csv-reports)/[JSON Reports](#json-reports) below)
 - **Test Summary**: Lists failing tests if tests executed
@@ -27,10 +28,10 @@ The Prow Job Analyzer provides comprehensive analysis of Prow job runs, extracti
 - **Selective Analysis**: Can analyze specific tests by name or test all failed tests
 - **Pattern Recognition**: Helps identify common failure patterns (timeouts, OOM, network issues, etc.)
 
-### Claude Code Integration
+### Agent Skill Integration
 
-- **Intelligent Workflow**: Automatically determines if tests ran or infrastructure failed
-- **Smart Decision**: Runs detailed test analysis only when appropriate (Case A vs Case B)
+- **Shared Skill**: `.claude/skills/prowjob-analyzer/SKILL.md` is the single Agent Skills definition, discovered by Claude Code and OpenCode; `.agents/skills/prowjob-analyzer` links to it for clients such as Codex
+- **Intelligent Workflow**: Distinguishes test failures, infrastructure failures, skips, and test-build failures
 - **Interactive & Non-Interactive**: Supports both quick analysis and deeper investigation modes
 
 ## Usage
@@ -108,7 +109,7 @@ cd scripts/prowjob-analyzer
 
 The launcher script:
 - Automatically finds the project root directory
-- Launches Claude Code with the `/prowjob-analyze` command
+- Launches Claude Code with the `/prowjob-analyzer` skill
 - No need to manually navigate or type the command
 - Runs in non-interactive mode by default (fast results)
 - Use `-i` for interactive mode to ask follow-up questions
@@ -117,13 +118,23 @@ The launcher script:
 - `--interactive, -i`: Launch Claude in interactive mode (default: non-interactive)
 - `--verbose, -v`: Show verbose output for debugging
 
-#### In Claude Code with /prowjob-analyze
+#### In Claude Code or OpenCode
 
-If you already have Claude Code open in the project directory:
+If you already have Claude Code open in the project directory, invoke the
+skill directly:
 
 ```
-/prowjob-analyze https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-aws-ipi-peerpods/1987995564184178688
+/prowjob-analyzer https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-aws-ipi-peerpods/1987995564184178688
 ```
+
+OpenCode also discovers the skill in `.claude/skills/`; ask it to use
+`prowjob-analyzer` with the job URL or a local artifact path. To make the
+skill available from other projects, add this checkout's
+`.claude/skills/prowjob-analyzer` directory to the OpenCode `skills` sources.
+The `.agents/skills/prowjob-analyzer` symlink exposes the same definition to
+agents that discover skills there, such as Codex. Other clients can use the
+same `SKILL.md` if they support the Agent Skills format; discovery and symlink
+support depend on the client.
 
 The analyzer supports both job URL patterns:
 - **Periodic/Postsubmit**: `https://prow.ci.openshift.org/view/gs/test-platform-results/logs/{JOB_NAME}/{BUILD_ID}`
@@ -395,6 +406,16 @@ Go test names, including subtest paths. The synthetic
 `junit_caa_noresults.xml` failure is not a real test and does not add a test
 name to this field.
 
+The existing `<suite>_root_cause` fields include concise **observed** details
+for recognized JUnit failure patterns, such as unavailable deployment
+replicas or a pod container-creation deadline. Only fixed descriptions and
+validated case IDs or replica counts are reported; arbitrary JUnit and build
+log text is not copied into these fields. Unrecognized failures still require
+inspection of the linked artifacts. If a pre-phase CI pod never starts and
+therefore writes no step artifacts, a matching terminal ci-operator failure
+summary identifies the failed step and reports the observed pending, sandbox,
+or image-pull problem in the existing `infra_*` fields.
+
 **When `infra_status` is `FAILURE`, every other category's status is
 `skipped`** (`overall`, `smoke`, and every suite) rather than each one's own
 independent result: ci-operator skips the test:-phase gate step whenever the
@@ -556,7 +577,7 @@ prowjob-analyzer/
 ### Key Components
 
 **User-Facing Scripts:**
-1. **sift.py**: Wrapper script that launches Claude Code with the `/prowjob-analyze` command
+1. **sift.py**: Wrapper script that launches Claude Code with the `/prowjob-analyzer` skill
    - Finds project root automatically
    - Supports interactive (`-i`) and non-interactive modes
    - Validates Prow URLs
@@ -580,16 +601,16 @@ prowjob-analyzer/
 4. **Failure Analyzer**: Failed step identification, test categorization
 5. **Report Generator**: Markdown and JSON report formatting
 
-### Claude Code Workflow
+### Agent Skill Workflow
 
-When using `/prowjob-analyze` command, Claude follows this workflow:
+When using `prowjob-analyzer`, the agent follows this workflow:
 
 1. **Run dig.py** - Get overall job status and identify failed steps
 2. **Examine Failure Analysis** - Check which step(s) failed
 3. **Decision Logic**:
-   - **Case A**: If `openshift-extended-test` failed AND tests are listed → Run `dig_failed_tests_report.py` for detailed test logs
-   - **Case B**: If other step failed (e.g., `ipi-install-install`) → Tests never ran, explain infrastructure failure
-   - **Case C**: If multiple steps failed → Intelligent decision based on whether tests executed
+   - **Tests failed**: Run `dig_failed_tests_report.py` for details of the failed tests that actually ran
+   - **Infrastructure or suite startup failed**: Inspect the failing step's artifacts; don't infer that tests ran
+   - **Multiple steps failed**: Investigate the relevant steps and suites independently, distinguishing skips and test-build failures
 4. **Report Results** - Present analysis with artifact links and next steps
 
 ## Requirements

@@ -2,7 +2,7 @@
 """
 Claude Prowjob Analyzer Launcher
 
-Wrapper script to launch Claude Code with the /prowjob-analyze command.
+Wrapper script to launch Claude Code with the /prowjob-analyzer skill.
 Automatically finds the project root and invokes Claude with the correct command.
 
 Usage:
@@ -20,15 +20,7 @@ from pathlib import Path
 
 
 def find_git_root():
-    """Find the git root directory."""
-    current = Path.cwd()
-
-    # Try from current directory upwards
-    for parent in [current] + list(current.parents):
-        if (parent / '.git').exists():
-            return parent
-
-    # If not found, try from script location upwards
+    """Find the checkout containing this script and its Claude skill."""
     script_dir = Path(__file__).resolve().parent
     for parent in [script_dir] + list(script_dir.parents):
         if (parent / '.git').exists():
@@ -101,7 +93,7 @@ Examples:
         print(f"Changed to directory: {os.getcwd()}", file=sys.stderr)
 
     # Prepare the Claude command
-    claude_command = f"/prowjob-analyze {args.url}"
+    claude_command = f"/prowjob-analyzer {args.url}"
 
     mode = "interactive" if args.interactive else "non-interactive"
     print(f"\nLaunching Claude Code in {mode} mode with command:", file=sys.stderr)
