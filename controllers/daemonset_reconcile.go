@@ -143,11 +143,10 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 		}
 	}
 
-	// TODO: propagate reconcile ctx through the call chain instead of context.TODO()
-	if err := r.deleteKataInstallNetworkPolicies(context.TODO()); err != nil {
-		r.Log.Error(err, "error deleting kata-install network policies")
-		return ctrl.Result{}, err
-	}
+	// The kata-install network policies are deleted further down, once the
+	// uninstall has finished. Deleting the DaemonSet only marks it for deletion,
+	// its pods keep running until they terminate, and removing the policies now
+	// would leave those pods without any network isolation in the meantime.
 
 	isUninstallDaemonSetJustCreated := false
 
@@ -217,6 +216,15 @@ func (r *KataConfigOpenShiftReconciler) processKataConfigDeleteRequestDaemonSet(
 
 	err = r.deleteDaemonsetForMonitor()
 	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// TODO: propagate reconcile ctx through the call chain instead of context.TODO()
+	// The install DaemonSet was deleted at the start of the uninstall, so its
+	// pods have had the whole uninstall to terminate. Its network policies can
+	// go now.
+	if err := r.deleteKataInstallNetworkPolicies(context.TODO()); err != nil {
+		r.Log.Error(err, "error deleting kata-install network policies")
 		return ctrl.Result{}, err
 	}
 
