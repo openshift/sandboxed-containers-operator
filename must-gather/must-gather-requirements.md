@@ -93,6 +93,10 @@ When running on an HCP hosted cluster (`controlPlaneTopology: External`), additi
 data is collected automatically. MachineConfigPool collection is skipped (MCPs do not
 exist on hosted clusters).
 
+If the cluster topology cannot be determined (query failure), both HCP-specific and
+MachineConfigPool diagnostics are still attempted, so that neither is silently
+missing; failures of individual lookups are recorded in `must-gather-errors.log`.
+
 **Note:** Management cluster resources (HostedCluster, HostedControlPlane, NodePool,
 HyperShift operator, MCE operator) are not collected because must-gather runs in the
 hosted cluster context. Run must-gather separately on the management cluster for those.
