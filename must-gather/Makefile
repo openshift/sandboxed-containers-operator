@@ -9,6 +9,7 @@ check:
 
 test:
 	bash tests/gather_cni_config_test.sh
+	bash tests/gather_common_test.sh
 
 ensure-must-gather-image-is-set:
 ifndef MUST_GATHER_IMAGE
