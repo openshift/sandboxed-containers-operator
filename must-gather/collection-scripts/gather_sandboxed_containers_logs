@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source /usr/bin/gather_common
+source "$(dirname "${BASH_SOURCE[0]}")/gather_common"
 
 IFS=$'\n'
 
@@ -41,11 +41,18 @@ for operator in "${operators[@]}"; do
     done
 done
 
-# mcps — skip on HCP hosted clusters where MachineConfigPools do not exist
+# mcps — skip on HCP hosted clusters where MachineConfigPools do not exist.
+# When topology detection failed (IS_HCP empty), attempt the collection
+# anyway: each MCP lookup is individually guarded, so this is safe on hosted
+# clusters and avoids silently missing MCP data on standalone clusters
+# (KATA-6493).
 detect_topology
 if [[ "$IS_HCP" == "true" ]]; then
     echo "HCP hosted cluster detected, skipping MachineConfigPool collection"
 else
+    if [[ -z "$IS_HCP" ]]; then
+        echo "Cluster topology unknown (controlPlaneTopology query failed), attempting MachineConfigPool collection"
+    fi
     mcps=()
     mcps+=(master)
     mcps+=(worker)
@@ -73,7 +80,7 @@ for pod in $(oc get pods -n openshift-marketplace -o'custom-columns=name:metadat
 done
 
 # lifecycle-manager
-LIFECYCLE_MANAGER_NS=${LIFECYCLE_MANAGER_NS}/openshift-operator-lifecycle-manager
+LIFECYCLE_MANAGER_NS=${NAMESPACE_PATH}/openshift-operator-lifecycle-manager
 mkdir -p ${LIFECYCLE_MANAGER_NS}
 
 for pod in $(oc get pods -n openshift-operator-lifecycle-manager -o'custom-columns=name:metadata.name' --no-headers); do
