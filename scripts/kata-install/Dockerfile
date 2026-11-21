@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/skopeo:9.9-1794502762
+FROM registry.access.redhat.com/ubi9/skopeo:9.9-1795227280
 
 ARG ORG_ID
 ARG ACTIVATION_KEY
