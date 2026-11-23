@@ -4,7 +4,8 @@
 # Source this file at the top of each gather_* script:
 #   source /usr/bin/gather_common
 
-BASE_COLLECTION_PATH="/must-gather"
+# Base output directory. Overridable via the environment (used by tests).
+BASE_COLLECTION_PATH="${BASE_COLLECTION_PATH:-/must-gather}"
 
 # Error tracking
 ERROR_LOG="${BASE_COLLECTION_PATH}/must-gather-errors.log"
@@ -159,4 +160,34 @@ detect_topology() {
     else
         IS_HCP=false
     fi
+}
+
+# Redact the value of every "Token" JSON field in the *.json files under a
+# directory, recursively.
+#
+# kata/virtcontainers sandbox state (nodes/<node>/run/vc/sbs/*/*/persist.json)
+# contains the runtime token of the sandbox process in its "Process" object.
+# The value has no diagnostic value, and leaktk flags the whole must-gather
+# archive when it finds it (KATA-6494), so it is replaced with a placeholder
+# in the gathered copies after collection. The field itself and everything
+# else in the files is preserved.
+#
+# Usage: redact_token_fields <directory>
+# Returns non-zero if a file could not be processed.
+redact_token_fields() {
+    local dir="$1"
+    local file
+    local rc=0
+    while IFS= read -r -d '' file; do
+        # sed -i is not portable (BSD/macOS requires a suffix argument), so
+        # write to a temporary file and move it into place instead.
+        if ! sed -E 's/("[Tt]oken"[[:space:]]*:[[:space:]]*")[^"]*(")/\1<redacted>\2/g' \
+                "$file" > "${file}.redacting" 2>/dev/null; then
+            rm -f "${file}.redacting"
+            rc=1
+            continue
+        fi
+        mv "${file}.redacting" "$file"
+    done < <(find "$dir" -type f -name '*.json' -print0 2>/dev/null)
+    return "$rc"
 }
