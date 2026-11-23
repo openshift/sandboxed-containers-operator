@@ -196,8 +196,12 @@ detect_topology() {
     local stderr_file
     local stderr_content
     stderr_file=$(mktemp 2>/dev/null || echo "/tmp/detect_topology_stderr_$$")
-    if ! topology=$(exec_with_retry run_oc get infrastructure cluster -o jsonpath='{.status.controlPlaneTopology}' 2>"$stderr_file"); then
-        exit_code=$?
+    # Capture the exit status directly: "if ! cmd; then ... $?" would always
+    # see the negated status (0), losing the real failure/timeout code in
+    # the error log.
+    topology=$(exec_with_retry run_oc get infrastructure cluster -o jsonpath='{.status.controlPlaneTopology}' 2>"$stderr_file")
+    exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
         stderr_content=$(<"$stderr_file")
         log_error "Detecting cluster topology (controlPlaneTopology)" \
                   "run_oc get infrastructure cluster -o jsonpath={.status.controlPlaneTopology}" \

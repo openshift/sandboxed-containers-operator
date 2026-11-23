@@ -222,6 +222,7 @@ detect_topology
 assert_eq "failed detection leaves topology unknown, not HCP" "" "${IS_HCP:-}"
 assert_eq "failed detection leaves controlPlaneTopology empty" "" "${CONTROL_PLANE_TOPOLOGY:-}"
 assert_contains "failed detection is logged" "$(cat "${BASE_COLLECTION_PATH}/must-gather-errors.log")" "Detecting cluster topology"
+assert_contains "failed detection logs the real exit code" "$(cat "${BASE_COLLECTION_PATH}/must-gather-errors.log")" "Exit Code: 1"
 unset OC_TOPOLOGY_EXIT
 export OC_TOPOLOGY=External
 
