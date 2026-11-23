@@ -95,7 +95,7 @@ spec:
             - name: RELATED_IMAGE_PEERPODS_WEBHOOK
               value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:48dad4282a86459cbf8fd9141648148c461c1309819ee15d771ce9df8b4f922c
             - name: RELATED_IMAGE_PODVM_BUILDER
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:ad51e822428b8b54722d7ce374449fbe33f8f9c979a10c4de2d6933b65d8acc5
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:48eac3f9c9bde876278e9b383a5db8e5fe36bf657fe8ff3f7858db5090c0dc45
             - name: RELATED_IMAGE_PODVM_PAYLOAD
               value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:16423df5034da6881f19d1040b027316b4cdb34d878ebd33a6292960161187bc
             - name: RELATED_IMAGE_PODVM_OCI
