@@ -175,9 +175,9 @@ detect_topology() {
 # The replacement is done by a small JSON-aware scanner: it tracks strings
 # and escape sequences, so it also copes with values containing escaped
 # quotes, any capitalization of the field name, and a value placed on a
-# separate line from the key. Bytes unrelated to the redaction are copied
-# verbatim. Field names written with \u escapes are not decoded; the Go
-# encoder that produces these files writes "Token" literally.
+# separate line from the key. Field names are matched after \uXXXX escape
+# decoding, so escaped spellings of the name are caught as well. Bytes
+# unrelated to the redaction are copied verbatim.
 #
 # The function fails closed: it returns non-zero when the file list cannot
 # be collected or when any file cannot be processed or replaced, so callers
@@ -215,10 +215,39 @@ redact_token_fields() {
         fi
         if ! awk -v trailing_newline="$trailing_newline" '
             # Replace the string value of every "token" field (key matched
-            # case-insensitively) with <redacted>, copying everything else
-            # verbatim. States: 0 normal, 1 after a "token" key string,
-            # 2 after the colon, waiting for the value string.
+            # case-insensitively, after \uXXXX escape decoding) with
+            # <redacted>, copying everything else verbatim. States:
+            # 0 normal, 1 after a "token" key string, 2 after the colon,
+            # waiting for the value string.
             function ws(c) { return c == " " || c == "\t" || c == "\r" || c == "\n" }
+            # Decode \uXXXX escapes for the field-name comparison only;
+            # the emitted text keeps the original bytes.
+            function decode(s,    out, i, c, h, k, d, v, ok, n) {
+                out = ""
+                n = length(s)
+                i = 1
+                while (i <= n) {
+                    c = substr(s, i, 1)
+                    if (c == "\\" && substr(s, i + 1, 1) == "u" && i + 5 <= n) {
+                        h = substr(s, i + 2, 4)
+                        ok = 1
+                        v = 0
+                        for (k = 1; k <= 4; k++) {
+                            d = index("0123456789abcdef", tolower(substr(h, k, 1)))
+                            if (d < 1) { ok = 0; break }
+                            v = v * 16 + d - 1
+                        }
+                        if (ok) {
+                            out = out sprintf("%c", v)
+                            i = i + 6
+                            continue
+                        }
+                    }
+                    out = out c
+                    i = i + 1
+                }
+                return out
+            }
             {
                 if (NR > 1) buf = buf "\n"
                 buf = buf $0
@@ -266,7 +295,7 @@ redact_token_fields() {
                         }
                         j = i + 1
                         while (j <= n && ws(substr(buf, j, 1))) { j++ }
-                        if (substr(buf, j, 1) == ":" && tolower(s) == "token") {
+                        if (substr(buf, j, 1) == ":" && tolower(decode(s)) == "token") {
                             state = 1
                         }
                         printf "\"%s\"", s

@@ -80,6 +80,11 @@ printf '{"Token":"escaped-\\"quote-token-value","Pid":1}\n' \
 printf '{"TOKEN":"uppercase-token-value","Pid":1}\n' \
     > "$vc/sbs/77aa31bc/other-container/uppercase.json"
 
+# Unicode-escaped field name: "Tok\u0065n" decodes to "Token" and must be
+# redacted; escapes inside values are preserved verbatim
+printf '{"desc":"value with \\u0054 escape","Tok\\u0065n":"escaped-name-token-value","Pid":1}\n' \
+    > "$vc/sbs/77aa31bc/other-container/escaped-name.json"
+
 # Value placed on a separate line from the key
 cat > "$vc/sbs/77aa31bc/other-container/multiline.json" <<'EOF'
 {
@@ -131,6 +136,11 @@ assert_not_contains "escaped quote: no partial value left" "$escaped" "quote-tok
 assert_contains "escaped quote: JSON stays valid" "$escaped" '"Pid":1}'
 assert_contains "uppercase: TOKEN marked redacted" "$uppercase" '"TOKEN":"<redacted>"'
 assert_not_contains "uppercase: value gone" "$uppercase" "uppercase-token-value"
+escaped_name=$(cat "$vc/sbs/77aa31bc/other-container/escaped-name.json")
+assert_contains "escaped field name: value marked redacted" "$escaped_name" '"Tok\u0065n":"<redacted>"'
+assert_not_contains "escaped field name: value gone" "$escaped_name" "escaped-name-token-value"
+assert_contains "escapes in values preserved verbatim" "$escaped_name" 'value with \u0054 escape'
+assert_contains "escaped field name: JSON stays valid" "$escaped_name" '"Pid":1}'
 assert_contains "multiline: value marked redacted" "$multiline" '"<redacted>"'
 assert_not_contains "multiline: value gone" "$multiline" "multiline-token-value"
 assert_contains "multiline: JSON stays valid" "$multiline" '"Pid": -1'
