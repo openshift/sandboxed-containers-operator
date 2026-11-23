@@ -248,6 +248,7 @@ redact_token_fields() {
     local file
     local list
     local trailing_newline
+    local tmp_out
     local rc=0
 
     # A missing directory means nothing was collected; that is not an error.
@@ -272,6 +273,10 @@ redact_token_fields() {
         else
             trailing_newline=1
         fi
+        # A unique temporary name in the same directory: a fixed
+        # "${file}.redacting" could clobber an unrelated collected file
+        # that happens to carry that name.
+        tmp_out=$(mktemp "${file}.redacting.XXXXXX") || { rc=1; continue; }
         if ! awk -v trailing_newline="$trailing_newline" '
             # Replace the string value of every "token" field (key matched
             # case-insensitively, after \uXXXX escape decoding) with
@@ -280,7 +285,10 @@ redact_token_fields() {
             # waiting for the value string.
             function ws(c) { return c == " " || c == "\t" || c == "\r" || c == "\n" }
             # Decode \uXXXX escapes for the field-name comparison only;
-            # the emitted text keeps the original bytes.
+            # the emitted text keeps the original bytes. ASCII only: the
+            # names we match are ASCII, and %c for non-ASCII code points
+            # is locale-dependent (gawk in a C locale emits the low byte,
+            # which could make an unrelated field falsely match).
             function decode(s,    out, i, c, h, k, d, v, ok, n) {
                 out = ""
                 n = length(s)
@@ -296,7 +304,7 @@ redact_token_fields() {
                             if (d < 1) { ok = 0; break }
                             v = v * 16 + d - 1
                         }
-                        if (ok) {
+                        if (ok && v < 128) {
                             out = out sprintf("%c", v)
                             i = i + 6
                             continue
@@ -365,13 +373,13 @@ redact_token_fields() {
                     i++
                 }
             }
-        ' "$file" >"${file}.redacting"; then
-            rm -f "${file}.redacting"
+        ' "$file" >"$tmp_out"; then
+            rm -f "$tmp_out"
             rc=1
             continue
         fi
-        if ! mv "${file}.redacting" "$file"; then
-            rm -f "${file}.redacting"
+        if ! mv "$tmp_out" "$file"; then
+            rm -f "$tmp_out"
             rc=1
         fi
     done <"$list"

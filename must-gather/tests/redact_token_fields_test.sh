@@ -85,6 +85,10 @@ printf '{"TOKEN":"uppercase-token-value","Pid":1}\n' \
 printf '{"desc":"value with \\u0054 escape","Tok\\u0065n":"escaped-name-token-value","Pid":1}\n' \
     > "$vc/sbs/77aa31bc/other-container/escaped-name.json"
 
+# A non-ASCII \u escape never spells "token" and must not be redacted
+printf '{"\\u0154oken":"non-ascii-escape-value","Pid":1}\n' \
+    > "$vc/sbs/77aa31bc/other-container/non-ascii-escape.json"
+
 # Value placed on a separate line from the key
 cat > "$vc/sbs/77aa31bc/other-container/multiline.json" <<'EOF'
 {
@@ -141,6 +145,9 @@ assert_contains "escaped field name: value marked redacted" "$escaped_name" '"To
 assert_not_contains "escaped field name: value gone" "$escaped_name" "escaped-name-token-value"
 assert_contains "escapes in values preserved verbatim" "$escaped_name" 'value with \u0054 escape'
 assert_contains "escaped field name: JSON stays valid" "$escaped_name" '"Pid":1}'
+non_ascii=$(cat "$vc/sbs/77aa31bc/other-container/non-ascii-escape.json")
+assert_contains "non-ascii escape: value preserved" "$non_ascii" "non-ascii-escape-value"
+assert_contains "non-ascii escape: field name unchanged" "$non_ascii" '\u0154oken'
 assert_contains "multiline: value marked redacted" "$multiline" '"<redacted>"'
 assert_not_contains "multiline: value gone" "$multiline" "multiline-token-value"
 assert_contains "multiline: JSON stays valid" "$multiline" '"Pid": -1'
@@ -149,10 +156,25 @@ assert_identical "token-free json is byte-identical" "$temp_dir/no-tokens.orig" 
 assert_contains "non-json files are untouched" "$log" "not json, ignore me"
 
 # no temporary files left behind
-if find "$vc" -name '*.redacting' | grep -q .; then
+if find "$vc" -name '*.redacting*' | grep -q .; then
     bad "no .redacting leftovers"
 else
     ok "no .redacting leftovers"
+fi
+
+# a pre-existing file with the temporary suffix must not be clobbered
+clobber_dir="$temp_dir/clobber"
+mkdir -p "$clobber_dir"
+printf '{"Token":"clobber-token-value","Pid":1}\n' > "$clobber_dir/state.json"
+printf 'pre-existing file that must not be touched\n' > "$clobber_dir/state.json.redacting"
+redact_token_fields "$clobber_dir"
+assert_contains "clobber: token redacted" "$(cat "$clobber_dir/state.json")" '"Token":"<redacted>"'
+assert_contains "clobber: pre-existing .json.redacting untouched" \
+    "$(cat "$clobber_dir/state.json.redacting")" "pre-existing file that must not be touched"
+if find "$clobber_dir" -name '*.redacting.*' | grep -q .; then
+    bad "clobber: no mktemp leftovers"
+else
+    ok "clobber: no mktemp leftovers"
 fi
 
 if [[ $run_permission_tests -eq 1 ]]; then
@@ -161,10 +183,10 @@ if [[ $run_permission_tests -eq 1 ]]; then
     else
         bad "unreadable file makes redaction fail (rc=$rc)"
     fi
-    if [[ ! -e "$vc/sbs/9c1f5b2e/some-container/locked.json.redacting" ]]; then
-        ok "failed file leaves no .redacting file"
-    else
+    if ls "$vc/sbs/9c1f5b2e/some-container/locked.json.redacting"* >/dev/null 2>&1; then
         bad "failed file leaves no .redacting file"
+    else
+        ok "failed file leaves no .redacting file"
     fi
     chmod 644 "$vc/sbs/9c1f5b2e/some-container/locked.json"
     assert_contains "unreadable file content unchanged" \
