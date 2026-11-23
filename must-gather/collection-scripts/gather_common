@@ -172,22 +172,121 @@ detect_topology() {
 # in the gathered copies after collection. The field itself and everything
 # else in the files is preserved.
 #
+# The replacement is done by a small JSON-aware scanner: it tracks strings
+# and escape sequences, so it also copes with values containing escaped
+# quotes, any capitalization of the field name, and a value placed on a
+# separate line from the key. Bytes unrelated to the redaction are copied
+# verbatim. Field names written with \u escapes are not decoded; the Go
+# encoder that produces these files writes "Token" literally.
+#
+# The function fails closed: it returns non-zero when the file list cannot
+# be collected or when any file cannot be processed or replaced, so callers
+# must drop the data instead of packaging unredacted tokens.
+#
 # Usage: redact_token_fields <directory>
-# Returns non-zero if a file could not be processed.
 redact_token_fields() {
     local dir="$1"
     local file
+    local list
+    local trailing_newline
     local rc=0
+
+    # A missing directory means nothing was collected; that is not an error.
+    if [[ ! -d "$dir" ]]; then
+        return 0
+    fi
+
+    # Collect the file list up front: iterating over a process substitution
+    # would silently drop find's exit status and hide traversal failures.
+    list=$(mktemp 2>/dev/null) || list="/tmp/redact_token_files_$$"
+    if ! find "$dir" -type f -name '*.json' -print0 >"$list"; then
+        rm -f "$list"
+        return 1
+    fi
+
     while IFS= read -r -d '' file; do
-        # sed -i is not portable (BSD/macOS requires a suffix argument), so
-        # write to a temporary file and move it into place instead.
-        if ! sed -E 's/("[Tt]oken"[[:space:]]*:[[:space:]]*")[^"]*(")/\1<redacted>\2/g' \
-                "$file" > "${file}.redacting" 2>/dev/null; then
+        # awk line processing drops the newline of the last record; tell the
+        # scanner whether the file had one so the output stays byte-identical
+        # apart from the redacted values.
+        if [[ -n "$(tail -c 1 "$file" 2>/dev/null)" ]]; then
+            trailing_newline=0
+        else
+            trailing_newline=1
+        fi
+        if ! awk -v trailing_newline="$trailing_newline" '
+            # Replace the string value of every "token" field (key matched
+            # case-insensitively) with <redacted>, copying everything else
+            # verbatim. States: 0 normal, 1 after a "token" key string,
+            # 2 after the colon, waiting for the value string.
+            function ws(c) { return c == " " || c == "\t" || c == "\r" || c == "\n" }
+            {
+                if (NR > 1) buf = buf "\n"
+                buf = buf $0
+            }
+            END {
+                if (trailing_newline && NR > 0) buf = buf "\n"
+                n = length(buf)
+                i = 1
+                while (i <= n) {
+                    c = substr(buf, i, 1)
+                    if (state == 1) {
+                        if (c == ":") { printf "%s", c; state = 2; i++; continue }
+                        if (ws(c))   { printf "%s", c; i++; continue }
+                        state = 0
+                    } else if (state == 2) {
+                        if (ws(c)) { printf "%s", c; i++; continue }
+                        if (c == "\"") {
+                            i++
+                            esc = 0
+                            while (i <= n) {
+                                d = substr(buf, i, 1)
+                                if (esc)            { esc = 0 }
+                                else if (d == "\\") { esc = 1 }
+                                else if (d == "\"") { break }
+                                i++
+                            }
+                            printf "\"<redacted>\""
+                            state = 0
+                            i++
+                            continue
+                        }
+                        state = 0
+                    }
+                    if (c == "\"") {
+                        i++
+                        s = ""
+                        esc = 0
+                        while (i <= n) {
+                            d = substr(buf, i, 1)
+                            if (esc)            { s = s d; esc = 0 }
+                            else if (d == "\\") { s = s d; esc = 1 }
+                            else if (d == "\"") { break }
+                            else                { s = s d }
+                            i++
+                        }
+                        j = i + 1
+                        while (j <= n && ws(substr(buf, j, 1))) { j++ }
+                        if (substr(buf, j, 1) == ":" && tolower(s) == "token") {
+                            state = 1
+                        }
+                        printf "\"%s\"", s
+                        i++
+                        continue
+                    }
+                    printf "%s", c
+                    i++
+                }
+            }
+        ' "$file" >"${file}.redacting"; then
             rm -f "${file}.redacting"
             rc=1
             continue
         fi
-        mv "${file}.redacting" "$file"
-    done < <(find "$dir" -type f -name '*.json' -print0 2>/dev/null)
+        if ! mv "${file}.redacting" "$file"; then
+            rm -f "${file}.redacting"
+            rc=1
+        fi
+    done <"$list"
+    rm -f "$list"
     return "$rc"
 }

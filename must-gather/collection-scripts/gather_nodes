@@ -227,21 +227,31 @@ gather_single_pod() {
 
         VC_PATH="$NODE_PATH/run/vc/"
         mkdir -p "${VC_PATH}"
-        if ! output=$(exec_with_retry oc cp "$pod:/host/run/vc/" "${VC_PATH}" -n node-gather 2>&1); then
+        # Capture the status directly: "if ! cmd; then ... $?" would always
+        # see the negated status (0), losing the real failure/timeout code.
+        cp_rc=0
+        output=$(exec_with_retry oc cp "$pod:/host/run/vc/" "${VC_PATH}" -n node-gather 2>&1) || cp_rc=$?
+        if [[ $cp_rc -ne 0 ]]; then
             log_error "Copying sandboxed containers runtime data for node $node" \
                       "oc cp $pod:/host/run/vc/ ${VC_PATH} -n node-gather" \
-                      "$?" \
+                      "$cp_rc" \
                       "$output"
-        else
-            # persist.json carries the sandbox process token, which leaktk
-            # flags in the gathered archive (KATA-6494); redact it in the
-            # local copy before the archive is built.
-            if ! redact_token_fields "${VC_PATH}"; then
-                log_error "Redacting tokens in sandboxed containers runtime data for node $node" \
-                          "redact_token_fields ${VC_PATH}" \
-                          "$?" \
-                          ""
-            fi
+            # Fall through: a failed copy may have left a partial tree, so
+            # sanitize whatever is there rather than skipping redaction.
+        fi
+        # persist.json carries the sandbox process token, which leaktk
+        # flags in the gathered archive (KATA-6494); redact it in the
+        # local copy before the archive is built.
+        redact_rc=0
+        redact_token_fields "${VC_PATH}" || redact_rc=$?
+        if [[ $redact_rc -ne 0 ]]; then
+            # The data could not be sanitized; drop it rather than package
+            # unredacted tokens (KATA-6494).
+            rm -rf "${VC_PATH}"
+            log_error "Redacting tokens in sandboxed containers runtime data for node $node" \
+                      "redact_token_fields ${VC_PATH}" \
+                      "$redact_rc" \
+                      ""
         fi
     fi
 
