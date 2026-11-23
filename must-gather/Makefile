@@ -9,6 +9,7 @@ check:
 
 test:
 	bash tests/gather_cni_config_test.sh
+	bash tests/gather_common_test.sh
 	bash tests/redact_token_fields_test.sh
 	bash tests/collect_vc_runtime_data_test.sh
 

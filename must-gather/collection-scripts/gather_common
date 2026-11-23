@@ -58,18 +58,51 @@ log_error() {
 
 # Wrapper for oc: logs the command with a timestamp, provides a single
 # place to inject additional arguments (e.g. --request-timeout).
+# Safe to pass to exec_with_retry/collect_resource as the command: shell
+# functions are handled by exec_with_timeout, and the log line is surfaced
+# on stderr even when the call succeeds.
 run_oc() {
     echo "$(date '+%H:%M:%S') oc $*" >&2
     oc "$@"
 }
 
+# Execute a command under timeout(1).
+#
+# timeout(1) can only launch executables, not shell functions such as
+# run_oc (KATA-6493: "timeout: failed to run command 'run_oc'"). When the
+# command names a shell function, export it and run it through an explicit
+# "bash -c" subshell so that timeout(1) has an executable to launch.
+# timeout(1) signals the child's process group, so commands spawned by the
+# function are still terminated when the timeout expires.
+#
+# Note: a function run this way must only call external commands, or other
+# shell functions that are explicitly exported before the call.
+exec_with_timeout() {
+    local timeout_secs="$1"
+    shift
+
+    if declare -F "$1" >/dev/null 2>&1; then
+        local func="$1"
+        shift
+        # shellcheck disable=SC2163 # the function named by $func is exported
+        export -f "${func?}"
+        timeout "$timeout_secs" bash -c "$func \"\$@\"" "$func" "$@"
+    else
+        timeout "$timeout_secs" "$@"
+    fi
+}
+
 # Execute a command with retry logic.
 # Stdout and stderr are kept separate: only stdout is returned on success,
 # so command warnings do not contaminate collected output files.
+# The command may be an executable or a shell function (e.g. run_oc); see
+# exec_with_timeout.
+# EXEC_MAX_RETRIES, EXEC_RETRY_DELAY and EXEC_TIMEOUT_SECS override the
+# defaults; they exist primarily so tests can exercise the logic quickly.
 exec_with_retry() {
-    local max_retries=3
-    local retry_delay=2
-    local timeout_secs=30
+    local max_retries="${EXEC_MAX_RETRIES:-3}"
+    local retry_delay="${EXEC_RETRY_DELAY:-2}"
+    local timeout_secs="${EXEC_TIMEOUT_SECS:-30}"
     local attempt=1
     local output
     local exit_code
@@ -77,8 +110,14 @@ exec_with_retry() {
     stderr_file=$(mktemp 2>/dev/null || echo "/tmp/exec_retry_stderr_$$")
 
     while [[ $attempt -le $max_retries ]]; do
-        output=$(timeout "$timeout_secs" "$@" 2>"$stderr_file")
+        output=$(exec_with_timeout "$timeout_secs" "$@" 2>"$stderr_file")
         exit_code=$?
+
+        # Surface the attempt's stderr (command logs such as run_oc
+        # timestamps, warnings) so it is not silently dropped when the
+        # command succeeds. It is kept in the error log on failure via the
+        # callers, which capture this function's stderr.
+        cat "$stderr_file" >&2
 
         if [[ $exit_code -eq 0 ]]; then
             echo "$output"
@@ -102,7 +141,6 @@ exec_with_retry() {
 
         # All retries exhausted
         echo "$output"
-        cat "$stderr_file" >&2
         rm -f "$stderr_file"
         return "$exit_code"
     done
@@ -141,19 +179,40 @@ collect_resource() {
     return 0
 }
 
-# Detect HCP topology. Sets CONTROL_PLANE_TOPOLOGY and IS_HCP.
-# On query failure, defaults to IS_HCP=true so HCP diagnostics are still
-# collected rather than silently skipped.
+# Detect HCP topology. Sets CONTROL_PLANE_TOPOLOGY and IS_HCP:
+#   IS_HCP=true  — controlPlaneTopology is External (HCP hosted cluster)
+#   IS_HCP=false — standalone cluster (any other controlPlaneTopology value)
+#   IS_HCP=""    — topology unknown (the query failed)
+# Callers must treat an unknown topology conservatively and collect both
+# HCP-specific and standalone diagnostics rather than silently skipping
+# either (KATA-6493: a failed detection used to imply IS_HCP=true, which
+# skipped MachineConfigPool collection on standalone clusters).
 detect_topology() {
     if [[ -n "$CONTROL_PLANE_TOPOLOGY" ]]; then
         return
     fi
     local topology
-    if ! topology=$(exec_with_retry run_oc get infrastructure cluster -o jsonpath='{.status.controlPlaneTopology}'); then
+    local exit_code
+    local stderr_file
+    local stderr_content
+    stderr_file=$(mktemp 2>/dev/null || echo "/tmp/detect_topology_stderr_$$")
+    # Capture the exit status directly: "if ! cmd; then ... $?" would always
+    # see the negated status (0), losing the real failure/timeout code in
+    # the error log.
+    topology=$(exec_with_retry run_oc get infrastructure cluster -o jsonpath='{.status.controlPlaneTopology}' 2>"$stderr_file")
+    exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
+        stderr_content=$(<"$stderr_file")
+        log_error "Detecting cluster topology (controlPlaneTopology)" \
+                  "run_oc get infrastructure cluster -o jsonpath={.status.controlPlaneTopology}" \
+                  "$exit_code" \
+                  "${topology}${stderr_content:+$'\n'$stderr_content}"
+        rm -f "$stderr_file"
         CONTROL_PLANE_TOPOLOGY=""
-        IS_HCP=true
+        IS_HCP=""
         return 0
     fi
+    rm -f "$stderr_file"
     CONTROL_PLANE_TOPOLOGY="$topology"
     if [[ "$CONTROL_PLANE_TOPOLOGY" == "External" ]]; then
         IS_HCP=true

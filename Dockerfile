@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/go-toolset:1.27.3-1794518352 as builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.27.3-1795320499 as builder
 
 # Required by the ubi based go-toolset image
 USER root
@@ -29,7 +29,7 @@ RUN . ./controller-tools-ver && mv bin/controller-gen bin/controller-gen-$CONTRO
 RUN . ./controller-tools-ver && make build
 
 # Use OpenShift base image
-FROM registry.redhat.io/ubi9/ubi-minimal-pqc:9.8-1794184649
+FROM registry.redhat.io/ubi9/ubi-minimal-pqc:9.9-1794497468
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
 COPY --from=builder /workspace/config/peerpods /config/peerpods

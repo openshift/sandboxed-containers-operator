@@ -482,27 +482,27 @@ spec:
                 - name: PEERPODS_NAMESPACE
                   value: openshift-sandboxed-containers-operator
                 - name: RELATED_IMAGE_KATA_DAEMONSET
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-daemonset-rhel9@sha256:9999b59791aa3bada8250d4c3f2b59a2c35e23773c0483125dbf78046f8ad2c5
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-daemonset-rhel9@sha256:3d5373c2a663c39f4d29774065804ef195683b49b761aa3d20ad17077540738d
                 - name: RELATED_IMAGE_KATA_MONITOR
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:fbb1f567d536acfbe0397dcdef09136085ae8bd46b4dc4155169a2abf3fe9772
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:9b5e81d75378b5248624377f1754b2db275e46beef15ea3b71932d6bed4a1a56
                 - name: RELATED_IMAGE_CAA
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:c128495ec70af11dcd6e4b1d377805420f8b197a74b8b53ca302dbd703f0eb59
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:8282f152528d19e1bf175b4a2f7489e298a79196c36fce81d2753c1026887166
                 - name: RELATED_IMAGE_PEERPODS_WEBHOOK
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:0b2c474b128fcc5f0eec1e13799a97fa5d62bbc6b6ab064022c908638a3fee1b
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:1ecbc1334f153498c4b82984326f35cdfe7b02913d1c22db75a219ea767e6b0c
                 - name: RELATED_IMAGE_PODVM_BUILDER
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:9e4d8bacdb8f86a3a64ca5807ffdcd1cda4cac833b9f1b2da03ffa088cfa60a6
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:25fed5f23e60862ccee5b6e92649df3b24236695e4397fd34ec78ebb5e05fb7f
                 - name: RELATED_IMAGE_PODVM_PAYLOAD
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:df2c034108c3259ddde3dc243c7903874802e418879a84e7b9513ffa59a48fff
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:bae0ca3f41d720053a4e03836635b1d9c47ba6973d3b42df334533ff69c90d3c
                 - name: RELATED_IMAGE_PODVM_OCI
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:da7cff86049a976fbf15ed30122dca1eb317555aea4e75e4dcbdf38110b81bb3
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:2ece2afc28d8772dd2e97a67fb8fc6212b4f3231707e9d6d0ddd0e6f88b0829e
                 - name: RELATED_IMAGE_MUST_GATHER
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:c27ab47abded7f151ae13d9358c6e8ff24ac4fe5adc97f4a662df13b3bf6210a
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:d4ea5c6db1b815bbc279efb143cfae7d6c299f35cc6f1af1ae50fb27f450443e
                 - name: RELATED_IMAGE_STORAGE_HELPER
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:46e53fe9e8dfa626b291cf5bc63c5bd81739e1f2a3ca97216b1436b19ea2ab1d
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:682e00a42c72033087dcd0ca3350468094f471efc6688118170b1ebb8b0cc208
                 - name: RELATED_IMAGE_OSC_CONSOLE_PLUGIN
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:5e5120944bce4033cf4913e440d5a60fb901bb93e62fe968d3de2d4d43d4c1f0
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:371a5c64d96a4980058228b889ddbc7c3d66068d53bf3b39592f57d012fa7c33
                 - name: RELATED_IMAGE_COCO_CONSOLE_PLUGIN
-                  value: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:2be3271970e711842b6866ccdbe6ee22bd3862044b2a32cf3bb4f029563c09d8
+                  value: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:945ffb84f491079b261457ec6c711dd815269a906d2361e49e6e124ac9b23eea
                 envFrom:
                 - secretRef:
                     name: peer-pods-secret
@@ -510,7 +510,7 @@ spec:
                 - configMapRef:
                     name: peer-pods-cm
                     optional: true
-                image: registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:b8e2c6c7c909627f4dfd03e9852b1492c1c8b320b6f6042a1888d0effe088d51
+                image: registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:ce5492cddfd888922d9e7df20fdedc27f1b5a485043943c13bfb53880580ee47
                 imagePullPolicy: Always
                 name: manager
                 ports:
@@ -636,27 +636,27 @@ spec:
   provider:
     name: Red Hat
   relatedImages:
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-daemonset-rhel9@sha256:9999b59791aa3bada8250d4c3f2b59a2c35e23773c0483125dbf78046f8ad2c5
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-daemonset-rhel9@sha256:3d5373c2a663c39f4d29774065804ef195683b49b761aa3d20ad17077540738d
     name: kata-daemonset
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:fbb1f567d536acfbe0397dcdef09136085ae8bd46b4dc4155169a2abf3fe9772
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:9b5e81d75378b5248624377f1754b2db275e46beef15ea3b71932d6bed4a1a56
     name: kata-monitor
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:c128495ec70af11dcd6e4b1d377805420f8b197a74b8b53ca302dbd703f0eb59
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:8282f152528d19e1bf175b4a2f7489e298a79196c36fce81d2753c1026887166
     name: caa
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:0b2c474b128fcc5f0eec1e13799a97fa5d62bbc6b6ab064022c908638a3fee1b
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:1ecbc1334f153498c4b82984326f35cdfe7b02913d1c22db75a219ea767e6b0c
     name: peerpods-webhook
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:9e4d8bacdb8f86a3a64ca5807ffdcd1cda4cac833b9f1b2da03ffa088cfa60a6
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:25fed5f23e60862ccee5b6e92649df3b24236695e4397fd34ec78ebb5e05fb7f
     name: podvm-builder
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:df2c034108c3259ddde3dc243c7903874802e418879a84e7b9513ffa59a48fff
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:bae0ca3f41d720053a4e03836635b1d9c47ba6973d3b42df334533ff69c90d3c
     name: podvm-payload
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:da7cff86049a976fbf15ed30122dca1eb317555aea4e75e4dcbdf38110b81bb3
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:2ece2afc28d8772dd2e97a67fb8fc6212b4f3231707e9d6d0ddd0e6f88b0829e
     name: podvm-oci
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:c27ab47abded7f151ae13d9358c6e8ff24ac4fe5adc97f4a662df13b3bf6210a
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:d4ea5c6db1b815bbc279efb143cfae7d6c299f35cc6f1af1ae50fb27f450443e
     name: must-gather
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:46e53fe9e8dfa626b291cf5bc63c5bd81739e1f2a3ca97216b1436b19ea2ab1d
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:682e00a42c72033087dcd0ca3350468094f471efc6688118170b1ebb8b0cc208
     name: storage-helper
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:5e5120944bce4033cf4913e440d5a60fb901bb93e62fe968d3de2d4d43d4c1f0
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:371a5c64d96a4980058228b889ddbc7c3d66068d53bf3b39592f57d012fa7c33
     name: osc-console-plugin
-  - image: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:2be3271970e711842b6866ccdbe6ee22bd3862044b2a32cf3bb4f029563c09d8
+  - image: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:945ffb84f491079b261457ec6c711dd815269a906d2361e49e6e124ac9b23eea
     name: coco-console-plugin
   replaces: sandboxed-containers-operator.v1.13.1
   version: 1.14.0
