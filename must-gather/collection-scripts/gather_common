@@ -319,3 +319,79 @@ redact_token_fields() {
     rm -f "$list"
     return "$rc"
 }
+
+# Collect the kata/virtcontainers runtime state (/host/run/vc) from a
+# node-gather pod and publish it under <vc_path>, with the sandbox process
+# tokens redacted (see redact_token_fields).
+#
+# The data is staged outside the collection tree (under /tmp) and only
+# published after the copy succeeded and the redaction was verified, so a
+# failure of the copy, the redaction, the publish or the cleanup itself can
+# never put unredacted runtime data into the archive (KATA-6494). A failed
+# copy drops the data entirely: whatever it leaves behind is partial and
+# cannot be trusted.
+#
+# Usage: collect_vc_runtime_data <pod> <node> <vc_path>
+collect_vc_runtime_data() {
+    local pod="$1"
+    local node="$2"
+    local vc_path="${3%/}"
+
+    local staging
+    local mktemp_rc
+    staging=$(mktemp -d /tmp/osc-must-gather-vc-XXXXXX)
+    mktemp_rc=$?
+    if [[ $mktemp_rc -ne 0 ]]; then
+        log_error "Creating staging directory for sandboxed containers runtime data for node $node" \
+                  "mktemp -d /tmp/osc-must-gather-vc-XXXXXX" \
+                  "$mktemp_rc" \
+                  ""
+        return 1
+    fi
+
+    # Capture the status directly: "if ! cmd; then ... $?" would always
+    # see the negated status (0), losing the real failure/timeout code.
+    local cp_rc=0
+    local output
+    output=$(exec_with_retry oc cp "$pod:/host/run/vc/" "${staging}/" -n node-gather 2>&1) || cp_rc=$?
+    if [[ $cp_rc -ne 0 ]]; then
+        log_error "Copying sandboxed containers runtime data for node $node" \
+                  "oc cp $pod:/host/run/vc/ ${staging} -n node-gather" \
+                  "$cp_rc" \
+                  "$output"
+        # The copy failed: drop the partial tree and publish nothing.
+        rm -rf "${staging}"
+        return 1
+    fi
+
+    # persist.json carries the sandbox process token, which leaktk flags
+    # in the gathered archive (KATA-6494); redact before publishing.
+    local redact_rc=0
+    redact_token_fields "${staging}" || redact_rc=$?
+    if [[ $redact_rc -ne 0 ]]; then
+        # The data could not be sanitized: drop it. It lives outside the
+        # collection tree, so even a failed removal cannot package
+        # unredacted tokens (KATA-6494).
+        rm -rf "${staging}"
+        log_error "Redacting tokens in sandboxed containers runtime data for node $node" \
+                  "redact_token_fields ${staging}" \
+                  "$redact_rc" \
+                  ""
+        return 1
+    fi
+
+    # Publish the sanitized data; a failed publish also keeps the data out
+    # of the archive.
+    local publish_rc=0
+    mkdir -p "$(dirname "${vc_path}")"
+    mv "${staging}" "${vc_path}" || publish_rc=$?
+    if [[ $publish_rc -ne 0 ]]; then
+        rm -rf "${staging}"
+        log_error "Publishing sandboxed containers runtime data for node $node" \
+                  "mv ${staging} ${vc_path}" \
+                  "$publish_rc" \
+                  ""
+        return 1
+    fi
+    return 0
+}
