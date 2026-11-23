@@ -220,7 +220,7 @@ periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate<v
 ```bash
 cd scripts/prowjob-analyzer
 
-# Default matrix: 420/421/422 x azure/aws/aro x kata/peerpods/coco, since a date:
+# Default matrix: 420/421/422/500 x azure/aws/aro x kata/peerpods/coco, since a date:
 ./batch_job_history.py --since 2026-10-01
 
 # Narrow the matrix:

@@ -65,7 +65,7 @@ JOB_NAME_TEMPLATE = (
     'candidate{version}-{provider}-ipi-{workload}'
 )
 
-DEFAULT_VERSIONS = ['420', '421', '422']
+DEFAULT_VERSIONS = ['420', '421', '422', '500']
 DEFAULT_PROVIDERS = ['azure', 'aws', 'aro']
 DEFAULT_WORKLOADS = ['kata', 'peerpods', 'coco']
 
