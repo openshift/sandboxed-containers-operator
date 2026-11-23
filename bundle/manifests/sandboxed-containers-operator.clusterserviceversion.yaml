@@ -488,7 +488,7 @@ spec:
                 - name: RELATED_IMAGE_CAA
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:2923506accc3a89cd736c3780702b672baba86e67b334371c4111a3bc8c40cfd
                 - name: RELATED_IMAGE_PEERPODS_WEBHOOK
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:d5e08a6ab2bc3a019098df325b96cb06f3b24fae226114bc188238795fa1a61f
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:dd2ff05317c4341428447c5b2a2ec5cc4e1364b723896c4f30ad0cbeabc2a863
                 - name: RELATED_IMAGE_PODVM_BUILDER
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:cced88ba998eb5ccdd644b94782543f36b2a422df81addcbd9ba09b8a7170675
                 - name: RELATED_IMAGE_PODVM_PAYLOAD
@@ -642,7 +642,7 @@ spec:
     name: kata-monitor
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:2923506accc3a89cd736c3780702b672baba86e67b334371c4111a3bc8c40cfd
     name: caa
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:d5e08a6ab2bc3a019098df325b96cb06f3b24fae226114bc188238795fa1a61f
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:dd2ff05317c4341428447c5b2a2ec5cc4e1364b723896c4f30ad0cbeabc2a863
     name: peerpods-webhook
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:cced88ba998eb5ccdd644b94782543f36b2a422df81addcbd9ba09b8a7170675
     name: podvm-builder
