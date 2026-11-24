@@ -29,6 +29,7 @@ spec:
   - name: build-args
     value:
     - VERSION=1.14 # OSC_VERSION
+    - CPE_STRING=cpe:/a:redhat:confidential_compute_attestation:1.140::el9
   pipelineSpec:
     description: |
       This pipeline is ideal for building container images from a Containerfile while reducing network traffic.
