@@ -41,7 +41,7 @@ ARG VERSION
 
 # Red Hat labels
 LABEL name="openshift-sandboxed-containers/osc-rhel9-operator" \
-cpe="cpe:/a:redhat:confidential_compute_attestation:1.130::el9" \
+cpe="cpe:/a:redhat:confidential_compute_attestation:1.140::el9" \
 version="$VERSION" \
 com.redhat.component="osc-operator-container" \
 summary="This operator manages the Openshift Sandboxed Containers runtime installation" \

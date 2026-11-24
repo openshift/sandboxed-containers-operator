@@ -27,7 +27,7 @@ ARG VERSION
 
 # Red Hat labels
 LABEL name="openshift-sandboxed-containers/osc-must-gather-rhel9" \
-cpe="cpe:/a:redhat:confidential_compute_attestation:1.130::el9" \
+cpe="cpe:/a:redhat:confidential_compute_attestation:1.140::el9" \
 version="$VERSION" \
 com.redhat.component="osc-must-gather-container" \
 summary="osc-must-gather collects information about the sandboxed containers operator and the kata runtime" \

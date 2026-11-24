@@ -32,7 +32,7 @@ RUN cd / && rm -rf /tmp/tools && dnf remove -y golang && dnf clean all
 
 # Red Hat labels
 LABEL name="openshift-sandboxed-containers/osc-daemonset-rhel9" \
-cpe="cpe:/a:redhat:confidential_compute_attestation:1.130::el9" \
+cpe="cpe:/a:redhat:confidential_compute_attestation:1.140::el9" \
 version="$VERSION" \
 com.redhat.component="osc-daemonset" \
 summary="This daemonset manages the Openshift Sandboxed Containers runtime installation" \
