@@ -111,7 +111,7 @@ spec:
             - name: RELATED_IMAGE_OSC_CONSOLE_PLUGIN
               value: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:bb2c7afa874f9c1b32a06324f9ca40ebe34f259661a9dcaf5cf52d67f03f2530
             - name: RELATED_IMAGE_COCO_CONSOLE_PLUGIN
-              value: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:f3430c1252138564487765da20851604a7c70e19754e4d76a6aede8e2a6ea218
+              value: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:5bd67a3219039cd65f72c823c13b64687114f7e0bec22811eadebc2a405d7635
           imagePullPolicy: Always
           resources:
             limits:
