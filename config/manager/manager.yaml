@@ -109,7 +109,7 @@ spec:
             - name: RELATED_IMAGE_STORAGE_HELPER
               value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:682e00a42c72033087dcd0ca3350468094f471efc6688118170b1ebb8b0cc208
             - name: RELATED_IMAGE_OSC_CONSOLE_PLUGIN
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:371a5c64d96a4980058228b889ddbc7c3d66068d53bf3b39592f57d012fa7c33
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:1e025157fd4210d65f187d56b1053f2cae169f454fb8b5f8364b6186cca4686f
             - name: RELATED_IMAGE_COCO_CONSOLE_PLUGIN
               value: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:adc0bc2b5519d135dae3e3d53cd35ad41479ee731b64506393d65bd74c6de7eb
           imagePullPolicy: Always
