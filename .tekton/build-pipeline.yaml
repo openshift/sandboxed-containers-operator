@@ -62,6 +62,10 @@ spec:
     description: Version string passed as VERSION build-arg to all image builds
     name: version
     type: string
+  - default: "cpe:/a:redhat:confidential_compute_attestation:1.140::el9"
+    description: cpe string passed as CPE_STRING build-arg to all image builds
+    name: cpe-string
+    type: string
   - default: 'false'
     description: Whether to enable privileged mode, should be used only with remote VMs
     name: privileged-nested
@@ -207,6 +211,7 @@ spec:
       value:
       - $(params.build-args[*])
       - VERSION=$(params.version)
+      - CPE_STRING=$(params.cpe-string)
     - name: PRIVILEGED_NESTED
       value: $(params.privileged-nested)
     - name: SOURCE_ARTIFACT
