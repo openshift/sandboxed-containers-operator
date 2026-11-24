@@ -29,7 +29,9 @@ directory or silently using a different version.
    summaries, and artifact links. Distinguish `skipped`, incomplete results,
    `TEST_BUG`, and actual test failures. The post-phase OSC, Kata upstream,
    and CAA suites can fail independently; `best_effort` does not make a
-   failing job pass.
+   failing suite pass. Failures after the testsuites chain (artifact gathering,
+   debug wait, or teardown) do not count toward the overall test verdict.
+   Report them separately without hiding the raw Prow status.
 3. For tests that actually ran and failed, run
    `python3 <OSC_ROOT>/scripts/prowjob-analyzer/dig_failed_tests_report.py <PROW_JOB_URL>`
    and inspect the relevant JUnit and step logs. For infrastructure, sanity,
@@ -50,6 +52,9 @@ directory or silently using a different version.
   time, followed by the job name or link, then its result.
 - Use the spreadsheet `start_time` format exactly as reported by the analyzer
   (e.g. `2026-11-12T00:15:41Z`); use `unknown` if unavailable.
-- Use `SUCCESS` for a passed job. For failures, use `FAILURE` followed by a
-  concise finding; preserve other states such as pending or aborted rather
-  than treating them as successful. Keep skipped suites distinct from passes.
+- Use `result_categories.overall.status` (the markdown `overall` line or CSV
+  `overall_status`) for the test verdict. If Prow reports failure solely for
+  post-chain housekeeping and `overall` is `SUCCESS`, report `SUCCESS` and
+  note the failed post step and raw Prow `FAILURE` separately. Preserve pending,
+  aborted, and unknown states. Keep skipped suites distinct from passes. If
+  `infra` failed and testing was skipped, report the infrastructure failure.

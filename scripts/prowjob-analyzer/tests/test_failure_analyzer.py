@@ -11,6 +11,7 @@ from lib.failure_analyzer import (
     _observed_suite_failures,
     _observed_test_failure,
     _pending_pre_step_from_build_log,
+    analyze_failure,
     analyze_steps_failure,
     build_result_categories,
     check_log_for_patterns,
@@ -866,7 +867,7 @@ class TestBuildResultCategoriesEndToEnd(unittest.TestCase):
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
-    def test_smoke_only_failure(self) -> None:
+    def test_smoke_failure_still_counts_with_post_chain_failure(self) -> None:
         root = tempfile.mkdtemp()
         try:
             _setup_all_pass(root)
@@ -874,6 +875,7 @@ class TestBuildResultCategoriesEndToEnd(unittest.TestCase):
                 root, 'sandboxed-containers-operator-testsuites-gate',
                 build_log='timeout waiting for marker\n',
             )
+            _failing_step(root, 'sandboxed-containers-operator-post-wait')
             configure_artifact_source(root)
             classification, summaries = self._classify_and_summarize()
 
@@ -883,6 +885,7 @@ class TestBuildResultCategoriesEndToEnd(unittest.TestCase):
             )
 
             self.assertEqual(categories['smoke']['status'], 'FAILURE')
+            self.assertEqual(categories['overall']['status'], 'FAILURE')
             self.assertEqual(
                 categories['smoke']['failed_steps'],
                 'sandboxed-containers-operator-testsuites-gate',
@@ -896,12 +899,14 @@ class TestBuildResultCategoriesEndToEnd(unittest.TestCase):
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
-    def test_one_suite_failure(self) -> None:
+    def test_suite_failure_still_counts_with_post_chain_failure(self) -> None:
         root = tempfile.mkdtemp()
         try:
             _setup_all_pass(root)
             step = 'sandboxed-containers-operator-testsuites-osc'
             _failing_step(root, step)
+            cleanup = 'gather-must-gather'
+            _failing_step(root, cleanup, build_log='OOMKilled while gathering\n')
             artifacts_dir = os.path.join(root, 'artifacts', _VARIANT, step, 'artifacts')
             os.makedirs(artifacts_dir, exist_ok=True)
             junit = (
@@ -922,12 +927,23 @@ class TestBuildResultCategoriesEndToEnd(unittest.TestCase):
             )
 
             self.assertEqual(categories['osc']['status'], 'FAILURE')
+            self.assertEqual(categories['overall']['status'], 'FAILURE')
             self.assertEqual(categories['osc']['failed_steps'], step)
             self.assertIn('C00349', categories['osc']['root_cause'])
             self.assertIn('Deployment not ready (2/3 replicas after 600s)', categories['osc']['root_cause'])
             self.assertNotIn('secret=abc', categories['osc']['root_cause'])
             for key in ('infra', 'smoke', 'kata_upstream', 'caa'):
                 self.assertEqual(categories[key]['status'], 'SUCCESS')
+
+            analysis = analyze_failure(
+                {'state': 'failure'}, 'http://x', {'variant': _VARIANT}, classification,
+            )
+            self.assertEqual(analysis['failure_location'], f'{step}, {cleanup}')
+            oom_sources = [p['source'] for p in analysis['detected_patterns']
+                           if p['pattern'] == 'oom']
+            self.assertEqual(oom_sources, [f'{cleanup}/build-log.txt'])
+            self.assertEqual(analysis['root_cause']['primary_pattern'], 'oom')
+            self.assertEqual(categories['overall']['primary_pattern'], '')
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
@@ -1106,11 +1122,23 @@ class TestBuildResultCategoriesEndToEnd(unittest.TestCase):
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
-    def test_cleanup_step_only_failure_feeds_overall(self) -> None:
+    def test_post_chain_failure_does_not_change_overall_result(self) -> None:
         root = tempfile.mkdtemp()
         try:
             _setup_all_pass(root)
-            _failing_step(root, 'gather-must-gather', build_log='OOMKilled while gathering\n')
+            osc_artifacts = os.path.join(
+                _step_dir(root, TESTSUITES_SUITE_STEPS['osc']), 'artifacts',
+            )
+            os.makedirs(osc_artifacts)
+            _write_text(os.path.join(osc_artifacts, 'junit_osc.xml'),
+                        '<testsuite tests="1"><testcase name="passes"/></testsuite>')
+            post_steps = ('gather-must-gather', 'sandboxed-containers-operator-post-wait',
+                          'release-test-resources')
+            for step in post_steps:
+                _failing_step(root, step)
+                _write_json(os.path.join(_step_dir(root, step), 'started.json'), {'timestamp': 1091})
+                _write_json(os.path.join(_step_dir(root, step), 'finished.json'),
+                            {'timestamp': 1092, 'passed': False, 'result': 'FAILURE'})
             configure_artifact_source(root)
             classification, summaries = self._classify_and_summarize()
 
@@ -1120,9 +1148,11 @@ class TestBuildResultCategoriesEndToEnd(unittest.TestCase):
             )
 
             self.assertEqual(categories['infra']['status'], 'SUCCESS')
-            self.assertEqual(categories['overall']['status'], 'FAILURE')
-            self.assertIn('gather-must-gather', categories['overall']['failed_steps'])
-            self.assertEqual(categories['overall']['primary_pattern'], 'oom')
+            self.assertEqual(categories['overall']['status'], 'SUCCESS')
+            self.assertEqual(categories['overall']['failed_steps'], '')
+            analysis = analyze_failure({'state': 'failure'}, 'http://x', {'variant': _VARIANT},
+                                       classification)
+            self.assertCountEqual(analysis['failure_location'].split(', '), post_steps)
         finally:
             shutil.rmtree(root, ignore_errors=True)
 

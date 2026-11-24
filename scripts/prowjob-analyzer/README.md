@@ -369,8 +369,8 @@ FAILURE](#test-code-build-failures-never-report-failure) for `TEST_BUG`)
 followed by a fixed **detail block** (five columns per category:
 `<category>_time`/`_failed_steps`/`_primary_pattern`/`_confidence`/
 `_root_cause`), covering **infra** (everything outside the testsuites chain,
-excluding gather/deprovision cleanup), **overall** (the whole Prow job's own
-verdict), **smoke** (the `testsuites-gate` step), and one block per
+excluding post-chain housekeeping), **overall** (the analyzer's test verdict),
+**smoke** (the `testsuites-gate` step), and one block per
 testsuites-chain suite (today: **osc**, **kata-upstream**, **caa**):
 
 | Col | Name | Col | Name |
@@ -469,15 +469,17 @@ To avoid exposing sensitive log content, the report links to the suite's
 build log instead of copying compiler output. **`overall` does not inherit
 a false `FAILURE` verdict from a `TEST_BUG` suite either**: a `TEST_BUG` suite is treated
 exactly like a self-skipped suite for `overall`'s own determination (it
-doesn't count as a real failure). When every testsuites-chain suite
-contributing to the job's own `FAILURE` state is a `TEST_BUG` (and nothing
-else -- `smoke`, a cleanup step -- also failed), `overall` is recomputed:
+doesn't count as a real failure). When only `TEST_BUG` suites or post-chain
+housekeeping (such as gather, debug wait, or teardown) account for Prow's
+`FAILURE`, and the gate passed, `overall` is recomputed:
 if *any* suite in the chain has JUnit confirming at least one passing test,
 `overall` becomes `SUCCESS`; `overall` is `'skipped'` only when **every**
 suite is `TEST_BUG` or self-skipped. If no confirmed pass exists and a
 suite is missing or its results are incomplete, `overall` is `unknown`;
-missing results do not prove a skip. If anything else genuinely failed
-alongside it, `overall` correctly stays `FAILURE`. If you touch the suite runners' `go
+missing results do not prove a skip. A post-chain failure cannot turn an
+incomplete chain into a pass. A failed gate or a real suite failure is not
+overridden. Raw Prow status and failed post steps remain visible in job
+diagnostics. If you touch the suite runners' `go
 test` invocation or add a new Go-based suite, keep this detector (and its
 tests in `tests/test_failure_analyzer.py::TestIsTestCodeBuildFailure`/
 `TestBuildResultCategoriesEndToEnd` and
@@ -647,7 +649,7 @@ Output:
 ```markdown
 # Prow Job Analysis Report
 
-## Status: ✅ SUCCESS
+## Prow Status: ✅ SUCCESS
 
 ## Job Overview
 - **Job Name**: periodic-ci-openshift-sandboxed-containers-operator-devel-downstream-candidate-aws-ipi-peerpods

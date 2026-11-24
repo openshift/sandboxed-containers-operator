@@ -146,14 +146,18 @@ ALL_TESTSUITES_STEPS = [TESTSUITES_GATE_STEP] + list(TESTSUITES_SUITE_STEPS.valu
 
 def is_cleanup_step(step_name: str) -> bool:
     """
-    True for a post-phase step that's known cleanup (gather/deprovision),
+    True for known post-chain housekeeping (gather/deprovision, wait, OSC post),
     not "infra" -- e.g. ``sandboxed-containers-operator-gather-must-gather``,
     ``azure-deprovision-sp-and-custom-role``, ``aws-deprovision-users-and-policies``.
     Case-insensitive substring match so it covers every provider's naming
     without hardcoding per-provider step names (see the prowjob-analyzer plan).
     """
     name = (step_name or '').lower()
-    return 'gather' in name or 'deprovision' in name
+    return 'gather' in name or 'deprovision' in name or name in {
+        'cucushift-installer-wait',
+        'sandboxed-containers-operator-post',
+        'sandboxed-containers-operator-post-wait',
+    }
 
 
 _STORAGE_BASE = "https://storage.googleapis.com"

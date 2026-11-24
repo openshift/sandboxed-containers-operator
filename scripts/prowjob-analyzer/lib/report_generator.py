@@ -593,7 +593,7 @@ def generate_human_report(report_data: Dict) -> str:
 
     # Status
     status_emoji = format_status_emoji(status)
-    report += f"## Status: {status_emoji} {status.upper()}\n\n"
+    report += f"## Prow Status: {status_emoji} {status.upper()}\n\n"
 
     # Fixed-layout dashboard (plan §6.2): always every category, same order,
     # every run -- placed right after Status so it reads like a quick-scan

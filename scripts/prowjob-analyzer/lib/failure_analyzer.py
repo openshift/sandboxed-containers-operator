@@ -278,10 +278,9 @@ def classify_infra_steps(base_url: str, variant: str) -> Dict:
     """
     Split a job's step directories outside the testsuites chain
     (``ALL_TESTSUITES_STEPS``) into "infra" (pre-phase/misc) and "cleanup"
-    (gather/deprovision) steps, each with its own currently-failed subset.
-    See the prowjob-analyzer plan's result-categories design: ``infra``'s
-    status/time only count the former; ``cleanup_failed_steps`` feeds
-    ``overall``'s catch-all when a cleanup step is what actually failed.
+    (post-chain housekeeping) steps, each with its own failed subset.
+    For unfamiliar failed steps, require timestamps that show the step
+    started after every suite finished before excluding it from infra.
 
     Returns:
         {
@@ -296,12 +295,31 @@ def classify_infra_steps(base_url: str, variant: str) -> Dict:
     failed_steps = set(get_failed_steps(base_url, variant))
     known_steps = set(ALL_TESTSUITES_STEPS)
 
+    chain_end = None
+    if any(step not in known_steps and not is_cleanup_step(step) for step in failed_steps):
+        suite_ends = [
+            _podutils_json_timestamp(fetch_json_artifact(
+                base_url, f'artifacts/{variant}/{step}/finished.json'
+            ))
+            for step in TESTSUITES_SUITE_STEPS.values() if step in step_dirs
+        ]
+        if suite_ends and len(suite_ends) == len(TESTSUITES_SUITE_STEPS) and None not in suite_ends:
+            chain_end = max(suite_ends)
+
     infra_steps: List[str] = []
     cleanup_steps: List[str] = []
     for step in step_dirs:
         if step in known_steps:
             continue
         if is_cleanup_step(step):
+            cleanup_steps.append(step)
+            continue
+        started = None
+        if step in failed_steps and chain_end is not None:
+            started = _podutils_json_timestamp(fetch_json_artifact(
+                base_url, f'artifacts/{variant}/{step}/started.json'
+            ))
+        if started is not None and started > chain_end:
             cleanup_steps.append(step)
         else:
             infra_steps.append(step)
@@ -318,8 +336,8 @@ def classify_infra_steps(base_url: str, variant: str) -> Dict:
 def analyze_steps_failure(base_url: str, variant: str, step_names: List[str]) -> Dict:
     """
     Generalizes :func:`analyze_suite_failure` for arbitrary non-suite steps
-    (``infra``'s failed pre-phase steps, or ``overall``'s cleanup-step
-    catch-all): fetches each step's own ``build-log.txt``, scans it for
+    (failed infrastructure or cleanup steps): fetches each step's own
+    ``build-log.txt``, scans it for
     ``FAILURE_PATTERNS``, and combines every step's detected patterns and
     (truncated) log text into one result for :func:`determine_root_cause`.
 
@@ -1193,8 +1211,9 @@ def analyze_failure(
         except Exception as e:
             logger.warning(f"Failed to analyze build-log.txt: {e}")
 
+    other_failed_steps = classification['other_failed_steps']
     if classification['failure_kind'] == 'blocking_phase_failure':
-        location_parts = classification['other_failed_steps'] or [
+        location_parts = other_failed_steps or [
             'pre/test phase (testsuites-gate did not run or failed)'
         ]
     elif classification['failure_kind'] == 'best_effort_suite_failure':
@@ -1227,13 +1246,18 @@ def analyze_failure(
                 'path': f"artifacts/{variant}/{info['step_name']}/build-log.txt",
                 'patterns_found': len(suite_result['detected_patterns']),
             })
-        location_parts.extend(classification['other_failed_steps'])
+        location_parts.extend(other_failed_steps)
     elif classification['failure_kind'] == 'unrelated_post_step_failure':
-        location_parts = classification['other_failed_steps']
+        location_parts = other_failed_steps
     else:
         # Classifier found nothing wrong in/around the testsuites chain; fall back to a
         # generic failed-step scan (covers edge cases this classifier doesn't model).
         location_parts = get_failed_steps(base_url, variant) or ['unknown']
+
+    # Keep non-suite diagnostics in the job failure analysis, not the test verdict.
+    if other_failed_steps:
+        steps_result = analyze_steps_failure(base_url, variant, other_failed_steps)
+        detected_patterns.extend(steps_result['detected_patterns'])
 
     analysis['failure_location'] = ', '.join(location_parts) if location_parts else 'unknown'
     analysis['failing_tests'] = failing_tests
@@ -1253,7 +1277,7 @@ def analyze_failure(
         test_code_build_failure=(
             bool(failed_suite_results)
             and all(is_test_code_build_failure(result) for result in failed_suite_results)
-            and not classification.get('other_failed_steps')
+            and not other_failed_steps
         ),
     )
 
@@ -1359,14 +1383,10 @@ def _build_infra_category(base_url: str, variant: str, metadata: Dict, infra_inf
 
 def _build_overall_category(
     prowjob_data: Dict,
-    base_url: str,
-    variant: str,
-    metadata: Dict,
     status: str,
     prowjob_elapsed_time: str,
-    infra_info: Dict,
 ) -> Dict:
-    """``overall``: the whole Prow job's own verdict (today's ``prowjob_status``)."""
+    """Seed ``overall`` with Prow's verdict before evaluating test evidence."""
     cat = _new_category()
     cat['status'] = (status or '').upper()
     cat['time'] = prowjob_elapsed_time or ''
@@ -1385,19 +1405,6 @@ def _build_overall_category(
     elif state in ('error', 'errored'):
         cat['failed_steps'] = 'infrastructure'
         cat['root_cause'] = 'The job failed due to infrastructure issues.'
-    elif state == 'failure':
-        cleanup_failed = infra_info.get('cleanup_failed_steps') or []
-        if cleanup_failed and variant and variant != 'unknown':
-            cat['failed_steps'] = ', '.join(cleanup_failed)
-            steps_result = analyze_steps_failure(base_url, variant, cleanup_failed)
-            rc = determine_root_cause(
-                [], steps_result['detected_patterns'], metadata, steps_result['build_log_text']
-            )
-            cat['primary_pattern'] = rc.get('primary_pattern') or ''
-            cat['confidence'] = rc.get('confidence') or ''
-            cat['root_cause'] = rc.get('likely_cause') or ''
-        else:
-            cat['root_cause'] = 'unknown'
     else:
         cat['root_cause'] = 'unknown'
 
@@ -1602,9 +1609,8 @@ def build_result_categories(
 
     Reuses ``classification``/``suite_summaries`` (already computed once by
     dig.py via :func:`classify_testsuites_result`/:func:`summarize_all_suites`)
-    rather than re-fetching; only ``infra``/``overall``/``smoke`` perform any
-    *new* fetching here (one ``build-log.txt`` per failed non-suite step),
-    and none of that fetching happens at all once infra has already failed.
+    rather than re-fetching suite results. Failed infra and gate steps may
+    need their own ``build-log.txt`` for diagnosis.
 
     A suite category's status can also be ``'TEST_BUG'`` instead of
     ``'FAILURE'``: the suite's own test code failed to *compile* (see
@@ -1613,9 +1619,8 @@ def build_result_categories(
     not inherit a false ``FAILURE`` verdict purely from that case either --
     a ``TEST_BUG`` suite is treated exactly like a self-skipped suite for
     ``overall``'s own determination (it doesn't count as a real failure).
-    When every testsuites-chain suite contributing to the job's own
-    ``FAILURE`` state is a ``TEST_BUG`` (and nothing else, e.g. ``smoke`` or
-    a cleanup step, also failed), ``overall`` is recomputed: a JUnit-confirmed
+    When only ``TEST_BUG`` suites or post-chain housekeeping caused Prow's
+    ``FAILURE``, ``overall`` is recomputed: a JUnit-confirmed
     passing test gives ``'SUCCESS'``; if all suites are TEST_BUG or skipped,
     it is ``'skipped'``. Missing or inconclusive suite results give
     ``'unknown'`` rather than being assumed to be skipped or passed.
@@ -1664,9 +1669,7 @@ def build_result_categories(
             categories[suite_key.replace('-', '_')] = dict(skipped)
         return categories
 
-    categories['overall'] = _build_overall_category(
-        prowjob_data, base_url, variant, metadata, status, prowjob_elapsed_time, infra_info
-    )
+    categories['overall'] = _build_overall_category(prowjob_data, status, prowjob_elapsed_time)
     categories['smoke'] = _build_smoke_category(
         base_url, variant, metadata, classification, suite_summaries
     )
@@ -1680,47 +1683,39 @@ def build_result_categories(
             metadata, suite_key, step_name, classification, suite_summaries
         )
 
-    # overall must not inherit a FAILURE verdict purely from a TEST_BUG suite
-    # (a test-code compile bug, not a product regression -- see
-    # is_test_code_build_failure()). A TEST_BUG suite is treated exactly like
-    # a self-skipped suite for overall's own determination: it doesn't count
-    # as a real failure. Only when every testsuites-chain suite that
-    # raw-FAILUREd is a test bug, and nothing else (smoke, an unrelated
-    # post-step/cleanup step) also contributed to the job's own FAILURE
-    # state, does this apply -- if anything else genuinely failed, overall
-    # correctly stays FAILURE.
+    # Only override a plain Prow failure accounted for by post-chain steps
+    # or test-code compilation bugs. Never override a failed or missing gate.
+    cleanup_failures = set(infra_info['cleanup_failed_steps'])
+    other_failures = set(classification.get('other_failed_steps') or [])
+    suites = classification.get('suites') or {}
+    failing_suites = [key for key, info in suites.items() if info.get('status') == 'FAILURE']
     if (
-        categories['overall']['status'] == 'FAILURE'
-        and classification.get('failure_kind') == 'best_effort_suite_failure'
-        and not classification.get('other_failed_steps')
-        and categories['smoke']['status'] != 'FAILURE'
+        status == 'failure'
+        and (prowjob_data.get('state') or '').lower() == 'failure'
+        and categories['smoke']['status'] == 'SUCCESS'
+        and (cleanup_failures or failing_suites)
+        and other_failures <= cleanup_failures
+        and all(categories[k.replace('-', '_')]['status'] == 'TEST_BUG' for k in failing_suites)
     ):
-        failing_suite_keys = [
-            k for k, info in (classification.get('suites') or {}).items()
-            if info.get('status') == 'FAILURE'
-        ]
-        if failing_suite_keys and all(
-            is_test_code_build_failure((suite_summaries or {}).get(k) or {})
-            for k in failing_suite_keys
-        ):
-            # A successful process is not evidence of a passing test when
-            # JUnit is missing, invalid or contains no passing cases.
-            any_real_pass = any(
-                categories[k.replace('-', '_')]['status'] == 'SUCCESS'
-                and (suite_summaries.get(k) or {}).get('had_junit', False)
-                and (suite_summaries.get(k) or {}).get('passed', 0) > 0
-                for k in TESTSUITES_SUITE_STEPS
-            )
-            all_skipped = all(
-                categories[k.replace('-', '_')]['status'] in ('TEST_BUG', 'skipped')
-                for k in TESTSUITES_SUITE_STEPS
-            )
-            categories['overall']['status'] = (
-                'SUCCESS' if any_real_pass else 'skipped' if all_skipped else 'unknown'
-            )
-            categories['overall']['failed_steps'] = ''
-            categories['overall']['primary_pattern'] = ''
-            categories['overall']['confidence'] = ''
-            categories['overall']['root_cause'] = ''
+        # A successful process is not evidence of a passing test when
+        # JUnit is missing, invalid or contains no passing cases.
+        incomplete_chain = cleanup_failures and any(
+            (suites.get(k) or {}).get('status') not in ('SUCCESS', 'FAILURE')
+            for k in TESTSUITES_SUITE_STEPS
+        )
+        any_real_pass = not incomplete_chain and any(
+            categories[k.replace('-', '_')]['status'] == 'SUCCESS'
+            and (suite_summaries.get(k) or {}).get('had_junit', False)
+            and (suite_summaries.get(k) or {}).get('passed', 0) > 0
+            for k in TESTSUITES_SUITE_STEPS
+        )
+        all_skipped = all(
+            categories[k.replace('-', '_')]['status'] in ('TEST_BUG', 'skipped')
+            for k in TESTSUITES_SUITE_STEPS
+        )
+        categories['overall']['status'] = (
+            'SUCCESS' if any_real_pass else 'skipped' if all_skipped else 'unknown'
+        )
+        categories['overall']['root_cause'] = ''
 
     return categories
