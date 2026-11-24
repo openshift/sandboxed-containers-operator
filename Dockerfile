@@ -38,10 +38,11 @@ RUN useradd  -r -u 499 nonroot
 RUN getent group nonroot || groupadd -o -g 499 nonroot
 
 ARG VERSION
+ARG CPE_STRING
 
 # Red Hat labels
 LABEL name="openshift-sandboxed-containers/osc-rhel9-operator" \
-cpe="cpe:/a:redhat:confidential_compute_attestation:1.130::el9" \
+cpe="$CPE_STRING" \
 version="$VERSION" \
 com.redhat.component="osc-operator-container" \
 summary="This operator manages the Openshift Sandboxed Containers runtime installation" \

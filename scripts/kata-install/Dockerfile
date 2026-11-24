@@ -3,6 +3,7 @@ FROM registry.access.redhat.com/ubi9/skopeo:9.9-1795227280
 ARG ORG_ID
 ARG ACTIVATION_KEY
 ARG VERSION
+ARG CPE_STRING
 
 # This registers RHEL when building on an unsubscribed system
 # If you are running a UBI container on a registered and subscribed RHEL host,
@@ -32,7 +33,7 @@ RUN cd / && rm -rf /tmp/tools && dnf remove -y golang && dnf clean all
 
 # Red Hat labels
 LABEL name="openshift-sandboxed-containers/osc-daemonset-rhel9" \
-cpe="cpe:/a:redhat:confidential_compute_attestation:1.130::el9" \
+cpe="$CPE_STRING" \
 version="$VERSION" \
 com.redhat.component="osc-daemonset" \
 summary="This daemonset manages the Openshift Sandboxed Containers runtime installation" \

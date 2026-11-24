@@ -1,5 +1,6 @@
 FROM scratch
 ARG VERSION
+ARG CPE_STRING
 
 # Core bundle labels.
 LABEL operators.operatorframework.io.bundle.mediatype.v1=registry+v1
@@ -27,7 +28,7 @@ LABEL io.k8s.description='This operator manages the sandboxed-containers runtime
 LABEL com.redhat.delivery.appregistry=''
 LABEL maintainer='support@redhat.com'
 LABEL name="openshift-sandboxed-containers/osc-operator-bundle"
-LABEL cpe="cpe:/a:redhat:confidential_compute_attestation:1.130::el9"
+LABEL cpe="$CPE_STRING"
 LABEL com.redhat.component="osc-operator-bundle-container"
 LABEL io.openshift.maintainer.product='OpenShift Container Platform'
 LABEL io.openshift.maintainer.component='Sandboxed Containers'
