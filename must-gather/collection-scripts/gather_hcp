@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source /usr/bin/gather_common
+source "$(dirname "${BASH_SOURCE[0]}")/gather_common"
 
 IFS=$'\n'
 
@@ -10,16 +10,23 @@ OSC_NS="openshift-sandboxed-containers-operator"
 # Detect HCP topology via the shared function
 detect_topology
 
-if [[ "$IS_HCP" != "true" ]]; then
+# Skip only when the cluster is known not to be HCP. When detection failed
+# (IS_HCP empty), collect anyway: these are cheap reads, and missing them
+# makes hosted-cluster debugging harder (KATA-6493).
+if [[ "$IS_HCP" == "false" ]]; then
     echo "Cluster is not HCP (controlPlaneTopology=${CONTROL_PLANE_TOPOLOGY:-unknown}), skipping HCP-specific collection"
     exit 0
 fi
 
-echo "HCP hosted cluster detected (controlPlaneTopology=External)"
+if [[ -z "$IS_HCP" ]]; then
+    echo "Cluster topology unknown (controlPlaneTopology query failed); collecting HCP diagnostics anyway"
+else
+    echo "HCP hosted cluster detected (controlPlaneTopology=External)"
+fi
 mkdir -p "${HCP_PATH}"
 
 # Record the topology detection result
-echo "controlPlaneTopology: ${CONTROL_PLANE_TOPOLOGY}" > "${HCP_PATH}/topology"
+echo "controlPlaneTopology: ${CONTROL_PLANE_TOPOLOGY:-unknown (query failed)}" > "${HCP_PATH}/topology"
 
 collect_resource "Collecting cluster infrastructure" \
     "${HCP_PATH}/infrastructure.yaml" \
