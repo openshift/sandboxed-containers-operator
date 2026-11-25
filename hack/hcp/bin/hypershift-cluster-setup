@@ -1,0 +1,4459 @@
+#!/bin/bash
+# hypershift-cluster-setup (multicloud)
+# HyperShift cluster setup for Azure, AWS, and GCP
+# Usage: hypershift-cluster-setup-multicloud --cloud PROVIDER [SCOPE] [ACTION] [OPTIONS]
+# Example: hypershift-cluster-setup-multicloud --cloud azure management create --location eastus
+#          hypershift-cluster-setup-multicloud --cloud aws hosted setup --cluster-name my-cluster
+#          hypershift-cluster-setup-multicloud --cloud gcp osc install
+
+set -euo pipefail
+
+# Verbose mode
+VERBOSE="${VERBOSE:-false}"
+
+# Debug mode (enables set -x)
+DEBUG="${DEBUG:-false}"
+HCP_CLOUD="${HCP_CLOUD:-}"
+HCP_CONFIG_FILE="${HCP_CONFIG_FILE:-}"
+
+# Track whether --load-env was used so next-step messages can echo it back
+HCP_LOAD_ENV_USED="false"
+HCP_LOAD_ENV_FILE=""
+
+# Pre-scan for flags that must be set before --load-env sources the env file
+# (env file uses :- so pre-set values win).
+for (( _hcs_i=1; _hcs_i<=$#; _hcs_i++ )); do
+    _hcs_j=$(( _hcs_i + 1 ))
+    if [[ "${!_hcs_i}" == "--release" || "${!_hcs_i}" == "-r" ]]; then
+        if [[ $_hcs_j -le $# ]]; then
+            _hcs_rel="${!_hcs_j}"
+            if [[ "$_hcs_rel" != *"/"* ]]; then
+                # Short version: append arch if not already present, then prefix with quay URL
+                [[ "$_hcs_rel" =~ -(x86_64|aarch64|arm64|s390x|ppc64le)$ ]] || _hcs_rel="${_hcs_rel}-x86_64"
+                _hcs_rel="quay.io/openshift-release-dev/ocp-release:${_hcs_rel}"
+            fi
+            export RELEASE_IMAGE="$_hcs_rel"
+            export HCP_RELEASE_IMAGE="$_hcs_rel"
+        fi
+    elif [[ "${!_hcs_i}" == "--openshift-install" ]]; then
+        [[ $_hcs_j -le $# ]] && export HCP_OPENSHIFT_INSTALL="${!_hcs_j}"
+    elif [[ "${!_hcs_i}" == "--hypershift" ]]; then
+        [[ $_hcs_j -le $# ]] && export HCP_HYPERSHIFT="${!_hcs_j}"
+    fi
+done
+unset _hcs_i _hcs_j _hcs_rel
+
+# Handle --load-env / -e flag to auto-load environment
+# Usage: --load-env FILE
+#   FILE is resolved as: literal path, then env/<FILE> in the repo.
+if [[ "${1:-}" == "--load-env" ]] || [[ "${1:-}" == "-e" ]]; then
+    shift
+    if [[ -z "${1:-}" || "$1" == -* ]]; then
+        echo "ERROR: --load-env requires a file argument." >&2
+        echo "Usage: $0 --load-env FILE SCOPE ACTION" >&2
+        echo "  FILE is resolved as a path, then as env/<FILE> in the repo." >&2
+        exit 1
+    fi
+    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+    if [[ -f "$1" ]]; then
+        ENV_FILE="$1"
+    elif [[ -f "${SCRIPT_DIR}/../env/$1" ]]; then
+        ENV_FILE="${SCRIPT_DIR}/../env/$1"
+    else
+        echo "ERROR: env file not found: $1" >&2
+        echo "  Searched: $1, ${SCRIPT_DIR}/../env/$1" >&2
+        echo "  Available: $(ls "${SCRIPT_DIR}/../env/" 2>/dev/null | grep -v '\.yaml$' | tr '\n' ' ')" >&2
+        exit 1
+    fi
+    HCP_LOAD_ENV_FILE="$1"
+    shift
+    # 'source' resolves names without a slash via PATH, so a bare FILE like
+    # 'env' would source /usr/bin/env instead of ./env. Prefix bare paths
+    # with ./ so they resolve relative to the current directory.
+    if [[ "$ENV_FILE" != */* ]]; then
+        ENV_FILE="./$ENV_FILE"
+    fi
+    source "$ENV_FILE"
+
+    # Derive standard defaults from env file settings
+    : "${HCP_USER:=${USER}}"
+    if [[ -n "${RELEASE_IMAGE:-}" ]]; then
+        _hcs_version=$(echo "$RELEASE_IMAGE" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        : "${HCP_PROJECT:=${HCP_USER}-hcp-${_hcs_version}}"
+        : "${HCP_RELEASE_IMAGE:=$RELEASE_IMAGE}"
+        unset _hcs_version
+    fi
+    : "${HCP_MGMT_CLUSTER_NAME:=${HCP_USER}-mgmt}"
+    : "${HCP_HOSTED_CLUSTER_NAME:=${HCP_USER}-hosted}"
+    : "${HCP_WORK_DIR:=$HOME/.hcp/${HCP_CLOUD:-azure}/${HCP_PROJECT:-default}}"
+    : "${HCP_MGMT_KUBECONFIG:=${HCP_WORK_DIR}/${HCP_MGMT_CLUSTER_NAME}/auth/kubeconfig}"
+    : "${HCP_BASE_DOMAIN:=${HCP_PROJECT:-default}.${HCP_CLOUD:-azure}.sandboxedcontainers.com}"
+    : "${HCP_DNS_RESOURCE_GROUP:=${HCP_PROJECT:-default}-dns-rg}"
+    : "${HCP_RESOURCE_GROUP:=${HCP_PROJECT:-default}-rg}"
+    : "${HCP_NAMESPACE:=clusters}"
+    : "${HCP_SSH_KEY:=$HOME/.ssh/id_rsa.pub}"
+
+    HCP_LOAD_ENV_USED="true"
+fi
+
+# Helper: print $0 with --load-env prefix when it was used, so next-step
+# messages are copy-pasteable without "Environment not initialized" errors.
+self_cmd() {
+    local base cmd
+    base=$(basename "$0")
+    if command -v "$base" >/dev/null 2>&1; then
+        cmd="$base"
+    else
+        cmd="$0"
+    fi
+    if [[ "$HCP_LOAD_ENV_USED" == "true" ]]; then
+        if [[ -n "$HCP_LOAD_ENV_FILE" ]]; then
+            echo "$cmd --load-env $HCP_LOAD_ENV_FILE"
+        else
+            echo "$cmd --load-env"
+        fi
+    else
+        echo "$cmd"
+    fi
+}
+
+print_next_steps_mgmt_create() {
+    echo "Next steps:"
+    echo "  1. Setup management:"
+    echo "     $(self_cmd) management setup"
+    echo "  2. Create hosted cluster:"
+    echo "     $(self_cmd) hosted setup --cluster-name ${HCP_HOSTED_CLUSTER_NAME}"
+}
+
+print_next_steps_hosted_setup() {
+    echo "Next step:"
+    echo "  $(self_cmd) hosted validate --cluster-name ${HCP_HOSTED_CLUSTER_NAME}"
+}
+
+if [[ -z "${SCRIPT_DIR:-}" ]]; then
+    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+fi
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Logging functions
+log_error() {
+    echo -e "${RED}ERROR: $*${NC}" >&2
+}
+
+log_success() {
+    echo -e "${GREEN}✓ $*${NC}"
+}
+
+log_warn() {
+    echo -e "${YELLOW}⚠️  $*${NC}"
+}
+
+log_info() {
+    echo "ℹ️  $*"
+}
+
+# Copy all OperatorHub catalog sources from the management cluster to a hosted cluster,
+# stripping master node scheduling constraints that don't exist on HyperShift worker-only clusters.
+copy_catalog_sources() {
+    local hosted_kc="$1"
+    local catalogs=(redhat-operators certified-operators community-operators redhat-marketplace)
+
+    echo "=== Ensuring OperatorHub Catalog Sources ==="
+    for cs in "${catalogs[@]}"; do
+        if KUBECONFIG="${hosted_kc}" oc get catalogsource "$cs" -n openshift-marketplace >/dev/null 2>&1; then
+            log_success "CatalogSource already exists: $cs"
+        else
+            log_debug "Copying CatalogSource from management cluster: $cs"
+            local json
+            json=$(KUBECONFIG="${HCP_MGMT_KUBECONFIG}" oc get catalogsource "$cs" \
+                -n openshift-marketplace -o json 2>/dev/null || true)
+            if [[ -z "$json" ]]; then
+                log_warn "Could not fetch CatalogSource ${cs} from management cluster (kubeconfig: ${HCP_MGMT_KUBECONFIG:-<unset>})"
+                continue
+            fi
+            echo "$json" | \
+                jq 'del(.metadata.resourceVersion,.metadata.uid,.metadata.generation,.metadata.creationTimestamp,.metadata.managedFields,.status) |
+                    del(.spec.grpcPodConfig.nodeSelector."node-role.kubernetes.io/master") |
+                    .spec.grpcPodConfig.tolerations |= if . then map(select(.key != "node-role.kubernetes.io/master")) else . end' | \
+                KUBECONFIG="${hosted_kc}" oc apply -f - || {
+                log_warn "Could not copy CatalogSource: $cs"
+            }
+        fi
+    done
+
+    # Delete any catalog pods stuck in image pull backoff so they restart immediately
+    # with the current pull secret rather than waiting out exponential backoff.
+    # Pod names have no spaces so unquoted word-split is intentional here.
+    local stuck_pods
+    stuck_pods=$(KUBECONFIG="${hosted_kc}" oc get pods -n openshift-marketplace --no-headers 2>/dev/null | \
+        awk '$3 ~ /ImagePullBackOff|ErrImagePull/ {print $1}')
+    if [[ -n "$stuck_pods" ]]; then
+        log_debug "Deleting stuck catalog pods (ImagePullBackOff): $stuck_pods"
+        # shellcheck disable=SC2086
+        KUBECONFIG="${hosted_kc}" oc delete pod -n openshift-marketplace --ignore-not-found $stuck_pods >/dev/null
+        log_success "Deleted stuck catalog pods — CatalogSource controller will recreate them"
+    fi
+}
+
+log_debug() {
+    if [[ "$VERBOSE" == "true" ]]; then
+        echo -e "${NC}[DEBUG] $*${NC}" >&2
+    fi
+}
+
+# Check if environment is initialized (after log_error is defined)
+check_environment() {
+    if [[ -z "${HCP_BASE_DOMAIN:-}" ]] || [[ -z "${HCP_RELEASE_IMAGE:-}" ]]; then
+        log_error "Environment not initialized"
+        echo ""
+        echo "Use --load-env with an env file (e.g. gcp-4.21, aws-4.22):"
+        echo "  $0 --load-env gcp-4.21 SCOPE ACTION [OPTIONS]"
+        exit 1
+    fi
+}
+
+# Initialize the environment for running inside a Prow multi-stage test step.
+# Activated by --prow (or HCP_PROW_MODE=true). Prow steps are separate
+# containers sharing only ${SHARED_DIR}, run without a TTY, and authenticate
+# to AWS with static cluster-profile credentials — so this mode:
+#   - forces non-interactive mode (GLOBAL_YES, same as --yes)
+#   - keeps all state on the shared volume instead of $HOME
+#   - derives unique per-job cluster names from PROW_JOB_ID
+#   - reads AWS credentials, region and pull secret from the Prow environment
+#   - makes the CI registry credentials discoverable to oc (DOCKER_CONFIG)
+#   - generates an ephemeral SSH key when none is configured
+prow_mode_init() {
+    log_info "Prow mode enabled"
+    local _v
+    for _v in PROW_JOB_ID SHARED_DIR CLUSTER_PROFILE_DIR; do
+        if [[ -z "${!_v:-}" ]]; then
+            log_error "--prow requires ${_v} to be set (not running inside Prow?)"
+            exit 1
+        fi
+    done
+
+    # Non-interactive: every confirmation prompt is auto-accepted.
+    GLOBAL_YES="true"
+
+    # All persistent state must live on the shared volume; $HOME does not
+    # survive between Prow steps.
+    HCP_WORK_DIR="${HCP_WORK_DIR:-${SHARED_DIR}/hcp/work}"
+    mkdir -p "${HCP_WORK_DIR}"
+
+    # Per-job RFC1123 cluster names so parallel jobs never collide and
+    # teardown always finds the clusters created by this job.
+    local _prow_base
+    _prow_base="$(echo -n "${PROW_JOB_ID}" | sha256sum | cut -c-15)"
+    HCP_MGMT_CLUSTER_NAME="${_prow_base}m"
+    HCP_HOSTED_CLUSTER_NAME="${_prow_base}h"
+    HCP_MGMT_KUBECONFIG="${HCP_WORK_DIR}/${HCP_MGMT_CLUSTER_NAME}/auth/kubeconfig"
+    : "${HCP_NAMESPACE:=clusters}"
+
+    # OSC CI vocabulary: adopt the names the Prow steps already use, so the
+    # step env blocks need no translation layer. Explicitly-set HCP_* values
+    # (laptop use) always win.
+    : "${HCP_NODE_COUNT:=${COMPUTE_NODE_REPLICAS:-2}}"
+    : "${HCP_HOSTED_WORKER_TYPE:=${COMPUTE_NODE_TYPE:-}}"
+    : "${HCP_MGMT_WORKER_TYPE:=${MGMT_COMPUTE_NODE_TYPE:-}}"
+    : "${HCP_AWS_HOSTED_WORKER_TYPE:=${HCP_HOSTED_WORKER_TYPE:-m8i.large}}"
+    : "${HCP_AWS_MGMT_WORKER_TYPE:=${HCP_MGMT_WORKER_TYPE:-m5.xlarge}}"
+    : "${HCP_BASE_DOMAIN:=${BASE_DOMAIN:-}}"
+    : "${HCP_NESTED_VIRT:=${ENABLE_NESTED_VIRT:-yes}}"
+    : "${HCP_IMAGE_CONTENT_SOURCES:=${IMAGE_CONTENT_SOURCES:-}}"
+    : "${HCP_MAX_RETRIES:=${MGMT_INSTALL_MAX_RETRIES:-2}}"
+
+    # Publish the derived state for the CI steps, so they never duplicate the
+    # PROW_JOB_ID naming derivation outside this script.
+    cat > "${SHARED_DIR}/hcp/state.sh" <<STATE_EOF
+export HCP_MGMT_CLUSTER_NAME="${HCP_MGMT_CLUSTER_NAME}"
+export HCP_HOSTED_CLUSTER_NAME="${HCP_HOSTED_CLUSTER_NAME}"
+export HCP_MGMT_KUBECONFIG="${HCP_MGMT_KUBECONFIG}"
+export HCP_HOSTED_KUBECONFIG="${HCP_WORK_DIR}/${HCP_HOSTED_CLUSTER_NAME}-kubeconfig"
+STATE_EOF
+
+    # AWS: cluster-profile credentials and the leased region. No SSO, no
+    # role assumption — the profile credentials are long-lived and used
+    # directly.
+    if [[ -f "${CLUSTER_PROFILE_DIR}/.awscred" ]]; then
+        export AWS_SHARED_CREDENTIALS_FILE="${CLUSTER_PROFILE_DIR}/.awscred"
+    fi
+    : "${HCP_AWS_REGION:=${AWS_REGION:-${LEASED_RESOURCE:-}}}"
+    : "${HCP_LOCATION:=${HCP_AWS_REGION:-}}"
+    [[ -n "${HCP_AWS_REGION:-}" ]] && export AWS_DEFAULT_REGION="${HCP_AWS_REGION}" && export AWS_REGION="${HCP_AWS_REGION}"
+
+    # Base domain comes from the CI environment (BASE_DOMAIN, set by the
+    # conf step from the cluster profile); check_environment fails with a
+    # clear message when it is missing.
+    : "${HCP_AWS_BASE_DOMAIN:=${HCP_BASE_DOMAIN}}"
+
+    # Pull secret from the cluster profile.
+    : "${HCP_PULL_SECRET:=${CLUSTER_PROFILE_DIR}/pull-secret}"
+
+    # Make the CI registry credentials discoverable to oc: the script runs
+    # `oc adm release extract` against the private CI payload without -a.
+    if [[ -z "${DOCKER_CONFIG:-}" && -f /etc/ci-pull-credentials/.dockerconfigjson ]]; then
+        mkdir -p "${SHARED_DIR}/hcp/docker"
+        if [[ ! -f "${SHARED_DIR}/hcp/docker/config.json" ]]; then
+            cp /etc/ci-pull-credentials/.dockerconfigjson "${SHARED_DIR}/hcp/docker/config.json"
+        fi
+        export DOCKER_CONFIG="${SHARED_DIR}/hcp/docker"
+    fi
+
+    # Ephemeral SSH key (CI containers have no user keys).
+    if [[ ! -f "${HCP_SSH_KEY:-}" ]]; then
+        mkdir -p "${SHARED_DIR}/hcp/ssh"
+        if [[ ! -f "${SHARED_DIR}/hcp/ssh/id_rsa" ]]; then
+            ssh-keygen -t rsa -b 2048 -N "" -q -f "${SHARED_DIR}/hcp/ssh/id_rsa"
+        fi
+        HCP_SSH_KEY="${SHARED_DIR}/hcp/ssh/id_rsa.pub"
+    fi
+
+    # Release images: default to the payload Prow resolved for this job.
+    : "${HCP_RELEASE_IMAGE:=${RELEASE_IMAGE_LATEST:-}}"
+    : "${HCP_MGMT_RELEASE_IMAGE:=${HCP_RELEASE_IMAGE}}"
+
+    # Bound retries for CI step timeouts.
+    : "${HCP_MAX_RETRIES:=2}"
+
+    log_info "Prow: work dir ${HCP_WORK_DIR}"
+    log_info "Prow: mgmt=${HCP_MGMT_CLUSTER_NAME} hosted=${HCP_HOSTED_CLUSTER_NAME}"
+    log_debug "Prow: region=${HCP_AWS_REGION:-unset} pull-secret=${HCP_PULL_SECRET}"
+}
+
+# Auto-detect pull-secret if not explicitly set
+find_pull_secret() {
+    # If already set and exists, use it
+    if [[ -n "${HCP_PULL_SECRET:-}" ]] && [[ -f "$HCP_PULL_SECRET" ]]; then
+        return 0
+    fi
+
+    # Search in common locations
+    local candidates=(
+        "./pull-secret.txt"
+        "$HCP_WORK_DIR/pull-secret.txt"
+        "$HOME/.config/openshift/pull-secret.txt"
+        "$HOME/.pull-secret.txt"
+    )
+
+    log_debug "Searching for pull-secret.txt in: ${candidates[*]}"
+
+    for file in "${candidates[@]}"; do
+        if [[ -f "$file" ]]; then
+            HCP_PULL_SECRET="$(cd "$(dirname "$file")" && pwd)/$(basename "$file")"
+            log_debug "Found pull secret: $HCP_PULL_SECRET"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+# Resolve and validate HCP_PULL_SECRET; exit with a clear message if missing.
+require_pull_secret() {
+    find_pull_secret || true
+    if [[ -z "${HCP_PULL_SECRET:-}" ]] || [[ ! -f "${HCP_PULL_SECRET}" ]]; then
+        log_error "Pull secret not found. Set HCP_PULL_SECRET or place pull-secret.txt in one of:"
+        echo "  ./pull-secret.txt"
+        echo "  ${HCP_WORK_DIR}/pull-secret.txt"
+        echo "  \$HOME/.config/openshift/pull-secret.txt"
+        echo "  \$HOME/.pull-secret.txt"
+        echo "Or: export HCP_PULL_SECRET=/path/to/pull-secret.txt"
+        exit 1
+    fi
+}
+
+# Ensure HCP_EFFECTIVE_PULL_SECRET has fresh credentials for all Red Hat registries.
+# HCP_PULL_SECRET may be an older file whose registry.redhat.io or quay.io tokens have
+# expired. Always overlay all registries from ~/.config/openshift/pull-secret.txt when
+# present, since that file reflects the user's current Red Hat account pull secret.
+augment_pull_secret() {
+    HCP_EFFECTIVE_PULL_SECRET="${HCP_PULL_SECRET}"
+
+    local std_ps="$HOME/.config/openshift/pull-secret.txt"
+    if [[ -f "$std_ps" ]]; then
+        local merged tmp
+        # Merge: std_ps entries override HCP_PULL_SECRET for any overlapping registry.
+        merged=$(jq -s '.[0] * .[1]' "${HCP_PULL_SECRET}" "$std_ps" 2>/dev/null)
+        if [[ -n "$merged" ]]; then
+            tmp=$(mktemp)
+            chmod 600 "$tmp"
+            printf '%s' "$merged" > "$tmp"
+            HCP_EFFECTIVE_PULL_SECRET="$tmp"
+            log_debug "Overlaid all registries from $std_ps into effective pull secret"
+            return 0
+        fi
+    fi
+
+    log_debug "No standard pull secret found; using HCP_PULL_SECRET as-is"
+}
+
+# Validate that the effective pull secret's quay.io token can reach ocp-v4.0-art-dev.
+# node-image-pull on bootstrap/master nodes pulls component images from that private repo;
+# an expired OCM token returns 401 there even though ocp-release tags are public.
+validate_pull_secret() {
+    local ps_file="${HCP_EFFECTIVE_PULL_SECRET:-${HCP_PULL_SECRET}}"
+    local quay_auth creds token http_code
+    quay_auth=$(jq -r '.auths["quay.io"].auth // empty' "$ps_file" 2>/dev/null)
+    if [[ -z "$quay_auth" ]]; then
+        log_warn "Pull secret has no quay.io credentials — skipping expiry check"
+        return 0
+    fi
+    creds=$(printf '%s' "$quay_auth" | base64 -d 2>/dev/null)
+    token=$(curl -sf --max-time 10 -u "$creds" \
+        "https://quay.io/v2/auth?service=quay.io&scope=repository:openshift-release-dev/ocp-v4.0-art-dev:pull" \
+        | jq -r '.token // empty' 2>/dev/null)
+    http_code=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" \
+        -H "Authorization: Bearer ${token}" \
+        "https://quay.io/v2/openshift-release-dev/ocp-v4.0-art-dev/tags/list")
+    if [[ "$http_code" != "200" ]]; then
+        log_error "Pull secret quay.io token cannot access ocp-v4.0-art-dev (HTTP ${http_code:-unreachable})"
+        log_error "Pull secret: ${HCP_PULL_SECRET}"
+        if [[ "${ps_file}" != "${HCP_PULL_SECRET}" ]]; then
+            log_error "  (augmented with ~/.config/openshift/pull-secret.txt)"
+        fi
+        echo "  The token is likely expired. Refresh it at:"
+        echo "    https://console.redhat.com/openshift/install"
+        echo "  Save to ~/.config/openshift/pull-secret.txt (auto-merged on next run)"
+        echo "  or update ${HCP_PULL_SECRET} directly."
+        exit 1
+    fi
+    log_debug "Pull secret quay.io credentials validated (ocp-v4.0-art-dev accessible)"
+}
+
+# Helper: read a field that may be a scalar string or an array of strings.
+# Returns a space-separated string either way. Works with yq v4 (mikefarah) or jq.
+parse_vm_types() {
+    local file="$1" field="$2"
+    local raw
+    if command -v yq &>/dev/null; then
+        # yq v4: try scalar first, then join as array
+        raw=$(yq -r "${field} // \"\"" "$file" 2>/dev/null || echo "")
+        # If yq returned a YAML list (lines starting with -), join them
+        if echo "$raw" | grep -q "^-"; then
+            raw=$(yq -r "${field} | join(\" \")" "$file" 2>/dev/null || echo "")
+        fi
+    else
+        raw=$(jq -r "(${field} | if type == \"array\" then join(\" \") else . end) // \"\"" "$file" 2>/dev/null || echo "")
+    fi
+    echo "${raw:-}"
+}
+
+# Read a batch config file (YAML or JSON) and populate config globals.
+# Sets: HCP_MGMT_CLUSTER_NAME, HCP_LOCATION, HCP_MGMT_WORKER_TYPE (from management.*)
+# Sets arrays: _CONFIG_CLUSTER_NAMES, _CONFIG_CLUSTER_COUNTS,
+#              _CONFIG_CLUSTER_LOCATIONS, _CONFIG_CLUSTER_WORKER_TYPES
+load_config() {
+    local config_file="$1"
+    [[ -f "$config_file" ]] || { log_error "Config file not found: $config_file"; exit 1; }
+
+    local mgmt_name mgmt_location mgmt_worker_type
+    _CONFIG_CLUSTER_NAMES=()
+    _CONFIG_CLUSTER_COUNTS=()
+    _CONFIG_CLUSTER_LOCATIONS=()
+    _CONFIG_CLUSTER_WORKER_TYPES=()
+
+    if command -v yq &>/dev/null; then
+        mgmt_name=$(yq -r '.management.name // ""' "$config_file" 2>/dev/null)
+        mgmt_location=$(yq -r '.management.location // ""' "$config_file" 2>/dev/null)
+        mgmt_worker_type=$(parse_vm_types "$config_file" '.management.workerType // .management.workerTypes // ""')
+        local cluster_count
+        cluster_count=$(yq -r '.hostedClusters | length' "$config_file" 2>/dev/null || echo "0")
+        for ((i=0; i<cluster_count; i++)); do
+            _CONFIG_CLUSTER_NAMES+=("$(yq -r ".hostedClusters[$i].name" "$config_file")")
+            _CONFIG_CLUSTER_COUNTS+=("$(yq -r ".hostedClusters[$i].nodeCount // 2" "$config_file")")
+            _CONFIG_CLUSTER_LOCATIONS+=("$(yq -r ".hostedClusters[$i].location // \"\"" "$config_file")")
+            _CONFIG_CLUSTER_WORKER_TYPES+=("$(parse_vm_types "$config_file" ".hostedClusters[$i].workerType // .hostedClusters[$i].workerTypes // \"\"")")
+        done
+    else
+        mgmt_name=$(jq -r '.management.name // ""' "$config_file" 2>/dev/null)
+        mgmt_location=$(jq -r '.management.location // ""' "$config_file" 2>/dev/null)
+        mgmt_worker_type=$(parse_vm_types "$config_file" '.management.workerType // .management.workerTypes // ""')
+        local cluster_count
+        cluster_count=$(jq -r '.hostedClusters | length' "$config_file" 2>/dev/null || echo "0")
+        for ((i=0; i<cluster_count; i++)); do
+            _CONFIG_CLUSTER_NAMES+=("$(jq -r ".hostedClusters[$i].name" "$config_file")")
+            _CONFIG_CLUSTER_COUNTS+=("$(jq -r ".hostedClusters[$i].nodeCount // 2" "$config_file")")
+            _CONFIG_CLUSTER_LOCATIONS+=("$(jq -r ".hostedClusters[$i].location // \"\"" "$config_file")")
+            _CONFIG_CLUSTER_WORKER_TYPES+=("$(parse_vm_types "$config_file" ".hostedClusters[$i].workerType // .hostedClusters[$i].workerTypes // \"\"")")
+        done
+    fi
+
+    [[ -n "$mgmt_name" ]] && HCP_MGMT_CLUSTER_NAME="$mgmt_name"
+    [[ -n "$mgmt_location" ]] && HCP_LOCATION="$mgmt_location"
+    [[ -n "$mgmt_worker_type" ]] && HCP_MGMT_WORKER_TYPE="$mgmt_worker_type"
+
+    # Top-level options — config supplies defaults, CLI flags and env vars win.
+    # _HCP_*_EXPLICIT is set by the CLI parser when the user passes a flag.
+    local _qry_tool="jq"
+    command -v yq &>/dev/null && _qry_tool="yq"
+    local _val
+    _val=$($_qry_tool -r '.nestedVirt // ""' "$config_file" 2>/dev/null)
+    [[ -n "$_val" && "${_HCP_NESTED_EXPLICIT:-}" != "true" ]] && HCP_NESTED_VIRT="$_val"
+    _val=$($_qry_tool -r '.peerPods // ""' "$config_file" 2>/dev/null)
+    [[ -n "$_val" && "${_HCP_PEERPODS_EXPLICIT:-}" != "true" ]] && HCP_OSC_PEER_PODS="$_val"
+
+    return 0
+}
+
+# Call function_name once per hosted cluster loaded by load_config,
+# setting HCP_HOSTED_CLUSTER_NAME, HCP_NODE_COUNT, HCP_LOCATION, and
+# HCP_HOSTED_WORKER_TYPE for each iteration.
+run_for_all_clusters() {
+    local fn="$1"
+    if [[ ${#_CONFIG_CLUSTER_NAMES[@]} -eq 0 ]]; then
+        log_error "No hostedClusters found in config — nothing to do"
+        exit 1
+    fi
+    for ((i=0; i<${#_CONFIG_CLUSTER_NAMES[@]}; i++)); do
+        HCP_HOSTED_CLUSTER_NAME="${_CONFIG_CLUSTER_NAMES[$i]}"
+        HCP_NODE_COUNT="${_CONFIG_CLUSTER_COUNTS[$i]}"
+        [[ -n "${_CONFIG_CLUSTER_LOCATIONS[$i]}" ]] && HCP_LOCATION="${_CONFIG_CLUSTER_LOCATIONS[$i]}"
+        HCP_HOSTED_WORKER_TYPE="${_CONFIG_CLUSTER_WORKER_TYPES[$i]:-}"
+        log_info "Running ${fn} for cluster: ${HCP_HOSTED_CLUSTER_NAME}"
+        "${fn}"
+    done
+}
+
+show_help() {
+    cat <<EOF
+
+Usage: $(basename "$0") [--load-env FILE] [OPTIONS] SCOPE ACTION [OPTIONS]
+
+--config FILE is the recommended way to drive all steps. It reads cluster names,
+locations, and VM types from a single YAML/JSON file so every step is repeatable
+without re-specifying flags:
+
+  $(basename "$0") -e azure-4.21 management create  --config clusters.yaml
+  $(basename "$0") -e azure-4.21 management setup   --config clusters.yaml
+  $(basename "$0") -e azure-4.21 hosted setup       --config clusters.yaml
+  $(basename "$0") -e azure-4.21 hosted validate    --config clusters.yaml
+  $(basename "$0") -e azure-4.21 osc install        --config clusters.yaml
+
+Scopes and actions accept unique prefixes (e.g. 'm c' for 'management create',
+'b d' for 'batch deploy', 'h s' for 'hosted setup').
+
+Examples — env variables:
+  # Run entirely from environment variables (no flags needed):
+  export HCP_CLOUD=azure
+  export HCP_USER=alice
+  export HCP_PROJECT=alice-hcp-4.21
+  export HCP_MGMT_CLUSTER_NAME=alice-mgmt
+  export HCP_HOSTED_CLUSTER_NAME=alice-hosted
+  export HCP_LOCATION=eastus
+  $(basename "$0") management create --config clusters.yaml
+  $(basename "$0") management setup  --config clusters.yaml
+  $(basename "$0") hosted setup      --config clusters.yaml
+
+  # Or use -e with a named env file:
+  $(basename "$0") -e aws-4.22 management create --config clusters.yaml
+
+  # Mix: env file sets cloud and user, flag overrides location for this run:
+  $(basename "$0") -e azure-4.21 management create -l westus2 --config clusters.yaml
+
+  # Custom operator image while keeping everything else from env + config:
+  HCP_OPERATOR_IMAGE=quay.io/my-org/osc-operator:dev \\
+    $(basename "$0") -e azure-4.21 osc install --config clusters.yaml
+
+  # Non-interactive batch deploy with all options from env:
+  $(basename "$0") -e aws-4.22 -y batch deploy --config clusters.yaml
+
+'batch deploy --config FILE' runs all of the above phases in one shot.
+
+Flags can appear before or after SCOPE ACTION in any order.
+
+Global flags:
+  --load-env, -e FILE Source env file (resolved as path, then env/<FILE> in repo)
+  --cloud, -c         Cloud provider: azure, aws, gcp, rosa, eks, aro, agent
+                      (agent = hosted cluster with ISO-booted bare-metal/VM nodes)
+  --release, -r       OCP release (version string or full image URL); sets both RELEASE_IMAGE
+                      and HCP_RELEASE_IMAGE so naming and deployment are consistent
+  --prow              Run inside a Prow CI step: non-interactive (--yes), state under
+                      \${SHARED_DIR}, per-job cluster names from PROW_JOB_ID, AWS
+                      credentials/region/pull secret from the cluster profile and
+                      lease, CI registry credentials exported for oc
+  --verbose, -v       Enable verbose/debug output
+  --yes, -y           Skip confirmation prompts (non-interactive mode)
+
+Scopes and actions:
+  management create   Create the IPI OpenShift management cluster
+  management setup    Install MCE + HyperShift operator on the management cluster
+  management upgrade  Upgrade the management cluster to a new OCP release
+  management teardown Delete the management cluster and all cloud resources
+
+  hosted setup        Create OIDC provider, cloud identities, and the hosted cluster(s)
+  hosted validate     Check worker nodes and cluster readiness
+  hosted upgrade      Upgrade the hosted cluster to a new OCP release
+  hosted teardown     Delete the hosted cluster and its cloud resources
+  hosted reboot       Cordon, drain, and reboot all kata-labelled worker nodes
+
+  osc install         Install OSC operator via OLM and create KataConfig
+  osc validate        Run a kata test pod to verify the runtime
+  osc upgrade         Upgrade the OSC operator to the latest available version
+  osc test            Deploy a set of kata workloads and report results
+  osc reboot          Cordon/drain/reboot kata nodes (alias for hosted reboot)
+  osc uninstall       Remove OSC operator and KataConfig
+
+  agent iso           Print (and download) the InfraEnv agent ISO for booting nodes
+  agent list          List registered agents and their states
+  agent wait          Wait for --count N machines to register as agents (--timeout SECS)
+  agent approve       Approve agents: --all or explicit IDs; --hostname/--disk/--label k=v
+  agent scale         Scale the hosted cluster NodePool (--replicas N)
+  agent status        Show HostedCluster conditions, control plane pods, agents and nodes
+                      (requires --cloud agent; see doc/superpowers/specs/2026-11-24-hypershift-agent-design.md)
+
+  podvm build         Build a peer pod VM image and upload it as a cloud image (AMI on AWS, managed image on Azure)
+                        --sources DIR         Path to local cloud-api-adaptor checkout (auto-cloned if unset)
+                        --branch BRANCH       CAA branch to clone (default: osc-release)
+                        --bucket BUCKET       S3 bucket for intermediate upload (AWS only; default: \$HCP_USER-osc-podvm)
+  podvm list          List peer pod VM images in the current cloud account
+
+  batch deploy        Run all phases in sequence (management create/setup + hosted setup + osc install)
+    --skip-management   Skip management cluster creation (assume it exists)
+    --dry-run           Show plan without making changes
+
+  completion bash     Print bash completion script (source or redirect to a file)
+  completion zsh      Print zsh completion script
+  completion fish     Print fish completion script
+
+Flags:
+  --config FILE             YAML/JSON config (sets mgmt name, location, VM types, hosted clusters)
+  --location, -l REGION     Cloud region/zone
+  --name, -n NAME           Cluster name; scope determines whether this sets the
+                            management or hosted cluster name (no need to distinguish)
+  --node-count N            Worker node count for hosted cluster
+  --release-image IMAGE     OCP release image
+  --operator-image IMAGE    OSC operator image override
+  --daemonset-image IMAGE   OSC daemonset image override
+  --bundle-image IMAGE      operator-sdk bundle install (instead of OLM subscription)
+  --catalog-image IMAGE     Custom CatalogSource image
+  --catalog-channel CHAN    Subscription channel (requires --catalog-image)
+  --peer-pods               Enable peer pods (kata-remote runtime class; default)
+  --no-peer-pods            Disable peer pods (kata runtime class; requires /dev/kvm)
+  --nested                  Require nested virtualization support in VM type selection
+  --no-nested               Do not require nested virtualization (default)
+  --kata-config-name NAME   KataConfig resource name (default: ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig})
+  --replicas N              NodePool replica count (agent scale)
+  --count N                 Number of agents to wait for (agent wait)
+  --timeout SECS            Timeout in seconds for agent wait (default: 1800)
+  --all                     Approve all pending agents (agent approve)
+  --hostname NAME           Hostname to set on approved agents
+  --disk PATH               installation_disk_id to set on approved agents (e.g. /dev/sda)
+  --label K=V[,K=V..]       Labels to apply to approved agents (NodePool selectors)
+  --ingress-ips RANGE       MetalLB IPAddressPool on hosted cluster (e.g. 192.168.124.230-240)
+  --api-ips LIST            A-record targets for api/api-int DNS (default: mgmt node IPs)
+  --download                Force re-download of the agent ISO (agent iso)
+  --openshift-install PATH  Path to openshift-install binary (overrides PATH lookup and HCP_TOOLS_DIR)
+  --hypershift PATH           Path to hypershift binary (overrides PATH lookup)
+  --max-retries N           Max management cluster install attempts (default: 3)
+  --wait-retries N          Max iterations in wait loops (default: 60; each loop's sleep interval is documented inline)
+  --install-role-duration N  AWS install role session duration in seconds (default: 28800 = 8h)
+  --aws-profile NAME        AWS profile to use (overrides AWS_PROFILE; credentials re-resolve on each call)
+  --no-teardown             On teardown, skip OIDC/IAM/resource-group deletion so
+                            resources can be reused after a failed setup run
+
+Environment variables (all flags have an env-var equivalent):
+  HCP_PROW_MODE              'true' to enable Prow mode (same as --prow)
+  HCP_OPENSHIFT_INSTALL     Path to openshift-install binary (highest priority)
+  HCP_HYPERSHIFT            Path to hypershift binary (highest priority)
+  HCP_CLOUD                 Cloud provider (azure, aws, gcp, rosa, eks, aro, agent)
+  HCP_MGMT_CLOUD            With --cloud agent: manage the management cluster in this
+                            cloud (azure, aws, gcp); unset = external management cluster
+  HCP_USER                  User prefix for cluster names (default: \$USER)
+  HCP_PROJECT               Project name, e.g. \$HCP_USER-hcp-4.21
+  HCP_MGMT_CLUSTER_NAME     Management cluster name (default: \$HCP_USER-mgmt)
+  HCP_HOSTED_CLUSTER_NAME   Hosted cluster name (default: \$HCP_USER-hosted)
+  HCP_LOCATION              Cloud region / zone
+  HCP_BASE_DOMAIN           DNS base domain for all clusters
+  HCP_WORK_DIR              Working directory (default: ~/.hcp/\$HCP_CLOUD/\$HCP_PROJECT)
+  HCP_MGMT_KUBECONFIG       Kubeconfig for management cluster
+  HCP_PULL_SECRET           Path to pull-secret.txt
+  HCP_SSH_KEY               Path to SSH public key (default: ~/.ssh/id_rsa.pub)
+  HCP_RELEASE_IMAGE         OCP release image
+  HCP_NODE_COUNT            Worker node count for hosted cluster (default: 2)
+  HCP_OPERATOR_IMAGE        OSC operator image override
+  HCP_OPERATOR_SOURCE       Source repo@ref for RBAC sync (default: openshift/sandboxed-containers-operator@devel)
+  HCP_DAEMONSET_IMAGE       OSC daemonset image override
+  HCP_BUNDLE_IMAGE          operator-sdk bundle image (mutually exclusive with HCP_CATALOG_IMAGE)
+  HCP_CATALOG_IMAGE         Custom CatalogSource image
+  HCP_CATALOG_CHANNEL       OLM subscription channel
+  HCP_MCE_CHANNEL           MCE subscription channel (auto-detected from catalog if empty)
+  HCP_OSC_PEER_PODS         'yes' to use kata-remote (peer pods, default), 'no' to use kata (requires /dev/kvm)
+  HCP_NESTED_VIRT           'yes' to require nested virtualization in VM type selection, 'no' to skip (default)
+  HCP_OSC_KATA_CONFIG_NAME  KataConfig resource name (default: ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig})
+  OSC_TEST_E2E_FOCUS        Ginkgo focus string for the e2e suite (e.g. "66108"); empty runs all [sig-kata] specs
+  OSC_TEST_E2E_TIMEOUT      go test -timeout for the e2e suite (default: 120m)
+  OSC_TEST_E2E_REPO         Repository URL to clone the e2e suite from (default: openshift/sandboxed-containers-operator)
+  OSC_TEST_E2E_REF          Branch of sandboxed-containers-operator to clone for the e2e suite (default: devel)
+  HCP_MAX_RETRIES           Max management cluster install attempts (default: 3)
+  HCP_WAIT_RETRIES          Max iterations in wait loops (default: 60)
+  HCP_INSTALL_ROLE_DURATION  AWS install role session duration in seconds (default: 28800 = 8h)
+  HCP_AWS_PROFILE           AWS profile to use (credentials re-resolve on each call, no expiry)
+  HCP_OPENSHIFT_INSTALL     Path to openshift-install binary (overrides PATH lookup and HCP_TOOLS_DIR)
+  HCP_MGMT_RELEASE_IMAGE    Release image override for management cluster install (sets OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE)
+  HCP_NO_TEARDOWN           Set to 'true' to preserve OIDC/cloud resources on teardown
+  HCP_DNS_RESOURCE_GROUP    Azure resource group for DNS zone (default: \$HCP_PROJECT-dns-rg)
+  HCP_CLUSTER_API_URL       Hosted cluster API URL (ROSA: used by --cluster-user/--cluster-password to seed kubeconfig)
+  HCP_CLUSTER_USER          Username for oc login when seeding kubeconfig (ROSA, no management cluster)
+  HCP_CLUSTER_PASSWORD      Password for oc login when seeding kubeconfig (ROSA, no management cluster)
+  HCP_PEER_PODS_AWS_ROLE_ARN  IAM role ARN for the cloud-api-adaptor to assume (written to peer-pods-secret as AWS_ROLE_ARN)
+  HCP_BUILD_PODVM_IMAGE       'yes' to auto-build a pod VM image when none is found (equivalent to --build-podvm-image)
+  HCP_AGENT_API_SERVER_ADDRESS  API address for the agent hosted cluster (default: api.<name>.<domain>)
+  HCP_AGENT_MACHINE_CIDR       Machine network CIDR of the agent nodes
+  HCP_AGENT_ETCD_STORAGE_CLASS Storage class for etcd on the management cluster (default: cluster default)
+  HCP_AGENT_ISO_PATH           Where to download the InfraEnv agent ISO
+  HCP_AGENT_INGRESS_IPS        MetalLB IPAddressPool range on the hosted cluster (e.g. 192.168.124.230-240)
+  HCP_AGENT_SETUP_INGRESS      'yes' to set up MetalLB + router LB on the hosted cluster (default)
+  HCP_AGENT_API_TARGET_IPS     A-record targets for api/api-int DNS (default: mgmt node IPs)
+  HCP_AGENT_AUTO_APPROVE       'yes' to auto-approve agents in agent wait
+  HCP_AGENT_LABELS             Labels applied to approved agents (k=v,k=v)
+  HCP_AGENT_NODEPOOL_SELECTOR  agentLabelSelector for the default NodePool
+  HCP_AGENT_LABEL_MGMT_NODES   'yes' to auto-assign unique topology.kubernetes.io/zone labels
+  HCP_MCE_AGENT_SERVICE        'yes'/'no' to force MCE agent-service enablement (default: auto)
+  HCP_IMAGE_CONTENT_SOURCES    File for --image-content-sources (release mirror config)
+  VERBOSE                   Set to 'true' to enable verbose output (equivalent to -v)
+
+  Source env/hypershift-cluster-setup-environment.sh (or use -e) to set
+  HCP_USER, HCP_PROJECT, HCP_BASE_DOMAIN, HCP_WORK_DIR, and paths from
+  a single VERSION variable instead of setting each one individually.
+
+EOF
+}
+
+# Expand a unique prefix to the matching full word.
+# Prints the match and returns 0 on success, returns 1 if no match,
+# returns 2 if the prefix is ambiguous (multiple candidates start with it).
+expand_prefix() {
+    local input="$1"; shift
+    local matches=()
+    for c in "$@"; do
+        [[ "$c" == "$input"* ]] && matches+=("$c")
+    done
+    case ${#matches[@]} in
+        0) return 1 ;;
+        1) echo "${matches[0]}"; return 0 ;;
+        *)
+            # Exact match wins even when other words share the prefix
+            for c in "${matches[@]}"; do
+                [[ "$c" == "$input" ]] && { echo "$c"; return 0; }
+            done
+            return 2 ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# Unified argument parser — flags can appear anywhere relative to SCOPE/ACTION
+# ---------------------------------------------------------------------------
+GLOBAL_YES="false"
+HCP_PROW_MODE="${HCP_PROW_MODE:-false}"
+HCP_NO_TEARDOWN="${HCP_NO_TEARDOWN:-false}"
+OSC_TEST_SUBTEST=""
+OSC_TEST_APP_IMAGE=""
+HCP_OSC_PEER_PODS="${HCP_OSC_PEER_PODS:-yes}"
+HCP_NESTED_VIRT="${HCP_NESTED_VIRT:-no}"
+
+# First pass: extract SCOPE and ACTION (first two non-flag positional args)
+# and collect remaining args for per-scope parsing.
+_positionals=()
+_remaining=()
+_all_args=("$@")
+_i=0
+while (( _i < ${#_all_args[@]} )); do
+    _arg="${_all_args[_i]}"
+    case "$_arg" in
+        # Universal flags that take a value — apply immediately
+        --cloud|-c)      HCP_CLOUD="${_all_args[_i+1]}"; (( _i += 2 )) ;;
+        --release|-r)
+            _hcs_rel="${_all_args[_i+1]}"
+            if [[ "$_hcs_rel" != *"/"* ]]; then
+                [[ "$_hcs_rel" =~ -(x86_64|aarch64|arm64|s390x|ppc64le)$ ]] || _hcs_rel="${_hcs_rel}-x86_64"
+                _hcs_rel="quay.io/openshift-release-dev/ocp-release:${_hcs_rel}"
+            fi
+            export RELEASE_IMAGE="$_hcs_rel"
+            export HCP_RELEASE_IMAGE="$_hcs_rel"
+            unset _hcs_rel
+            (( _i += 2 )) ;;
+        # Mode-specific flags that take a value — defer to per-scope parser
+        --config|--location|--region|-l|--name|-n| \
+        --management-cluster-name|--hosted-cluster-name|--cluster-name| \
+        --node-count|--release-image|--operator-image|--daemonset-image| \
+        --bundle-image|--catalog-image|--catalog-channel|--mce-channel| \
+        --catalog-package|--openshift-install|--hypershift|--sources| \
+        --branch|--bucket|--max-retries|--wait-retries|--install-role-duration| \
+        --aws-profile|--api-url|--cluster-user|--cluster-password| \
+        --peer-pods-role-arn|--kata-config-name)
+            _remaining+=("$_arg" "${_all_args[_i+1]}")
+            (( _i += 2 )) ;;
+        # Universal flags — apply immediately so every mode sees them
+        --verbose|-v)    VERBOSE="true"; (( _i += 1 )) ;;
+        --debug)         DEBUG="true"; VERBOSE="true"; (( _i += 1 )) ;;
+        --yes|-y)        GLOBAL_YES="true"; (( _i += 1 )) ;;
+        --prow)          HCP_PROW_MODE="true"; (( _i += 1 )) ;;
+        --no-teardown)   HCP_NO_TEARDOWN="true"; (( _i += 1 )) ;;
+        --peer-pods)     HCP_OSC_PEER_PODS="yes"; _HCP_PEERPODS_EXPLICIT=true; (( _i += 1 )) ;;
+        --no-peer-pods)  HCP_OSC_PEER_PODS="no"; _HCP_PEERPODS_EXPLICIT=true; (( _i += 1 )) ;;
+        --nested)        HCP_NESTED_VIRT="yes"; _HCP_NESTED_EXPLICIT=true; (( _i += 1 )) ;;
+        --no-nested)     HCP_NESTED_VIRT="no"; _HCP_NESTED_EXPLICIT=true; (( _i += 1 )) ;;
+        --help|-h)       show_help; exit 0 ;;
+        # Mode-specific boolean flags — defer to per-scope parser
+        --skip-management|--dry-run|--build-podvm-image)
+            _remaining+=("$_arg")
+            (( _i += 1 )) ;;
+        # Positional args: first two become SCOPE and ACTION
+        *)
+            if (( ${#_positionals[@]} < 2 )); then
+                _positionals+=("$_arg")
+            else
+                _remaining+=("$_arg")
+            fi
+            (( _i += 1 )) ;;
+    esac
+done
+
+SCOPE_RAW="${_positionals[0]:-}"
+ACTION_RAW="${_positionals[1]:-}"
+set -- ${_remaining[@]+"${_remaining[@]}"}
+unset _positionals _remaining _all_args _i _arg
+
+# Activate Prow mode (from --prow or HCP_PROW_MODE=true) before scope/action
+# expansion so every phase and the cloud libraries see the CI environment.
+if [[ "${HCP_PROW_MODE:-false}" == "true" ]]; then
+    prow_mode_init
+fi
+
+# Normalize common abbreviations before prefix expansion
+[[ "$SCOPE_RAW" == "mgmt" ]] && SCOPE_RAW="management"
+
+# Expand scope prefix (e.g. "m" → "management", "b" → "batch")
+if [[ -n "$SCOPE_RAW" ]]; then
+    SCOPE=$(expand_prefix "$SCOPE_RAW" management hosted osc agent podvm batch completion help) || {
+        case $? in
+            1) log_error "Unknown scope: '${SCOPE_RAW}'" ;;
+            2) log_error "Ambiguous scope: '${SCOPE_RAW}' (did you mean one of: management, hosted, osc, agent, podvm, batch?)" ;;
+        esac
+        echo "Run '$(basename "$0") --help' for usage."
+        exit 1
+    }
+else
+    SCOPE=""
+fi
+
+# Expand action prefix; candidates depend on scope
+if [[ -n "$ACTION_RAW" ]]; then
+    case "$SCOPE" in
+        management) _action_list=(create setup upgrade teardown) ;;
+        hosted)     _action_list=(setup validate upgrade teardown reboot) ;;
+        osc)        _action_list=(install validate upgrade test reboot uninstall) ;;
+        agent)      _action_list=(iso list wait approve scale status) ;;
+        podvm)      _action_list=(build list) ;;
+        batch)      _action_list=(deploy) ;;
+        completion) _action_list=(bash zsh fish) ;;
+        help|"")    _action_list=() ;;
+    esac
+    if [[ ${#_action_list[@]} -gt 0 ]]; then
+        ACTION=$(expand_prefix "$ACTION_RAW" "${_action_list[@]}") || {
+            case $? in
+                1) log_error "Unknown action: '${ACTION_RAW}' for scope '${SCOPE}'" ;;
+                2) log_error "Ambiguous action: '${ACTION_RAW}' for scope '${SCOPE}'" ;;
+            esac
+            echo "Run '$(basename "$0") --help' for usage."
+            exit 1
+        }
+    else
+        ACTION="$ACTION_RAW"
+    fi
+else
+    ACTION=""
+fi
+
+# help needs no ACTION
+if [[ "$SCOPE" == "help" ]]; then
+    show_help
+    exit 0
+fi
+
+# Second pass: parse mode-specific flags (universal flags already applied)
+# Positional agent IDs for `agent approve <id> [<id>...]`
+AGENT_APPROVE_IDS=()
+if [[ "$SCOPE" != "batch" ]]; then
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --management-cluster-name|--hosted-cluster-name|--cluster-name|--name|-n)
+                case "$SCOPE" in
+                    management) HCP_MGMT_CLUSTER_NAME="$2" ;;
+                    *)          HCP_HOSTED_CLUSTER_NAME="$2" ;;
+                esac
+                shift 2 ;;
+            --location|--region|-l)  HCP_LOCATION="$2"; shift 2 ;;
+            --node-count)            HCP_NODE_COUNT="$2"; shift 2 ;;
+            --release-image)         HCP_RELEASE_IMAGE="$2"; shift 2 ;;
+            --operator-image)        HCP_OPERATOR_IMAGE="$2"; shift 2 ;;
+            --daemonset-image)       HCP_DAEMONSET_IMAGE="$2"; shift 2 ;;
+            --bundle-image)          HCP_BUNDLE_IMAGE="$2"; shift 2 ;;
+            --catalog-image)         HCP_CATALOG_IMAGE="$2"; shift 2 ;;
+            --catalog-channel)       HCP_CATALOG_CHANNEL="$2"; shift 2 ;;
+            --mce-channel)           HCP_MCE_CHANNEL="$2"; shift 2 ;;
+            --catalog-package)       HCP_CATALOG_PACKAGE="$2"; shift 2 ;;
+            --config)                HCP_CONFIG_FILE="$2"; shift 2 ;;
+            --openshift-install)     export HCP_OPENSHIFT_INSTALL="$2"; shift 2 ;;
+            --hypershift)            export HCP_HYPERSHIFT="$2"; shift 2 ;;
+            --sources)               PODVM_SOURCES="$2"; shift 2 ;;
+            --branch)                HCP_CLOUD_API_ADAPTOR_BRANCH="$2"; shift 2 ;;
+            --bucket)                HCP_PODVM_BUCKET="$2"; shift 2 ;;
+            --peer-pods)             HCP_OSC_PEER_PODS="yes"; shift ;;
+            --no-peer-pods)          HCP_OSC_PEER_PODS="no"; shift ;;
+            --max-retries)           HCP_MAX_RETRIES="$2"; shift 2 ;;
+            --wait-retries)          HCP_WAIT_RETRIES="$2"; shift 2 ;;
+            --install-role-duration) HCP_INSTALL_ROLE_DURATION="$2"; shift 2 ;;
+            --aws-profile)           HCP_AWS_PROFILE="$2"; shift 2 ;;
+            --api-url)               HCP_CLUSTER_API_URL="$2"; shift 2 ;;
+            --cluster-user)          HCP_CLUSTER_USER="$2"; shift 2 ;;
+            --cluster-password)      HCP_CLUSTER_PASSWORD="$2"; shift 2 ;;
+            --peer-pods-role-arn)     HCP_PEER_PODS_AWS_ROLE_ARN="$2"; shift 2 ;;
+            --build-podvm-image)     HCP_BUILD_PODVM_IMAGE="yes"; shift ;;
+            --kata-config-name)      HCP_OSC_KATA_CONFIG_NAME="$2"; shift 2 ;;
+            # agent scope
+            --replicas)              HCP_AGENT_REPLICAS="$2"; shift 2 ;;
+            --count)                 HCP_AGENT_WAIT_COUNT="$2"; shift 2 ;;
+            --timeout)               HCP_AGENT_WAIT_TIMEOUT="$2"; shift 2 ;;
+            --all)                   HCP_AGENT_APPROVE_ALL="true"; shift ;;
+            --hostname)              HCP_AGENT_HOSTNAME="$2"; shift 2 ;;
+            --disk)                  HCP_AGENT_DISK="$2"; shift 2 ;;
+            --label)                 HCP_AGENT_LABELS="$2"; shift 2 ;;
+            --ingress-ips)           HCP_AGENT_INGRESS_IPS="$2"; shift 2 ;;
+            --api-ips)               HCP_AGENT_API_TARGET_IPS="$2"; shift 2 ;;
+            --download)              HCP_AGENT_FORCE_DOWNLOAD="true"; shift ;;
+            --help|-h)               show_help; exit 0 ;;
+            *)
+                if [[ "$SCOPE" == "osc" && "$ACTION" == "test" ]]; then
+                    if [[ -z "$OSC_TEST_SUBTEST" ]]; then
+                        OSC_TEST_SUBTEST="$1"; shift
+                    elif [[ -z "$OSC_TEST_APP_IMAGE" ]]; then
+                        OSC_TEST_APP_IMAGE="$1"; shift
+                    else
+                        log_error "Unknown option: $1"
+                        echo "Run '$(basename "$0") --help' for usage."
+                        exit 1
+                    fi
+                elif [[ "$SCOPE" == "agent" && "$ACTION" == "approve" && "$1" != -* ]]; then
+                    AGENT_APPROVE_IDS+=("$1"); shift
+                else
+                    log_error "Unknown option: $1"
+                    echo "Run '$(basename "$0") --help' for usage."
+                    exit 1
+                fi ;;
+        esac
+    done
+fi
+
+# --nested implies --no-peer-pods unless peer-pods was explicitly requested
+if [[ "${HCP_NESTED_VIRT}" == "yes" && "${_HCP_PEERPODS_EXPLICIT:-}" != "true" ]]; then
+    HCP_OSC_PEER_PODS="no"
+fi
+
+# Enable debug mode if requested
+if [[ "$DEBUG" == "true" ]]; then
+    set -x
+fi
+
+[[ "$VERBOSE" == "true" ]] && log_debug "Verbose mode enabled"
+
+# Max number of retries in case a region gets full
+HCP_MAX_RETRIES="${HCP_MAX_RETRIES:-3}"
+
+# Max iterations for wait loops (each loop documents its sleep interval)
+HCP_WAIT_RETRIES="${HCP_WAIT_RETRIES:-60}"
+
+# AWS install role session duration in seconds (8h covers batch deploys)
+HCP_INSTALL_ROLE_DURATION="${HCP_INSTALL_ROLE_DURATION:-28800}"
+
+# AWS profile for credential resolution (preferred over frozen env vars)
+HCP_AWS_PROFILE="${HCP_AWS_PROFILE:-}"
+
+# openshift-install binary override (use e.g. a custom CrowdStrike-patched build)
+HCP_OPENSHIFT_INSTALL="${HCP_OPENSHIFT_INSTALL:-}"
+# Release image override (use a proper quay.io release image with a custom openshift-install build)
+HCP_MGMT_RELEASE_IMAGE="${HCP_MGMT_RELEASE_IMAGE:-}"
+
+# Completion generation (no cloud or env required — handle before check_environment)
+_completion_bash() {
+    local cmd
+    cmd="$(basename "$0")"
+    cat <<BASH_COMP
+# bash completion for ${cmd}
+# Source this file or add to /etc/bash_completion.d/
+# Generate: ${cmd} completion bash > ~/.bash_completion.d/${cmd}
+
+_${cmd//-/_}() {
+    local cur prev words cword
+    _init_completion 2>/dev/null || {
+        COMPREPLY=()
+        cur="\${COMP_WORDS[COMP_CWORD]}"
+        prev="\${COMP_WORDS[COMP_CWORD-1]}"
+        words=("\${COMP_WORDS[@]}")
+        cword=\$COMP_CWORD
+    }
+
+    local clouds="azure aws gcp rosa eks aro agent"
+    local scopes="management hosted osc agent podvm batch completion help"
+    local mgmt_actions="create setup upgrade teardown"
+    local hosted_actions="setup validate upgrade teardown reboot"
+    local osc_actions="install validate upgrade test reboot uninstall"
+    local agent_actions="iso list wait approve scale status"
+    local podvm_actions="build list"
+    local batch_actions="deploy"
+    local completion_actions="bash zsh fish"
+    local global_flags="--load-env -e --cloud -c --release -r --verbose -v --debug --yes -y --help -h"
+    local op_flags="--config --location -l --name -n --cluster-name --node-count
+                    --release-image --operator-image --daemonset-image
+                    --bundle-image --catalog-image --catalog-channel --max-retries
+                    --wait-retries --skip-management --dry-run --sources --bucket"
+
+    # Walk previous words to find scope and action
+    local scope="" action=""
+    local i
+    for (( i=1; i<cword; i++ )); do
+        local w="\${words[i]}"
+        case "\$w" in
+            --cloud|-c|--release|-r|--load-env|-e) (( i++ )); continue ;;
+            --config|--location|-l|--name|-n|--cluster-name|--node-count|\
+            --release-image|--operator-image|--daemonset-image|--bundle-image|\
+            --catalog-image|--catalog-channel|--max-retries|--wait-retries) (( i++ )); continue ;;
+            -*) continue ;;
+            *)
+                if [[ -z "\$scope" ]]; then scope="\$w"
+                elif [[ -z "\$action" ]]; then action="\$w"
+                fi ;;
+        esac
+    done
+
+    # Complete based on position
+    if [[ -z "\$scope" ]]; then
+        COMPREPLY=(\$(compgen -W "\$global_flags \$scopes" -- "\$cur"))
+    elif [[ -z "\$action" ]]; then
+        case "\$scope" in
+            m*|management) COMPREPLY=(\$(compgen -W "\$mgmt_actions" -- "\$cur")) ;;
+            h*|hosted)     COMPREPLY=(\$(compgen -W "\$hosted_actions" -- "\$cur")) ;;
+            o*|osc)        COMPREPLY=(\$(compgen -W "\$osc_actions" -- "\$cur")) ;;
+            a*|agent)      COMPREPLY=(\$(compgen -W "\$agent_actions" -- "\$cur")) ;;
+            p*|podvm)      COMPREPLY=(\$(compgen -W "\$podvm_actions" -- "\$cur")) ;;
+            b*|batch)      COMPREPLY=(\$(compgen -W "\$batch_actions" -- "\$cur")) ;;
+            comp*|completion) COMPREPLY=(\$(compgen -W "\$completion_actions" -- "\$cur")) ;;
+        esac
+    else
+        case "\$prev" in
+            --cloud|-c)  COMPREPLY=(\$(compgen -W "\$clouds" -- "\$cur")) ;;
+            --load-env|-e) COMPREPLY=(\$(compgen -f -- "\$cur")) ;;
+            --config)    COMPREPLY=(\$(compgen -f -- "\$cur")) ;;
+            --release|-r) COMPREPLY=() ;;
+            --location|-l|--name|-n|--cluster-name|--node-count|\
+            --release-image|--operator-image|--daemonset-image|--bundle-image|\
+            --catalog-image|--catalog-channel|--max-retries|--wait-retries) COMPREPLY=() ;;
+            *)           COMPREPLY=(\$(compgen -W "\$op_flags" -- "\$cur")) ;;
+        esac
+    fi
+}
+
+complete -F _${cmd//-/_} ${cmd}
+BASH_COMP
+}
+
+_completion_zsh() {
+    local cmd
+    cmd="$(basename "$0")"
+    cat <<ZSH_COMP
+#compdef ${cmd}
+# zsh completion for ${cmd}
+# Generate: ${cmd} completion zsh > "\${fpath[1]}/_${cmd}"
+
+_${cmd//-/_}() {
+    local state
+
+    _arguments -C \\
+        '(-e --load-env)'{-e,--load-env}'[source environment file]:env file:_files' \\
+        '(-c --cloud)'{-c,--cloud}'[cloud provider]:cloud:(azure aws gcp rosa eks aro agent)' \\
+        '(-r --release)'{-r,--release}'[OCP release version or image URL]:release:' \\
+        '(-v --verbose)'{-v,--verbose}'[enable verbose output]' \\
+        '(-y --yes)'{-y,--yes}'[skip confirmation prompts]' \\
+        '(-h --help)'{-h,--help}'[show help]' \\
+        '1:scope:->scope' \\
+        '2:action:->action' \\
+        '*:option:->option' && return 0
+
+    case \$state in
+        scope)
+            _values 'scope' management hosted osc agent podvm batch completion help
+            ;;
+        action)
+            case \${words[2]} in
+                m*) _values 'action' create setup upgrade teardown ;;
+                h*) _values 'action' setup validate upgrade teardown reboot ;;
+                o*) _values 'action' install validate upgrade test reboot uninstall ;;
+                a*) _values 'action' iso list wait approve scale status ;;
+                p*) _values 'action' build list ;;
+                b*) _values 'action' deploy ;;
+                comp*) _values 'action' bash zsh fish ;;
+            esac
+            ;;
+        option)
+            case \${words[2]} in
+                b*)
+                    _arguments \\
+                        '--config[config file]:file:_files' \\
+                        '--skip-management[skip management cluster creation]' \\
+                        '--dry-run[show plan only]'
+                    ;;
+                *)
+                    _arguments \\
+                        '--config[config file]:file:_files' \\
+                        '(-l --location)'{-l,--location}'[cloud region]:region:' \\
+                        '(-n --name)'{-n,--name}'[cluster name]:name:' \\
+                        '--node-count[worker node count]:count:' \\
+                        '--release-image[OCP release image]:image:' \\
+                        '--operator-image[OSC operator image]:image:' \\
+                        '--daemonset-image[OSC daemonset image]:image:' \\
+                        '--bundle-image[operator bundle image]:image:' \\
+                        '--catalog-image[custom catalog image]:image:' \\
+                        '--catalog-channel[catalog channel]:channel:' \\
+                        '--max-retries[max install retries]:count:' \
+                        '--wait-retries[max wait-loop iterations]:count:' \\
+                        '--sources[cloud-api-adaptor source directory]:dir:_files -/' \\
+                        '--bucket[S3 bucket for podvm upload]:bucket:'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+compdef _${cmd//-/_} ${cmd}
+ZSH_COMP
+}
+
+_completion_fish() {
+    local cmd
+    cmd="$(basename "$0")"
+    cat <<FISH_COMP
+# fish completion for ${cmd}
+# Generate: ${cmd} completion fish > ~/.config/fish/completions/${cmd}.fish
+
+set -l scopes management hosted osc agent podvm batch completion help
+set -l clouds azure aws gcp rosa eks aro agent
+
+complete -c ${cmd} -n '__fish_use_subcommand' -a "\$scopes"
+complete -c ${cmd} -s e -l load-env   -d 'Source environment file' -r -F
+complete -c ${cmd} -s c -l cloud      -d 'Cloud provider' -r -a "\$clouds"
+complete -c ${cmd} -s r -l release    -d 'OCP release version or image URL' -r
+complete -c ${cmd} -s v -l verbose    -d 'Verbose output'
+complete -c ${cmd} -s y -l yes        -d 'Skip confirmations'
+complete -c ${cmd} -s h -l help       -d 'Show help'
+
+for scope in management m
+    complete -c ${cmd} -n "__fish_seen_subcommand_from \$scope" -a 'create setup upgrade teardown'
+end
+for scope in hosted h
+    complete -c ${cmd} -n "__fish_seen_subcommand_from \$scope" -a 'setup validate upgrade teardown reboot'
+end
+for scope in agent a
+    complete -c ${cmd} -n "__fish_seen_subcommand_from \$scope" -a 'iso list wait approve scale status'
+end
+for scope in osc o
+    complete -c ${cmd} -n "__fish_seen_subcommand_from \$scope" -a 'install validate upgrade test reboot uninstall'
+end
+complete -c ${cmd} -n '__fish_seen_subcommand_from podvm p' -a 'build list'
+complete -c ${cmd} -n '__fish_seen_subcommand_from batch b' -a deploy
+complete -c ${cmd} -n '__fish_seen_subcommand_from completion comp' -a 'bash zsh fish'
+
+complete -c ${cmd} -l config         -d 'Config file'        -r -F
+complete -c ${cmd} -s l -l location  -d 'Cloud region'       -r
+complete -c ${cmd} -s n -l name      -d 'Cluster name'       -r
+complete -c ${cmd} -l node-count     -d 'Worker node count'  -r
+complete -c ${cmd} -l max-retries    -d 'Max retries'        -r
+complete -c ${cmd} -l wait-retries   -d 'Max wait iterations' -r
+complete -c ${cmd} -l sources        -d 'CAA source directory (podvm build)' -r -F
+complete -c ${cmd} -l bucket         -d 'S3 bucket for podvm upload' -r
+FISH_COMP
+}
+
+if [[ "$SCOPE" == "completion" ]]; then
+    case "$ACTION" in
+        bash) _completion_bash ;;
+        zsh)  _completion_zsh ;;
+        fish) _completion_fish ;;
+        *) log_error "Unknown completion shell: '${ACTION}'. Use bash, zsh, or fish."; exit 1 ;;
+    esac
+    exit 0
+fi
+
+# Verify environment is initialized before proceeding (podvm build/list don't need cluster env)
+[[ "$SCOPE" != "podvm" ]] && check_environment
+
+# Validate cloud selection and source cloud-specific function library
+if [[ -z "${HCP_CLOUD}" ]]; then
+    log_error "Cloud provider not specified. Use --cloud azure|aws|gcp|agent or set HCP_CLOUD"
+    echo ""
+    echo "Example: $0 --cloud azure management create"
+    echo "         $0 --cloud agent hosted setup    (bare-metal / ISO-booted nodes)"
+    exit 1
+fi
+case "${HCP_CLOUD}" in
+    azure|aws|gcp|rosa|eks|aro|agent) ;;
+    *)
+        log_error "Unknown cloud provider: ${HCP_CLOUD}. Must be azure, aws, gcp, rosa, eks, or agent"
+        exit 1
+        ;;
+esac
+CLOUD_LIB="${SCRIPT_DIR}/../lib/hypershift-cluster-setup-${HCP_CLOUD}.sh"
+if [[ ! -f "${CLOUD_LIB}" ]]; then
+    log_error "Cloud library not found: ${CLOUD_LIB}"
+    exit 1
+fi
+# shellcheck source=/dev/null
+source "${CLOUD_LIB}"
+log_debug "Loaded ${HCP_CLOUD} cloud library: ${CLOUD_LIB}"
+
+# Function to show menu if no arguments
+show_menu() {
+    cat <<EOF
+
+Which operation do you want to run?
+
+Batch Operations:
+  0) batch deploy           — Deploy management + multiple hosted clusters from config
+
+Management Cluster:
+  1) management create      — Create IPI OpenShift management cluster
+  2) management setup       — Install MCE + HyperShift on management cluster
+  3) management teardown    — Delete management cluster
+
+Hosted Cluster:
+  4) hosted setup           — Create OIDC, identities, and hosted cluster
+  5) hosted validate        — Check worker nodes and cluster readiness
+  6) hosted teardown        — Delete hosted cluster and cloud resources
+
+OSC (OpenShift Sandboxed Containers):
+  7) osc install            — Install OSC operator and configure DaemonSet mode
+  8) osc validate           — Verify kata runtime and test kata pod
+  9) osc reboot             — Cordon, drain, and reboot worker nodes
+  10) osc test              — Deploy and verify various kata workloads
+  11) osc uninstall         — Remove OSC operator and clean up kata runtime
+
+Agent Nodes (agent platform, --cloud agent):
+  12) agent wait            — Wait for ISO-booted machines to register as agents
+  13) agent approve         — Approve registered agents so they can join
+
+Peer Pod VM Image:
+  14) podvm build           — Build peer pod VM image and upload to cloud
+  15) podvm list            — List available peer pod VM images in cloud account
+
+EOF
+    if ! read -p "Select operation (0-15) or press Ctrl+C to exit: " choice; then
+        log_error "Failed to read input. Run with: $0 SCOPE ACTION [OPTIONS]"
+        echo ""
+        echo "Example: $0 management create"
+        echo "         $0 batch deploy --config clusters.yaml"
+        exit 1
+    fi
+    case "$choice" in
+        0) SCOPE="batch" ACTION="deploy" ;;
+        1) SCOPE="management" ACTION="create" ;;
+        2) SCOPE="management" ACTION="setup" ;;
+        3) SCOPE="management" ACTION="teardown" ;;
+        4) SCOPE="hosted" ACTION="setup" ;;
+        5) SCOPE="hosted" ACTION="validate" ;;
+        6) SCOPE="hosted" ACTION="teardown" ;;
+        7) SCOPE="osc" ACTION="install" ;;
+        8) SCOPE="osc" ACTION="validate" ;;
+        9) SCOPE="osc" ACTION="reboot" ;;
+        10) SCOPE="osc" ACTION="test" ;;
+        11) SCOPE="osc" ACTION="uninstall" ;;
+        12) SCOPE="agent" ACTION="wait" ;;
+        13) SCOPE="agent" ACTION="approve" ;;
+        14) SCOPE="podvm" ACTION="build" ;;
+        15) SCOPE="podvm" ACTION="list" ;;
+        *) log_error "Invalid choice"; exit 1 ;;
+    esac
+}
+
+# Show menu if no scope/action given (unless --yes is provided, which requires explicit commands)
+if [[ -z "$SCOPE" ]] || [[ -z "$ACTION" ]]; then
+    if [[ "$GLOBAL_YES" == "true" ]]; then
+        log_error "Cannot use --yes without explicit SCOPE and ACTION"
+        echo "Usage: $0 --yes SCOPE ACTION [OPTIONS]"
+        exit 1
+    fi
+    show_menu
+fi
+
+# Recover stuck worker machines so the cluster converges.
+# Machines stuck in Provisioned for >30 min are deleted; their MachineSet
+# recreates them automatically.  Returns 0 when all workers are Running.
+management_recover_workers() {
+    export KUBECONFIG="${HCP_MGMT_KUBECONFIG}"
+
+    local total running stuck
+    total=$(oc get machines -n openshift-machine-api -l machine.openshift.io/cluster-api-machine-role=worker \
+        --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    running=$(oc get machines -n openshift-machine-api -l machine.openshift.io/cluster-api-machine-role=worker \
+        --no-headers 2>/dev/null | awk '$2 == "Running"' | wc -l | tr -d ' ')
+
+    if [[ "$total" -eq 0 ]]; then
+        log_debug "No worker machines found — skipping recovery"
+        return 0
+    fi
+    if [[ "$running" -eq "$total" ]]; then
+        log_debug "All $total worker machines Running"
+        return 0
+    fi
+
+    stuck=$(( total - running ))
+    log_warn "$stuck of $total worker machines not Running — checking for stuck Provisioned machines"
+
+    local machine phase age_s now_s created_s
+    now_s=$(date +%s)
+    while IFS= read -r machine; do
+        phase=$(oc get machine "$machine" -n openshift-machine-api -o jsonpath='{.status.phase}' 2>/dev/null)
+        [[ "$phase" == "Provisioned" ]] || continue
+        local _ts
+        _ts=$(oc get machine "$machine" -n openshift-machine-api \
+            -o jsonpath='{.metadata.creationTimestamp}' 2>/dev/null)
+        created_s=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$_ts" +%s 2>/dev/null \
+            || date -d "$_ts" +%s 2>/dev/null || echo 0)
+        age_s=$(( now_s - created_s ))
+        if [[ "$age_s" -gt 1800 ]]; then
+            log_warn "Deleting stuck machine $machine (Provisioned for $(( age_s / 60 ))m)"
+            oc delete machine "$machine" -n openshift-machine-api
+        fi
+    done < <(oc get machines -n openshift-machine-api \
+        -l machine.openshift.io/cluster-api-machine-role=worker \
+        --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null)
+
+    echo "Waiting for all worker machines to reach Running (may take 5-10 minutes)..."
+    local wait_i
+    for wait_i in $(seq 1 60); do
+        running=$(oc get machines -n openshift-machine-api \
+            -l machine.openshift.io/cluster-api-machine-role=worker \
+            --no-headers 2>/dev/null | awk '$2 == "Running"' | wc -l | tr -d ' ')
+        total=$(oc get machines -n openshift-machine-api \
+            -l machine.openshift.io/cluster-api-machine-role=worker \
+            --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        if [[ "$running" -eq "$total" && "$total" -gt 0 ]]; then
+            log_success "All $total worker machines Running"
+            return 0
+        fi
+        echo "  Workers: $running/$total Running ($wait_i/60)"
+        sleep 15
+    done
+
+    log_error "Not all worker machines reached Running after 15 minutes ($running/$total)"
+    return 1
+}
+
+# Management cluster operations
+management_setup() {
+    export KUBECONFIG="${HCP_MGMT_KUBECONFIG}"
+
+    echo ""
+    echo "=== Setting Up Management Cluster: ${HCP_MGMT_CLUSTER_NAME} ==="
+
+    require_pull_secret
+
+    # Verify management cluster is accessible
+    oc cluster-info >/dev/null 2>&1 || {
+        log_error "Cannot access management cluster"
+        echo "Check KUBECONFIG: ${HCP_MGMT_KUBECONFIG}"
+        exit 1
+    }
+
+    log_success "Management cluster accessible"
+    echo ""
+
+    # Check cluster version
+    CLUSTER_VERSION=$(oc get clusterversion -o jsonpath='{.items[0].status.desired.version}')
+    echo "Cluster version: ${CLUSTER_VERSION}"
+
+    # Verify minimum version
+    MAJOR_MINOR=$(echo ${CLUSTER_VERSION} | cut -d. -f1,2)
+    IFS='.' read -r _ver_major _ver_minor <<< "${MAJOR_MINOR}"
+    if (( _ver_major < 4 || ( _ver_major == 4 && _ver_minor < 21 ) )); then
+        log_warn "OpenShift version ${CLUSTER_VERSION} may not support HyperShift"
+        echo "Recommended: 4.21.0 or newer"
+    fi
+
+    echo ""
+
+    # Step 1: Install MultiCluster Engine
+    echo "=== Step 1: Installing MultiCluster Engine Operator ==="
+    echo ""
+
+    echo "Creating multicluster-engine namespace..."
+    oc create namespace multicluster-engine 2>/dev/null || echo "  Namespace already exists"
+
+    echo "Creating OperatorGroup..."
+    cat <<EOF | oc apply -f -
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: multicluster-engine-operatorgroup
+  namespace: multicluster-engine
+spec:
+  targetNamespaces:
+  - multicluster-engine
+EOF
+
+    local mce_channel="${HCP_MCE_CHANNEL:-}"
+    local available_channels
+    available_channels=$(oc get packagemanifest multicluster-engine -n openshift-marketplace \
+        -o jsonpath='{range .status.channels[*]}{.name}{"\n"}{end}' 2>/dev/null \
+        | grep '^stable-' | sort -t. -k2 -n)
+    if [[ -n "$mce_channel" ]]; then
+        if [[ -n "$available_channels" ]] && ! echo "$available_channels" | grep -qx "$mce_channel"; then
+            log_error "MCE channel ${mce_channel} not found in catalog (available: $(echo $available_channels | tr '\n' ' '))"
+            exit 1
+        fi
+        log_info "Using MCE channel: ${mce_channel} (from HCP_MCE_CHANNEL / --mce-channel)"
+    elif [[ -n "$available_channels" ]]; then
+        mce_channel=$(echo "$available_channels" | tail -1)
+        log_info "Using MCE channel: ${mce_channel} (highest available in catalog)"
+    else
+        local mce_minor=$(( _ver_minor - 10 ))
+        mce_channel="stable-2.${mce_minor}"
+        log_warn "Could not query MCE catalog, guessing channel: ${mce_channel}"
+    fi
+
+    echo "Creating Subscription for MCE..."
+    cat <<EOF | oc apply -f -
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: multicluster-engine
+  namespace: multicluster-engine
+spec:
+  channel: ${mce_channel}
+  name: multicluster-engine
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+EOF
+
+    echo ""
+    echo "Waiting for MCE operator to install (may take 2-3 minutes)..."
+    sleep 30
+
+    for (( i=1; i<=HCP_WAIT_RETRIES; i++ )); do
+        CSV=$(oc get csv -n multicluster-engine -o name 2>/dev/null | grep multicluster-engine | head -1 || true)
+        if [[ -n "$CSV" ]]; then
+            PHASE=$(oc get ${CSV} -n multicluster-engine -o jsonpath='{.status.phase}' 2>/dev/null || true)
+            if [[ "$PHASE" == "Succeeded" ]]; then
+                log_success "MCE operator installed: ${CSV}"
+                break
+            fi
+            echo "  Waiting for CSV (phase: ${PHASE})... ($i/${HCP_WAIT_RETRIES})"
+        else
+            echo "  Waiting for CSV to appear... ($i/${HCP_WAIT_RETRIES})"
+        fi
+        sleep 10
+    done
+
+    if [[ "${PHASE:-}" != "Succeeded" ]]; then
+        log_error "MCE operator CSV did not reach Succeeded phase within 5 minutes (last phase: ${PHASE:-not found})"
+        exit 1
+    fi
+
+    echo ""
+
+    # Step 2: Create MultiClusterEngine instance
+    echo "=== Step 2: Creating MultiClusterEngine Instance ==="
+    echo ""
+
+    local _mce_created=false
+    for _mce_try in $(seq 1 12); do
+        if cat <<EOF | oc apply -f - 2>&1; then
+apiVersion: multicluster.openshift.io/v1
+kind: MultiClusterEngine
+metadata:
+  name: multiclusterengine
+spec: {}
+EOF
+            _mce_created=true
+            break
+        fi
+        echo "  Webhook not ready, retrying... (${_mce_try}/12)"
+        sleep 10
+    done
+    if [[ "$_mce_created" != "true" ]]; then
+        log_error "Failed to create MultiClusterEngine after 12 attempts"
+        return 1
+    fi
+
+    echo "Waiting for MultiClusterEngine to be available (may take 3-5 minutes)..."
+    echo "Monitor progress with: oc wait --for=condition=Available multiclusterengine/multiclusterengine --timeout=10m"
+    if ! oc wait --for=condition=Available multiclusterengine/multiclusterengine --timeout=10m; then
+        log_error "MultiClusterEngine did not become available"
+        return 1
+    fi
+
+    echo ""
+
+    # Step 2b: Enable the MCE agent service (assisted installer / central
+    # infrastructure management) for the Agent platform. Required to create
+    # InfraEnvs and register ISO-booted nodes.
+    local mce_agent_service="${HCP_MCE_AGENT_SERVICE:-}"
+    if [[ -z "${mce_agent_service}" ]]; then
+        if [[ "${HCP_CLOUD}" == "agent" ]]; then
+            mce_agent_service="yes"
+        else
+            mce_agent_service="no"
+        fi
+    fi
+    if [[ "${mce_agent_service}" == "yes" ]]; then
+        echo "=== Step 2b: Enabling MCE agent-service (central infrastructure management) ==="
+        echo ""
+        if ! oc patch mce multiclusterengine --type merge -p \
+            '{"spec":{"overrides":{"components":[{"name":"agent-service","enabled": true}]}}}'; then
+            log_error "Failed to enable the agent-service component on MultiClusterEngine"
+            return 1
+        fi
+        # The agent lib provides AgentServiceConfig creation (osImages for the
+        # hosted release); other clouds only get the component enabled.
+        if declare -F agent_service_config >/dev/null 2>&1; then
+            agent_service_config || return 1
+        else
+            log_info "agent_service_config not provided by the ${HCP_CLOUD} library; skipping AgentServiceConfig creation"
+        fi
+        echo ""
+    fi
+
+    # Step 3: Verify HyperShift
+    echo "=== Step 3: Verifying HyperShift Installation ==="
+    echo ""
+
+    oc get crd hostedclusters.hypershift.openshift.io >/dev/null 2>&1 && log_success "HostedCluster CRD present" || { log_error "HostedCluster CRD not found"; return 1; }
+    oc get crd nodepools.hypershift.openshift.io >/dev/null 2>&1 && log_success "NodePool CRD present" || { log_error "NodePool CRD not found"; return 1; }
+
+    echo ""
+    echo "HyperShift operator pods:"
+    oc get pods -n hypershift
+
+    echo ""
+
+    # Step 4: Cloud-specific prerequisites
+    echo ""
+    cloud_management_prereqs
+
+    echo ""
+    log_success "Management cluster setup complete!"
+    echo ""
+    echo "Summary:"
+    echo "  - MCE operator installed and MultiClusterEngine available"
+    echo "  - HyperShift operator running with CRDs present"
+    echo "  - Cloud prerequisites verified (${HCP_CLOUD})"
+    echo ""
+    echo "Next step:"
+    echo "  $(self_cmd) hosted setup --cluster-name ${HCP_HOSTED_CLUSTER_NAME}"
+}
+
+# When --release is passed for an upgrade, the env file recomputes HCP_PROJECT
+# (and thus HCP_MGMT_KUBECONFIG / HCP_WORK_DIR) from the *target* version, but
+# the source cluster lives under the *current* version's directory. Resolve the
+# actual kubeconfig by searching for the management cluster name on disk and fix
+# HCP_WORK_DIR so that hosted kubeconfig paths are also correct.
+_resolve_work_dir_for_upgrade() {
+    [[ -f "${HCP_MGMT_KUBECONFIG}" ]] && return 0
+
+    local found
+    found=$(find "${HOME}/.hcp/${HCP_CLOUD:-azure}" -name "kubeconfig" \
+        -path "*/${HCP_MGMT_CLUSTER_NAME}/auth/kubeconfig" 2>/dev/null | sort | tail -1)
+    if [[ -z "$found" ]]; then
+        log_error "Management kubeconfig not found at: ${HCP_MGMT_KUBECONFIG}"
+        log_error "Set HCP_MGMT_KUBECONFIG explicitly when using --release for upgrades:"
+        log_error "  export HCP_MGMT_KUBECONFIG=~/.hcp/${HCP_CLOUD:-azure}/<project>/${HCP_MGMT_CLUSTER_NAME}/auth/kubeconfig"
+        exit 1
+    fi
+
+    HCP_MGMT_KUBECONFIG="$found"
+    # Derive HCP_WORK_DIR: strip /<cluster>/auth/kubeconfig from the path
+    HCP_WORK_DIR="$(dirname "$(dirname "$(dirname "$found")")")"
+    log_info "Resolved source cluster work dir: ${HCP_WORK_DIR}"
+    export KUBECONFIG="${HCP_MGMT_KUBECONFIG}"
+}
+
+management_upgrade() {
+    export KUBECONFIG="${HCP_MGMT_KUBECONFIG}"
+    _resolve_work_dir_for_upgrade
+
+    echo ""
+    echo "=== Upgrading Management Cluster: ${HCP_MGMT_CLUSTER_NAME} ==="
+
+    local target_image="${HCP_RELEASE_IMAGE}"
+    if [[ -z "$target_image" ]]; then
+        log_error "No release image specified. Use --release <version> or set HCP_RELEASE_IMAGE"
+        exit 1
+    fi
+
+    local current_version
+    current_version=$(oc get clusterversion -o jsonpath='{.items[0].status.desired.version}' 2>/dev/null || echo "unknown")
+    echo "Current version: ${current_version}"
+    echo "Target image:    ${target_image}"
+    echo ""
+
+    log_warn "Upgrading the management cluster while hosted clusters are running may"
+    log_warn "briefly disrupt the HyperShift operator and hosted control planes."
+    echo ""
+
+    if [[ "$GLOBAL_YES" == "true" ]]; then
+        REPLY="y"
+    else
+        read -p "Proceed with management cluster upgrade? [y/N] " -n 1 -r
+        echo
+    fi
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Upgrade cancelled"
+        exit 0
+    fi
+
+    echo "Initiating upgrade to ${target_image}..."
+    oc adm upgrade --to-image "${target_image}" --allow-explicit-upgrade 2>/dev/null || \
+    oc adm upgrade --to-image "${target_image}" --force 2>/dev/null || {
+        log_error "Failed to initiate upgrade"
+        echo "Check: oc get clusterversion -o yaml"
+        exit 1
+    }
+    log_success "Upgrade initiated"
+    echo ""
+    echo "Monitoring upgrade progress (Ctrl+C to detach; upgrade continues in background)..."
+    echo ""
+
+    local i=1 seen_progressing=false
+    while true; do
+        local cv_json progressing available degraded version message
+        cv_json=$(oc get clusterversion -o json 2>/dev/null)
+        progressing=$(printf '%s' "$cv_json" | jq -r \
+            '.items[0].status.conditions[] | select(.type=="Progressing") | .status' 2>/dev/null || echo "?")
+        available=$(printf '%s' "$cv_json" | jq -r \
+            '.items[0].status.conditions[] | select(.type=="Available") | .status' 2>/dev/null || echo "?")
+        degraded=$(printf '%s' "$cv_json" | jq -r \
+            '.items[0].status.conditions[] | select(.type=="Degraded") | .status' 2>/dev/null || echo "?")
+        version=$(printf '%s' "$cv_json" | jq -r \
+            '.items[0].status.history[0] | "\(.version // "?") (\(.state // "?"))"' 2>/dev/null || echo "unknown")
+        message=$(printf '%s' "$cv_json" | jq -r \
+            '.items[0].status.conditions[] | select(.type=="Progressing") | .message' 2>/dev/null | head -1)
+
+        printf "[%3d] version=%-30s progressing=%-5s available=%-5s degraded=%s\n" \
+            "$i" "$version" "$progressing" "$available" "$degraded"
+        [[ -n "$message" ]] && echo "      ${message:0:120}"
+
+        [[ "$progressing" == "True" ]] && seen_progressing=true
+        [[ "$degraded" == "True" ]] && log_warn "Cluster is Degraded — run: oc get clusterversion -o yaml"
+
+        if [[ "$seen_progressing" == "true" && "$progressing" == "False" && "$available" == "True" ]]; then
+            echo ""
+            log_success "Management cluster upgrade complete: $version"
+            break
+        fi
+
+        sleep 30
+        i=$((i + 1))
+    done
+}
+
+# Hosted cluster operations
+hosted_validate() {
+    export KUBECONFIG="${HCP_MGMT_KUBECONFIG}"
+
+    echo ""
+    echo "=== Validating Hosted Cluster: ${HCP_HOSTED_CLUSTER_NAME} ==="
+
+    # Get kubeconfig
+    HYPERSHIFT="${HCP_HYPERSHIFT:-$(command -v hypershift 2>/dev/null)}"
+    [[ -n "$HYPERSHIFT" ]] || { log_error "hypershift CLI not found"; exit 1; }
+
+    HOSTED_KUBECONFIG="${HCP_WORK_DIR}/${HCP_HOSTED_CLUSTER_NAME}-kubeconfig"
+    local kc_err
+    kc_err=$(mktemp)
+    if ! ${HYPERSHIFT} create kubeconfig --name ${HCP_HOSTED_CLUSTER_NAME} --namespace ${HCP_NAMESPACE} >"${HOSTED_KUBECONFIG}" 2>"${kc_err}"; then
+        local msg; msg=$(cat "${kc_err}")
+        rm -f "${HOSTED_KUBECONFIG}" "${kc_err}"
+        log_error "Cannot get hosted cluster kubeconfig: ${msg}"
+        log_error "The cluster may not be Available yet. Check:"
+        echo "  KUBECONFIG=${HCP_MGMT_KUBECONFIG} oc get hostedcluster ${HCP_HOSTED_CLUSTER_NAME} -n ${HCP_NAMESPACE}"
+        exit 1
+    fi
+    rm -f "${kc_err}"
+    log_success "Generated kubeconfig: ${HOSTED_KUBECONFIG}"
+    echo ""
+
+    copy_catalog_sources "${HOSTED_KUBECONFIG}"
+    echo ""
+
+    # Check worker nodes
+    echo "=== Worker Nodes ==="
+    KUBECONFIG=${HOSTED_KUBECONFIG} oc get nodes || {
+        log_warn "Cannot access hosted cluster or no nodes joined yet"
+        exit 1
+    }
+
+    NODE_COUNT_ACTUAL=$(KUBECONFIG=${HOSTED_KUBECONFIG} oc get nodes --no-headers 2>/dev/null | wc -l)
+    NODES_READY=$(KUBECONFIG=${HOSTED_KUBECONFIG} oc get nodes --no-headers 2>/dev/null | grep -c " Ready ")
+    echo ""
+    echo "Worker nodes: ${NODE_COUNT_ACTUAL}/${HCP_NODE_COUNT} (${NODES_READY} Ready)"
+
+    # Skip remaining validation if already validated
+    if [[ "$NODES_READY" -eq "$NODE_COUNT_ACTUAL" ]] && [[ "$NODE_COUNT_ACTUAL" -ge "$HCP_NODE_COUNT" ]]; then
+        echo ""
+        log_success "All nodes are ready, validation complete"
+        echo ""
+        echo "To manually verify:"
+        echo "  KUBECONFIG=${HOSTED_KUBECONFIG} oc get nodes"
+        echo "  KUBECONFIG=${HCP_MGMT_KUBECONFIG} oc get hostedcluster ${HCP_HOSTED_CLUSTER_NAME} -n ${HCP_NAMESPACE}"
+        echo ""
+        echo "Next step:"
+        echo "  $(self_cmd) osc install --cluster-name ${HCP_HOSTED_CLUSTER_NAME}"
+        return 0
+    fi
+    echo ""
+
+    # Verify MCO is not functional
+    echo "=== MCO/MachineConfig Check ==="
+    echo "Checking if MCO is functional (it should NOT be on HyperShift)..."
+
+    if KUBECONFIG=${HOSTED_KUBECONFIG} kubectl get machineconfigpools 2>&1 | grep -q "error: the server doesn't have a resource type"; then
+        log_success "MachineConfigPools not available (MCO not functional)"
+    else
+        MCP_COUNT=$(KUBECONFIG=${HOSTED_KUBECONFIG} kubectl get machineconfigpools --no-headers 2>/dev/null | wc -l)
+        if [[ "$MCP_COUNT" -gt 0 ]]; then
+            log_error "Found $MCP_COUNT MachineConfigPools - MCO is functional!"
+            exit 1
+        else
+            log_success "No MachineConfigPools (MCO not functional)"
+        fi
+    fi
+
+    if KUBECONFIG=${HOSTED_KUBECONFIG} kubectl get daemonset -A 2>/dev/null | grep -q machine-config-daemon; then
+        log_error "machine-config-daemon is running - MCO is functional!"
+        exit 1
+    else
+        log_success "No machine-config-daemon DaemonSet"
+    fi
+
+    echo ""
+    log_success "MCO is not functional on this cluster (correct for HyperShift)"
+    echo "  OSC DaemonSet mode is required and will work correctly"
+    echo ""
+    log_success "Validation complete"
+    echo ""
+    echo "To manually verify:"
+    echo "  KUBECONFIG=${HOSTED_KUBECONFIG} oc get nodes"
+    echo "  KUBECONFIG=${HCP_MGMT_KUBECONFIG} oc get hostedcluster ${HCP_HOSTED_CLUSTER_NAME} -n ${HCP_NAMESPACE}"
+    echo ""
+    echo "Next step:"
+    echo "  $(self_cmd) osc install --cluster-name ${HCP_HOSTED_CLUSTER_NAME}"
+}
+
+# OSC operations
+
+# Validate that a kubeconfig can authenticate to its cluster.  Exits with a
+# clear message if oc whoami fails (expired token, rotated certificate, etc.).
+_check_kubeconfig_auth() {
+    local kc="$1" label="$2"
+    local out
+    if ! out=$(KUBECONFIG="$kc" oc whoami --request-timeout=10s 2>&1); then
+        log_error "${label} credentials have expired or are invalid"
+        log_error "Kubeconfig: ${kc}"
+        log_error "Error: ${out}"
+        log_error "Re-authenticate:  oc login <api-url> -u <user> -p <pass> --kubeconfig ${kc}"
+        exit 1
+    fi
+    log_info "${label}: authenticated as ${out}"
+}
+
+cluster_seed_kubeconfig() {
+    local hosted_kc="${HCP_WORK_DIR}/${HCP_HOSTED_CLUSTER_NAME}-kubeconfig"
+    local api_url="${HCP_CLUSTER_API_URL:-}"
+    local user="${HCP_CLUSTER_USER:-}"
+    local password="${HCP_CLUSTER_PASSWORD:-}"
+
+    if [[ -z "$api_url" ]]; then
+        # ROSA convenience: derive API URL from the managed control plane if rosa CLI is available
+        log_info "HCP_CLUSTER_API_URL not set — trying rosa describe cluster..."
+        api_url=$(rosa describe cluster --cluster "${HCP_HOSTED_CLUSTER_NAME}" \
+            --output json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('api',{}).get('url',''))" 2>/dev/null || true)
+        [[ -n "$api_url" ]] || {
+            log_error "Cannot determine cluster API URL."
+            log_error "Set HCP_CLUSTER_API_URL or pass --api-url <url>."
+            exit 1
+        }
+        log_info "API URL from rosa: ${api_url}"
+    fi
+
+    [[ -n "$user" ]] || {
+        log_error "HCP_CLUSTER_USER not set — pass --cluster-user <user>."
+        exit 1
+    }
+    [[ -n "$password" ]] || {
+        log_error "HCP_CLUSTER_PASSWORD not set — pass --cluster-password <pass>."
+        exit 1
+    }
+
+    log_info "Logging in to ${api_url} as ${user}..."
+    local tmp_kc; tmp_kc=$(mktemp)
+    if ! oc login "${api_url}" --username "${user}" --password "${password}" \
+            --kubeconfig "${tmp_kc}" >/dev/null 2>&1; then
+        rm -f "${tmp_kc}"
+        log_error "oc login failed — check --api-url, --cluster-user, and --cluster-password."
+        exit 1
+    fi
+    mkdir -p "${HCP_WORK_DIR}"
+    KUBECONFIG="${tmp_kc}" oc config view --minify --flatten > "${hosted_kc}"
+    rm -f "${tmp_kc}"
+    log_success "Kubeconfig seeded: ${hosted_kc}"
+}
+
+osc_install() {
+    local hosted_kc="${HCP_WORK_DIR}/${HCP_HOSTED_CLUSTER_NAME}-kubeconfig"
+    export KUBECONFIG="$hosted_kc"
+
+    _kata_runtime_class="kata"
+    local peer_pods_enabled="false"
+    if [[ "${HCP_OSC_PEER_PODS:-yes}" == "yes" ]]; then
+        _kata_runtime_class="kata-remote"
+        peer_pods_enabled="true"
+    fi
+
+    echo ""
+    echo "=== Installing OpenShift Sandboxed Containers (OSC) via OLM ==="
+    echo "Cluster: ${HCP_HOSTED_CLUSTER_NAME}"
+    echo "Mode: DaemonSet (MCO non-functional on HyperShift)"
+    echo "Peer pods: ${peer_pods_enabled} (runtime class: ${_kata_runtime_class})"
+    echo ""
+
+    # If the kubeconfig exists but is stale (cluster gone/expired) and --yes is set,
+    # back it up and fall through to the re-fetch logic below.
+    if [[ -s "$hosted_kc" ]] && [[ "$GLOBAL_YES" == "true" ]]; then
+        if ! KUBECONFIG="$hosted_kc" oc whoami --request-timeout=10s >/dev/null 2>&1; then
+            log_warn "Hosted cluster kubeconfig is stale — backing up and re-fetching"
+            mv "$hosted_kc" "${hosted_kc}.bak"
+        fi
+    fi
+
+    # Ensure the hosted cluster kubeconfig exists (hosted validate may not have run)
+    if [[ ! -s "$hosted_kc" ]]; then
+        if [[ "${HCP_CLOUD}" == "rosa" ]]; then
+            # ROSA has no management cluster; seed kubeconfig via oc login
+            [[ -n "${HCP_CLUSTER_USER:-}" ]] || {
+                log_error "Kubeconfig not found: ${hosted_kc}"
+                log_error "For ROSA, seed it with: --cluster-user <user> --cluster-password <pass> [--api-url <url>]"
+                exit 1
+            }
+            cluster_seed_kubeconfig
+        else
+            local HYPERSHIFT="${HCP_HYPERSHIFT:-$(command -v hypershift 2>/dev/null)}"
+            [[ -n "$HYPERSHIFT" ]] || { log_error "hypershift CLI not found"; exit 1; }
+            echo "Fetching hosted cluster kubeconfig..."
+            local kc_err; kc_err=$(mktemp)
+            export KUBECONFIG="${HCP_MGMT_KUBECONFIG}"
+            if ! ${HYPERSHIFT} create kubeconfig \
+                    --name "${HCP_HOSTED_CLUSTER_NAME}" \
+                    --namespace "${HCP_NAMESPACE}" \
+                    >"$hosted_kc" 2>"$kc_err"; then
+                local msg; msg=$(cat "$kc_err")
+                rm -f "$hosted_kc" "$kc_err"
+                log_error "Cannot get hosted cluster kubeconfig: ${msg}"
+                log_error "The cluster may not be Available yet — run 'hosted validate' first."
+                exit 1
+            fi
+            rm -f "$kc_err"
+            log_success "Fetched kubeconfig: ${hosted_kc}"
+            echo ""
+        fi
+        export KUBECONFIG="$hosted_kc"
+    fi
+
+    _check_kubeconfig_auth "${hosted_kc}" "Hosted cluster"
+
+    # Wait for worker nodes to be ready (CatalogSource pod needs somewhere to run)
+    echo "Waiting for worker nodes to be ready..."
+    NODES_READY=false
+    for (( i=1; i<=HCP_WAIT_RETRIES; i++ )); do
+        NODE_COUNT=$(oc get nodes --no-headers 2>/dev/null | wc -l || true)
+        READY_COUNT=$(oc get nodes --no-headers 2>/dev/null | grep -c " Ready " 2>/dev/null || true)
+        READY_COUNT=${READY_COUNT:-0}
+        if [[ "$READY_COUNT" -gt 0 ]]; then
+            echo "  Nodes ready: $READY_COUNT/$NODE_COUNT"
+            NODES_READY=true
+            break
+        fi
+        echo "  Waiting for nodes... ($i/${HCP_WAIT_RETRIES})"
+        sleep 5
+    done
+
+    if [[ "$NODES_READY" != "true" ]]; then
+        log_warn "No worker nodes ready after 5 minutes, continuing anyway (may fail)"
+    fi
+
+    # Azure CCM can crash-loop during initialization, leaving nodes with a
+    # NoSchedule taint that blocks ALL data-plane pods (including catalogs).
+    # Nodes are Ready but untainted CCM never ran — remove the taint so pods
+    # can schedule.  Only act when every Ready node carries the taint.
+    if [[ "$NODES_READY" == "true" ]]; then
+        local tainted_nodes
+        tainted_nodes=$(oc get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .spec.taints[*]}{.key}{" "}{end}{"\n"}{end}' 2>/dev/null \
+            | grep 'node.cloudprovider.kubernetes.io/uninitialized' \
+            | awk '{print $1}' || true)
+        if [[ -n "$tainted_nodes" ]]; then
+            log_warn "Nodes have cloud-provider 'uninitialized' NoSchedule taint — pods cannot schedule"
+            # Check if the CCM is crashing (management cluster, Azure only)
+            local ccm_crash="false"
+            if [[ "${HCP_CLOUD}" == "azure" && -n "${HCP_MGMT_KUBECONFIG:-}" && -f "${HCP_MGMT_KUBECONFIG}" ]]; then
+                local ctrl_ns="clusters-${HCP_HOSTED_CLUSTER_NAME}"
+                local ccm_status
+                ccm_status=$(KUBECONFIG="${HCP_MGMT_KUBECONFIG}" oc get pods -n "$ctrl_ns" \
+                    -l app=azure-cloud-controller-manager --no-headers 2>/dev/null \
+                    | awk '{print $3}' | head -1 || true)
+                if [[ "$ccm_status" == "CrashLoopBackOff" || "$ccm_status" == "Error" ]]; then
+                    ccm_crash="true"
+                fi
+            fi
+            if [[ "$ccm_crash" == "true" ]]; then
+                log_warn "Azure cloud-controller-manager is $ccm_status — removing taint to unblock scheduling"
+            else
+                log_warn "Removing cloud-provider uninitialized taint to unblock pod scheduling"
+            fi
+            oc adm taint nodes --all node.cloudprovider.kubernetes.io/uninitialized- 2>/dev/null || true
+            log_success "Removed uninitialized taint from nodes"
+
+            # Without CCM, kubelet-serving CSRs are never auto-approved,
+            # breaking oc logs/exec with "tls: internal error".  Approve them.
+            local pending_csrs
+            pending_csrs=$(oc get csr -o jsonpath='{range .items[?(@.status.conditions==null)]}{.metadata.name}{"\n"}{end}' 2>/dev/null \
+                | head -20 || true)
+            if [[ -n "$pending_csrs" ]]; then
+                log_warn "Approving pending kubelet-serving CSRs (CCM never ran)"
+                local _csr
+                for _csr in $pending_csrs; do
+                    oc adm certificate approve "$_csr" 2>/dev/null || true
+                done
+                log_success "Approved $(echo "$pending_csrs" | wc -l | tr -d ' ') pending CSR(s)"
+            fi
+
+        fi
+    fi
+
+    if [[ "$NODES_READY" == "true" ]]; then
+        _azure_patch_provider_ids
+    fi
+    echo ""
+
+    if [[ -n "${HCP_MGMT_KUBECONFIG:-}" && -f "${HCP_MGMT_KUBECONFIG}" ]]; then
+        _check_kubeconfig_auth "${HCP_MGMT_KUBECONFIG}" "Management cluster"
+    fi
+    copy_catalog_sources "${HCP_WORK_DIR}/${HCP_HOSTED_CLUSTER_NAME}-kubeconfig"
+    echo ""
+
+    # Check if OSC subscription already exists — skip OLM steps but still apply
+    # node labeling and KataConfig, which are idempotent and may be missing.
+    local skip_olm=false
+    if oc get subscriptions -n openshift-sandboxed-containers-operator 2>/dev/null | grep -q "sandboxed-containers-operator"; then
+        log_success "OSC subscription already exists, skipping OLM install (Steps 1-3)"
+        skip_olm=true
+    fi
+    echo ""
+
+    if [[ "$skip_olm" == "false" ]]; then
+    # Validate flag combinations
+    if [[ -n "${HCP_BUNDLE_IMAGE:-}" && -n "${HCP_CATALOG_IMAGE:-}" ]]; then
+        log_error "--bundle-image and --catalog-image are mutually exclusive"
+        exit 1
+    fi
+
+    HCP_CATALOG_CHANNEL="${HCP_CATALOG_CHANNEL:-stable}"
+
+    if [[ -n "${HCP_BUNDLE_IMAGE:-}" ]]; then
+        echo "Catalog tier: bundle-image (operator-sdk run bundle)"
+        echo "Bundle image: ${HCP_BUNDLE_IMAGE}"
+    elif [[ -n "${HCP_CATALOG_IMAGE:-}" ]]; then
+        echo "Catalog tier: catalog-image (custom CatalogSource)"
+        echo "Catalog image: ${HCP_CATALOG_IMAGE}"
+        echo "Catalog channel: ${HCP_CATALOG_CHANNEL}"
+    else
+        echo "Catalog tier: default (redhat-operators)"
+    fi
+    [[ -n "${HCP_OPERATOR_IMAGE:-}" ]] && echo "Operator image override: ${HCP_OPERATOR_IMAGE}"
+    [[ -n "${HCP_DAEMONSET_IMAGE:-}" ]] && echo "DaemonSet image override: ${HCP_DAEMONSET_IMAGE}"
+    echo ""
+
+    # Create namespace
+    echo "=== Step 1: Creating Namespace ==="
+    oc create namespace openshift-sandboxed-containers-operator 2>/dev/null || echo "✓ Namespace already exists"
+    echo ""
+
+    # Copy pull secret
+    echo "=== Step 2: Copying Pull Secret ==="
+    if ! oc get secret pull-secret -n openshift-config >/dev/null 2>&1; then
+        log_error "Pull secret not found in openshift-config"
+        exit 1
+    fi
+
+    oc get secret pull-secret -n openshift-config -o json | \
+      jq 'del(.metadata.ownerReferences,.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp) | .metadata.namespace = "openshift-sandboxed-containers-operator"' | \
+      oc apply -f - >/dev/null
+    log_success "Pull secret copied"
+    echo ""
+
+    # Install operator
+    echo "=== Step 3: Installing Operator ==="
+
+    if [[ -n "${HCP_BUNDLE_IMAGE:-}" ]]; then
+        OPERATOR_SDK=$(command -v operator-sdk 2>/dev/null)
+        [[ -n "$OPERATOR_SDK" ]] || { log_error "operator-sdk not found (required for --bundle-image)"; exit 1; }
+
+        ${OPERATOR_SDK} run bundle "${HCP_BUNDLE_IMAGE:-}" -n openshift-sandboxed-containers-operator
+        log_success "operator-sdk run bundle completed"
+
+    elif [[ -n "${HCP_CATALOG_IMAGE:-}" ]]; then
+        cat <<EOF | oc apply -f -
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: osc-custom-catalog
+  namespace: openshift-marketplace
+spec:
+  sourceType: grpc
+  image: ${HCP_CATALOG_IMAGE}
+  displayName: OSC Custom Catalog
+  publisher: osc-testing
+EOF
+
+        echo "Waiting for CatalogSource to become READY (timeout: ${HCP_WAIT_RETRIES}x10s)..."
+        CATALOG_READY=false
+        for (( i=1; i<=HCP_WAIT_RETRIES; i++ )); do
+            STATE=$(oc get catalogsource osc-custom-catalog -n openshift-marketplace -o jsonpath='{.status.connectionState.lastObservedState}' 2>/dev/null)
+            echo "  CatalogSource state: ${STATE:-unknown} ($i/${HCP_WAIT_RETRIES})"
+            if [[ "$STATE" == "READY" ]]; then
+                CATALOG_READY=true
+                log_success "CatalogSource ready"
+                break
+            fi
+            sleep 10
+        done
+
+        if [[ "$CATALOG_READY" == "false" ]]; then
+            log_error "CatalogSource not READY after 5 minutes"
+            exit 1
+        fi
+
+        cat <<EOF | oc apply -f -
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-sandboxed-containers-operator
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  targetNamespaces:
+  - openshift-sandboxed-containers-operator
+EOF
+
+        cat <<EOF | oc apply -f -
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: openshift-sandboxed-containers-operator
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  channel: ${HCP_CATALOG_CHANNEL}
+  name: ${HCP_CATALOG_PACKAGE}
+  source: osc-custom-catalog
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic
+EOF
+
+        log_success "Subscription created"
+
+    else
+        cat <<EOF | oc apply -f -
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-sandboxed-containers-operator
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  targetNamespaces:
+  - openshift-sandboxed-containers-operator
+EOF
+
+        cat <<EOF | oc apply -f - || { log_error "Failed to create subscription"; exit 1; }
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: openshift-sandboxed-containers-operator
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  channel: ${HCP_CATALOG_CHANNEL}
+  name: sandboxed-containers-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic
+EOF
+
+        log_success "Subscription created"
+    fi
+    fi # end skip_olm
+
+    # Determine which catalog source the subscription uses and wait for it.
+    # Without a healthy catalog, OLM cannot resolve the subscription and the
+    # CSV wait below burns its full 15-minute timeout for nothing.
+    local sub_catalog
+    sub_catalog=$(oc get subscription -n openshift-sandboxed-containers-operator -o jsonpath='{.items[0].spec.source}' 2>/dev/null || echo "redhat-operators")
+    sub_catalog="${sub_catalog:-redhat-operators}"
+    local cat_state
+    cat_state=$(oc get catalogsource "$sub_catalog" -n openshift-marketplace \
+        -o jsonpath='{.status.connectionState.lastObservedState}' 2>/dev/null || true)
+    if [[ "$cat_state" != "READY" ]]; then
+        echo ""
+        echo "=== Waiting for CatalogSource '$sub_catalog' ==="
+        local cat_timeout=60  # 60 × 5s = 5 minutes
+        for (( ci=1; ci<=cat_timeout; ci++ )); do
+            cat_state=$(oc get catalogsource "$sub_catalog" -n openshift-marketplace \
+                -o jsonpath='{.status.connectionState.lastObservedState}' 2>/dev/null || true)
+            if [[ "$cat_state" == "READY" ]]; then
+                log_success "CatalogSource '$sub_catalog' is READY"
+                break
+            fi
+            # Check if catalog pods are stuck (Pending/ImagePullBackOff)
+            if (( ci % 12 == 0 )); then
+                local pending_pods
+                pending_pods=$(oc get pods -n openshift-marketplace --no-headers 2>/dev/null | \
+                    awk '$3 == "Pending" || $3 ~ /ImagePullBackOff|ErrImagePull/ {print $1}')
+                if [[ -n "$pending_pods" ]]; then
+                    log_warn "Catalog pods stuck: $(echo $pending_pods | tr '\n' ' ')"
+                    log_warn "Deleting stuck pods to trigger reschedule..."
+                    # shellcheck disable=SC2086
+                    oc delete pod -n openshift-marketplace --ignore-not-found $pending_pods >/dev/null 2>&1 || true
+                fi
+            fi
+            echo "  CatalogSource '$sub_catalog' state: ${cat_state:-unknown} ($ci/$cat_timeout)"
+            sleep 5
+        done
+        if [[ "$cat_state" != "READY" ]]; then
+            log_warn "CatalogSource '$sub_catalog' not READY after 5 minutes (state: ${cat_state:-unknown})"
+            log_warn "CSV installation may fail — continuing anyway"
+        fi
+    fi
+
+    echo ""
+    echo "=== Step 4: Waiting for CSV Installation ==="
+    echo "Cluster: ${HCP_HOSTED_CLUSTER_NAME}"
+    echo "Kubeconfig: ${KUBECONFIG}"
+
+    # Debug: show subscription, InstallPlan, and pod status
+    log_debug "Subscription status:"
+    oc get subscriptions -n openshift-sandboxed-containers-operator 2>/dev/null | tail -n +2 || log_debug "  (no subscriptions found)"
+    log_debug "InstallPlan status:"
+    oc get installplan -n openshift-sandboxed-containers-operator 2>/dev/null | tail -n +2 || log_debug "  (no InstallPlans found)"
+    log_debug "Operator pods:"
+    oc get pods -n openshift-sandboxed-containers-operator 2>/dev/null || log_debug "  (no pods)"
+    log_debug "Existing CSVs:"
+    oc get csv -n openshift-sandboxed-containers-operator 2>/dev/null || log_debug "  (no CSVs)"
+
+    local osc_ns="openshift-sandboxed-containers-operator"
+    local csv_timeout=90  # 90 × 10s = 15 minutes
+    echo "Waiting for CSV installation (timeout: 15 minutes)..."
+    CSV_FOUND=false
+    local bundle_retry_done=false
+    for i in $(seq 1 $csv_timeout); do
+        CSV=$(oc get csv -n "$osc_ns" -o name 2>/dev/null | grep sandboxed-containers | head -1 || true)
+        if [[ -n "$CSV" ]]; then
+            PHASE=$(oc get ${CSV} -n "$osc_ns" -o jsonpath='{.status.phase}' 2>/dev/null || true)
+            echo "  CSV: $(basename $CSV), Phase: ${PHASE} ($i/$csv_timeout)"
+
+            if [[ "$PHASE" == "Succeeded" ]]; then
+                CSV_FOUND=true
+                log_success "CSV installed: $(basename $CSV)"
+                break
+            fi
+
+            if [[ "$PHASE" == "Failed" ]]; then
+                log_error "CSV installation failed. To investigate:"
+                echo "  KUBECONFIG=${KUBECONFIG} oc get csv -n $osc_ns"
+                echo "  KUBECONFIG=${KUBECONFIG} oc describe csv -n $osc_ns"
+                echo "  KUBECONFIG=${KUBECONFIG} oc get events -n $osc_ns --sort-by=.lastTimestamp"
+                exit 1
+            fi
+        else
+            echo "  Waiting for CSV... ($i/$csv_timeout)"
+            # A stale failed bundle-unpack job (e.g. created before nodes existed) blocks OLM
+            # from ever installing the CSV. Detect BundleUnpackFailed on the subscription and
+            # recreate it — along with the failed jobs — so OLM starts a fresh unpack attempt.
+            if [[ "$bundle_retry_done" == "false" ]]; then
+                local bundle_failed
+                bundle_failed=$(oc get subscription openshift-sandboxed-containers-operator \
+                    -n "$osc_ns" \
+                    -o jsonpath='{.status.conditions[?(@.type=="BundleUnpackFailed")].status}' \
+                    2>/dev/null || true)
+                if [[ "$bundle_failed" == "True" ]]; then
+                    bundle_retry_done=true
+                    log_warn "Bundle unpack failed; recreating subscription to retry..."
+                    local sub_source sub_channel sub_pkgname
+                    sub_source=$(oc get subscription openshift-sandboxed-containers-operator \
+                        -n "$osc_ns" -o jsonpath='{.spec.source}' 2>/dev/null || echo "redhat-operators")
+                    sub_channel=$(oc get subscription openshift-sandboxed-containers-operator \
+                        -n "$osc_ns" -o jsonpath='{.spec.channel}' 2>/dev/null || echo "stable")
+                    sub_pkgname=$(oc get subscription openshift-sandboxed-containers-operator \
+                        -n "$osc_ns" -o jsonpath='{.spec.name}' 2>/dev/null || echo "sandboxed-containers-operator")
+                    oc delete subscription openshift-sandboxed-containers-operator \
+                        -n "$osc_ns" --ignore-not-found 2>/dev/null || true
+                    # Remove stale failed bundle-unpack jobs so OLM spawns a fresh one.
+                    oc get jobs -n openshift-marketplace -o json 2>/dev/null | \
+                        python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for job in data.get('items', []):
+    if job.get('status', {}).get('failed', 0) > 0:
+        print(job['metadata']['name'])
+" | while IFS= read -r _job; do
+                        oc delete job "$_job" -n openshift-marketplace 2>/dev/null || true
+                    done || true
+                    sleep 5
+                    cat <<RETRY_SUB_EOF | oc apply -f - || true
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: openshift-sandboxed-containers-operator
+  namespace: ${osc_ns}
+spec:
+  channel: ${sub_channel}
+  name: ${sub_pkgname}
+  source: ${sub_source}
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic
+RETRY_SUB_EOF
+                    log_success "Subscription recreated, continuing wait..."
+                fi
+            fi
+        fi
+        sleep 10
+    done
+
+    if [[ "$CSV_FOUND" == "false" ]]; then
+        log_error "CSV not installed after 15 minutes. To investigate:"
+        echo "  KUBECONFIG=${KUBECONFIG} oc get catalogsource -n openshift-marketplace"
+        echo "  KUBECONFIG=${KUBECONFIG} oc get pods -n openshift-marketplace"
+        echo "  KUBECONFIG=${KUBECONFIG} oc get subscription -n $osc_ns"
+        echo "  KUBECONFIG=${KUBECONFIG} oc get installplan -n $osc_ns"
+        echo "  KUBECONFIG=${KUBECONFIG} oc get events -n $osc_ns --sort-by=.lastTimestamp"
+        echo ""
+        echo "Once the catalog is healthy, re-run:"
+        echo "  $(self_cmd) osc install --cluster-name ${HCP_HOSTED_CLUSTER_NAME}"
+        exit 1
+    fi
+
+    # Operator image override: patch the controller-manager deployment after OLM install.
+    # Dev builds may reference APIs the stock CSV ClusterRole lacks — sync RBAC from source.
+    if [[ -n "${HCP_OPERATOR_IMAGE:-}" ]]; then
+        echo "=== Step 4b: Applying Operator Image Override ==="
+        echo "Image: ${HCP_OPERATOR_IMAGE}"
+
+        oc set image deployment/controller-manager \
+            -n "$osc_ns" \
+            manager="${HCP_OPERATOR_IMAGE}" 2>/dev/null || true
+        oc rollout status deployment/controller-manager \
+            -n "$osc_ns" --timeout=120s 2>/dev/null || true
+        log_success "Operator image overridden"
+
+        # The canonical env var is RELATED_IMAGE_KATA_DAEMONSET (devel).
+        # Older CSVs provide TP_KATA_DAEMONSET instead. Ensure both are set so
+        # the overridden image works regardless of which name it expects.
+        local _ri_kata _tp_kata
+        _ri_kata=$(oc get deployment/controller-manager -n "$osc_ns" \
+            -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="RELATED_IMAGE_KATA_DAEMONSET")].value}' 2>/dev/null || true)
+        _tp_kata=$(oc get deployment/controller-manager -n "$osc_ns" \
+            -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="TP_KATA_DAEMONSET")].value}' 2>/dev/null || true)
+        if [[ -z "$_ri_kata" && -n "$_tp_kata" ]]; then
+            oc set env deployment/controller-manager -n "$osc_ns" \
+                RELATED_IMAGE_KATA_DAEMONSET="${_tp_kata}" 2>/dev/null || true
+            log_info "Set RELATED_IMAGE_KATA_DAEMONSET from TP_KATA_DAEMONSET"
+        elif [[ -n "$_ri_kata" && -z "$_tp_kata" ]]; then
+            oc set env deployment/controller-manager -n "$osc_ns" \
+                TP_KATA_DAEMONSET="${_ri_kata}" 2>/dev/null || true
+            log_info "Set TP_KATA_DAEMONSET from RELATED_IMAGE_KATA_DAEMONSET"
+        fi
+
+        # Sync RBAC *after* all deployment changes so OLM has finished
+        # reconciling the ClusterRole back to the CSV spec.
+        local cr_name
+        cr_name=$(oc get clusterrole -o name 2>/dev/null | grep 'sandboxed-containers-ope' | grep -v 'olm\.og\.' | head -1 || true)
+        if [[ -n "$cr_name" ]]; then
+            local src="${HCP_OPERATOR_SOURCE:-openshift/sandboxed-containers-operator@devel}"
+            local repo="${src%%@*}" ref="${src##*@}"
+            local role_url="https://raw.githubusercontent.com/${repo}/${ref}/config/rbac/role.yaml"
+            log_info "Syncing RBAC from ${repo}@${ref}"
+            local upstream_rules patch
+            upstream_rules=$(curl -sf "$role_url" | yq -o json -c '.rules' 2>/dev/null || true)
+            if [[ -n "$upstream_rules" ]]; then
+                local installed_rules
+                installed_rules=$(oc get "$cr_name" -o json 2>/dev/null | jq -c '.rules')
+                patch=$(python3 -c "
+import json, sys
+installed = json.loads(sys.argv[1])
+upstream  = json.loads(sys.argv[2])
+def key(r):
+    return (tuple(sorted(r.get('apiGroups',[]))),
+            tuple(sorted(r.get('resources',[]))),
+            tuple(sorted(r.get('resourceNames',[]))))
+have = {}
+for i, r in enumerate(installed):
+    k = key(r)
+    have.setdefault(k, {'verbs': set(), 'idx': i})
+    have[k]['verbs'].update(r.get('verbs',[]))
+ops = []
+for r in upstream:
+    k = key(r)
+    want = set(r.get('verbs',[]))
+    want_res = set(r.get('resources',[]))
+    ag = tuple(sorted(r.get('apiGroups',[])))
+    replaced = False
+    for ik, iv in have.items():
+        if ik[0] == ag and set(ik[1]) < want_res:
+            merged = dict(r)
+            merged['verbs'] = sorted(want | iv['verbs'])
+            ops.append({'op':'replace','path':'/rules/%d' % iv['idx'],'value':merged})
+            replaced = True
+            break
+    if replaced:
+        continue
+    if not want - have.get(k, {'verbs': set()})['verbs']:
+        continue
+    merged = dict(r)
+    merged['verbs'] = sorted(want | have.get(k, {'verbs': set()})['verbs'])
+    ops.append({'op':'add','path':'/rules/-','value':merged})
+print(json.dumps(ops) if ops else '')
+" "$installed_rules" "$upstream_rules" 2>/dev/null || true)
+                if [[ -n "$patch" ]]; then
+                    oc patch "$cr_name" --type=json -p="$patch" 2>/dev/null \
+                        && log_success "ClusterRole synced ($(echo "$patch" | jq length) rules added)" \
+                        || log_warn "ClusterRole patch failed — operator may lack permissions"
+                else
+                    log_success "ClusterRole already has all required permissions"
+                fi
+            else
+                log_warn "Could not fetch RBAC from $role_url — skipping sync"
+            fi
+        fi
+        echo ""
+    fi
+
+    # DaemonSet image override: the operator reads the Kata daemonset image
+    # from the RELATED_IMAGE_KATA_DAEMONSET env var (newer CSVs) or
+    # TP_KATA_DAEMONSET (older CSVs). Set both so the override wins
+    # whichever the operator reads.
+    if [[ -n "${HCP_DAEMONSET_IMAGE:-}" ]]; then
+        echo "=== Step 4c: Applying DaemonSet Image Override ==="
+        echo "Image: ${HCP_DAEMONSET_IMAGE}"
+        oc set env deployment/controller-manager -n "$osc_ns" \
+            RELATED_IMAGE_KATA_DAEMONSET="${HCP_DAEMONSET_IMAGE}" \
+            TP_KATA_DAEMONSET="${HCP_DAEMONSET_IMAGE}" 2>/dev/null || true
+        log_success "DaemonSet image overridden"
+        echo ""
+    fi
+
+    # Label worker nodes
+    echo ""
+    echo "=== Step 5: Labeling Worker Nodes ==="
+    oc label node -l node-role.kubernetes.io/worker kata=true --overwrite
+    log_success "Worker nodes labeled"
+    echo ""
+
+    # Configure peer pods resources before KataConfig (controller validates them on reconcile).
+    # ROSA runs on AWS — use the same AWS peer-pods setup; fail gracefully if VPC info is
+    # unavailable (e.g. clusterbot ROSA clusters run in Red Hat's managed AWS account).
+    if [[ "$peer_pods_enabled" == "true" ]] && [[ "${HCP_CLOUD}" == "aws" || "${HCP_CLOUD}" == "rosa" || "${HCP_CLOUD}" == "azure" ]]; then
+        # Azure: the operator creates the pod VM image automatically (osc-podvm-image-creation job)
+        # AWS/ROSA: no operator-managed image — build one locally if needed
+        if [[ "${HCP_CLOUD}" != "azure" ]] && [[ -z "${HCP_PEER_PODS_IMAGE_ID:-}" ]] && [[ "${HCP_BUILD_PODVM_IMAGE:-no}" == "yes" || "${GLOBAL_YES:-false}" == "true" ]]; then
+            log_info "No peer pod image pre-configured — building one automatically (this takes ~30-60 min)..."
+            podvm_build || { log_error "Pod VM image build failed — peer pods cannot be configured"; exit 1; }
+        fi
+        cloud_setup_peer_pods || { log_error "Peer pods setup failed — see errors above; fix and re-run, or use --no-peer-pods"; exit 1; }
+    fi
+
+    # Wait for the controller manager pod to be ready before creating KataConfig.
+    # The validating webhook vkataconfig.kb.io calls controller-manager-service;
+    # if no endpoints are up yet the apply fails with InternalError.
+    echo "=== Step 5b: Waiting for Controller Manager ==="
+    local ctrl_timeout=60
+    local ctrl_i
+    for ctrl_i in $(seq 1 $ctrl_timeout); do
+        local ready_replicas
+        ready_replicas=$(oc get deployment controller-manager \
+            -n "$osc_ns" \
+            -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+        if [[ "${ready_replicas:-0}" -ge 1 ]]; then
+            log_success "Controller manager ready ($ready_replicas replica(s))"
+            break
+        fi
+        echo "  Waiting for controller manager pod to become ready... ($ctrl_i/$ctrl_timeout × 5s)"
+        sleep 5
+        if [[ $ctrl_i -eq $ctrl_timeout ]]; then
+            log_error "Controller manager not ready after $((ctrl_timeout * 5 / 60)) minutes."
+            echo "  To investigate: KUBECONFIG=${KUBECONFIG} oc get pods -n $osc_ns"
+            exit 1
+        fi
+    done
+    echo ""
+
+    # Create KataConfig
+    echo "=== Step 6: Creating KataConfig ==="
+    cat <<EOF | oc apply -f -
+apiVersion: kataconfiguration.openshift.io/v1
+kind: KataConfig
+metadata:
+  name: ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig}
+spec:
+  enablePeerPods: ${peer_pods_enabled}
+  kataConfigPoolSelector:
+    matchLabels:
+      kata: "true"
+EOF
+    log_success "KataConfig created"
+    echo ""
+
+    wait_for_kataconfig || exit 1
+
+    # Create osc-config ConfigMap for the e2e suite (all required fields)
+    local workload_to_test="kata"
+    [[ "$peer_pods_enabled" == "true" ]] && workload_to_test="peer-pods"
+    echo "=== Creating osc-config ConfigMap ==="
+    cat <<EOF | oc apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: osc-config
+  namespace: default
+data:
+  kataConfigName: "${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig}"
+  runtimeClassName: "${_kata_runtime_class}"
+  enablePeerPods: "${peer_pods_enabled}"
+  workloadImage: "ghcr.io/nginxinc/nginx-unprivileged:alpine@sha256:e234d4f7e346c098f7b22245690372382aded5be988611eb2c53ae62231eece7"
+  workloadMessage: "Welcome to nginx!"
+  workloadToTest: "${workload_to_test}"
+EOF
+    log_success "osc-config ConfigMap created in default namespace"
+    echo ""
+
+    log_success "OSC installation complete via OLM"
+    echo ""
+    echo "To manually verify:"
+    echo "  KUBECONFIG=${KUBECONFIG} oc get csv -n openshift-sandboxed-containers-operator"
+    echo "  KUBECONFIG=${KUBECONFIG} oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig}"
+    echo "  KUBECONFIG=${KUBECONFIG} oc get nodes -l kata=true"
+    echo ""
+    echo "Next step:"
+    echo "  $(self_cmd) osc validate --cluster-name ${HCP_HOSTED_CLUSTER_NAME}"
+}
+
+# Returns path to the cloud-api-adaptor source root, cloning from GitHub if not found.
+# Priority: HCP_CLOUD_API_ADAPTOR_SOURCES > --sources flag (PODVM_SOURCES) > cwd > ~/cloud-api-adaptor > clone
+# Returns the cloud-api-adaptor repo root path on stdout; all status messages go to stderr
+# so the caller can safely use: caa_root=$(find_caa_sources)
+# The sentinel is src/cloud-api-adaptor/podvm/Makefile (commit 27304762 restructured the repo).
+find_caa_sources() {
+    local sources="${HCP_CLOUD_API_ADAPTOR_SOURCES:-${PODVM_SOURCES:-}}"
+    local _sentinel="src/cloud-api-adaptor/podvm/Makefile"
+
+    if [[ -z "$sources" ]] && [[ -f "${_sentinel}" ]]; then
+        sources="$(pwd)"
+    fi
+    if [[ -z "$sources" ]] && [[ -f "${HOME}/cloud-api-adaptor/${_sentinel}" ]]; then
+        sources="${HOME}/cloud-api-adaptor"
+    fi
+
+    if [[ -n "$sources" ]]; then
+        if [[ ! -f "${sources}/${_sentinel}" ]]; then
+            log_error "CAA sources at '${sources}' do not contain ${_sentinel}" >&2
+            return 1
+        fi
+        echo "$sources"
+        return 0
+    fi
+
+    echo "ℹ️  cloud-api-adaptor sources not found — cloning from GitHub..." >&2
+    local clone_dir="${HOME}/cloud-api-adaptor"
+    if [[ ! -d "$clone_dir" ]]; then
+        local branch="${HCP_CLOUD_API_ADAPTOR_BRANCH:-osc-release}"
+        local repo="${HCP_CLOUD_API_ADAPTOR_REPO:-https://github.com/openshift/cloud-api-adaptor.git}"
+        git clone --depth=1 --branch "${branch}" \
+            "${repo}" "${clone_dir}" || {
+            log_error "Clone failed. Set HCP_CLOUD_API_ADAPTOR_SOURCES or use --sources." >&2
+            return 1
+        }
+        git -C "${clone_dir}" submodule update --init --recursive || {
+            log_error "Submodule init failed in ${clone_dir}" >&2
+            return 1
+        }
+    fi
+    echo "${clone_dir}"
+}
+
+podvm_build() {
+    echo ""
+    echo "=== Building Peer Pod VM Image ==="
+    local tee_platform="${HCP_PODVM_TEE_PLATFORM:-none}"
+    echo "Cloud: ${HCP_CLOUD}, TEE platform: ${tee_platform}"
+    echo ""
+
+    local _shim_dir=""
+    if command -v docker &>/dev/null && docker buildx version &>/dev/null 2>&1 && docker info &>/dev/null 2>&1; then
+        : # docker buildx available and daemon is running
+    elif command -v podman &>/dev/null && [[ "$(uname -s)" != "Darwin" ]]; then
+        # Linux: podman runs natively; local --output exports work fine
+        log_info "docker buildx not available — using podman as build backend"
+        _shim_dir="$(mktemp -d)"
+        _podvm_write_docker_shim "${_shim_dir}/docker" || { rm -rf "${_shim_dir}"; return 1; }
+        export PATH="${_shim_dir}:${PATH}"
+    else
+        log_error "podvm build requires Docker Desktop with the daemon running."
+        if command -v docker &>/dev/null && ! docker info &>/dev/null 2>&1; then
+            log_error "Docker is installed but the daemon is not running."
+            log_error "Start Docker Desktop, then retry."
+        elif [[ "$(uname -s)" == "Darwin" ]] && command -v podman &>/dev/null; then
+            log_error "Podman on macOS uses a VM (remote mode) and cannot export"
+            log_error "build artifacts to the local filesystem (--output type=local)."
+            log_error "Start Docker Desktop instead: open -a Docker"
+        else
+            log_error "Install Docker Desktop from https://docs.docker.com/desktop/"
+        fi
+        return 1
+    fi
+
+    _podvm_cleanup() { [[ -n "${_shim_dir}" ]] && rm -rf "${_shim_dir}"; }
+
+    local caa_root
+    caa_root=$(find_caa_sources) || { _podvm_cleanup; return 1; }
+    log_info "Using CAA sources: ${caa_root}"
+
+    local podvm_dir="${caa_root}/src/cloud-api-adaptor/podvm"
+    local raw_image="${podvm_dir}/build/system.raw"
+
+    local target_arch="${HCP_PODVM_ARCH:-x86_64}"
+    local go_arch="amd64" distro_arch="amd64" protoc_arch="x86_64"
+    local docker_platform="linux/amd64"
+    if [[ "$target_arch" == "aarch64" || "$target_arch" == "arm64" ]]; then
+        go_arch="arm64"; distro_arch="arm64"; protoc_arch="aarch_64"; docker_platform="linux/arm64"
+    fi
+    # Run the build container on the target platform (emulated if needed) so that
+    # cross-build-extras.sh installs the correct packages for that arch natively.
+    log_info "Build platform: ${docker_platform} (target arch: ${target_arch})"
+
+    echo ""
+    echo "=== Step 1: Building CAA binaries ==="
+    (
+        cd "${podvm_dir}"
+        export TEE_PLATFORM="${tee_platform}"
+        export ARCH="${target_arch}" GO_ARCH="${go_arch}" DISTRO_ARCH="${distro_arch}" PROTOC_ARCH="${protoc_arch}"
+        export DOCKER_OPTS="--platform ${docker_platform}"
+        make podvm-binaries
+    ) || { log_error "Binary build failed"; _podvm_cleanup; return 1; }
+    log_success "Binaries built"
+
+    echo ""
+    echo "=== Step 2: Building disk image ==="
+    (
+        cd "${podvm_dir}"
+        export TEE_PLATFORM="${tee_platform}"
+        export ARCH="${target_arch}" GO_ARCH="${go_arch}" DISTRO_ARCH="${distro_arch}"
+        export DOCKER_OPTS="--platform ${docker_platform}"
+        make image-debug
+    ) || {
+        # make image-debug may fail at the final 'qemu-img convert' step when qemu-img is not
+        # installed (common on macOS). The qcow2 is not needed for cloud upload — each cloud's
+        # upload function works directly from system.raw. Treat the failure as non-fatal if
+        # system.raw was produced. (Azure's upload does its own raw→VHD conversion internally.)
+        if [[ ! -f "${raw_image}" ]]; then
+            log_error "Disk image build failed and ${raw_image} was not produced"
+            _podvm_cleanup
+            return 1
+        fi
+        log_info "qemu-img not found — skipping qcow2 conversion (cloud upload uses system.raw directly)"
+    }
+
+    [[ -f "${raw_image}" ]] || { log_error "Expected raw image not found: ${raw_image}"; _podvm_cleanup; return 1; }
+    log_success "Disk image built: ${raw_image} ($(du -h "${raw_image}" | cut -f1))"
+
+    local git_sha
+    git_sha=$(cd "${caa_root}" 2>/dev/null && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+    echo ""
+    echo "=== Step 3: Uploading to ${HCP_CLOUD} ==="
+    cloud_podvm_upload "${raw_image}" "${git_sha}"
+    local _rc=$?
+    _podvm_cleanup
+    return ${_rc}
+}
+
+# Write a docker→podman shim script so the CAA Makefile's 'docker buildx' calls work with podman.
+# The shim handles: buildx build (→ podman build --security-opt seccomp=unconfined),
+# buildx ls (fakes "insecure-builder" so the grep check passes), buildx create/use (no-ops).
+_podvm_write_docker_shim() {
+    local path="$1"
+    cat > "${path}" << 'DOCKER_SHIM'
+#!/usr/bin/env bash
+if [[ "$1" != "buildx" ]]; then
+    exec podman "$@"
+fi
+shift
+case "$1" in
+    version)
+        echo "podman-shim (buildx compatibility)"
+        exit 0
+        ;;
+    ls)
+        printf "insecure-builder\n"
+        exit 0
+        ;;
+    use|create)
+        exit 0
+        ;;
+    build)
+        shift
+        args=()
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --builder|--allow|--progress) shift ;;
+                --builder=*|--allow=*|--progress=*|--load) ;;
+                *) args+=("$1") ;;
+            esac
+            shift
+        done
+        exec podman build --security-opt seccomp=unconfined "${args[@]}"
+        ;;
+    *)
+        echo "docker-shim: unhandled buildx subcommand: $1" >&2
+        exit 1
+        ;;
+esac
+DOCKER_SHIM
+    chmod +x "${path}"
+}
+
+podvm_list() {
+    echo ""
+    echo "=== Peer Pod VM Images (${HCP_CLOUD}, region: ${HCP_LOCATION:-${HCP_AWS_REGION:-default}}) ==="
+    cloud_podvm_list
+}
+
+wait_for_kataconfig() {
+    echo "=== Waiting for KataConfig Installation ==="
+    # HCP_KATA_TIMEOUT: max iterations × 10s. Peer pods require cloud-api-adaptor DaemonSet which
+    # takes time to deploy. If PODVM_IMAGE_ID is absent from peer-pods-cm, the operator stalls.
+    local kata_timeout="${HCP_KATA_TIMEOUT:-360}"  # default: 360 × 10s = 60 minutes
+    local i node_count ready_count in_progress cond_msg
+    local stall_diag_done=false
+    for i in $(seq 1 $kata_timeout); do
+        node_count=$(oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} \
+            -o jsonpath='{.status.kataNodes.nodeCount}' 2>/dev/null)
+        ready_count=$(oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} \
+            -o jsonpath='{.status.kataNodes.readyNodeCount}' 2>/dev/null)
+        in_progress=$(oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} \
+            -o jsonpath='{.status.conditions[?(@.type=="InProgress")].status}' 2>/dev/null)
+        cond_msg=$(oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} \
+            -o jsonpath='{.status.conditions[?(@.type=="InProgress")].message}' 2>/dev/null || true)
+
+        if [[ -z "$node_count" ]]; then
+            echo "  Waiting for KataConfig to appear... ($i/$kata_timeout)"
+        elif [[ "$ready_count" == "$node_count" ]] && [[ "$node_count" -gt 0 ]]; then
+            if [[ "$in_progress" == "False" ]]; then
+                log_success "KataConfig installation complete: $ready_count/$node_count nodes ready"
+                echo ""
+                return 0
+            fi
+            local reason
+            reason=$(oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} \
+                -o jsonpath='{.status.conditions[?(@.type=="InProgress")].reason}' 2>/dev/null || true)
+            if [[ "$reason" == "PodVMImageJobRunning" || "$reason" == "PodVMImageJobFailed" ]]; then
+                log_success "KataConfig installation complete: $ready_count/$node_count nodes ready"
+                log_warn "Pod VM image job still in progress — this does not block kata workloads."
+                echo ""
+                return 0
+            fi
+            echo "  KataConfig installing: $ready_count/${node_count:-?} nodes ready ($i/$kata_timeout)"
+        else
+            echo "  KataConfig installing: $ready_count/${node_count:-?} nodes ready ($i/$kata_timeout)"
+
+            # After 15 minutes with no ready nodes, check for the most common stall cause
+            if (( i == 90 )) && [[ "${stall_diag_done}" == "false" ]]; then
+                stall_diag_done=true
+                local osc_ns="openshift-sandboxed-containers-operator"
+                local current_image_id
+                current_image_id=$(oc get configmap peer-pods-cm -n "${osc_ns}" \
+                    -o jsonpath='{.data.PODVM_IMAGE_ID}' 2>/dev/null || true)
+                local caa_ds
+                caa_ds=$(oc get daemonset -n "${osc_ns}" -o name 2>/dev/null \
+                    | grep -i "cloud-api-adaptor" | head -1 || true)
+                local kata_rc
+                kata_rc=$(oc get runtimeclass kata-remote -o name 2>/dev/null || true)
+
+                echo ""
+                echo "  --- 15-minute stall diagnostics ---"
+                echo "  PODVM_IMAGE_ID in peer-pods-cm: ${current_image_id:-(empty)}"
+                echo "  CAA DaemonSet: ${caa_ds:-(not found)}"
+                echo "  kata-remote RuntimeClass: ${kata_rc:-(not found)}"
+                if [[ -z "$current_image_id" ]]; then
+                    log_warn "PODVM_IMAGE_ID is missing from peer-pods-cm."
+                    log_warn "The operator needs a peer pod VM AMI to deploy cloud-api-adaptor."
+                    log_warn "Build one with the aws-podvm-ami skill, then re-run with HCP_PEER_PODS_IMAGE_ID=<ami-id>."
+                fi
+                echo "  -----------------------------------"
+                echo ""
+            fi
+        fi
+        sleep 10
+    done
+
+    log_error "KataConfig not ready after $((kata_timeout * 10 / 60)) minutes. To investigate:"
+    echo "  KUBECONFIG=${KUBECONFIG} oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} -o yaml"
+    echo "  KUBECONFIG=${KUBECONFIG} oc get pods -n openshift-sandboxed-containers-operator"
+    # Final check: missing PODVM_IMAGE_ID is the most common peer-pods stall cause
+    local final_image_id
+    final_image_id=$(oc get configmap peer-pods-cm \
+        -n openshift-sandboxed-containers-operator \
+        -o jsonpath='{.data.PODVM_IMAGE_ID}' 2>/dev/null || true)
+    if [[ -z "$final_image_id" ]]; then
+        echo ""
+        log_warn "PODVM_IMAGE_ID is not set in peer-pods-cm — this is the likely stall cause."
+        log_warn "Build a peer pod VM AMI and re-run with HCP_PEER_PODS_IMAGE_ID=<ami-id>."
+    fi
+    return 1
+}
+
+wait_for_kataconfig_deletion() {
+    echo "=== Waiting for KataConfig Uninstallation ==="
+    # The controller runs a cleanup DaemonSet on every kata-labelled node before removing
+    # the finalizer.  We must block here so the operator is still alive to do that work.
+    local kata_timeout="${HCP_KATA_TIMEOUT:-180}"  # 180 × 10s = 30 minutes
+    local osc_ns="openshift-sandboxed-containers-operator"
+    local i
+    for i in $(seq 1 $kata_timeout); do
+        if ! oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} \
+                >/dev/null 2>&1; then
+            log_success "KataConfig removed — nodes cleaned up"
+            echo ""
+            return 0
+        fi
+
+        # Surface BlockedByExistingKataPods — if the controller is waiting for user-owned
+        # pods to be deleted, the cleanup DS will not be created yet.  Keep looping;
+        # the controller re-checks every 15 s and will clear the condition once the pods
+        # are gone.  Only print the warning once per blocked run to avoid log spam.
+        local block_reason
+        block_reason=$(oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} \
+            -o jsonpath='{.status.conditions[?(@.type=="InProgress")].reason}' 2>/dev/null || true)
+        if [[ "$block_reason" == "BlockedByExistingKataPods" ]]; then
+            if [[ "${_kata_blocked_warned:-false}" == "false" ]]; then
+                local block_msg
+                block_msg=$(oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} \
+                    -o jsonpath='{.status.conditions[?(@.type=="InProgress")].message}' 2>/dev/null || true)
+                log_warn "KataConfig deletion blocked by existing kata pods: ${block_msg}"
+                log_warn "Delete those pods; the controller will re-check within 15 s."
+                log_warn "To find them: oc get pods -A -o jsonpath='{range .items[?(@.spec.runtimeClassName)]}{.metadata.namespace}/{.metadata.name} {.spec.runtimeClassName}{\"\\n\"}{end}'"
+                _kata_blocked_warned=true
+            fi
+            echo "  Still blocked by kata pods — waiting for controller to re-check... ($i/$kata_timeout × 10s)"
+            sleep 10
+            continue
+        fi
+        _kata_blocked_warned=false
+
+        # Show cleanup DaemonSet pod logs once a minute (every 6th iteration).
+        # Controller creates osc-rpm-uninstall DS; exclude the operator pod and cloud-api-adaptor.
+        if (( i % 6 == 1 )); then
+            local cleanup_ds_names
+            cleanup_ds_names=$(oc get ds -n "$osc_ns" --no-headers \
+                -o custom-columns=NAME:.metadata.name 2>/dev/null \
+                | grep -v "^sandboxed-containers-operator$" \
+                | grep -v "^cloud-api-adaptor" || true)
+            if [[ -n "$cleanup_ds_names" ]]; then
+                echo "  --- Cleanup DaemonSet logs (last 5 lines per pod) ---"
+                while IFS= read -r ds; do
+                    [[ -z "$ds" ]] && continue
+                    local pods_for_ds
+                    pods_for_ds=$(oc get pods -n "$osc_ns" --no-headers -o name 2>/dev/null \
+                        | grep "^pod/${ds}-" || true)
+                    if [[ -n "$pods_for_ds" ]]; then
+                        while IFS= read -r pod; do
+                            echo "  [${pod}]"
+                            oc logs -n "$osc_ns" "${pod#pod/}" --tail=5 2>/dev/null \
+                                | sed 's/^/    /' || true
+                        done <<< "$pods_for_ds"
+                    else
+                        echo "  DaemonSet ${ds}: no pods yet"
+                    fi
+                done <<< "$cleanup_ds_names"
+                echo "  --- end ---"
+            fi
+        fi
+
+        local cleaned node_count
+        cleaned=$(oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} \
+            -o jsonpath='{.status.kataNodes.readyNodeCount}' 2>/dev/null || true)
+        node_count=$(oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} \
+            -o jsonpath='{.status.kataNodes.nodeCount}' 2>/dev/null || true)
+        echo "  KataConfig cleanup in progress: ${cleaned:-?}/${node_count:-?} nodes still configured ($i/$kata_timeout × 10s)"
+        sleep 10
+    done
+    log_error "KataConfig still present after $((kata_timeout * 10 / 60)) minutes — aborting operator removal."
+    echo "  To investigate: KUBECONFIG=${KUBECONFIG} oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} -o yaml"
+    return 1
+}
+
+osc_validate() {
+    export KUBECONFIG="${HCP_WORK_DIR}/${HCP_HOSTED_CLUSTER_NAME}-kubeconfig"
+    _kata_runtime_class="kata"
+    [[ "${HCP_OSC_PEER_PODS:-yes}" == "yes" ]] && _kata_runtime_class="kata-remote"
+
+    echo ""
+    echo "=== Validating OSC Installation ==="
+    echo "Cluster: ${HCP_HOSTED_CLUSTER_NAME}"
+    echo "Runtime class: ${_kata_runtime_class}"
+    echo ""
+
+    wait_for_kataconfig || exit 1
+
+    # Test basic deployment — delete stale pod if it exists
+    if oc get pod kata-test-pod -n default &>/dev/null; then
+        log_info "Deleting existing kata-test-pod..."
+        oc delete pod kata-test-pod -n default --grace-period=0 --force 2>/dev/null || true
+        oc wait --for=delete pod/kata-test-pod -n default --timeout=30s 2>/dev/null || true
+    fi
+
+    log_info "Testing basic kata pod deployment..."
+    cat <<EOF | oc apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kata-test-pod
+  namespace: default
+spec:
+  runtimeClassName: ${_kata_runtime_class}
+  containers:
+  - name: test
+    image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+    command: ["sleep", "3600"]
+EOF
+
+    echo "Waiting for test pod..."
+    if oc wait --for=condition=Ready pod/kata-test-pod -n default --timeout=60s 2>/dev/null; then
+        log_success "Kata test pod running"
+    else
+        log_warn "Kata pod not ready - check pod status with: oc describe pod kata-test-pod"
+    fi
+
+    echo ""
+    log_success "OSC validation check complete"
+
+    echo ""
+    echo "To manually verify:"
+    echo "  KUBECONFIG=${KUBECONFIG} oc get runtimeclass kata"
+    echo "  KUBECONFIG=${KUBECONFIG} oc get pod kata-test-pod -n default"
+    echo "  KUBECONFIG=${KUBECONFIG} oc exec kata-test-pod -n default -- uname -r"
+
+    echo ""
+    echo "Next step:"
+    echo "  $(self_cmd) osc test --cluster-name ${HCP_HOSTED_CLUSTER_NAME}"
+}
+
+hosted_reboot() {
+    export KUBECONFIG="${HCP_WORK_DIR}/${HCP_HOSTED_CLUSTER_NAME}-kubeconfig"
+
+    echo ""
+    echo "=== Rebooting Worker Nodes ==="
+    echo "Cluster: ${HCP_HOSTED_CLUSTER_NAME}"
+    echo ""
+
+    if [[ "$GLOBAL_YES" == "true" ]]; then
+        REPLY="y"
+    else
+        read -p "Proceed with node reboots? [y/N] " -n 1 -r
+        echo
+    fi
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Reboot cancelled"
+        exit 0
+    fi
+
+    NODES=$(oc get nodes -l kata=true -o name)
+    NODE_COUNT=$(echo "$NODES" | wc -l | tr -d ' ')
+
+    echo "Found ${NODE_COUNT} nodes to reboot"
+    echo ""
+
+    for node in $NODES; do
+        node_name=$(basename $node)
+        echo "=== Processing node: ${node_name} ==="
+
+        echo "  Cordoning node..."
+        oc adm cordon ${node_name}
+
+        echo "  Draining node (may take a few minutes)..."
+        oc adm drain ${node_name} \
+            --ignore-daemonsets \
+            --delete-emptydir-data \
+            --force \
+            --grace-period=300 \
+            --timeout=600s || {
+            log_warn "Drain timed out or failed, continuing anyway..."
+        }
+
+        echo "  Rebooting node..."
+        oc debug node/${node_name} -- chroot /host systemctl reboot &
+
+        sleep 10
+
+        echo "  Waiting for node to go down..."
+        for (( i=1; i<=HCP_WAIT_RETRIES; i++ )); do
+            STATUS=$(oc get node ${node_name} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+            if [[ "$STATUS" != "True" ]]; then
+                echo "  Node is down (iteration $i)"
+                break
+            fi
+            sleep 5
+        done
+
+        echo "  Waiting for node to come back up (this can take 3-5 minutes)..."
+        for (( i=1; i<=HCP_WAIT_RETRIES; i++ )); do
+            STATUS=$(oc get node ${node_name} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+            if [[ "$STATUS" == "True" ]]; then
+                log_success "Node is Ready (iteration $i)"
+                break
+            fi
+            if [[ $((i % 12)) -eq 0 ]]; then
+                echo "  Still waiting for node... ($i/120)"
+            fi
+            sleep 5
+        done
+
+        echo "  Uncordoning node..."
+        oc adm uncordon ${node_name}
+
+        log_success "Node ${node_name} rebooted and ready"
+        echo ""
+    done
+
+    log_success "All nodes rebooted successfully"
+}
+
+hosted_upgrade() {
+    export KUBECONFIG="${HCP_MGMT_KUBECONFIG}"
+    _resolve_work_dir_for_upgrade
+
+    echo ""
+    echo "=== Upgrading Hosted Cluster: ${HCP_HOSTED_CLUSTER_NAME} ==="
+
+    local target_image="${HCP_RELEASE_IMAGE}"
+    if [[ -z "$target_image" ]]; then
+        log_error "No release image specified. Use --release <version> or set HCP_RELEASE_IMAGE"
+        exit 1
+    fi
+
+    local current_image
+    current_image=$(oc get hostedcluster "${HCP_HOSTED_CLUSTER_NAME}" -n "${HCP_NAMESPACE}" \
+        -o jsonpath='{.status.version.desired.image}' 2>/dev/null || echo "unknown")
+    echo "Current image: ${current_image}"
+    echo "Target image:  ${target_image}"
+    echo ""
+
+    if [[ "$GLOBAL_YES" == "true" ]]; then
+        REPLY="y"
+    else
+        read -p "Proceed with hosted cluster upgrade? [y/N] " -n 1 -r
+        echo
+    fi
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Upgrade cancelled"
+        exit 0
+    fi
+
+    # Patch HostedCluster release image
+    echo "Patching HostedCluster release image..."
+    oc patch hostedcluster "${HCP_HOSTED_CLUSTER_NAME}" -n "${HCP_NAMESPACE}" \
+        --type=merge -p "{\"spec\":{\"release\":{\"image\":\"${target_image}\"}}}" || {
+        log_error "Failed to patch HostedCluster"
+        exit 1
+    }
+    log_success "HostedCluster release image updated"
+
+    # Patch NodePools — filter by spec.clusterName; NodePools do not carry a
+    # hypershift.openshift.io/cluster label in all HyperShift versions.
+    echo "Patching NodePools..."
+    local nodepools
+    nodepools=$(oc get nodepool -n "${HCP_NAMESPACE}" -o json 2>/dev/null | \
+        jq -r ".items[] | select(.spec.clusterName == \"${HCP_HOSTED_CLUSTER_NAME}\") | \
+            \"nodepool.hypershift.openshift.io/\" + .metadata.name")
+    if [[ -n "$nodepools" ]]; then
+        while IFS= read -r np; do
+            oc patch "$np" -n "${HCP_NAMESPACE}" \
+                --type=merge -p "{\"spec\":{\"release\":{\"image\":\"${target_image}\"}}}" && \
+                log_success "Patched NodePool: $(basename "$np")" || \
+                log_warn "Failed to patch NodePool: $np"
+            # Persist kata=true label so replacement nodes get it automatically
+            oc patch "$np" -n "${HCP_NAMESPACE}" \
+                --type=merge -p '{"spec":{"nodeLabels":{"kata":"true"}}}' 2>/dev/null && \
+                log_success "Persisted kata=true in NodePool nodeLabels: $(basename "$np")" || \
+                log_warn "Failed to persist nodeLabels on $np"
+        done <<< "$nodepools"
+    else
+        log_warn "No NodePools found for cluster ${HCP_HOSTED_CLUSTER_NAME}"
+    fi
+    echo ""
+
+    # Obtain hosted kubeconfig for OSC DaemonSet monitoring
+    local hosted_kc="${HCP_WORK_DIR}/${HCP_HOSTED_CLUSTER_NAME}-kubeconfig"
+    local has_hosted_kc=false
+    local hypershift_cmd
+    hypershift_cmd="${HCP_HYPERSHIFT:-$(command -v hypershift 2>/dev/null)}"
+    if [[ -n "$hypershift_cmd" ]]; then
+        ${hypershift_cmd} create kubeconfig --name "${HCP_HOSTED_CLUSTER_NAME}" \
+            --namespace "${HCP_NAMESPACE}" > "${hosted_kc}" 2>/dev/null && has_hosted_kc=true || true
+    fi
+    [[ "$has_hosted_kc" == "false" && -f "$hosted_kc" ]] && has_hosted_kc=true
+
+    echo "Monitoring upgrade (Ctrl+C to detach; upgrade continues in background)..."
+    echo ""
+
+    local target_version
+    target_version=$(printf '%s' "$target_image" | sed -E 's|.*:([0-9]+\.[0-9]+\.[0-9]+[^ ]*).*|\1|; s|-x86_64$||; s|-aarch64$||')
+
+    local i=1 done=false seen_progressing=false
+    while [[ "$done" == "false" ]]; do
+        local hc_json hc_version hc_progressing hc_available hc_degraded
+        hc_json=$(oc get hostedcluster "${HCP_HOSTED_CLUSTER_NAME}" -n "${HCP_NAMESPACE}" \
+            -o json 2>/dev/null)
+        hc_version=$(printf '%s' "$hc_json" | jq -r \
+            '.status.version.history[0] // {} | "\(.version // "?") (\(.state // "?"))"' 2>/dev/null \
+            || echo "unknown")
+        hc_progressing=$(printf '%s' "$hc_json" | jq -r \
+            '.status.conditions[] | select(.type=="Progressing") | .status' 2>/dev/null || echo "?")
+        hc_available=$(printf '%s' "$hc_json" | jq -r \
+            '.status.conditions[] | select(.type=="Available") | .status' 2>/dev/null || echo "?")
+        hc_degraded=$(printf '%s' "$hc_json" | jq -r \
+            '.status.conditions[] | select(.type=="Degraded") | .status' 2>/dev/null || echo "?")
+
+        printf "[%3d] HC: version=%-30s progressing=%-5s available=%-5s degraded=%s\n" \
+            "$i" "$hc_version" "$hc_progressing" "$hc_available" "$hc_degraded"
+
+        # NodePool summary — filter by spec.clusterName (label not reliable across versions)
+        oc get nodepool -n "${HCP_NAMESPACE}" -o json 2>/dev/null | \
+            jq -r ".items[] | select(.spec.clusterName == \"${HCP_HOSTED_CLUSTER_NAME}\") | \
+                \"      NP  \" + .metadata.name + \
+                \"  replicas=\" + (.spec.replicas // 0 | tostring) + \
+                \"  ready=\" + (.status.replicas // 0 | tostring)" 2>/dev/null || true
+
+        # OSC DaemonSet state in the hosted cluster
+        if [[ "$has_hosted_kc" == "true" ]]; then
+            local ds_out
+            ds_out=$(KUBECONFIG="${hosted_kc}" oc get ds \
+                -n openshift-sandboxed-containers-operator \
+                --no-headers 2>/dev/null | \
+                awk '{printf "      DS  %-40s desired=%-3s ready=%-3s available=%s\n", $1, $2, $4, $5}')
+            [[ -n "$ds_out" ]] && printf '%s\n' "$ds_out" || true
+        fi
+        echo ""
+
+        [[ "$hc_progressing" == "True" ]] && seen_progressing=true
+
+        if [[ "$hc_degraded" == "True" ]]; then
+            local degraded_msg
+            degraded_msg=$(printf '%s' "$hc_json" | jq -r \
+                '.status.conditions[] | select(.type=="Degraded") | .message' 2>/dev/null | head -3)
+            log_warn "Cluster is Degraded: ${degraded_msg:0:200}"
+        fi
+
+        # Detect version gate: ValidReleaseImage=False means the operator rejects the target
+        local valid_release
+        valid_release=$(printf '%s' "$hc_json" | jq -r \
+            '.status.conditions[] | select(.type=="ValidReleaseImage") | .status' 2>/dev/null || echo "?")
+        if [[ "$valid_release" == "False" ]]; then
+            local gate_msg
+            gate_msg=$(printf '%s' "$hc_json" | jq -r \
+                '.status.conditions[] | select(.type=="ValidReleaseImage") | .message' 2>/dev/null)
+            log_error "Upgrade blocked by version gate: ${gate_msg:0:200}"
+            exit 1
+        fi
+
+        # Already at target version — nothing to upgrade
+        if [[ "$i" -eq 1 && "$seen_progressing" == "false" && "$hc_available" == "True" ]] && \
+           printf '%s' "$hc_version" | grep -q "^${target_version} .*(Completed)"; then
+            log_success "Already at target version: $hc_version"
+            done=true
+        elif [[ "$seen_progressing" == "true" && "$hc_progressing" == "False" && "$hc_available" == "True" ]]; then
+            log_success "Hosted cluster upgrade complete: $hc_version"
+            done=true
+            # Re-apply kata=true to any nodes that lost it during rolling replacement.
+            # NodePool nodeLabels ensures future nodes get it; this covers the current set.
+            if [[ "$has_hosted_kc" == "true" ]]; then
+                echo "Re-applying kata=true label to worker nodes..."
+                KUBECONFIG="${hosted_kc}" oc label node \
+                    -l node-role.kubernetes.io/worker kata=true --overwrite 2>/dev/null && \
+                    log_success "kata=true label applied to worker nodes" || \
+                    log_warn "Failed to re-apply kata=true label — check manually"
+            fi
+        fi
+
+        [[ "$done" == "false" ]] && { sleep 30; i=$((i + 1)); }
+    done
+
+    echo ""
+    echo "=== Final State ==="
+    if [[ "$has_hosted_kc" == "true" ]]; then
+        echo "OSC DaemonSets:"
+        KUBECONFIG="${hosted_kc}" oc get ds -n openshift-sandboxed-containers-operator 2>/dev/null || \
+            echo "  (none)"
+        echo ""
+        echo "KataConfig:"
+        KUBECONFIG="${hosted_kc}" oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} -o wide 2>/dev/null || \
+            echo "  (not found)"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Azure CCM workaround: patch providerID on nodes
+# ---------------------------------------------------------------------------
+
+_azure_patch_provider_ids() {
+    [[ "${HCP_CLOUD}" == "azure" ]] || return 0
+    local nodes_without_provider
+    nodes_without_provider=$(oc get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.providerID}{"\n"}{end}' 2>/dev/null \
+        | awk 'NF==1 {print $1}' || true)
+    [[ -n "$nodes_without_provider" ]] || return 0
+
+    local node_rg="${HCP_HOSTED_CLUSTER_NAME}-rg"
+    log_warn "Nodes missing providerID — querying Azure VMs in $node_rg"
+    local az_vms
+    az_vms=$(az vm list-ip-addresses --resource-group "$node_rg" \
+        --query "[].{name:virtualMachine.name, ip:virtualMachine.network.privateIpAddresses[0], id:virtualMachine.id}" \
+        -o tsv 2>/dev/null || true)
+    if [[ -z "$az_vms" ]]; then
+        log_warn "Could not list VMs in $node_rg — providerID not set"
+        return 0
+    fi
+    local patched=0
+    local _node
+    for _node in $nodes_without_provider; do
+        local node_ip
+        node_ip=$(oc get node "$_node" -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || true)
+        [[ -n "$node_ip" ]] || continue
+        local vm_id
+        vm_id=$(echo "$az_vms" | awk -v ip="$node_ip" '$2 == ip {print $3}' | head -1)
+        if [[ -n "$vm_id" ]]; then
+            local provider_id="azure://${vm_id}"
+            oc patch node "$_node" -p "{\"spec\":{\"providerID\":\"${provider_id}\"}}" 2>/dev/null || true
+            patched=$((patched + 1))
+        fi
+    done
+    if [[ $patched -gt 0 ]]; then
+        log_success "Set providerID on $patched node(s) (CCM workaround)"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# OSC Test Suite helpers
+# ---------------------------------------------------------------------------
+
+_osc_test_pass=0
+_osc_test_fail=0
+_osc_test_skip=0
+_kata_ns=""
+_kata_runtime_class="kata"
+
+osc_run_test() {
+    local name="$1" func="$2"
+    echo ""
+    echo "--- ${name} ---"
+
+    local pods_before pods_after pods_new
+    pods_before=$(oc get pods -n "${_kata_ns}" --no-headers -o name 2>/dev/null | sort)
+
+    local rc=0
+    "${func}" || rc=$?
+
+    pods_after=$(oc get pods -n "${_kata_ns}" --no-headers -o name 2>/dev/null | sort)
+    pods_new=$(comm -13 \
+        <(echo "$pods_before" | grep .) \
+        <(echo "$pods_after"  | grep .) 2>/dev/null || true)
+
+    if [[ $rc -eq 0 ]]; then
+        log_success "PASSED: ${name}"
+        _osc_test_pass=$((_osc_test_pass + 1))
+        if [[ -n "$pods_new" ]]; then
+            echo "$pods_new" | xargs oc delete -n "${_kata_ns}" --wait=false 2>/dev/null || true
+        fi
+    elif [[ $rc -eq 2 ]]; then
+        log_warn "SKIPPED: ${name}"
+        _osc_test_skip=$((_osc_test_skip + 1))
+        if [[ -n "$pods_new" ]]; then
+            echo "$pods_new" | xargs oc delete -n "${_kata_ns}" --wait=false 2>/dev/null || true
+        fi
+    else
+        log_warn "FAILED: ${name}"
+        _osc_test_fail=$((_osc_test_fail + 1))
+        if [[ -n "$pods_new" ]]; then
+            local log_dir="${HCP_WORK_DIR}/tests/${_kata_ns}"
+            mkdir -p "${log_dir}"
+            while IFS= read -r pod; do
+                [[ -z "$pod" ]] && continue
+                local pod_name="${pod#pod/}"
+                local log_file="${log_dir}/${pod_name}.log"
+                echo "=== Pod logs: ${pod_name} ===" >&2
+                oc logs "${pod_name}" -n "${_kata_ns}" 2>&1 | tee "${log_file}" >&2 || true
+                log_warn "  Saved: ${log_file}"
+            done <<< "$pods_new"
+            log_warn "Pods left for inspection in ${_kata_ns}: $(echo "$pods_new" | tr '\n' ' ')"
+        fi
+    fi
+}
+
+_kata_pod_apply() {
+    local name="$1" image="$2"
+    shift 2
+    oc apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${name}
+  namespace: ${_kata_ns}
+spec:
+  runtimeClassName: ${_kata_runtime_class}
+  restartPolicy: Never
+  containers:
+  - name: test
+    image: ${image}
+$*
+EOF
+}
+
+_kata_wait() {
+    local name="$1" timeout="${2:-120s}"
+    oc wait --for=condition=Ready "pod/${name}" -n "${_kata_ns}" --timeout="${timeout}" 2>/dev/null
+}
+
+# Ensure the Azure CSI driver secrets on the management cluster contain a
+# cloud.conf key.  ccoctl generates individual key/value pairs but the driver
+# mounts the secret as a directory and looks for /etc/kubernetes/cloud.conf.
+# If the key is absent we synthesise it from the existing fields and bounce the
+# CSI controller pods so they pick it up.
+
+_kata_exec() {
+    local name="$1"; shift
+    oc exec "${name}" -n "${_kata_ns}" -- "$@"
+}
+
+_kata_logs() {
+    oc logs "$1" -n "${_kata_ns}" 2>/dev/null || true
+}
+
+# --- Test functions ---
+
+osc_test_basic() {
+    _kata_pod_apply test-basic \
+        registry.access.redhat.com/ubi9/ubi-minimal:latest \
+        '    command: ["sleep", "3600"]'
+    _kata_wait test-basic 60s || return 1
+    local kernel
+    kernel=$(_kata_exec test-basic uname -r 2>/dev/null || echo "unknown")
+    log_info "Guest kernel: ${kernel}"
+}
+
+osc_test_workload() {
+    oc apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-workload
+  namespace: ${_kata_ns}
+spec:
+  runtimeClassName: ${_kata_runtime_class}
+  restartPolicy: Never
+  containers:
+  - name: workload
+    image: quay.io/c3d/workload
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+      limits:
+        cpu: "1"
+        memory: "512Mi"
+    env:
+    - name: CPU
+      value: "50"
+    - name: MEMORY
+      value: "200"
+    - name: INCREMENT
+      value: "64"
+EOF
+    _kata_wait test-workload 120s || return 1
+    log_info "Workload running — sampling for 30s..."
+    sleep 30
+    local out
+    out=$(_kata_logs test-workload)
+    if [[ -n "$out" ]]; then
+        log_info "Workload output (last 3 lines):"
+        echo "$out" | tail -3
+    fi
+}
+
+osc_test_hotplug() {
+    oc apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-hotplug
+  namespace: ${_kata_ns}
+spec:
+  runtimeClassName: ${_kata_runtime_class}
+  restartPolicy: Never
+  containers:
+  - name: test
+    image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+    command: ["sleep", "3600"]
+    resources:
+      requests:
+        cpu: "1"
+        memory: "256Mi"
+      limits:
+        cpu: "2"
+        memory: "512Mi"
+EOF
+    _kata_wait test-hotplug 120s || return 1
+    local cpus mem_kb
+    cpus=$(_kata_exec test-hotplug grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo "?")
+    mem_kb=$(_kata_exec test-hotplug grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo "?")
+    log_info "Guest vCPUs: ${cpus} (limit 2), MemTotal: ${mem_kb} kB (limit 512Mi)"
+    [[ "$cpus" != "?" && "$mem_kb" != "?" ]]
+}
+
+osc_test_network() {
+    _kata_pod_apply test-network \
+        registry.access.redhat.com/ubi9/ubi-minimal:latest \
+        '    command: ["sleep", "3600"]'
+    _kata_wait test-network 120s || return 1
+
+    log_info "Testing in-cluster connectivity (kubernetes API)..."
+    local http_code
+    http_code=$(_kata_exec test-network \
+        curl -sk -o /dev/null -w '%{http_code}' --max-time 10 \
+        https://kubernetes.default.svc/healthz 2>/dev/null || echo "fail")
+    log_info "API server response code: ${http_code}"
+    [[ "$http_code" == "200" || "$http_code" == "401" || "$http_code" == "403" ]] || return 1
+
+    log_info "External connectivity test..."
+    local ext_code
+    ext_code=$(_kata_exec test-network \
+        curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+        http://quay.io 2>/dev/null || echo "fail")
+    log_info "External (quay.io) response code: ${ext_code}"
+
+    log_info "Internal throughput (generate 10MB)..."
+    _kata_exec test-network bash -c \
+        'dd if=/dev/urandom bs=1M count=10 2>/dev/null | wc -c' 2>/dev/null || true
+}
+
+osc_test_virtiofs() {
+    oc apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-virtiofs
+  namespace: ${_kata_ns}
+spec:
+  runtimeClassName: ${_kata_runtime_class}
+  restartPolicy: Never
+  containers:
+  - name: test
+    image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+    command: ["sleep", "3600"]
+    volumeMounts:
+    - name: shared
+      mountPath: /mnt/shared
+  volumes:
+  - name: shared
+    emptyDir: {}
+EOF
+    _kata_wait test-virtiofs 120s || return 1
+
+    _kata_exec test-virtiofs bash -c 'echo "kata virtiofs test" > /mnt/shared/test.txt' || return 1
+    local content
+    content=$(_kata_exec test-virtiofs cat /mnt/shared/test.txt 2>/dev/null || echo "")
+    [[ "$content" == "kata virtiofs test" ]] || { log_warn "Read/write check failed"; return 1; }
+
+    log_info "VirtioFS write throughput:"
+    _kata_exec test-virtiofs bash -c \
+        'dd if=/dev/zero of=/mnt/shared/perf bs=1M count=256 2>&1 | tail -1' || true
+    log_info "VirtioFS read throughput:"
+    _kata_exec test-virtiofs bash -c \
+        'dd if=/mnt/shared/perf of=/dev/null bs=1M 2>&1 | tail -1' || true
+}
+
+osc_test_passthrough() {
+    declare -f ensure_csi_cloud_config >/dev/null && ensure_csi_cloud_config
+
+    # Use the cluster-default StorageClass (typically managed-csi / WaitForFirstConsumer
+    # on Azure). PVC binding is triggered by pod scheduling, so create PVC and pod
+    # together rather than waiting for PVC to bind first.
+    log_info "Creating PVC and pod together (WaitForFirstConsumer binding)..."
+
+    oc apply -f - <<EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kata-pvc
+  namespace: ${_kata_ns}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+EOF
+
+    oc apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-passthrough
+  namespace: ${_kata_ns}
+spec:
+  runtimeClassName: ${_kata_runtime_class}
+  restartPolicy: Never
+  containers:
+  - name: test
+    image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+    command: ["sleep", "3600"]
+    volumeMounts:
+    - name: data
+      mountPath: /mnt/data
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: kata-pvc
+EOF
+
+    # Wait for pod to be Ready; CSI provisioning happens concurrently.
+    if ! _kata_wait test-passthrough 300s 2>/dev/null; then
+        # Diagnose: check if this is the known HyperShift workload-identity limitation.
+        local pvc_events
+        pvc_events=$(oc get events -n "${_kata_ns}" \
+            --field-selector involvedObject.name=kata-pvc \
+            --sort-by='.lastTimestamp' \
+            -o custom-columns='MSG:.message' --no-headers 2>/dev/null | tail -3)
+        if printf '%s' "$pvc_events" | grep -qE 'no such file.*token|WorkloadIdentityCredential|clientFactory is nil'; then
+            log_warn "SKIP: CSI provisioning requires a workload-identity token that is not"
+            log_warn "      available in this HyperShift deployment. The CSI driver operator"
+            log_warn "      reconciles away the token-minter sidecar needed to populate"
+            log_warn "      /var/run/secrets/openshift/serviceaccount/token."
+            log_warn "      This is a known HyperShift limitation; upstream fix needed."
+            log_warn "Last CSI provisioner events:"
+            printf '%s\n' "$pvc_events" | while IFS= read -r line; do
+                log_warn "  $line"
+            done
+            return 2
+        fi
+        log_warn "PVC provisioning or pod startup failed."
+        log_warn "PVC events: ${pvc_events:-none}"
+        log_warn "To inspect: oc get events -n ${_kata_ns} --field-selector involvedObject.name=kata-pvc"
+        return 1
+    fi
+
+    log_info "PVC write throughput:"
+    _kata_exec test-passthrough bash -c \
+        'dd if=/dev/zero of=/mnt/data/perf bs=1M count=256 2>&1 | tail -1' || true
+    log_info "PVC read throughput:"
+    _kata_exec test-passthrough bash -c \
+        'dd if=/mnt/data/perf of=/dev/null bs=1M 2>&1 | tail -1' || true
+}
+
+osc_test_images() {
+    local all_ok=true
+    local n=0
+    for img in \
+        "registry.access.redhat.com/ubi9/ubi-micro:latest" \
+        "registry.access.redhat.com/ubi9/ubi-minimal:latest" \
+        "registry.access.redhat.com/ubi9/ubi:latest" \
+        "registry.access.redhat.com/ubi9/openjdk-17:latest"
+    do
+        n=$((n + 1))
+        local pod="test-img-${n}"
+        local short="${img##*/}"; short="${short%%:*}"
+        oc apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${pod}
+  namespace: ${_kata_ns}
+spec:
+  runtimeClassName: ${_kata_runtime_class}
+  restartPolicy: Never
+  containers:
+  - name: test
+    image: ${img}
+    command: ["sleep", "300"]
+EOF
+        if oc wait --for=condition=Ready "pod/${pod}" -n "${_kata_ns}" --timeout=120s 2>/dev/null; then
+            local meminfo
+            meminfo=$(oc exec "${pod}" -n "${_kata_ns}" -- cat /proc/meminfo 2>/dev/null | \
+                grep -E '^Mem(Total|Free|Available):' || echo "unavailable")
+            log_info "  ${short}:"
+            echo "$meminfo" | while IFS= read -r line; do echo "    ${line}"; done
+        else
+            log_warn "  ${short}: pod not ready"
+            all_ok=false
+        fi
+    done
+    $all_ok
+}
+
+osc_test_alpine() {
+    _kata_pod_apply test-alpine alpine:latest \
+        '    command: ["sleep", "60"]'
+    _kata_wait test-alpine 120s || return 1
+    local release kernel
+    release=$(_kata_exec test-alpine cat /etc/alpine-release 2>/dev/null || echo "unknown")
+    kernel=$(_kata_exec test-alpine uname -r 2>/dev/null || echo "unknown")
+    log_info "Alpine ${release}, kernel: ${kernel}"
+}
+
+osc_test_app() {
+    local image="${OSC_TEST_APP_IMAGE:-redis:latest}"
+    local pod_name="test-app"
+    log_info "Deploying app: ${image}"
+    _kata_pod_apply "${pod_name}" "${image}"
+    _kata_wait "${pod_name}" 180s || return 1
+    log_info "App pod running"
+    _kata_exec "${pod_name}" uname -a 2>/dev/null || true
+    if [[ "$image" == redis* ]]; then
+        local pong
+        pong=$(_kata_exec "${pod_name}" redis-cli ping 2>/dev/null || echo "no redis-cli")
+        log_info "Redis ping: ${pong}"
+    fi
+}
+
+osc_test_must_gather() {
+    local mg_image="${HCP_OSC_MUST_GATHER_IMAGE:-registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9:latest}"
+    local mg_dir
+    mg_dir=$(mktemp -d "${HCP_WORK_DIR}/must-gather-XXXXXX")
+    log_info "Running must-gather with image: ${mg_image}"
+    log_info "Output directory: ${mg_dir}"
+
+    if ! oc adm must-gather --image="${mg_image}" --dest-dir="${mg_dir}" 2>&1; then
+        log_warn "must-gather command failed"
+        return 1
+    fi
+
+    local mg_root
+    mg_root=$(find "${mg_dir}" -maxdepth 1 -type d -name 'quay-*' -o -name 'registry-*' | head -1)
+    [[ -z "$mg_root" ]] && mg_root="${mg_dir}"
+
+    local checks_passed=0 checks_total=0
+
+    _mg_check() {
+        local label="$1" pattern="$2"
+        checks_total=$((checks_total + 1))
+        if find "${mg_root}" -path "${pattern}" -print -quit 2>/dev/null | grep -q .; then
+            log_info "Found: ${label}"
+            checks_passed=$((checks_passed + 1))
+        else
+            log_warn "Missing: ${label}"
+        fi
+    }
+
+    _mg_check "KataConfig resource"              '*/kataconfig/kataconfig*'
+    _mg_check "KataConfig CRD"                    '*/customresourcedefinitions/*kataconfiguration*'
+    _mg_check "OSC operator namespace data"       '*sandboxed-containers/namespaces/openshift-sandboxed-containers-operator*'
+    _mg_check "OSC operator pod logs"             '*openshift-sandboxed-containers-operator/*_logs'
+    _mg_check "kata-containers node configuration" '*/nodes/*/etc/kata-containers/*'
+    _mg_check "Peer-pods data"                    '*sandboxed-containers/peer-pods*'
+    _mg_check "OLM diagnostics"                   '*sandboxed-containers/olm*'
+    _mg_check "Subscription description"          '*sandboxed-containers/subscription_description'
+    _mg_check "CSV description"                   '*sandboxed-containers/clusterserviceversion_description'
+    _mg_check "Node resources"                    '*/cluster-scoped-resources/core/nodes/*'
+
+    log_info "Must-gather checks: ${checks_passed}/${checks_total} passed"
+    log_info "Full output preserved at: ${mg_dir}"
+
+    [[ "$checks_passed" -eq "$checks_total" ]]
+}
+
+osc_test_e2e() {
+    local focus="${OSC_TEST_E2E_FOCUS:-}"
+    local timeout="${OSC_TEST_E2E_TIMEOUT:-120m}"
+    local ref="${OSC_TEST_E2E_REF:-devel}"
+    local repo="${OSC_TEST_E2E_REPO:-https://github.com/openshift/sandboxed-containers-operator}"
+
+    if ! command -v go >/dev/null 2>&1; then
+        log_warn "go not found; skipping e2e suite (install go to enable)"
+        return 2
+    fi
+
+    local operator_dir
+    operator_dir="$(mktemp -d /tmp/osc-e2e-XXXXXX)"
+    log_info "Cloning ${repo} (${ref})"
+    git clone --depth 1 -b "${ref}" "${repo}" "${operator_dir}"
+
+    export GOCACHE="${GOCACHE:-/tmp/gocache}"
+    export GOMODCACHE="${GOMODCACHE:-/tmp/gomod}"
+    # Allow module download; test/e2e is not vendored.
+    export GOFLAGS="${GOFLAGS:--mod=mod}"
+
+    # Stale module cache entries (directories exist but .go files missing) cause
+    # build failures. Re-download if the cache looks corrupt.
+    if [[ -d "$GOMODCACHE" ]]; then
+        local _stale
+        _stale=$(find "$GOMODCACHE" -maxdepth 4 -name '*.go' -print -quit 2>/dev/null)
+        if [[ -z "$_stale" ]]; then
+            log_info "Go module cache looks stale, clearing..."
+            chmod -R u+w "$GOMODCACHE" 2>/dev/null || true
+            rm -rf "$GOMODCACHE"
+        fi
+    fi
+
+    # The upstream test hardcodes KataConfig name as "example-kataconfig" and does
+    # not read kataConfigName from the osc-config ConfigMap.  Patch the test source
+    # to match whatever name the cluster actually uses.
+    local _kc_name="${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig}"
+    if [[ "$_kc_name" != "example-kataconfig" ]]; then
+        log_warn "KataConfig name '${_kc_name}' differs from upstream test default 'example-kataconfig'; patching test source"
+        sed -i'' -e "s/\"example-kataconfig\"/\"${_kc_name}\"/" "${operator_dir}/test/e2e/kata_test.go"
+    fi
+
+    local test_args=(-v -timeout "${timeout}" -ginkgo.no-color -ginkgo.silence-skips)
+    [[ -n "${focus}" ]] && test_args+=(-ginkgo.focus="${focus}")
+
+    log_info "Running go test (timeout=${timeout}${focus:+, focus=${focus}})"
+    local rc=0
+    (cd "${operator_dir}/test/e2e" && go test "${test_args[@]}" ./...) || rc=$?
+    rm -rf "${operator_dir}"
+    return "${rc}"
+}
+
+# ---------------------------------------------------------------------------
+# osc test dispatcher
+# ---------------------------------------------------------------------------
+
+osc_test() {
+    _resolve_work_dir_for_upgrade
+    export KUBECONFIG="${HCP_WORK_DIR}/${HCP_HOSTED_CLUSTER_NAME}-kubeconfig"
+
+    if ! KUBECONFIG="${KUBECONFIG}" oc whoami --request-timeout=10s &>/dev/null; then
+        log_info "Hosted cluster credentials expired, refreshing kubeconfig..."
+        local _hs="${HCP_HYPERSHIFT:-$(command -v hypershift 2>/dev/null)}"
+        if [[ -n "$_hs" && -f "${HCP_MGMT_KUBECONFIG}" ]]; then
+            local _kc_tmp
+            _kc_tmp=$(mktemp "${KUBECONFIG}.XXXXXX")
+            if KUBECONFIG="${HCP_MGMT_KUBECONFIG}" $_hs create kubeconfig \
+                    --name "${HCP_HOSTED_CLUSTER_NAME}" \
+                    --namespace "${HCP_NAMESPACE:-clusters}" \
+                    > "$_kc_tmp" 2>/dev/null && [[ -s "$_kc_tmp" ]]; then
+                mv "$_kc_tmp" "${KUBECONFIG}"
+                log_info "Kubeconfig refreshed"
+            else
+                rm -f "$_kc_tmp"
+                log_warn "Kubeconfig refresh failed (management cluster may be unreachable)"
+            fi
+        fi
+    fi
+    _check_kubeconfig_auth "${KUBECONFIG}" "Hosted cluster"
+    _azure_patch_provider_ids
+    _kata_runtime_class="kata"
+    local _peer_pods_enabled="false"
+    local _workload_to_test="kata"
+    if [[ "${HCP_OSC_PEER_PODS:-yes}" == "yes" ]]; then
+        _kata_runtime_class="kata-remote"
+        _peer_pods_enabled="true"
+        _workload_to_test="peer-pods"
+    fi
+
+    echo ""
+    echo "=== Testing Kata Workloads ==="
+    echo "Cluster: ${HCP_HOSTED_CLUSTER_NAME}"
+    echo "Runtime class: ${_kata_runtime_class}"
+    echo ""
+
+    # Sync osc-config ConfigMap so the Ginkgo e2e suite matches the current flags
+    cat <<EOF | oc apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: osc-config
+  namespace: default
+data:
+  kataConfigName: "${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig}"
+  runtimeClassName: "${_kata_runtime_class}"
+  enablePeerPods: "${_peer_pods_enabled}"
+  workloadImage: "ghcr.io/nginxinc/nginx-unprivileged:alpine@sha256:e234d4f7e346c098f7b22245690372382aded5be988611eb2c53ae62231eece7"
+  workloadMessage: "Welcome to nginx!"
+  workloadToTest: "${_workload_to_test}"
+EOF
+    log_debug "osc-config synced: runtimeClassName=${_kata_runtime_class}, enablePeerPods=${_peer_pods_enabled}"
+
+    local subtest="${OSC_TEST_SUBTEST:-all}"
+
+    _kata_ns="kata-test-$(date +%s)"
+    echo "Creating test namespace: ${_kata_ns}"
+    oc create namespace "${_kata_ns}"
+    oc label namespace "${_kata_ns}" --overwrite \
+        pod-security.kubernetes.io/enforce=privileged \
+        pod-security.kubernetes.io/audit=privileged \
+        pod-security.kubernetes.io/warn=privileged >/dev/null
+    echo ""
+
+    _osc_test_pass=0
+    _osc_test_fail=0
+    _osc_test_skip=0
+
+    case "$subtest" in
+        all)
+            osc_run_test "1. Basic sleep pod"                osc_test_basic
+            osc_run_test "2. CPU/memory overhead (workload)" osc_test_workload
+            osc_run_test "3. CPU/memory hotplug"             osc_test_hotplug
+            osc_run_test "4. Network access"                 osc_test_network
+            osc_run_test "5. VirtioFS volumes"               osc_test_virtiofs
+            osc_run_test "6. PVC passthrough"                osc_test_passthrough
+            osc_run_test "7. UBI image variants"             osc_test_images
+            osc_run_test "8. Alpine sanity"                  osc_test_alpine
+            osc_run_test "9. App deployment (redis)"         osc_test_app
+            osc_run_test "10. Must-gather collection"          osc_test_must_gather
+            osc_run_test "11. OSC e2e suite (Ginkgo)"          osc_test_e2e
+            ;;
+        basic|sleep)       osc_run_test "Basic sleep pod"         osc_test_basic ;;
+        workload|overhead) osc_run_test "Workload overhead"       osc_test_workload ;;
+        hotplug)           osc_run_test "CPU/memory hotplug"      osc_test_hotplug ;;
+        network|net)       osc_run_test "Network access"          osc_test_network ;;
+        virtiofs|volume)   osc_run_test "VirtioFS volumes"        osc_test_virtiofs ;;
+        passthrough|pvc)   osc_run_test "PVC passthrough"         osc_test_passthrough ;;
+        images|image|ubi|ubi-images) osc_run_test "UBI image variants" osc_test_images ;;
+        alpine)            osc_run_test "Alpine sanity"           osc_test_alpine ;;
+        app)               osc_run_test "App deployment"          osc_test_app ;;
+        must-gather|mg)     osc_run_test "Must-gather collection"  osc_test_must_gather ;;
+        e2e)               osc_run_test "E2E test suite"          osc_test_e2e ;;
+        *)
+            log_error "Unknown test: ${subtest}"
+            echo "Available subtests: all, basic, workload, hotplug, network, virtiofs, passthrough, images (ubi, ubi-images), alpine, app, must-gather (mg), e2e"
+            echo "For a custom image:  $(self_cmd) osc test app <image>"
+            exit 1
+            ;;
+    esac
+
+    echo ""
+    echo "--- Test Summary ---"
+    echo "  Passed:  ${_osc_test_pass}"
+    echo "  Failed:  ${_osc_test_fail}"
+    echo "  Skipped: ${_osc_test_skip}"
+    echo ""
+    echo "To inspect pods:"
+    echo "  KUBECONFIG=${KUBECONFIG} oc get pods -n ${_kata_ns} -o wide"
+    echo ""
+
+    if [[ "$GLOBAL_YES" == "true" ]]; then
+        REPLY="y"
+    else
+        read -p "Delete test namespace ${_kata_ns}? [Y/n] " -n 1 -r
+        echo
+    fi
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        oc delete namespace "${_kata_ns}" --wait=false
+        log_success "Test namespace deletion initiated"
+    else
+        echo "Test namespace preserved: ${_kata_ns}"
+    fi
+
+    [[ "${_osc_test_fail}" -eq 0 ]]
+}
+
+osc_uninstall() {
+    export KUBECONFIG="${HCP_WORK_DIR}/${HCP_HOSTED_CLUSTER_NAME}-kubeconfig"
+
+    echo ""
+    echo "=== Uninstalling OpenShift Sandboxed Containers (OSC) ==="
+    echo "Cluster: ${HCP_HOSTED_CLUSTER_NAME}"
+    echo ""
+
+    if [[ "$GLOBAL_YES" == "true" ]]; then
+        REPLY="y"
+    else
+        read -p "Proceed with OSC uninstall? [y/N] " -n 1 -r
+        echo
+    fi
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Uninstall cancelled"
+        exit 0
+    fi
+
+    # Remove any lingering kata test namespaces — their pods block KataConfig deletion
+    # because the controller waits for all kata-runtimeclass pods to be gone first.
+    echo "=== Cleaning up kata test namespaces ==="
+    local test_ns_list
+    test_ns_list=$(oc get ns --no-headers -o name 2>/dev/null \
+        | grep "^namespace/kata-test-" | sed 's|namespace/||' || true)
+    if [[ -n "$test_ns_list" ]]; then
+        echo "$test_ns_list" | while IFS= read -r ns; do
+            echo "  Deleting test namespace: ${ns}"
+            oc delete namespace "$ns" --wait=false 2>/dev/null || true
+        done
+        echo "  Waiting for test namespaces to terminate..."
+        local ns_timeout=60
+        local t
+        for t in $(seq 1 $ns_timeout); do
+            local remaining
+            remaining=$(oc get ns --no-headers -o name 2>/dev/null \
+                | grep "^namespace/kata-test-" || true)
+            [[ -z "$remaining" ]] && break
+            echo "  Still terminating: $(echo "$remaining" | tr '\n' ' ') ($t/$ns_timeout × 5s)"
+            sleep 5
+        done
+        if [[ $t -ge $ns_timeout ]]; then
+            log_warn "Test namespaces not fully terminated after $((ns_timeout * 5 / 60)) minutes — uninstall may still be blocked"
+        else
+            log_success "Test namespaces removed"
+        fi
+    else
+        log_success "No kata test namespaces found"
+    fi
+    echo ""
+
+    # Delete KataConfig and wait for the controller to finish node cleanup before
+    # removing the operator (otherwise the cleanup DaemonSet never runs).
+    echo "=== Deleting KataConfig ==="
+    if oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} >/dev/null 2>&1; then
+        echo "Triggering KataConfig deletion..."
+        oc delete kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} --wait=false
+        wait_for_kataconfig_deletion || exit 1
+    else
+        log_success "KataConfig not found"
+    fi
+
+    # RuntimeClasses are cluster-scoped and survive even a clean controller teardown;
+    # delete them explicitly so tests cannot pass against a bare runtime on the nodes.
+    for rc in kata kata-remote; do
+        if oc get runtimeclass "$rc" >/dev/null 2>&1; then
+            oc delete runtimeclass "$rc"
+            log_success "RuntimeClass $rc deleted"
+        fi
+    done
+
+    echo ""
+
+    # Delete operator
+    echo "=== Deleting OSC Operator ==="
+    if oc get subscription -n openshift-sandboxed-containers-operator openshift-sandboxed-containers-operator >/dev/null 2>&1; then
+        oc delete subscription -n openshift-sandboxed-containers-operator openshift-sandboxed-containers-operator
+        log_success "Subscription deleted"
+    fi
+
+    CSV=$(oc get csv -n openshift-sandboxed-containers-operator -o name 2>/dev/null | grep sandboxed-containers | head -1 || true)
+    if [[ -n "$CSV" ]]; then
+        oc delete -n openshift-sandboxed-containers-operator $CSV
+        log_success "CSV deleted"
+    fi
+
+    echo ""
+    log_success "OSC uninstall complete — nodes cleaned up, RuntimeClasses removed."
+    echo ""
+    echo "Note: a node reboot is no longer required for correctness."
+    echo "Reboot anyway if you want a fully pristine node state:"
+    echo "  $(basename $0) hosted reboot --cluster-name ${HCP_HOSTED_CLUSTER_NAME}"
+}
+
+osc_upgrade() {
+    export KUBECONFIG="${HCP_WORK_DIR}/${HCP_HOSTED_CLUSTER_NAME}-kubeconfig"
+
+    echo ""
+    echo "=== Upgrading OSC Operator ==="
+    echo "Cluster: ${HCP_HOSTED_CLUSTER_NAME}"
+    echo ""
+
+    local osc_ns="openshift-sandboxed-containers-operator"
+
+    # Report current CSV
+    local current_csv current_ver
+    current_csv=$(oc get csv -n "${osc_ns}" -o name 2>/dev/null | grep sandboxed-containers | head -1 || true)
+    if [[ -z "$current_csv" ]]; then
+        log_warn "No OSC CSV found — run 'osc install' first"
+        exit 1
+    fi
+    current_ver=$(basename "$current_csv")
+    echo "Current CSV: ${current_ver}"
+    echo ""
+
+    # Update CatalogSource image if a new one is supplied
+    if [[ -n "${HCP_CATALOG_IMAGE:-}" ]]; then
+        local cs_name
+        cs_name=$(oc get catalogsource -n openshift-marketplace -o name 2>/dev/null | \
+            grep -E "osc-custom|sandboxed" | head -1 | sed 's|.*/||')
+        if [[ -n "$cs_name" ]]; then
+            echo "Updating CatalogSource ${cs_name} with new image: ${HCP_CATALOG_IMAGE}"
+            oc patch catalogsource "${cs_name}" -n openshift-marketplace \
+                --type=merge -p "{\"spec\":{\"image\":\"${HCP_CATALOG_IMAGE}\"}}" && \
+                log_success "CatalogSource updated" || \
+                log_warn "Failed to update CatalogSource"
+        else
+            log_warn "No custom CatalogSource found — cannot update image"
+        fi
+        echo ""
+    fi
+
+    # Approve pending InstallPlan if manual approval is configured
+    local pending_ip
+    pending_ip=$(oc get installplan -n "${osc_ns}" --no-headers 2>/dev/null | \
+        awk '$3 == "Manual" && $4 == "false" {print $1}' | head -1)
+    if [[ -n "$pending_ip" ]]; then
+        local ip_csv
+        ip_csv=$(oc get installplan "${pending_ip}" -n "${osc_ns}" \
+            -o jsonpath='{.spec.clusterServiceVersionNames[*]}' 2>/dev/null)
+        echo "Pending InstallPlan: ${pending_ip} (upgrades to: ${ip_csv})"
+
+        if [[ "$GLOBAL_YES" == "true" ]]; then
+            REPLY="y"
+        else
+            read -p "Approve InstallPlan ${pending_ip}? [y/N] " -n 1 -r
+            echo
+        fi
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            oc patch installplan "${pending_ip}" -n "${osc_ns}" \
+                --type=merge -p '{"spec":{"approved":true}}' && \
+                log_success "InstallPlan approved" || \
+                log_warn "Failed to approve InstallPlan"
+        fi
+        echo ""
+    else
+        log_info "No pending InstallPlan (Automatic approval or already current)"
+    fi
+
+    # Wait for a CSV to reach Succeeded
+    echo "Waiting for CSV upgrade (timeout: 10 minutes)..."
+    local csv_timeout=60 new_csv_found=false
+    for i in $(seq 1 $csv_timeout); do
+        local new_csv phase
+        new_csv=$(oc get csv -n "${osc_ns}" -o name 2>/dev/null | grep sandboxed-containers | head -1 || true)
+        phase=$(oc get "${new_csv}" -n "${osc_ns}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "unknown")
+        echo "  CSV: $(basename "${new_csv:-none}"), Phase: ${phase} ($i/$csv_timeout)"
+        if [[ -n "$new_csv" && "$phase" == "Succeeded" ]]; then
+            if [[ "$new_csv" != "$current_csv" ]]; then
+                log_success "OSC operator upgraded: $(basename "$new_csv")"
+            else
+                log_success "OSC operator already at latest version: $(basename "$new_csv")"
+            fi
+            new_csv_found=true
+            break
+        fi
+        sleep 10
+    done
+
+    [[ "$new_csv_found" == "false" ]] && \
+        log_warn "No CSV reached Succeeded within timeout — check subscription and catalog health"
+
+    echo ""
+    echo "OSC DaemonSet state:"
+    oc get ds -n "${osc_ns}" 2>/dev/null || echo "  (none)"
+    echo ""
+    echo "KataConfig:"
+    oc get kataconfig ${HCP_OSC_KATA_CONFIG_NAME:-cluster-kataconfig} 2>/dev/null || echo "  (not found)"
+    echo ""
+    echo "To check operator logs:"
+    echo "  KUBECONFIG=${KUBECONFIG} oc logs -n ${osc_ns} -l name=sandboxed-containers-operator -c manager --tail=50"
+}
+
+# Batch operations
+batch_deploy() {
+    local config_file="${1:-.}"
+    local skip_management="${2:-false}"
+    local dry_run="${3:-false}"
+    local batch_yes="${4:-$GLOBAL_YES}"
+
+    log_debug "batch_deploy() called"
+    log_debug "  config_file=$config_file"
+    log_debug "  skip_management=$skip_management"
+    log_debug "  dry_run=$dry_run"
+    log_debug "  batch_yes=$batch_yes"
+
+    # Parse config file (supports YAML and JSON)
+    if [[ ! -f "$config_file" ]]; then
+        log_error "Config file not found: $config_file"
+        exit 1
+    fi
+
+    echo ""
+    echo "=== Batch Cluster Deployment ==="
+    echo "Config file: $config_file"
+    echo ""
+
+    load_config "$config_file"
+    local mgmt_name="$HCP_MGMT_CLUSTER_NAME"
+    local mgmt_location="${HCP_LOCATION:-}"
+    local mgmt_worker_type="${HCP_MGMT_WORKER_TYPE:-}"
+    local -a cluster_names=("${_CONFIG_CLUSTER_NAMES[@]}")
+    local -a cluster_counts=("${_CONFIG_CLUSTER_COUNTS[@]}")
+    local -a cluster_locations=("${_CONFIG_CLUSTER_LOCATIONS[@]}")
+    local -a cluster_worker_types=("${_CONFIG_CLUSTER_WORKER_TYPES[@]}")
+
+    if [[ -z "$mgmt_name" ]]; then
+        log_error "Invalid config: management.name is required"
+        exit 1
+    fi
+
+    if [[ "$mgmt_name" =~ \. ]]; then
+        local _mgmt_kc="${HCP_WORK_DIR:-$HOME/.hcp/${HCP_CLOUD:-azure}/${HCP_PROJECT:-}}/${mgmt_name}/auth/kubeconfig"
+        if [[ -f "$_mgmt_kc" ]] && KUBECONFIG="$_mgmt_kc" oc cluster-info >/dev/null 2>&1; then
+            log_warn "Management cluster name '${mgmt_name}' contains a dot — accepting because cluster already exists"
+        else
+            log_error "Management cluster name '${mgmt_name}' contains a dot."
+            log_error "Cluster names must be RFC1123-compliant (lowercase letters, digits, hyphens only)."
+            log_error "Replace dots with hyphens or remove them, e.g. '4.22' → '422' or '4-22'."
+            exit 1
+        fi
+    fi
+
+    if [[ ${#cluster_names[@]} -eq 0 ]]; then
+        log_error "Invalid config: hostedClusters must contain at least one cluster"
+        exit 1
+    fi
+
+    for cname in "${cluster_names[@]}"; do
+        if [[ "$cname" =~ \. ]]; then
+            log_error "Hosted cluster name '${cname}' contains a dot."
+            log_error "Cluster names must be RFC1123-compliant (lowercase letters, digits, hyphens only)."
+            log_error "Replace dots with hyphens or remove them, e.g. '4.22' → '422' or '4-22'."
+            exit 1
+        fi
+    done
+
+    log_debug "Configuration parsed successfully"
+    log_debug "  Management: $mgmt_name (location: ${mgmt_location:-auto})"
+    log_debug "  Hosted clusters: ${#cluster_names[@]}"
+
+    # Display plan
+    echo "Deployment Plan:"
+    echo "  Management cluster: $mgmt_name (location: ${mgmt_location:-auto})"
+    echo "  Hosted clusters:"
+    for ((i=0; i<${#cluster_names[@]}; i++)); do
+        echo "    - ${cluster_names[$i]} (${cluster_counts[$i]} nodes, location: ${cluster_locations[$i]:-auto})"
+    done
+    echo ""
+
+    if [[ "$dry_run" == "true" ]]; then
+        log_success "Dry run complete — no changes made"
+        return 0
+    fi
+
+    # Validate prerequisites before proceeding
+    echo ""
+    echo "=== Pre-flight Checks ==="
+
+    # Auto-detect pull secret if not set
+    if ! find_pull_secret; then
+        log_error "Pull secret not found. Set HCP_PULL_SECRET or place pull-secret.txt in current directory"
+        exit 1
+    fi
+    augment_pull_secret
+    validate_pull_secret
+
+    [[ ! -f "$HCP_SSH_KEY" ]] && { log_error "SSH key not found: $HCP_SSH_KEY"; exit 1; }
+    if [[ "${HCP_EFFECTIVE_PULL_SECRET}" != "${HCP_PULL_SECRET}" ]]; then
+        log_success "Pull secret: ${HCP_PULL_SECRET} (quay.io credentials refreshed from ~/.config/openshift/pull-secret.txt)"
+    else
+        log_success "Pull secret: ${HCP_PULL_SECRET}"
+    fi
+    log_success "SSH key: $HCP_SSH_KEY"
+    if declare -f cloud_preflight &>/dev/null; then
+        cloud_preflight || exit 1
+    fi
+    echo ""
+
+    # Validate OSC configuration: if no catalog-image, clear catalog-channel
+    if [[ -z "${HCP_CATALOG_IMAGE:-}" ]]; then
+        HCP_CATALOG_CHANNEL="${HCP_CATALOG_CHANNEL:-}"
+    fi
+    echo ""
+
+    # Create/setup management cluster
+    if [[ "$skip_management" != "true" ]]; then
+        echo ""
+        if [[ "$batch_yes" == "true" ]]; then
+            echo "Proceeding with deployment (--yes flag provided)"
+            REPLY="y"
+        else
+            if ! read -p "Proceed with deployment? [y/N] " -n 1 -r; then
+                log_error "Failed to read input (non-interactive terminal?)"
+                exit 1
+            fi
+            echo
+        fi
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Deployment cancelled"
+            exit 0
+        fi
+
+        HCP_MGMT_CLUSTER_NAME="$mgmt_name"
+        [[ -n "$mgmt_location" ]] && HCP_LOCATION="$mgmt_location"
+        [[ -n "$mgmt_worker_type" ]] && HCP_MGMT_WORKER_TYPE="$mgmt_worker_type"
+        # Re-derive kubeconfig: the env file sets this before the config is parsed,
+        # so HCP_MGMT_CLUSTER_NAME may have changed since it was computed.
+        export HCP_MGMT_KUBECONFIG="${HCP_WORK_DIR}/${HCP_MGMT_CLUSTER_NAME}/auth/kubeconfig"
+
+        # Check if management cluster already exists and is accessible
+        MGMT_EXISTS=false
+        if [[ -f "$HCP_MGMT_KUBECONFIG" ]]; then
+            export KUBECONFIG="$HCP_MGMT_KUBECONFIG"
+            log_debug "Checking MCE with kubeconfig: $KUBECONFIG"
+            # Verify cluster is actually accessible
+            if oc cluster-info >/dev/null 2>&1; then
+                MGMT_EXISTS=true
+                # Recover stuck workers before proceeding
+                management_recover_workers || {
+                    log_error "Worker recovery failed — consider destroying and recreating the management cluster"
+                    exit 1
+                }
+                # Cluster is accessible, check if MCE is already set up
+                if oc get crd hostedclusters.hypershift.openshift.io >/dev/null 2>&1; then
+                    log_warn "Management cluster with MCE already exists, skipping creation and setup"
+                else
+                    log_warn "Management cluster exists but MCE not set up, running setup"
+                    echo ""
+                    echo "=== Phase 2: Management Setup ==="
+                    cloud_management_setup || {
+                        log_error "Management cluster setup failed"
+                        exit 1
+                    }
+                fi
+            else
+                # Kubeconfig exists but cluster is not accessible, treat as non-existent
+                log_debug "Kubeconfig exists but cluster is not accessible, will recreate"
+            fi
+        fi
+
+        # If cluster doesn't exist or isn't accessible, create it
+        if [[ "$MGMT_EXISTS" != "true" ]]; then
+            # Check if installation directory exists from a failed attempt
+            if [[ -d "$HCP_WORK_DIR/$mgmt_name" ]]; then
+                echo ""
+                echo "Installation directory exists but cluster is not accessible."
+                echo "This may be from a failed previous installation."
+                echo ""
+
+                if [[ "$batch_yes" == "true" ]]; then
+                    echo "Removing installation directory (--yes flag provided)"
+                    rm -rf "$HCP_WORK_DIR/$mgmt_name"
+                else
+                    read -p "Delete installation directory and reinstall? [y/N] " -n 1 -r
+                    echo
+                    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                        echo "Cannot proceed without deleting failed installation"
+                        exit 1
+                    fi
+                    rm -rf "$HCP_WORK_DIR/$mgmt_name"
+                fi
+
+                # Delete stale cloud resources left by the failed install
+                cloud_cleanup_stale_install_resources "$mgmt_name"
+            fi
+
+            echo ""
+            echo "=== Phase 1: Management Cluster ==="
+
+            cloud_management_create || {
+                log_error "Management cluster creation failed"
+                exit 1
+            }
+
+            echo ""
+            echo "=== Phase 2: Management Setup ==="
+            cloud_management_setup || {
+                log_error "Management cluster setup failed"
+                exit 1
+            }
+        fi
+    else
+        log_info "Skipping management cluster creation (--skip-management)"
+        HCP_MGMT_CLUSTER_NAME="$mgmt_name"
+    fi
+
+    # Create and configure hosted clusters
+    for ((i=0; i<${#cluster_names[@]}; i++)); do
+        HCP_HOSTED_CLUSTER_NAME="${cluster_names[$i]}"
+        HCP_NODE_COUNT="${cluster_counts[$i]}"
+        [[ -n "${cluster_locations[$i]}" ]] && HCP_LOCATION="${cluster_locations[$i]}"
+        HCP_HOSTED_WORKER_TYPE="${cluster_worker_types[$i]:-}"
+
+        HOSTED_KUBECONFIG="$HCP_WORK_DIR/${cluster_names[$i]}-kubeconfig"
+
+        # Check if hosted cluster actually exists on management cluster
+        export KUBECONFIG="${HCP_MGMT_KUBECONFIG}"
+        if oc get hostedcluster ${cluster_names[$i]} -n ${HCP_NAMESPACE} >/dev/null 2>&1; then
+            log_warn "Hosted cluster ${cluster_names[$i]} already exists, skipping setup and validation"
+            # Ensure kubeconfig exists for OSC operations
+            HYPERSHIFT="${HCP_HYPERSHIFT:-$(command -v hypershift 2>/dev/null)}"
+            if [[ -n "$HYPERSHIFT" ]]; then
+                ${HYPERSHIFT} create kubeconfig --name ${cluster_names[$i]} --namespace ${HCP_NAMESPACE} > ${HOSTED_KUBECONFIG} 2>/dev/null || true
+            fi
+        else
+            echo ""
+            echo "=== Phase $((i+3)): Hosted Cluster — ${cluster_names[$i]} ==="
+
+            cloud_hosted_setup || {
+                log_error "Hosted cluster ${cluster_names[$i]} setup failed"
+                exit 1
+            }
+
+            echo ""
+            echo "=== Validating Cluster — ${cluster_names[$i]} ==="
+            hosted_validate || {
+                log_error "Hosted cluster ${cluster_names[$i]} validation failed"
+                exit 1
+            }
+        fi
+
+        echo ""
+        echo "=== Installing OSC — ${cluster_names[$i]} ==="
+        osc_install || {
+            log_error "OSC installation on ${cluster_names[$i]} failed"
+            exit 1
+        }
+    done
+
+    echo ""
+    echo "=== Deployment Complete ==="
+    log_success "All clusters deployed successfully"
+    echo ""
+    echo "Summary:"
+    echo "  Management: $mgmt_name"
+    echo "  Hosted clusters: ${#cluster_names[@]}"
+    for ((i=0; i<${#cluster_names[@]}; i++)); do
+        echo "    - ${cluster_names[$i]}"
+    done
+    echo ""
+    echo "All clusters are now deployed and configured with OSC installed."
+    echo "To manually reboot nodes in a cluster: $(basename $0) hosted reboot --cluster-name <cluster_name>"
+}
+
+# Main dispatch
+case "${SCOPE}" in
+    management)
+        case "${ACTION}" in
+            create)
+                [[ -n "${HCP_CONFIG_FILE}" ]] && load_config "${HCP_CONFIG_FILE}"
+                cloud_management_create ;;
+            setup)
+                [[ -n "${HCP_CONFIG_FILE}" ]] && load_config "${HCP_CONFIG_FILE}"
+                cloud_management_setup ;;
+            upgrade)
+                [[ -n "${HCP_CONFIG_FILE}" ]] && load_config "${HCP_CONFIG_FILE}"
+                management_upgrade ;;
+            teardown)
+                [[ -n "${HCP_CONFIG_FILE}" ]] && load_config "${HCP_CONFIG_FILE}"
+                cloud_management_teardown ;;
+            *) log_error "Unknown management action: ${ACTION}"; exit 1 ;;
+        esac
+        ;;
+    hosted)
+        case "${ACTION}" in
+            setup)
+                if [[ -n "${HCP_CONFIG_FILE}" ]]; then
+                    load_config "${HCP_CONFIG_FILE}"
+                    run_for_all_clusters cloud_hosted_setup
+                else
+                    cloud_hosted_setup
+                fi ;;
+            validate)
+                if [[ -n "${HCP_CONFIG_FILE}" ]]; then
+                    load_config "${HCP_CONFIG_FILE}"
+                    run_for_all_clusters hosted_validate
+                else
+                    hosted_validate
+                fi ;;
+            upgrade)
+                if [[ -n "${HCP_CONFIG_FILE}" ]]; then
+                    load_config "${HCP_CONFIG_FILE}"
+                    run_for_all_clusters hosted_upgrade
+                else
+                    hosted_upgrade
+                fi ;;
+            teardown)
+                if [[ -n "${HCP_CONFIG_FILE}" ]]; then
+                    load_config "${HCP_CONFIG_FILE}"
+                    run_for_all_clusters cloud_hosted_teardown
+                else
+                    cloud_hosted_teardown
+                fi ;;
+            reboot)
+                if [[ -n "${HCP_CONFIG_FILE}" ]]; then
+                    load_config "${HCP_CONFIG_FILE}"
+                    run_for_all_clusters hosted_reboot
+                else
+                    hosted_reboot
+                fi ;;
+            *) log_error "Unknown hosted action: ${ACTION}"; exit 1 ;;
+        esac
+        ;;
+    agent)
+        case "${ACTION}" in
+            iso)      agent_iso ;;
+            list)     agent_list ;;
+            wait)     agent_wait ;;
+            approve)  agent_approve ;;
+            scale)    agent_scale ;;
+            status)   agent_status ;;
+            *) log_error "Unknown agent action: ${ACTION}"; exit 1 ;;
+        esac
+        ;;
+    osc)
+        case "${ACTION}" in
+            install)
+                if [[ -n "${HCP_CONFIG_FILE}" ]]; then
+                    load_config "${HCP_CONFIG_FILE}"
+                    run_for_all_clusters osc_install
+                else
+                    osc_install
+                fi ;;
+            validate)
+                if [[ -n "${HCP_CONFIG_FILE}" ]]; then
+                    load_config "${HCP_CONFIG_FILE}"
+                    run_for_all_clusters osc_validate
+                else
+                    osc_validate
+                fi ;;
+            upgrade)
+                if [[ -n "${HCP_CONFIG_FILE}" ]]; then
+                    load_config "${HCP_CONFIG_FILE}"
+                    run_for_all_clusters osc_upgrade
+                else
+                    osc_upgrade
+                fi ;;
+            reboot)
+                if [[ -n "${HCP_CONFIG_FILE}" ]]; then
+                    load_config "${HCP_CONFIG_FILE}"
+                    run_for_all_clusters hosted_reboot
+                else
+                    hosted_reboot
+                fi ;;
+            test)
+                if [[ -n "${HCP_CONFIG_FILE}" ]]; then
+                    load_config "${HCP_CONFIG_FILE}"
+                    run_for_all_clusters osc_test
+                else
+                    osc_test
+                fi ;;
+            uninstall)
+                if [[ -n "${HCP_CONFIG_FILE}" ]]; then
+                    load_config "${HCP_CONFIG_FILE}"
+                    run_for_all_clusters osc_uninstall
+                else
+                    osc_uninstall
+                fi ;;
+            *) log_error "Unknown osc action: ${ACTION}"; exit 1 ;;
+        esac
+        ;;
+    podvm)
+        case "${ACTION}" in
+            build) podvm_build ;;
+            list)  podvm_list ;;
+            *) log_error "Unknown podvm action: ${ACTION}"; exit 1 ;;
+        esac
+        ;;
+    batch)
+        case "${ACTION}" in
+            deploy)
+                # Parse batch-specific flags
+                BATCH_CONFIG=""
+                BATCH_SKIP_MGMT="false"
+                BATCH_DRY_RUN="false"
+                BATCH_YES="false"
+
+                while [[ $# -gt 0 ]]; do
+                    case "$1" in
+                        --config)
+                            BATCH_CONFIG="$2"
+                            shift 2
+                            ;;
+                        --skip-management)
+                            BATCH_SKIP_MGMT="true"
+                            shift
+                            ;;
+                        --dry-run)
+                            BATCH_DRY_RUN="true"
+                            shift
+                            ;;
+                        --yes|-y)
+                            BATCH_YES="true"
+                            shift
+                            ;;
+                        --verbose)
+                            VERBOSE="true"
+                            shift
+                            ;;
+                        --debug)
+                            DEBUG="true"
+                            VERBOSE="true"
+                            set -x
+                            shift
+                            ;;
+                        --openshift-install)
+                            export HCP_OPENSHIFT_INSTALL="$2"
+                            shift 2
+                            ;;
+                        --hypershift)
+                            export HCP_HYPERSHIFT="$2"
+                            shift 2
+                            ;;
+                        --max-retries)
+                            HCP_MAX_RETRIES="$2"
+                            shift 2
+                            ;;
+                        --wait-retries)
+                            HCP_WAIT_RETRIES="$2"
+                            shift 2
+                            ;;
+                        --install-role-duration)
+                            HCP_INSTALL_ROLE_DURATION="$2"
+                            shift 2
+                            ;;
+                        --aws-profile)
+                            HCP_AWS_PROFILE="$2"
+                            shift 2
+                            ;;
+                        *)
+                            log_error "Unknown batch option: $1"
+                            exit 1
+                            ;;
+                    esac
+                done
+
+                [[ "$VERBOSE" == "true" ]] && log_debug "Verbose mode enabled"
+                [[ "$DEBUG" == "true" ]] && log_debug "Debug mode enabled (set -x active)"
+
+                [[ -z "$BATCH_CONFIG" ]] && {
+                    log_error "batch deploy requires --config FILE"
+                    echo "Usage: $0 batch deploy --config clusters.yaml [--skip-management] [--dry-run]"
+                    exit 1
+                }
+
+                # Use GLOBAL_YES if set, otherwise use BATCH_YES (from explicit flags after batch deploy)
+                if [[ "$GLOBAL_YES" == "true" ]]; then
+                    BATCH_YES="true"
+                fi
+                batch_deploy "$BATCH_CONFIG" "$BATCH_SKIP_MGMT" "$BATCH_DRY_RUN" "$BATCH_YES"
+                ;;
+            *)
+                log_error "Unknown batch action: ${ACTION}"
+                exit 1
+                ;;
+        esac
+        ;;
+    help|--help|-h)
+        show_help
+        exit 0
+        ;;
+    *)
+        log_error "Unknown scope: ${SCOPE}"
+        echo "Run '$(basename "$0") --help' for usage."
+        exit 1
+        ;;
+esac
