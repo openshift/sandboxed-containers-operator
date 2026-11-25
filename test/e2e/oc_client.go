@@ -23,6 +23,7 @@ type CLI struct {
 	withoutNamespace bool
 	globalArgs       []string
 	commandArgs      []string
+	input            string
 }
 
 // NewOC creates a CLI and registers Ginkgo lifecycle hooks for namespace management.
@@ -98,6 +99,13 @@ func (c *CLI) Args(args ...string) *CLI {
 	return c
 }
 
+// Input supplies stdin to the command.
+func (c *CLI) Input(input string) *CLI {
+	nc := *c
+	nc.input = input
+	return &nc
+}
+
 func (c *CLI) Namespace() string {
 	return c.namespace
 }
@@ -105,6 +113,7 @@ func (c *CLI) Namespace() string {
 func (c *CLI) Output() (string, error) {
 	finalArgs := append(c.globalArgs, c.commandArgs...)
 	cmd := exec.Command(c.execPath, finalArgs...)
+	cmd.Stdin = strings.NewReader(c.input)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
