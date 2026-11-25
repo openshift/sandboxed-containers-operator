@@ -172,6 +172,10 @@ func (r *KataConfigOpenShiftReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
+	if err := r.reconcileRuntimeClassLabels(ctx); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	oldObjStatus := r.kataConfig.Status.DeepCopy()
 
 	err = r.migratePeerPodsLimit()
@@ -992,6 +996,9 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(
 	extResOverhead string,
 	handler string,
 	additionalNodeLabels map[string]string) error {
+	if !r.kataConfig.DeletionTimestamp.IsZero() {
+		return nil
+	}
 
 	if os.Getenv("RUST_RUNTIME") != "" {
 		handler = "rs-" + handler
@@ -1071,6 +1078,9 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(
 	if err := controllerutil.SetControllerReference(r.kataConfig, rc, r.Scheme); err != nil {
 		return err
 	}
+	if err := r.applyRuntimeClassLabels(rc); err != nil {
+		return err
+	}
 
 	foundRc := &nodeapi.RuntimeClass{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: rc.Name}, foundRc)
@@ -1085,15 +1095,17 @@ func (r *KataConfigOpenShiftReconciler) createRuntimeClass(
 			return fmt.Errorf("error creating %s runtime class: %w", rc.Name, err)
 		}
 	} else {
-		// RC exists — patch scheduling.nodeSelector if it differs.
-		// This handles transitions: e.g. single-class -> mixed cluster where
-		// EnableMixedCluster is enabled after the RC was already created.
-		if !reflect.DeepEqual(foundRc.Scheduling, rc.Scheduling) {
-			r.Log.Info("Updating RuntimeClass nodeSelector", "rc.Name", rc.Name, "nodeSelector", rc.Scheduling.NodeSelector)
-			patch := client.MergeFrom(foundRc.DeepCopy())
-			foundRc.Scheduling = rc.Scheduling
+		// Update scheduling too, since EnableMixedCluster can change after creation.
+		before := foundRc.DeepCopy()
+		if err := r.applyRuntimeClassLabels(foundRc); err != nil {
+			return err
+		}
+		foundRc.Scheduling = rc.Scheduling
+		if !reflect.DeepEqual(before, foundRc) {
+			r.Log.Info("Updating RuntimeClass labels or scheduling", "rc.Name", rc.Name, "nodeSelector", rc.Scheduling.NodeSelector)
+			patch := client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{})
 			if err := r.Client.Patch(context.TODO(), foundRc, patch); err != nil {
-				return fmt.Errorf("error updating %s runtime class scheduling: %w", rc.Name, err)
+				return fmt.Errorf("error updating %s runtime class labels or scheduling: %w", rc.Name, err)
 			}
 		}
 	}
@@ -1896,6 +1908,7 @@ func (eh *NodeEventHandler) Generic(ctx context.Context, event event.GenericEven
 func (r *KataConfigOpenShiftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&kataconfigurationv1.KataConfig{}).
+		Owns(&nodeapi.RuntimeClass{}).
 		Owns(&networkingv1.NetworkPolicy{}).
 		Watches(
 			&corev1.Node{},
