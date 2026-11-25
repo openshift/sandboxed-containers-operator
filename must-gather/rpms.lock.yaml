@@ -4,6 +4,13 @@ lockfileVendor: redhat
 arches:
 - arch: s390x
   packages:
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/o/oniguruma-6.9.6-1.el9.5.s390x.rpm
+    repoid: ubi-9-for-s390x-appstream-rpms
+    size: 225810
+    checksum: sha256:02fab0b52c89158bd45ccc575ccc9186f196fc514eccd66ebfc72c6b0a08849f
+    name: oniguruma
+    evr: 6.9.6-1.el9.5
+    sourcerpm: oniguruma-6.9.6-1.el9.5.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/c/cracklib-2.9.6-28.el9.s390x.rpm
     repoid: ubi-9-for-s390x-baseos-rpms
     size: 101566
@@ -60,6 +67,13 @@ arches:
     name: jansson
     evr: 2.14-1.el9
     sourcerpm: jansson-2.14-1.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/j/jq-1.6-21.el9_9.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 206791
+    checksum: sha256:efa420bc2e21731b8485becc4e3e75ab617b43c9d8b9f3af56657c313a6fa4df
+    name: jq
+    evr: 1.6-21.el9_9
+    sourcerpm: jq-1.6-21.el9_9.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/k/kmod-libs-28-11.el9.s390x.rpm
     repoid: ubi-9-for-s390x-baseos-rpms
     size: 63041
@@ -208,6 +222,12 @@ arches:
     evr: 2.37.4-28.el9_9.1
     sourcerpm: util-linux-2.37.4-28.el9_9.1.src.rpm
   source:
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/source/SRPMS/Packages/o/oniguruma-6.9.6-1.el9.5.src.rpm
+    repoid: ubi-9-for-s390x-appstream-source-rpms
+    size: 934541
+    checksum: sha256:cba17754ccaffd886995aec7f152aadbc5d9932a2a2cdf1d983291c7b2838404
+    name: oniguruma
+    evr: 6.9.6-1.el9.5
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/c/cracklib-2.9.6-28.el9.src.rpm
     repoid: ubi-9-for-s390x-baseos-source-rpms
     size: 6416053
@@ -250,6 +270,12 @@ arches:
     checksum: sha256:f15174491e4b92ca0c70b85b57cc8eac4373c424fc1c78e6bf492f99f28cb77b
     name: jansson
     evr: 2.14-1.el9
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/j/jq-1.6-21.el9_9.src.rpm
+    repoid: ubi-9-for-s390x-baseos-source-rpms
+    size: 1512457
+    checksum: sha256:08ccbf4c45f04e3062a25f6aa06c0591efeb795f6fc967e1374480c886a6466f
+    name: jq
+    evr: 1.6-21.el9_9
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/k/kmod-28-11.el9.src.rpm
     repoid: ubi-9-for-s390x-baseos-source-rpms
     size: 579198
@@ -361,6 +387,13 @@ arches:
   module_metadata: []
 - arch: x86_64
   packages:
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/appstream/os/Packages/o/oniguruma-6.9.6-1.el9.5.x86_64.rpm
+    repoid: ubi-9-for-x86_64-appstream-rpms
+    size: 226331
+    checksum: sha256:6c884cc2216e5b4699ebd8cde27b39e99532520b367f645ed6cc660d081916dc
+    name: oniguruma
+    evr: 6.9.6-1.el9.5
+    sourcerpm: oniguruma-6.9.6-1.el9.5.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/c/cracklib-2.9.6-28.el9.x86_64.rpm
     repoid: ubi-9-for-x86_64-baseos-rpms
     size: 102444
@@ -417,6 +450,13 @@ arches:
     name: jansson
     evr: 2.14-1.el9
     sourcerpm: jansson-2.14-1.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/j/jq-1.6-21.el9_9.x86_64.rpm
+    repoid: ubi-9-for-x86_64-baseos-rpms
+    size: 197415
+    checksum: sha256:bbf3a251f6bae8fe8d73e6e4136ffac09dedbc24c2354c8f869d5d6576024f3f
+    name: jq
+    evr: 1.6-21.el9_9
+    sourcerpm: jq-1.6-21.el9_9.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/k/kmod-libs-28-11.el9.x86_64.rpm
     repoid: ubi-9-for-x86_64-baseos-rpms
     size: 63619
@@ -565,6 +605,12 @@ arches:
     evr: 2.37.4-28.el9_9.1
     sourcerpm: util-linux-2.37.4-28.el9_9.1.src.rpm
   source:
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/appstream/source/SRPMS/Packages/o/oniguruma-6.9.6-1.el9.5.src.rpm
+    repoid: ubi-9-for-x86_64-appstream-source-rpms
+    size: 934541
+    checksum: sha256:cba17754ccaffd886995aec7f152aadbc5d9932a2a2cdf1d983291c7b2838404
+    name: oniguruma
+    evr: 6.9.6-1.el9.5
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/source/SRPMS/Packages/c/cracklib-2.9.6-28.el9.src.rpm
     repoid: ubi-9-for-x86_64-baseos-source-rpms
     size: 6416053
@@ -607,6 +653,12 @@ arches:
     checksum: sha256:f15174491e4b92ca0c70b85b57cc8eac4373c424fc1c78e6bf492f99f28cb77b
     name: jansson
     evr: 2.14-1.el9
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/source/SRPMS/Packages/j/jq-1.6-21.el9_9.src.rpm
+    repoid: ubi-9-for-x86_64-baseos-source-rpms
+    size: 1512457
+    checksum: sha256:08ccbf4c45f04e3062a25f6aa06c0591efeb795f6fc967e1374480c886a6466f
+    name: jq
+    evr: 1.6-21.el9_9
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/source/SRPMS/Packages/k/kmod-28-11.el9.src.rpm
     repoid: ubi-9-for-x86_64-baseos-source-rpms
     size: 579198
