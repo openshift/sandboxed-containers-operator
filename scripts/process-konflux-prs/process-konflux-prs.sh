@@ -115,6 +115,12 @@ format_pr_row() {
   if [ -z "$reason" ]; then
     printf -- '- %s %s/%s (%s)\n' "$link" "$repo" "$branch" "$components"
   else
+    case "$reason" in
+      *"build checks failed"*|*"developer verification needed"*|*"merge failed"*|\
+      *"failed to apply"*|*"safety check failed"*|*"status check failed"*|\
+      *"Failed to query"*|*"Last on-push pipeline did not succeed"*)
+        reason="⚠️ $reason" ;;
+    esac
     printf -- '- %s %s/%s (%s)\n  - %s\n' "$link" "$repo" "$branch" "$components" "$reason"
   fi
 }
@@ -155,7 +161,7 @@ REPORT_FILE="Konflux-PR-report-$(date +%Y%m%d-%H%M%S).md"
 {
   echo "# Konflux PR Processing Report"
   echo ""
-  echo "*Generated: $(date '+%Y-%m-%d %H:%M:%S')*"
+  echo "*Generated: $(date -u '+%Y-%m-%d %H:%M UTC')*"
   echo ""
 
   # Mintmaker section
