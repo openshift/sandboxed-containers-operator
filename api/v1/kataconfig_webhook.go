@@ -21,6 +21,11 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metavalidation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -42,16 +47,16 @@ func (r *KataConfig) SetupWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-
-// TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
-//+kubebuilder:webhook:verbs=create,path=/validate-kataconfiguration-openshift-io-v1-kataconfig,mutating=false,failurePolicy=fail,groups=kataconfiguration.openshift.io,resources=kataconfigs,versions=v1,name=vkataconfig.kb.io,sideEffects=none,admissionReviewVersions={v1}
+//+kubebuilder:webhook:verbs=create;update,path=/validate-kataconfiguration-openshift-io-v1-kataconfig,mutating=false,failurePolicy=fail,groups=kataconfiguration.openshift.io,resources=kataconfigs,versions=v1,name=vkataconfig.kb.io,sideEffects=none,admissionReviewVersions={v1}
 
 var _ admission.Validator[*KataConfig] = &KataConfig{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *KataConfig) ValidateCreate(ctx context.Context, obj *KataConfig) (admission.Warnings, error) {
 	kataconfiglog.Info("validate create", "name", obj.Name)
+	if err := obj.validateRuntimeClassLabels(); err != nil {
+		return nil, err
+	}
 
 	kataConfigList := &KataConfigList{}
 	listOpts := []client.ListOption{
@@ -72,8 +77,27 @@ func (r *KataConfig) ValidateCreate(ctx context.Context, obj *KataConfig) (admis
 func (r *KataConfig) ValidateUpdate(ctx context.Context, oldObj, newObj *KataConfig) (admission.Warnings, error) {
 	kataconfiglog.Info("validate update", "name", newObj.Name)
 
-	// TODO(user): fill in your validation logic upon object update.
-	return nil, nil
+	return nil, newObj.validateRuntimeClassLabels()
+}
+
+func (r *KataConfig) validateRuntimeClassLabels() error {
+	config := r.Spec.RuntimeClassLabels
+	if config == nil {
+		return nil
+	}
+	path := field.NewPath("spec", "runtimeClassLabels")
+	errs := metavalidation.ValidateLabels(config.Defaults, path.Child("defaults"))
+	for name, labels := range config.Overrides {
+		entryPath := path.Child("overrides").Key(name)
+		for _, message := range validation.IsDNS1123Subdomain(name) {
+			errs = append(errs, field.Invalid(entryPath, name, message))
+		}
+		errs = append(errs, metavalidation.ValidateLabels(labels, entryPath)...)
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	return apierrors.NewInvalid(schema.GroupKind{Group: GroupVersion.Group, Kind: "KataConfig"}, r.Name, errs)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type

@@ -674,6 +674,7 @@ spec:
       - v1
       operations:
       - CREATE
+      - UPDATE
       resources:
       - kataconfigs
     sideEffects: None
