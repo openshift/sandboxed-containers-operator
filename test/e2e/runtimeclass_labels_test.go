@@ -98,6 +98,71 @@ var _ = ginkgo.Describe("[sig-kata] RuntimeClassLabels", ginkgo.Serial, ginkgo.L
 		o.Expect(rc.GetLabels()).To(o.HaveKeyWithValue(f.unmanagedKey, "keep"))
 	})
 
+	ginkgo.It("restores configured labels when an unused RuntimeClass is recreated", func() {
+		ginkgo.By("Selecting an operator-created class with no active pods")
+		target, err := f.unusedClass()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		if target == nil {
+			ginkgo.Skip("No operator-created RuntimeClass is currently safe to recreate")
+		}
+		o.Expect(f.configure(func(config map[string]interface{}) {
+			labelMap(config, "defaults")[f.sharedKey] = "recreated"
+		})).To(o.Succeed())
+		f.waitLabels(map[string]string{f.sharedKey: "recreated"}, nil)
+		ginkgo.By("Deleting the unused class without bypassing its finalizer")
+		unused, err := f.unusedClass()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		if unused == nil || unused.GetName() != target.GetName() || unused.GetUID() != target.GetUID() {
+			ginkgo.Skip("RuntimeClass usage changed before deletion")
+		}
+		o.Expect(f.deleteClass(target.GetName(), target.GetUID())).To(o.Succeed())
+		o.Expect(pollLabelCheck(func() error {
+			rc, err := labelObject(oc, "runtimeclass", target.GetName())
+			if err != nil {
+				return err
+			}
+			if rc.GetUID() == target.GetUID() || rc.GetDeletionTimestamp() != nil {
+				return fmt.Errorf("RuntimeClass %s has not been recreated", target.GetName())
+			}
+			if rc.GetLabels()[f.sharedKey] != "recreated" {
+				return fmt.Errorf("recreated RuntimeClass %s is missing its configured label", target.GetName())
+			}
+			return nil
+		})).To(o.Succeed())
+		f.waitLabels(map[string]string{f.sharedKey: "recreated"}, nil)
+	})
+
+	ginkgo.It("rejects invalid labels and override names on create and update", func() {
+		for _, config := range []map[string]interface{}{
+			{"defaults": map[string]interface{}{"invalid key": "true"}},
+			{"defaults": map[string]interface{}{f.sharedKey: "invalid value"}},
+			{"overrides": map[string]interface{}{"Invalid_Name": map[string]interface{}{f.sharedKey: "true"}}},
+		} {
+			ginkgo.By("Validating an update without persisting it")
+			patch, err := json.Marshal([]map[string]interface{}{{"op": "add", "path": "/spec/runtimeClassLabels", "value": config}})
+			o.Expect(err).NotTo(o.HaveOccurred())
+			_, err = oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+				"kataconfig", f.config.GetName(), "--type=json", "-p", string(patch),
+				"--dry-run=server", "--request-timeout=20s",
+			).Output()
+			o.Expect(err).To(o.HaveOccurred())
+			o.Expect(err.Error()).To(o.ContainSubstring("spec.runtimeClassLabels"))
+
+			ginkgo.By("Validating a create without creating a second KataConfig")
+			object := map[string]interface{}{
+				"apiVersion": "kataconfiguration.openshift.io/v1", "kind": "KataConfig",
+				"metadata": map[string]interface{}{"name": "e2e-invalid-" + getRandomString()},
+				"spec":     map[string]interface{}{"checkNodeEligibility": false, "runtimeClassLabels": config},
+			}
+			data, err := json.Marshal(object)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			_, err = oc.AsAdmin().WithoutNamespace().Run("create").Args(
+				"-f", "-", "--dry-run=server", "--request-timeout=20s",
+			).Input(string(data)).Output()
+			o.Expect(err).To(o.HaveOccurred())
+			o.Expect(err.Error()).To(o.ContainSubstring("spec.runtimeClassLabels"))
+		}
+	})
 })
 
 type runtimeClassLabelsFixture struct {
@@ -351,6 +416,58 @@ func (f *runtimeClassLabelsFixture) deleteClass(name string, uid types.UID) erro
 		"--raw", "/apis/node.k8s.io/v1/runtimeclasses/"+name, "-f", "-", "--request-timeout=20s",
 	).Input(string(data)).Output()
 	return err
+}
+
+func (f *runtimeClassLabelsFixture) unusedClass() (*unstructured.Unstructured, error) {
+	out, err := f.oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"pods", "-A", `-o=jsonpath={range .items[*]}{.spec.runtimeClassName}{"\t"}{.status.phase}{"\n"}{end}`, "--request-timeout=20s",
+	).Output()
+	if err != nil {
+		return nil, err
+	}
+	used := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.SplitN(line, "\t", 2)
+		if len(fields) == 2 && fields[1] != "Succeeded" && fields[1] != "Failed" {
+			used[fields[0]] = true
+		}
+	}
+	current, err := labelObject(f.oc, "kataconfig", f.config.GetName())
+	if err != nil {
+		return nil, err
+	}
+	managed, _, err := unstructured.NestedStringSlice(current.Object, "status", "runtimeClasses")
+	if err != nil {
+		return nil, err
+	}
+	classes, err := f.ownedClasses()
+	if err != nil {
+		return nil, err
+	}
+	for i := range classes {
+		rc := &classes[i]
+		if !slices.Contains(managed, rc.GetName()) || used[rc.GetName()] {
+			continue
+		}
+		var keys []string
+		if value := rc.GetAnnotations()["kataconfiguration.openshift.io/managed-runtimeclass-labels"]; value != "" {
+			if err := json.Unmarshal([]byte(value), &keys); err != nil {
+				return nil, fmt.Errorf("RuntimeClass %s: invalid managed label annotation: %w", rc.GetName(), err)
+			}
+		}
+		// Recreating an object loses unmanaged metadata. Leave those classes alone.
+		unmanaged := false
+		for key := range rc.GetLabels() {
+			unmanaged = unmanaged || !slices.Contains(keys, key)
+		}
+		for key := range rc.GetAnnotations() {
+			unmanaged = unmanaged || key != "kataconfiguration.openshift.io/managed-runtimeclass-labels"
+		}
+		if !unmanaged {
+			return rc, nil
+		}
+	}
+	return nil, nil
 }
 
 func (f *runtimeClassLabelsFixture) cleanup() error {

@@ -59,6 +59,44 @@ The workload image must serve HTTP on port 8080 and run as a non-root user
 > `SCHILY.xattr.user.overlay.origin` PAX records, which `astral-tokio-tar` >= 0.6.3
 > rejects, so image-rs fails to pull it with "Failed to read entries from the tar".
 
+### RuntimeClass label tests
+
+New operator functional tests go in this Ginkgo v2 package. The
+`runtimeclass_labels_test.go` cases are included in the default `[sig-kata]`
+selection. To run them alone:
+
+```bash
+cd test/e2e
+export KUBECONFIG=~/path/to/kubeconfig
+go test -v -count=1 -timeout 30m -ginkgo.focus=RuntimeClassLabels ./...
+```
+
+Install a matching operator bundle and wait for KataConfig installation to
+finish first. The tests fail if the CRD lacks `spec.runtimeClassLabels`.
+
+The cases cover defaults, overrides, future owned classes, ownership isolation,
+drift repair, removal, recreation, and admission validation. They use temporary
+keys and objects, preserve existing settings, and wait for cleanup to finish.
+They check metadata behavior and need no GPU nodes.
+
+Run on a dedicated test cluster. The recreation case deletes an operator-created
+class only when it has no active pods or unmanaged metadata, otherwise it skips.
+It uses a UID precondition and leaves finalizer handling to the operator.
+`ginkgo.Serial` prevents overlap within this suite, not with other clients.
+
+The [Prow OSC runner](https://github.com/openshift/release/blob/main/ci-operator/step-registry/sandboxed-containers-operator/testsuites/osc/sandboxed-containers-operator-testsuites-osc-ref.yaml)
+accepts these settings:
+
+```yaml
+TESTS_OSC_ENABLE: "true"
+TESTS_OSC_FOCUS: RuntimeClassLabels
+TESTS_OSC_REPO: https://github.com/<user>/<operator-fork>
+TESTS_OSC_REPO_REF: "<branch-or-commit>"
+```
+
+The repo and ref choose the test source. The job must also install the matching
+operator bundle; a prebuilt catalog can contain an older API.
+
 ## Sanity Suite
 
 A bats-based smoke check per workload type (kata, peer-pods, coco), meant to
