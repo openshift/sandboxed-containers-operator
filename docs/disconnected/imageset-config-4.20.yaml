@@ -6,6 +6,7 @@ mirror:
     # oc-mirror will automatically mirror the catalog index, the operator
     # bundle, and all images listed as relatedImages in the bundle.
     catalog: registry.redhat.io/redhat/redhat-operator-index:v4.20
+    targetTag: stable
     packages:
     - name: sandboxed-containers-operator
       channels:
