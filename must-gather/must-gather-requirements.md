@@ -20,6 +20,7 @@ See also the [Official 1.5 documentation](https://access.redhat.com/documentatio
 - All namespaces and child objects with OSC resources
 - All OSC custom resource definitions (CRDs)
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/**_*_**\_description
+- Deployment units using the kata runtime class (pods, deployments, statefulsets, deploymentconfigs)
 - versions in nodes/**_nodename_**/**_nodename_**/version
   - kata-containers
   - qemu
@@ -35,6 +36,8 @@ See also the [Official 1.5 documentation](https://access.redhat.com/documentatio
 - Logs
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/controller-manager-**_*_**\_logs
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/install-**_*_**\_logs
+- Deployment units using the kata runtime class
+  - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/deployments/**_{pods,deployments,statefulsets,deploymentconfigs}_**
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/openshift-sandboxed-containers-monitor-**_*_**\_logs
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/peerpodconfig-ctrl-caa-daemon-**_*_**\_logs
   - sandboxed-containers/namespaces/openshift-sandboxed-containers-operator/peer-pods-webhook-**_*_**\_logs
