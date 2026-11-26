@@ -107,7 +107,7 @@ spec:
             - name: RELATED_IMAGE_PODVM_OCI_S390X
               value: registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image-s390x-rhel9@sha256:01b4ad71a3f7b80ce35317a46019e40d79491fad3e27d1d7f9d48aaddb776ea3
             - name: RELATED_IMAGE_MUST_GATHER
-              value: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:9d5829e9bcccb5a921d0f6a9a76af756a3b82062e18819a448e431c843fcbeeb
+              value: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:85a6f217c755ef60fb49e119b7163f5b5520c70ecdb36054ac46ca35e221658e
             - name: RELATED_IMAGE_STORAGE_HELPER
               value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:c1073da6564181d80c69f308eecae4ce5f08ec006fae007d0db6dd7e25eb999f
             - name: RELATED_IMAGE_OSC_CONSOLE_PLUGIN
