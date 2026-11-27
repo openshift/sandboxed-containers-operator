@@ -502,7 +502,7 @@ spec:
                 - name: RELATED_IMAGE_STORAGE_HELPER
                   value: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:ab6eb4de4d3645df23c08fb974f532e56e1c9e5ee322061eba74349498627d3f
                 - name: RELATED_IMAGE_OSC_CONSOLE_PLUGIN
-                  value: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:678e553cf3f8f7ef0c66dfde43841548b63fc647135299f75cfb93cb0469bf56
+                  value: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:4cc967dc0a4f6a597016943692eba39e4bb2c47c84b0a33c6820897376672b4e
                 - name: RELATED_IMAGE_COCO_CONSOLE_PLUGIN
                   value: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:461b6749a6d96c2e51a52cfd91d86835539b9915faaa46aa82ee3a848d779def
                 envFrom:
@@ -658,7 +658,7 @@ spec:
     name: must-gather
   - image: registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:ab6eb4de4d3645df23c08fb974f532e56e1c9e5ee322061eba74349498627d3f
     name: storage-helper
-  - image: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:678e553cf3f8f7ef0c66dfde43841548b63fc647135299f75cfb93cb0469bf56
+  - image: registry.redhat.io/openshift-sandboxed-containers/osc-console-plugin-rhel9@sha256:4cc967dc0a4f6a597016943692eba39e4bb2c47c84b0a33c6820897376672b4e
     name: osc-console-plugin
   - image: registry.redhat.io/openshift-sandboxed-containers/coco-console-plugin-rhel9@sha256:461b6749a6d96c2e51a52cfd91d86835539b9915faaa46aa82ee3a848d779def
     name: coco-console-plugin
