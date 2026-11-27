@@ -263,16 +263,7 @@ def parse_osc_suite_test_case_info(test_name: str) -> Dict:
 
 def get_job_status(prowjob_data: Dict) -> str:
     """
-    Determine overall job status from Prow's own ``status.state``.
-
-    The retired OTP (``openshift-extended-test``) step needed cross-checks
-    against ``test-results.yaml``/its own ``finished.json`` because its
-    reported result could disagree with the real test outcome. The current
-    sandboxed-containers-operator-testsuites-chain architecture doesn't have
-    that problem -- each step's own ``finished.json`` is accurate on its own
-    (confirmed live; see the prowjob-analyzer plan) -- and neither does
-    Prow's top-level job state, so this reads it directly instead of layering
-    step-result overrides on top of it.
+    Read Prow's raw ``status.state``, not the analyzer's overall test verdict.
 
     Args:
         prowjob_data: Parsed prowjob.json (raw dict)

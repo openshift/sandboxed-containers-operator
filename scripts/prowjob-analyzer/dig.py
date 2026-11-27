@@ -156,11 +156,8 @@ def analyze_prowjob(
             test_elapsed_time = 'unknown'
         logger.info(f"test_elapsed_time: {test_elapsed_time}")
 
-    # Determine job status. Prow's own job state is authoritative for the
-    # testsuites-chain architecture: unlike the retired OTP
-    # openshift-extended-test step, no step here is known to under-report its
-    # own failures (confirmed live; see the prowjob-analyzer plan), so there's
-    # no override layer needed on top of status.state anymore.
+    # Preserve Prow's raw state for job diagnostics. The result categories
+    # separately compute the overall test verdict.
     status = get_job_status(prowjob_json)
     logger.info(f"Job status: {status}")
 
