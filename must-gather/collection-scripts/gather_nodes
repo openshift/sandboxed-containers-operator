@@ -224,15 +224,9 @@ gather_single_pod() {
     # Sandboxed containers runtime data
     if exec_with_retry oc exec "$pod" -n node-gather -- [ -d "/host/run/vc" ]; then
         echo "Collecting sandboxed-containers specific logs"
-
-        VC_PATH="$NODE_PATH/run/vc/"
-        mkdir -p "${VC_PATH}"
-        if ! output=$(exec_with_retry oc cp "$pod:/host/run/vc/" "${VC_PATH}" -n node-gather 2>&1); then
-            log_error "Copying sandboxed containers runtime data for node $node" \
-                      "oc cp $pod:/host/run/vc/ ${VC_PATH} -n node-gather" \
-                      "$?" \
-                      "$output"
-        fi
+        # Stages outside the collection tree, redacts the process tokens
+        # and publishes only complete, sanitized data (KATA-6494).
+        collect_vc_runtime_data "$pod" "$node" "$NODE_PATH/run/vc/"
     fi
 
     # Collect kata-containers configuration

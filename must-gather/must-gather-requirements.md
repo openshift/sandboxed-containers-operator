@@ -128,3 +128,15 @@ hosted cluster context. Run must-gather separately on the management cluster for
 - hcp/README
 
 
+### Node Runtime State
+The kata/virtcontainers runtime state is collected from every node under
+`nodes/<node>/run/vc/`. The sandbox process token stored in the sandbox
+state files (`persist.json`) is redacted in the gathered copies before
+they are added to the archive; everything else is preserved verbatim.
+
+The data is staged outside the collection tree and only published when it
+was copied completely and redacted successfully. When that is not possible,
+the runtime state is dropped and the failure is recorded in
+`must-gather-errors.log`.
+
+
