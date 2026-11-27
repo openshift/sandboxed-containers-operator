@@ -98,7 +98,7 @@ deploymentUnits=(pods deployments statefulsets deploymentconfigs)
 for deploymentUnit in "${deploymentUnits[@]}"; do
 	echo "$deploymentUnit using kata runtime class still running:"
 
-	oc get $deploymentUnit -A -o json | jq -r '.items[] | select(.spec.runtimeClassName | test("kata")).metadata.name' 2>/dev/null > ${DEPLOYMENT_UNIT_PATH}/${deploymentUnit}
+	oc get $deploymentUnit -A -o json | jq -r '.items[] | select((.spec.runtimeClassName // .spec.template.spec.runtimeClassName // "") | test("kata")).metadata.name' 2>/dev/null > ${DEPLOYMENT_UNIT_PATH}/${deploymentUnit}
 
 done
 
