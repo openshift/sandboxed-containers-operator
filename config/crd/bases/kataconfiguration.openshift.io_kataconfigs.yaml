@@ -137,6 +137,28 @@ spec:
                 description: Sets log level on kata-equipped nodes.  Valid values
                   are the same as for `crio --log-level`.
                 type: string
+              runtimeClassLabels:
+                description: |-
+                  RuntimeClassLabels configures metadata labels on RuntimeClasses owned by this
+                  KataConfig. It does not create RuntimeClasses or enable runtimes.
+                properties:
+                  defaults:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      Defaults applies to every RuntimeClass owned by this KataConfig, including
+                      classes added in future releases. Removed keys are removed from those classes.
+                    type: object
+                  overrides:
+                    additionalProperties:
+                      additionalProperties:
+                        type: string
+                      type: object
+                    description: |-
+                      Overrides maps exact RuntimeClass names to labels. These values take
+                      precedence over Defaults. Entries for absent classes do not create them.
+                    type: object
+                type: object
             required:
             - checkNodeEligibility
             type: object

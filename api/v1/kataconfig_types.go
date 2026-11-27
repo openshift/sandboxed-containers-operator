@@ -57,6 +57,24 @@ type KataConfigSpec struct {
 	// +optional
 	// +kubebuilder:default:=false
 	EnableMixedCluster bool `json:"enableMixedCluster,omitempty"`
+
+	// RuntimeClassLabels configures metadata labels on RuntimeClasses owned by this
+	// KataConfig. It does not create RuntimeClasses or enable runtimes.
+	// +optional
+	RuntimeClassLabels *RuntimeClassLabels `json:"runtimeClassLabels,omitempty"`
+}
+
+// RuntimeClassLabels configures shared and per-class metadata labels.
+type RuntimeClassLabels struct {
+	// Defaults applies to every RuntimeClass owned by this KataConfig, including
+	// classes added in future releases. Removed keys are removed from those classes.
+	// +optional
+	Defaults map[string]string `json:"defaults,omitempty"`
+
+	// Overrides maps exact RuntimeClass names to labels. These values take
+	// precedence over Defaults. Entries for absent classes do not create them.
+	// +optional
+	Overrides map[string]map[string]string `json:"overrides,omitempty"`
 }
 
 // KataConfigStatus defines the observed state of KataConfig
