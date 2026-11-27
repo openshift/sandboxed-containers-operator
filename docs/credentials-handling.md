@@ -93,7 +93,8 @@ cat > extended-policy.json <<EOF
         "iam:GetRole",
         "iam:ListRolePolicies",
         "iam:DeleteRole",
-        "iam:DeleteRolePolicy"
+        "iam:DeleteRolePolicy",
+        "iam:PassRole"
       ],
       "Resource": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/vmimport"
     },
